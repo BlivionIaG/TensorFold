@@ -89,8 +89,7 @@ pub fn patchify(a: std.mem.Allocator, rgb: picture.Rgb) ![]f32 {
     const pixels = try a.alloc(f32, gh * gw * patch_width);
     var lut: [256]f32 = undefined;
     for (&lut, 0..) |*value, i| {
-        const scaled = @as(f32, @floatFromInt(i)) * @as(f32, 1.0 / 255.0);
-        value.* = (scaled - 0.5) / 0.5;
+        value.* = (@as(f32, @floatFromInt(i)) - 127.5) / 127.5;
     }
     var row: usize = 0;
     for (0..gh / merge) |by| for (0..gw / merge) |bx| for (0..merge) |dy| for (0..merge) |dx| {
@@ -122,7 +121,7 @@ test "LFM3 patches preserve merge order, channel order and duplicated temporal f
     defer std.testing.allocator.free(out);
     const order = [_]u8{ 0, 1, 4, 5, 2, 3, 6, 7 };
     for (order, 0..) |red, row| {
-        const expected = (@as(f32, @floatFromInt(red)) * @as(f32, 1.0 / 255.0) - 0.5) / 0.5;
+        const expected = (@as(f32, @floatFromInt(red)) - 127.5) / 127.5;
         try std.testing.expectEqual(expected, out[row * patch_width]);
         try std.testing.expectEqual(expected, out[row * patch_width + 256]);
         try std.testing.expectEqual(@as(f32, 1), out[row * patch_width + 512]);
@@ -144,4 +143,20 @@ test "LFM3 rejects image metadata that disagrees with its grid, budget or placeh
     try std.testing.expectError(error.BadLfm3ImageSpans, validate(&inputs, 1, 2, 2));
     try std.testing.expectError(error.ImageTooLarge, validate(&inputs, 2, 1, 2));
     try std.testing.expectError(error.TooManyImages, validate(&inputs, 2, 2, 1));
+}
+
+test "LFM3 image patches match the processor float32 pixel fixture" {
+    const a = std.testing.allocator;
+    const rgb = try a.alloc(u8, 217 * 300 * 3);
+    defer a.free(rgb);
+    for (0..217) |y| for (0..300) |x| for (0..3) |channel| {
+        rgb[(y * 300 + x) * 3 + channel] = @intCast((x * 7 + y * 13 + channel * 50 + (x * y) % 31) % 256);
+    };
+    const prepared = try prepareRgb(a, .{ .pixels = rgb, .width = 300, .height = 217 }, 0, 1 << 20);
+    defer a.free(prepared.pixels);
+    try std.testing.expectEqual([2]u32{ 14, 20 }, [2]u32{ prepared.gh, prepared.gw });
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(std.mem.sliceAsBytes(prepared.pixels), &digest, .{});
+    const actual = std.fmt.bytesToHex(digest, .lower);
+    try std.testing.expectEqualStrings("53153c22eb4e065031bbdf4de0f038db37ef736a880e3438ac8e0d73f82dcea8", &actual);
 }
