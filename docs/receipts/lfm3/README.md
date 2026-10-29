@@ -1,13 +1,14 @@
 # LFM3 Metal qualification receipts
 
-## Current M5 long-context snapshot
+## Current M5 long-context checks
 
-[`current-m5-long-context-partial.json`](current-m5-long-context-partial.json) records 20 completed requests:
-VL6/8 text prompts at 32k/64k and text4/6/8 at 131072/262128 prompt tokens, each with two fresh-process legs.
-All requests return 16 tokens with zero cached input; all ten repeated output-token hashes match.
-All ten completed servers exit zero. The remaining six VL native-window requests are running or not yet attempted in this snapshot.
+[`current-m5-long-context.json`](current-m5-long-context.json) records all 26 completed requests:
+VL6/8 text prompts at 32k/64k, text4/6/8 at 131072/262128 prompt tokens, and VL4/6/8 at 127984 prompt tokens.
+Each cell has two fresh-process legs. All requests return 16 tokens with zero cached input;
+all 13 repeated output-token hashes match. All 16 servers exit zero, and all three packets release their leases.
 The receipt includes artifact/checkpoint pins, exact input and output hashes, timings and process memory measurements.
-These are native context checks; this snapshot does not establish image-context, FP64 or comparative speed qualification.
+These are native text-context checks, including VL checkpoints; they do not establish image-context, FP64 or comparative speed acceptance.
+The earlier 20-request snapshot remains in `current-m5-long-context-partial.json`.
 
 These receipts cover native LFM3-1.7B and LFM3-VL-2B from the official MLX exports.
 They distinguish implementation checks from the still-required maintainer model/performance gate.
