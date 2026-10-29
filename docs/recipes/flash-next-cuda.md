@@ -141,6 +141,8 @@ starts a rank. These switches tune it:
 | `TF_FLASHNEXT_KV_HOST` | unset | With `TF_FLASHNEXT_KV_PAGES`: MiB of pinned host RAM holding the K/V plane of every page; `0` is no host tier. |
 | `TF_FLASHNEXT_KV_FRAMES` | paged streams times their frame working set | With the host tier: cap the device frames of the K/V plane; fewer than one stream's required working set is refused. |
 | `TF_FLASHNEXT_KV_SLOTS` | 128 | With the host tier: frames lent to a stream, 64 four-row slots a frame for each attention layer. |
+| `TF_FLASHNEXT_EXL3_UNIFORM_LINES` | unset | Any value: with `TF_FLASHNEXT_EXPERT_LINES`, every rank holds exactly that many lines instead of using spare room. |
+| `TF_FLASHNEXT_EXL3_GRAPH`, `_DPLAN`, `_GRAPH_ASYNC` | `0`, `0`, `1` | The device planner and CUDA graphs, see [their page](../flash-next-exl3-graphs.md). |
 | `TF_FLASHNEXT_PLE_READ` | `map` | `pread` reads the n-gram embedding rows by positional read. |
 | `TF_FLASHNEXT_SNAP_HOST` | `1` above 32,768 tokens of context, else `0` | Whether kept prompt-cache states live in pinned host memory. |
 | `TF_FLASHNEXT_CACHE_TELEMETRY` | `0` | Diagnostics only: `1` logs `EXL3-CACHE` expert-cache counters per phase, with a sync at each boundary. |
