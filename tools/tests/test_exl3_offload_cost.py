@@ -38,6 +38,13 @@ class CostTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 cost.propose(profile)
 
+    def test_equal_measured_cost_keeps_uniform_geometry(self):
+        profile = fixture()
+        for layer in profile["layers"]:
+            for point in layer["points"]:
+                point["service_ns"] = [100] * 5
+        self.assertEqual(cost.propose(profile)["lines"], (11, 11))
+
     def test_refuse_missing_baseline_duplicate_and_unordered_layers(self):
         profiles = [fixture() for _ in range(3)]
         profiles[0]["layers"][0]["points"].pop(1)
