@@ -1,4 +1,4 @@
-//! Exponent fast paths and absorbing risk flags must retain the public attention bytes.
+//! Fused branch-free range predicates must retain the public attention bytes.
 const std = @import("std");
 const mtl = @import("metal");
 const sources = @import("kernel_sources");

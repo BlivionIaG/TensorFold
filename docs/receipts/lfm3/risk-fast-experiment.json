@@ -123,5 +123,7 @@
     "repeats": 5,
     "log_sha256": "31c86c8db07677f4714aa6c136d70ea802ca22cefa1d4720f06f1b3117dea3c8",
     "scope": "targeted risk-fast full/sliding contracts; no full-suite or negative-control claim"
-  }
+  },
+  "archived_candidate_commit": "1543227fc657c88d8300015a1e1590af7633f1ee",
+  "superseded_by": "risk-fused-experiment.json"
 }

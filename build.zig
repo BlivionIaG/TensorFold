@@ -76,7 +76,7 @@ pub fn build(b: *std.Build) void {
     const slide_test_hooks = b.option(bool, "slide-test-hooks", "Living Weights test hooks, such as TF_SLIDE_FORGET_FAIL (never in a release)") orelse false;
     if (slide_test_hooks and release_version != null) @panic("-Dslide-test-hooks is for test builds: a -Dversion release never carries it");
     build_options.addOption(bool, "slide_test_hooks", slide_test_hooks);
-    const lfm3_risk_fast = b.option(bool, "lfm3-risk-fast", "Developer LFM3 exact risk predicate candidate") orelse false;
+    const lfm3_risk_fast = b.option(bool, "lfm3-risk-fast", "Developer LFM3 fused range predicate candidate") orelse false;
     const optimize = b.option(std.builtin.OptimizeMode, "optimize", "debug, safe, fast or small (default fast)") orelse .fast;
     // Nemotron's draft vocabulary (zig/src/families/nemotron/draft_ids.txt), for every backend
     const ids_files = b.addWriteFiles();

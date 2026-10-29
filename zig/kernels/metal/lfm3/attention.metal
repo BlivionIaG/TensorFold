@@ -72,28 +72,37 @@ inline ushort l3_x_pack(l3_x a){
 inline bool l3_finite_bits(uint a){return (a&0x7f800000u)!=0x7f800000u;}
 inline bool l3_nonzero_bits(uint a){return (a&0x7fffffffu)!=0;}
 inline bool l3_product_risk(uint a,uint b){
- const uint ea=(a>>23)&255u,eb=(b>>23)&255u;
- if(L3_RISK_FAST&&ea>0u&&ea<255u&&eb>0u&&eb<255u&&ea+eb>129u&&ea+eb<380u)return false;
  const bool live=l3_finite_bits(a)&l3_finite_bits(b)&l3_nonzero_bits(a)&l3_nonzero_bits(b);
  const uint ae=(a>>23)&255u,be=(b>>23)&255u,s=ae+be;
  return live&((ae==0)|(be==0)|(s<=129u)|(s>=380u));
 }
 inline bool l3_sum_risk(uint a,uint b,uint c,uint d,uint result){
- const uint er=(result>>23)&255u;if(L3_RISK_FAST&&er>0u&&er<253u)return false;
  const bool finite=l3_finite_bits(a)&l3_finite_bits(b)&l3_finite_bits(c)&l3_finite_bits(d);
  const uint e=(result>>23)&255u;
  const bool any=(l3_nonzero_bits(a)&l3_nonzero_bits(b))|(l3_nonzero_bits(c)&l3_nonzero_bits(d));
  return finite&((e>=253u)|((e==0)&any));
 }
 inline bool l3_exp_risk(float gap,float value){
- if(L3_RISK_FAST&&(as_type<uint>(value)&0x7f800000u)!=0)return false;
  return isfinite(gap)&(gap<0)&((as_type<uint>(value)&0x7f800000u)==0);}
 inline bool l3_div_risk(uint numerator,uint denominator){
- const int ea=int((numerator>>23)&255u),eb=int((denominator>>23)&255u);
- if(L3_RISK_FAST&&ea>0&&ea<255&&eb>0&&eb<255&&ea-eb> -125&&ea-eb<126)return false;
  const bool live=l3_finite_bits(numerator)&l3_finite_bits(denominator)&l3_nonzero_bits(numerator)&l3_nonzero_bits(denominator);
  const int a=int((numerator>>23)&255u),b=int((denominator>>23)&255u);
  return live&((a==0)|(b==0)|(a-b<=-125)|(a-b>=126));
+}
+
+struct l3_risk_factor { uint e; bool finite, nonzero; };
+inline l3_risk_factor l3_risk_decode(uint bits){
+ const uint e=(bits>>23)&255u;
+ return {e,e!=255u,(bits&0x7fffffffu)!=0u};
+}
+inline bool l3_pv_risk(uint before,uint value,uint after,l3_risk_factor a,l3_risk_factor b){
+ const l3_risk_factor x=l3_risk_decode(before),y=l3_risk_decode(value);
+ const uint e=(after>>23)&255u;
+ const bool xf=x.finite&a.finite,yf=y.finite&b.finite;
+ const bool xl=xf&x.nonzero&a.nonzero,yl=yf&y.nonzero&b.nonzero;
+ const bool xr=(x.e==0u)|(a.e==0u)|((x.e+a.e-130u)>=250u);
+ const bool yr=(y.e==0u)|(b.e==0u)|((y.e+b.e-130u)>=250u);
+ return (xl&(xr|(yf&(e==0u))))|(yl&(yr|(xf&(e==0u))))|(xf&yf&(e>=253u));
 }
 
 inline void l3_x_merge(float part_max,float part_total,thread l3_x* part,
@@ -156,13 +165,15 @@ inline void lfm3_attention_partial(const device bfloat* queries, const device bf
     const float next = max(maximum, score);
     const float alpha = maximum == -INFINITY ? 0.0f : metal::precise::exp(maximum - next);
     const float probability = score == -INFINITY ? 0.0f : metal::precise::exp(score - next);
-    if(!L3_RISK_FAST||range_risk==0)range_risk|=uint(l3_exp_risk(maximum-next,alpha)|l3_exp_risk(score-next,probability));
+    range_risk|=uint(l3_exp_risk(maximum-next,alpha)|l3_exp_risk(score-next,probability));
     total = total * alpha + probability;
+    const l3_risk_factor ar=l3_risk_decode(as_type<uint>(alpha)),br=l3_risk_decode(as_type<uint>(probability));
     for (uint j = 0; j < 4; ++j) {
       const uint before=as_type<uint>(float(result[j])),a=as_type<uint>(alpha),b=as_type<uint>(probability),v=uint(as_type<ushort>(values[base+32*j]))<<16;
-      if(!L3_RISK_FAST||range_risk==0)range_risk|=uint(l3_product_risk(before,a)|l3_product_risk(b,v));
+      if(!L3_RISK_FAST)range_risk|=uint(l3_product_risk(before,a)|l3_product_risk(b,v));
       result[j] = result[j] * alpha + probability * float(values[base + 32 * j]);
-      if(!L3_RISK_FAST||range_risk==0)range_risk|=uint(l3_sum_risk(before,a,b,v,as_type<uint>(float(result[j]))));
+      range_risk|=uint(L3_RISK_FAST?l3_pv_risk(before,v,as_type<uint>(float(result[j])),ar,br):
+        l3_sum_risk(before,a,b,v,as_type<uint>(float(result[j]))));
     }
     maximum = next;
   }
@@ -179,13 +190,15 @@ inline void lfm3_attention_partial(const device bfloat* queries, const device bf
     const float next = max(merged_max, maxima[part]);
     const float a = merged_max == -INFINITY ? 0.0f : metal::precise::exp(merged_max - next);
     const float b = metal::precise::exp(maxima[part] - next);
-    if(!L3_RISK_FAST||range_risk==0)range_risk|=uint(l3_exp_risk(merged_max-next,a)|l3_exp_risk(maxima[part]-next,b));
+    range_risk|=uint(l3_exp_risk(merged_max-next,a)|l3_exp_risk(maxima[part]-next,b));
     merged_total = merged_total * a + totals[part] * b;
+    const l3_risk_factor ar=l3_risk_decode(as_type<uint>(a)),br=l3_risk_decode(as_type<uint>(b));
     for (uint j = 0; j < 4; ++j) {
       const uint before=as_type<uint>(merged[j]),aa=as_type<uint>(a),bb=as_type<uint>(b),v=as_type<uint>(outputs[part*128+lane+32*j]);
-      if(!L3_RISK_FAST||range_risk==0)range_risk|=uint(l3_product_risk(before,aa)|l3_product_risk(v,bb));
+      if(!L3_RISK_FAST)range_risk|=uint(l3_product_risk(before,aa)|l3_product_risk(v,bb));
       merged[j] = merged[j] * a + outputs[part * 128 + lane + 32 * j] * b;
-      if(!L3_RISK_FAST||range_risk==0)range_risk|=uint(l3_sum_risk(before,aa,v,bb,as_type<uint>(merged[j])));
+      range_risk|=uint(L3_RISK_FAST?l3_pv_risk(before,v,as_type<uint>(merged[j]),ar,br):
+        l3_sum_risk(before,aa,v,bb,as_type<uint>(merged[j])));
     }
     merged_max = next;
   }
@@ -223,13 +236,15 @@ inline float lfm3_attention_merge(const device float* pm, const device float* pl
     const float next = max(maximum, pm[i]);
     const float a = maximum == -INFINITY ? 0.0f : metal::precise::exp(maximum - next);
     const float b = metal::precise::exp(pm[i] - next);
-    if(risk!=nullptr&&(!L3_RISK_FAST||!*risk))*risk|=l3_exp_risk(maximum-next,a)|l3_exp_risk(pm[i]-next,b);
+    if(risk!=nullptr)*risk|=l3_exp_risk(maximum-next,a)|l3_exp_risk(pm[i]-next,b);
     total = total * a + pl[i] * b;
+    const l3_risk_factor ar=l3_risk_decode(as_type<uint>(a)),br=l3_risk_decode(as_type<uint>(b));
     for (uint j = 0; j < 4; ++j) {
       const uint before=as_type<uint>(float(result[j])),aa=as_type<uint>(a),bb=as_type<uint>(b),v=as_type<uint>(po[i*128+lane+32*j]);
-      if(risk!=nullptr&&(!L3_RISK_FAST||!*risk))*risk|=l3_product_risk(before,aa)|l3_product_risk(v,bb);
+      if(risk!=nullptr&&!L3_RISK_FAST)*risk|=l3_product_risk(before,aa)|l3_product_risk(v,bb);
       result[j] = float(L3_ATTN_ACC(result[j] * a + po[i * 128 + lane + 32 * j] * b));
-      if(risk!=nullptr&&(!L3_RISK_FAST||!*risk))*risk|=l3_sum_risk(before,aa,v,bb,as_type<uint>(float(result[j])));
+      if(risk!=nullptr)*risk|=L3_RISK_FAST?l3_pv_risk(before,v,as_type<uint>(float(result[j])),ar,br):
+        l3_sum_risk(before,aa,v,bb,as_type<uint>(float(result[j])));
     }
     maximum = next;
   }
