@@ -55,6 +55,17 @@ pub fn sampleAfterConsumers(allocator: std.mem.Allocator, engine: *prompt.Engine
             .host_prefetch_copies = resident.stats.prefetches,
             .pool_dma_copies = resident.lines.stats.copies,
             .pool_dma_requested_bytes = resident.lines.stats.bytes,
+            .host_split_passes = resident.stats.split_passes,
+            .host_busy_drains = resident.stats.busy,
+            .host_busy_wait_ns = resident.stats.busy_wait_ns,
+            .host_protected_rounds = resident.stats.protected,
+            .host_unique_experts = resident.stats.unique,
+            .pool_staged_bytes = resident.lines.stats.staged_bytes,
+            .pool_stage_ns = resident.lines.stats.stage_ns,
+            .pool_staging_waits = resident.lines.stats.staging_waits,
+            .pool_staging_wait_ns = resident.lines.stats.staging_wait_ns,
+            .pool_release_dependencies = resident.lines.stats.release_waits,
+            .pool_gate_dependencies = resident.lines.stats.gate_waits,
             .device_plans = device.plans,
             .device_hit_picks = device.hit_picks,
             .device_miss_picks = device.miss_picks,
@@ -74,6 +85,12 @@ pub fn sampleAfterConsumers(allocator: std.mem.Allocator, engine: *prompt.Engine
                     break;
                 }
             };
+            layer_sample.line_bytes = resident.lineBytes();
+            layer_sample.device_bytes = resident.deviceBytes();
+            if (dplan.current(&engine.exl3_dplan)) |planner| {
+                layer_sample.timing = try planner.samplePoolTimingAfterConsumers(resident);
+                if (planner.indexOf(resident)) |index| layer_sample.device_bytes += planner.pool_states[index].words * 4;
+            }
             layers[seen_count - 1] = layer_sample;
         }
     }

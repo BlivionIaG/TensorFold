@@ -132,8 +132,8 @@ test "exl3: aggregate telemetry finds attached pools deduplicates MTP aliases an
     resident.telemetry_id = 991;
     resident.telemetry_valid = true;
     resident.telemetry_device = .{ .plans = 5, .hit_picks = 20, .miss_picks = 10, .copies = 3, .inplace_experts = 1 };
-    resident.stats = .{ .rounds = 7, .hit_slots = 25, .miss_slots = 13, .misses = 5 };
-    resident.lines.stats = .{ .copies = 2, .bytes = 96 };
+    resident.stats = .{ .rounds = 7, .hit_slots = 25, .miss_slots = 13, .misses = 5, .split_passes = 2, .busy = 3, .busy_wait_ns = 123, .protected = 4, .unique = 9 };
+    resident.lines.stats = .{ .copies = 2, .bytes = 96, .staged_bytes = 48, .stage_ns = 77, .staging_waits = 2, .staging_wait_ns = 90, .release_waits = 4, .gate_waits = 6 };
     const payload: [16]u8 = @splat(0);
     var sources = [_][3][]const u8{.{ &payload, &payload, &payload }};
     var widths = [_][3]i32{.{ 1, 1, 1 }};
@@ -161,4 +161,15 @@ test "exl3: aggregate telemetry finds attached pools deduplicates MTP aliases an
     try std.testing.expectEqual(@as(u64, 144), snapshot.experts.mapped_copy_payload_min_bytes);
     try std.testing.expectEqual(@as(u64, 144), snapshot.experts.mapped_copy_payload_max_bytes);
     try std.testing.expectEqual(@as(u64, 96), snapshot.experts.pool_dma_requested_bytes);
+    try std.testing.expectEqual(@as(u64, 2), snapshot.experts.host_split_passes);
+    try std.testing.expectEqual(@as(u64, 3), snapshot.experts.host_busy_drains);
+    try std.testing.expectEqual(@as(u64, 123), snapshot.experts.host_busy_wait_ns);
+    try std.testing.expectEqual(@as(u64, 4), snapshot.experts.host_protected_rounds);
+    try std.testing.expectEqual(@as(u64, 9), snapshot.experts.host_unique_experts);
+    try std.testing.expectEqual(@as(u64, 48), snapshot.experts.pool_staged_bytes);
+    try std.testing.expectEqual(@as(u64, 77), snapshot.experts.pool_stage_ns);
+    try std.testing.expectEqual(@as(u64, 2), snapshot.experts.pool_staging_waits);
+    try std.testing.expectEqual(@as(u64, 90), snapshot.experts.pool_staging_wait_ns);
+    try std.testing.expectEqual(@as(u64, 4), snapshot.experts.pool_release_dependencies);
+    try std.testing.expectEqual(@as(u64, 6), snapshot.experts.pool_gate_dependencies);
 }

@@ -76,6 +76,17 @@ pub const Experts = struct {
     host_prefetch_copies: u64 = 0,
     pool_dma_copies: u64 = 0,
     pool_dma_requested_bytes: u64 = 0,
+    host_split_passes: u64 = 0,
+    host_busy_drains: u64 = 0,
+    host_busy_wait_ns: u64 = 0,
+    host_protected_rounds: u64 = 0,
+    host_unique_experts: u64 = 0,
+    pool_staged_bytes: u64 = 0,
+    pool_stage_ns: u64 = 0,
+    pool_staging_waits: u64 = 0,
+    pool_staging_wait_ns: u64 = 0,
+    pool_release_dependencies: u64 = 0,
+    pool_gate_dependencies: u64 = 0,
     device_plans: u64 = 0,
     device_hit_picks: u64 = 0,
     device_miss_picks: u64 = 0,
@@ -127,6 +138,17 @@ pub const LayerCounts = struct {
     host_prefetch_copies: u64 = 0,
     pool_dma_copies: u64 = 0,
     pool_dma_requested_bytes: u64 = 0,
+    host_split_passes: u64 = 0,
+    host_busy_drains: u64 = 0,
+    host_busy_wait_ns: u64 = 0,
+    host_protected_rounds: u64 = 0,
+    host_unique_experts: u64 = 0,
+    pool_staged_bytes: u64 = 0,
+    pool_stage_ns: u64 = 0,
+    pool_staging_waits: u64 = 0,
+    pool_staging_wait_ns: u64 = 0,
+    pool_release_dependencies: u64 = 0,
+    pool_gate_dependencies: u64 = 0,
     device_plans: u64 = 0,
     device_hit_picks: u64 = 0,
     device_miss_picks: u64 = 0,
@@ -143,12 +165,21 @@ pub const LayerCounts = struct {
     }
 };
 
+pub const LayerTiming = struct {
+    service_ns: u64,
+    copy_ns: u64,
+    exposed_copy_wait_ns: u64,
+};
+
 pub const LayerSample = struct {
     owner: u64,
     kind: enum { decoder, mtp },
     layer: usize,
     lines: usize,
+    line_bytes: usize = 0,
+    device_bytes: usize = 0,
     counts: LayerCounts = .{},
+    timing: ?LayerTiming = null,
 
     fn samePool(first: LayerSample, last: LayerSample) bool {
         return first.owner != 0 and first.owner == last.owner and first.kind == last.kind and first.layer == last.layer and first.lines == last.lines;
@@ -214,7 +245,11 @@ pub const Report = struct {
         for (report.layers) |layer| {
             try report.header(writer, "expert-layer");
             try writer.print(" pool={d} kind={s} layer={d} lines={d}", .{ layer.owner, @tagName(layer.kind), layer.layer, layer.lines });
+            try writer.print(" line_bytes={d} device_bytes={d}", .{ layer.line_bytes, layer.device_bytes });
             inline for (@typeInfo(LayerCounts).@"struct".field_names) |field| try writer.print(" {s}={d}", .{ field, @field(layer.counts, field) });
+            if (layer.timing) |timing| {
+                try writer.print(" timing_scope=last_device_invocation last_device_service_ns={d} last_device_copy_ns={d} last_device_exposed_copy_wait_ns={d}", .{ timing.service_ns, timing.copy_ns, timing.exposed_copy_wait_ns });
+            }
             try writer.writeByte('\n');
         }
     }

@@ -68,6 +68,7 @@ pub const Stats = struct {
     staged_bytes: u64 = 0, // bytes the host memcpy'd into pinned staging
     stage_ns: u64 = 0, // host time in those memcpys
     staging_waits: u64 = 0, // a staging slot was still being copied from (the host blocked)
+    staging_wait_ns: u64 = 0,
     release_waits: u64 = 0, // a copy waited on the device for a pass that read its line
     gate_waits: u64 = 0, // a pass waited on the device for a line copy
 };
@@ -257,7 +258,9 @@ pub const Lines = struct {
             l.stage_next = (l.stage_next + 1) % l.spec.staging;
             if (l.stage_busy[slot]) {
                 if (!try l.stage_ev[slot].done()) l.stats.staging_waits += 1;
+                const wait_start = std.Io.Clock.awake.now(io).toNanoseconds();
                 try l.stage_ev[slot].synchronize();
+                l.stats.staging_wait_ns += @intCast(std.Io.Clock.awake.now(io).toNanoseconds() - wait_start);
             }
             const buf = l.staging.?.bytes[slot * l.layout.line_bytes ..][0..l.layout.line_bytes];
             const t0 = std.Io.Clock.awake.now(io).toNanoseconds();

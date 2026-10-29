@@ -7,6 +7,26 @@ pub const Plan = struct {
     planner_bytes: u64,
 };
 
+pub fn fromEnv(rank: usize) !?[]const u8 {
+    return select(env("TF_FLASHNEXT_EXL3_LINE_DELTAS"), env("TF_FLASHNEXT_EXL3_LINE_DELTAS_R0"), env("TF_FLASHNEXT_EXL3_LINE_DELTAS_R1"), rank);
+}
+
+pub fn select(generic: ?[]const u8, rank0: ?[]const u8, rank1: ?[]const u8, rank: usize) !?[]const u8 {
+    if (rank > 1) return error.InvalidRank;
+    return (if (rank == 0) rank0 else rank1) orelse generic;
+}
+
+fn env(name: [*:0]const u8) ?[]const u8 {
+    return if (std.c.getenv(name)) |value| std.mem.span(value) else null;
+}
+
+test "exl3: rank-specific line deltas override only their own rank" {
+    try std.testing.expectEqualStrings("1:+1,2:-1", (try select("0:+1,1:-1", "1:+1,2:-1", null, 0)).?);
+    try std.testing.expectEqualStrings("0:+1,1:-1", (try select("0:+1,1:-1", "1:+1,2:-1", null, 1)).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), try select(null, "1:+1,2:-1", null, 1));
+    try std.testing.expectError(error.InvalidRank, select(null, null, null, 2));
+}
+
 pub fn apply(text: []const u8, uniform_lines: usize, decoder_pools: usize, line_bytes: []const usize, min_lines: usize, planner_rows: ?u64, fixed_bytes: u64, startup_reservation: u64, counts: []usize) !Plan {
     if (counts.len != line_bytes.len or decoder_pools > counts.len or min_lines == 0) return error.InvalidLineDeltaIndex;
     if (uniform_lines < min_lines) return error.PoolTooSmall;
