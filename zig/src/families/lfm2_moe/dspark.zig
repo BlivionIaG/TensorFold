@@ -20,7 +20,7 @@ pub const pass_rows = 32;
 pub const absorb_rows = 2048;
 /// Verified rows a lane keeps on the host until its next hold absorbs them (a round's rows for no GPU work).
 pub const stage_rows = 128;
-/// The blocks a hold is timed with at load, each at one draft and at four (two at 16 blocks: one 32-row pass).
+/// The block counts timed at load, at every depth that fits one pass and the checkpoint's block.
 const hold_grid = [_]u32{ 1, 2, 4, 8, 16 };
 const kw = c.kv_heads * c.head_dim;
 
@@ -86,7 +86,7 @@ pub const Drafter = struct {
     /// One stream's hold wall ms at full depth, and that over the block (the depth rule's cost a draft).
     hold_ms: f64 = 0,
     step_ms: f64 = 0,
-    holds: [hold_grid.len * 2]lanes.hold_price.HoldCost = undefined, // hold passes timed at load, then by settled holds
+    holds: [2 * pass_rows]lanes.hold_price.HoldCost = undefined, // the power-of-two block counts sum to fewer than 2 * pass_rows depths
     holds_len: usize = 0,
     event: mtl.Event = undefined,
     signalled: u64 = 0,
@@ -139,7 +139,7 @@ pub const Drafter = struct {
         const r = pass_rows;
         const wide = @max(pass_rows, absorb_rows);
         const i = d.config.intermediate;
-        const partials = @max(st.split_rows, d.config.block) * st.subs * c.query_heads * st.chunks;
+        const partials = d.partRows() * st.subs * c.query_heads * st.chunks;
         const sums = @max(absorb_rows * (d.config.tap_count * c.hidden / 64), r * (i / 64));
         d.s = .{
             .ids = try d.buffer(r * 4),
@@ -166,6 +166,11 @@ pub const Drafter = struct {
             .picks = try d.buffer(d.config.block * r * 8),
             .conf = try d.buffer(d.config.block * r * 4),
         };
+    }
+
+    /// Query rows the attention partials hold at once: a whole hold pass's, so its blocks attend side by side.
+    pub fn partRows(d: *const Drafter) usize {
+        return @max(pass_rows, d.config.block);
     }
 
     /// The drafter's buffers that every round reads (weights and scratch), for the server's residency set.
@@ -389,6 +394,21 @@ pub const Drafter = struct {
             l.staged = 0;
         }
         const r = run orelse return;
+        // the other lanes' staged rows join the pass: one waited pass a stage's worth of rounds, not one a stream
+        var others = d.lanes.valueIterator();
+        while (others.next()) |lp| {
+            const pc = stagedPiece(lp.*) orelse continue;
+            if (count == pieces.len or rows + pc.rows > absorb_rows) {
+                try block.absorbPass(d, r.e, pieces[0..count]);
+                count = 0;
+                rows = 0;
+            }
+            pieces[count] = pc;
+            count += 1;
+            rows += pc.rows;
+            lp.*.end += lp.*.staged;
+            lp.*.staged = 0;
+        }
         if (count > 0) try block.absorbPass(d, r.e, pieces[0..count]);
         try block.end(r.cb, r.e);
     }
@@ -520,9 +540,8 @@ pub const Drafter = struct {
         var blocks: [hold_grid[hold_grid.len - 1]]block.Block = undefined;
         for (made, &blocks) |lane, *b| b.* = .{ .lane = lane, .pending = 1, .anchor = 0, .depth = 1 };
         d.holds_len = 0;
-        for (hold_grid) |streams| for ([_]u32{ 1, @min(4, pass_rows / streams) }, 0..) |depth, j| {
-            if (j == 1 and depth == 1) continue;
-            for (blocks[0..streams]) |*b| b.depth = depth;
+        for (hold_grid) |streams| for (1..@min(d.config.block, pass_rows / streams) + 1) |depth| {
+            for (blocks[0..streams]) |*b| b.depth = @intCast(depth);
             var ms_best = std.math.floatMax(f64);
             for (0..4) |i| {
                 const t0 = std.Io.Clock.awake.now(d.io);
@@ -530,7 +549,7 @@ pub const Drafter = struct {
                 const ms = @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(d.io)).toNanoseconds())) / 1e6;
                 if (i > 0) ms_best = @min(ms_best, ms);
             }
-            d.holds[d.holds_len] = .{ .streams = streams, .depth = depth, .ms = ms_best };
+            d.holds[d.holds_len] = .{ .streams = streams, .depth = @intCast(depth), .ms = ms_best };
             d.holds_len += 1;
         };
     }

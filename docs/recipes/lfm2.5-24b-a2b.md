@@ -77,7 +77,7 @@ checkpoint's interleaved RoPE. Its own kernels are `lfm2_tap`, `lfm2_attn_block`
 (non-causal block attention, the target's attention kernels with a template flag), `lfm2_markov_scan` and
 `lfm2_markov_pick` (a Markov step) and `lfm2_draft_ids` (a hold's drafts into the next verify's rows on the GPU, so
 the host does not wait for a hold that fits one pass). Each kept prompt state keeps the drafter's context too, so a
-drafting stream resumes prompts. Hold lengths follow the lane core's per-round depth pricing; no stream-count guard disables drafting.
+drafting stream resumes prompts. The lane core prices drafts across the admitted stream counts.
 
 `tf-kernel-contract --only lfm2` checks these kernels. `tf-lfm2-dspark MODEL DRAFTER TOKENS [ROWS]` runs the drafter
 against an fp32 host reference of the released checkpoint (the same taps and the target's embedding and head),
@@ -96,12 +96,29 @@ without the head verifies by the core's depth rule, from each stream's measured 
 
 A stream with a copy ahead verifies the copy and asks no hold, and a drafting stream prices its copy
 windows by its own copies. The lane core also weighs the hold pass itself: the drafter times holds of 1 to 16
-blocks at load and corrects those prices toward each settled hold's GPU time. The lane core prices each round from the drafter's confidence chances and measured hold costs.
+blocks at every admissible depth at load and corrects those prices toward each settled hold's GPU time.
+Prices interpolate neighboring measured depths, preserving the cost changes at kernel transitions.
 
 `tf-lfm2-dspark` also prints the confidence
 head against its fp32 reference and times shared holds of 2 to 16 streams.
 
-The loader reads the checkpoint one matrix at a time and keeps the released bf16 matrices, or 8-bit codes only when explicitly requested; a stream's drafter lane is one
+The loader reads the checkpoint one matrix at a time and keeps the released bf16 matrices by default, or the
+8-bit codes with `--drafter-bits 8`; a stream's drafter lane is one
 Metal buffer (its layers' keys and values, then its staged rows), and its bytes join the streams the load limit
 admits. At load the drafter logs its weights, scratch and a stream's bytes. `tf-lfm2-dspark` also counts host
 allocations over twenty served drafter rounds, which must be none.
+
+A hold runs on one concurrent encoder with a barrier only where a step reads an earlier step's writes: q, k and v,
+and gate and up, share one sums pass, and the blocks of a shared hold attend side by side. An 8-bit projection takes
+the scalar twin up to 8 rows, the window kernel past them where the GPU has no tensor units, and the tensor units
+from 9 rows (the head from 5) where it has them. Held blocks use one bf16 16-row group, then the existing
+64x64 tiles past 16 rows, avoiding a second weight pass for shared holds of 17 to 32 rows. Context ingestion
+keeps the original row kernel through 32 rows, preserving the persistent context projections.
+When one lane's stage of 128 verified rows fills, its absorb pass takes
+every lane's staged rows, so the lanes' stages fill together.
+
+Shared verification past the 16-row qualified window uses measured increments
+from the shared forward path through 32 rows, anchored at the 16-row window
+price. This calibrates the batch cost without widening a stream's qualified
+window. The wide-batch receipt records the throughput gains, the accepted
+four-stream tradeoff, startup/footprint cost and hardware coverage limits.

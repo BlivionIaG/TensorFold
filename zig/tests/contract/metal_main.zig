@@ -26,12 +26,12 @@ const gemma_embed = @import("metal_gemma4_embed.zig");
 const gemma_mixed = @import("metal_gemma4_mixed.zig");
 const lfm2_argmax = @import("metal_lfm2_argmax.zig");
 const lfm2_streams = @import("metal_lfm2_streams.zig");
+const lfm2_controls = @import("metal_lfm2_controls.zig");
 const lfm2_tap = @import("metal_lfm2_tap.zig");
 const lfm2_dspark = @import("metal_lfm2_dspark.zig");
 const lfm2_bf16 = @import("metal_lfm2_bf16.zig");
 const lfm2_attn = @import("metal_lfm2_attn.zig");
 const lfm2_conf = @import("metal_lfm2_confidence.zig");
-const lfm2_controls = @import("metal_lfm2_controls.zig");
 const g = contract.gates;
 const usage = "usage: tf-kernel-contract [--only TEXT] [--no-gates] [--no-limits] [--offline DIR] [--seed N] [--repro] [--rotary-long] [--rotary-accuracy FILE]";
 
