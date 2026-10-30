@@ -254,5 +254,67 @@
         ]
       }
     }
+  },
+  "composed_m5_serving": {
+    "scope": "M5 VL4 matched composed attention plus deferred-head native falsefalse/truetrue served cold2k8k, two legs each, not MLX comparison",
+    "default_off": true,
+    "protocol": "Fresh native server ABBA, pinned2k then8k IDs, cache0,16 output tokens, no warmup/retry, two legs each.",
+    "summary_sha256": "664facf3d80af22e2c7146f88fc7c4fe17711a4cad059bbadc5a0657e5358975",
+    "raw_files_verified": 63,
+    "cases": [
+      {
+        "prompt_tokens": 2048,
+        "baseline_ttft_s": [
+          0.8617813750170171,
+          0.8616457916796207
+        ],
+        "candidate_ttft_s": [
+          0.8461027080193162,
+          0.8467173343524337
+        ],
+        "baseline_median_s": 0.8617135833483189,
+        "candidate_median_s": 0.8464100211858749,
+        "baseline_over_candidate": 1.0180805540806366,
+        "baseline_first_last_drift": -0.00015732915717014961,
+        "stable_at_5percent": true,
+        "output_text_sha256_equal": true,
+        "output_token_id_equality": "not emitted by cold client; separate model qualification covers16 IDs/logits",
+        "prompt_ids": "both routes /tokenize exact pinned arrays"
+      },
+      {
+        "prompt_tokens": 8192,
+        "baseline_ttft_s": [
+          4.639439832884818,
+          4.660513749811798
+        ],
+        "candidate_ttft_s": [
+          4.434221500065178,
+          4.424068999942392
+        ],
+        "baseline_median_s": 4.649976791348308,
+        "candidate_median_s": 4.429145250003785,
+        "baseline_over_candidate": 1.049858726431321,
+        "baseline_first_last_drift": 0.004542340818304291,
+        "stable_at_5percent": true,
+        "output_text_sha256_equal": true,
+        "output_token_id_equality": "not emitted by cold client; separate model qualification covers16 IDs/logits",
+        "prompt_ids": "both routes /tokenize exact pinned arrays"
+      }
+    ],
+    "server_prefill": {
+      "metric": "tensorfold:request_prefill_seconds_sum",
+      "scope": "Per-leg aggregate of two requests (2k+8k); scrape is before/after both, so individual-length prefill duration cannot be recovered. Separate from client TTFT.",
+      "baseline_sum_s": [
+        5.488429,
+        5.509407
+      ],
+      "candidate_sum_s": [
+        5.267624,
+        5.257553
+      ],
+      "baseline_median_sum_s": 5.498918,
+      "candidate_median_sum_s": 5.2625885
+    },
+    "limitations": "No new ITL/decode benchmark, MLX comparison, fresh vision tower, wider-checkpoint timing or confidence interval. HTTP output text SHA matches; separate numerical gate covers state/logits/token IDs."
   }
 }
