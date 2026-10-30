@@ -1,5 +1,5 @@
 {
-  "status": "default-off measured operator improvement; full-model validation pending",
+  "status": "default-off measured operator improvement; real-checkpoint 2k/8k equivalence passed, serving pending",
   "date": "2026-10-30",
   "backend": "Metal",
   "device": "Apple M5 Ultra",
@@ -501,9 +501,9 @@
   },
   "remaining": [
     "Full public kernel contract suite",
-    "Real-checkpoint prompt/decode recurrent state, KV, logits and token equality",
     "Cold 2k/8k prefill and complete serving before/after measurements",
-    "M1-M4 and other backend qualification not established by this M5 receipt"
+    "M1-M4 and other backend qualification not established by this M5 receipt",
+    "Broader image, checkpoint-width, cancellation and concurrent-stream baseline/candidate validation"
   ],
   "reproduce": [
     "python3 tools/check_lfm3_risk.py",
@@ -535,7 +535,8 @@
     "diff_check": "pass",
     "full_host_suite": "not run",
     "full_kernel_contract_suite": "not run",
-    "targeted_integrated_contract": "pass on Apple M5 Ultra"
+    "targeted_integrated_contract": "pass on Apple M5 Ultra",
+    "host_contract_golden_fuzz_subset": "pass; details in risk-fused-fullmodel.json"
   },
   "targeted_integrated_contract": {
     "source_commit": "de7cf96ed",
@@ -553,5 +554,6 @@
     "scope": "Targeted full/sliding replacements and launch-limit checks; no complete kernel-suite claim; the two mutation controls are recorded separately in private operator qualification",
     "log_sha256": "35e5a0c0e68c2f0a0c72b66f72f29c2636fabb3ee6027b6d060b7f1d7f218c2e",
     "manifest_sha256": "5b6223276399163e9c626634639a1e13a162de3edf7e31cd296702ebb7e6d508"
-  }
+  },
+  "fullmodel_receipt": "risk-fused-fullmodel.json"
 }
