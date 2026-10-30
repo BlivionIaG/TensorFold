@@ -316,9 +316,9 @@
     }
   },
   "remaining": [
-    "Separate LFM3-1.7B text4/6/8 checkpoint equivalence",
     "Fresh image-to-decoder and HTTP image-request checks",
     "Full test suites, other GPUs and longer contexts",
     "Existing independent FP64 fidelity ledger remains unchanged"
-  ]
+  ],
+  "text_widths_receipt": "risk-fused-text-widths.json"
 }
