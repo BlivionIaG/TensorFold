@@ -316,5 +316,91 @@
       "candidate_median_sum_s": 5.2625885
     },
     "limitations": "No new ITL/decode benchmark, MLX comparison, fresh vision tower, wider-checkpoint timing or confidence interval. HTTP output text SHA matches; separate numerical gate covers state/logits/token IDs."
+  },
+  "composed_m5_remaining_checkpoints": {
+    "scope": "Text4/6/8 and VL6/8 at2k/8k, plus corrected injected image512 forVL6/8. VL-rendered text token arrays used as valid model inputs, not a text chat-template parity claim. No fresh vision tower or serving timing.",
+    "manifest_sha256": "8077a8ff7ba91b0402b2419d89bda748d74a56882a09f6812247ecdadff686a7",
+    "all_cross_binary_state_logits_16_tokens_equal": true,
+    "all_per_binary_chunk_marks_resume_checks_pass": true,
+    "all_five_bad_final_controls_rejected": true,
+    "cases": [
+      {
+        "case": "LFM3-1.7B-MLX-4bit-vl-2048",
+        "skipped_heads": 14,
+        "result_sha256": "5983f83352bd8e216a40fc3b779d90e8a1a0b5cc0dc72ad6d068c34cf032e85c"
+      },
+      {
+        "case": "LFM3-1.7B-MLX-6bit-vl-2048",
+        "skipped_heads": 14,
+        "result_sha256": "01d1e269ba8a7919f4a97c3a30db4dfb46808b514189b82f5e652ce7956c6771"
+      },
+      {
+        "case": "LFM3-1.7B-MLX-8bit-vl-2048",
+        "skipped_heads": 14,
+        "result_sha256": "27b723cec339e4a1c366dd307dd3915c34f9cac8905b6ffc695bfce05e5a04aa"
+      },
+      {
+        "case": "LFM3-VL-2B-MLX-6bit-vl-2048",
+        "skipped_heads": 14,
+        "result_sha256": "7274b0c09df97cc67de9c4764f14e06dbc772650414c098c1f01b0bc1232cf47"
+      },
+      {
+        "case": "LFM3-VL-2B-MLX-8bit-vl-2048",
+        "skipped_heads": 14,
+        "result_sha256": "8db8e859fda9cb72eb18cd7f181694ec104d3148a2888819b7b8bb06db85cdbd"
+      },
+      {
+        "case": "LFM3-1.7B-MLX-4bit-vl-8192",
+        "skipped_heads": 62,
+        "result_sha256": "0e8cbdec06cf2f443745144e96a9230f1c7e1fefcf0d631e386ed2df1c8ac189"
+      },
+      {
+        "case": "LFM3-1.7B-MLX-6bit-vl-8192",
+        "skipped_heads": 62,
+        "result_sha256": "ddecf8ac439b9acf8d3130076440bb3fbac1bfb16b32b01b542262592bf89e4f"
+      },
+      {
+        "case": "LFM3-1.7B-MLX-8bit-vl-8192",
+        "skipped_heads": 62,
+        "result_sha256": "2fc56c8c2af934bddc753cb5738ebc5af4722e11fa4bdd28e20bf1824b7789d2"
+      },
+      {
+        "case": "LFM3-VL-2B-MLX-6bit-image512",
+        "skipped_heads": 2,
+        "result_sha256": "8cc888761ce47b5249ac9d7debbc640fa5524422d9f0d8d29725d6f2e3805038"
+      },
+      {
+        "case": "LFM3-VL-2B-MLX-6bit-vl-8192",
+        "skipped_heads": 62,
+        "result_sha256": "f38fe52957fa7db8e61e0da0438909bf218a6f2227fd7e89b068fe38e882013f"
+      },
+      {
+        "case": "LFM3-VL-2B-MLX-8bit-image512",
+        "skipped_heads": 2,
+        "result_sha256": "6188832c42c9e689dccf8031481fab0593f960a0010edc1bab45bcec645535bd"
+      },
+      {
+        "case": "LFM3-VL-2B-MLX-8bit-vl-8192",
+        "skipped_heads": 62,
+        "result_sha256": "9c50ac37e1bd76b4032c14fac647b67fa596e82f25405f8e5235f8cd7fb43ca6"
+      }
+    ],
+    "stages": {
+      "smoke": {
+        "receipt_sha256": "0bbf9951981ff74e47260eba9e44dedce623ebc5c04ad4f7bcab35494b9218f7",
+        "commands": 15,
+        "expected_exit": 0
+      },
+      "positive": {
+        "receipt_sha256": "dc665bd413262a61ad17e68998880562d2e1b5ffba23384653412e15440edd0d",
+        "commands": 21,
+        "expected_exit": 0
+      },
+      "controls": {
+        "receipt_sha256": "aa98a8338a64c7bc6bce0fb3e3e131693e4d6baa8e76d7c3f27f82e8796e1bfe",
+        "commands": 5,
+        "expected_exit": 1
+      }
+    }
   }
 }
