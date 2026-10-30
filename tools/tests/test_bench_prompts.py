@@ -108,6 +108,12 @@ class DistinctCell(unittest.TestCase):
         self.assertEqual(len(requests), 4)
         self.assertTrue(all(body["prompt"] == [3, 2, 1] for body in requests))
 
+    def test_skipping_warmup_sends_only_the_requested_output_length(self):
+        report, bodies = self.main("--skip-warmup")
+        self.assertEqual(report["warmup_reply_tokens"], 0)
+        self.assertEqual(len(bodies), 8)
+        self.assertTrue(all(body["max_tokens"] == 256 for body in bodies))
+
     def test_prompts_and_mixed_are_exclusive(self):
         with self.assertRaises(SystemExit):
             self.main("--prompts", str(TOOLS / "bench_prompts.json"), "--mixed")
