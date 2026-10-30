@@ -216,6 +216,7 @@ def main() -> None:
     p.add_argument("model")
     p.add_argument("--levels", default="4", help="concurrent requests, a comma list")
     p.add_argument("--tokens", type=int, default=256)
+    p.add_argument("--skip-warmup", action="store_true", help="skip the automatic 16-output-token warmup")
     p.add_argument("--reps", type=int, default=3)
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument("--temperatures", default="1.0,0")
@@ -247,7 +248,7 @@ def main() -> None:
         except (OSError, ValueError) as exc:
             p.error(str(exc))
     cells = [None] if args.mixed or args.prompts else PROMPTS
-    report: dict = {"label": args.label, "tokens": args.tokens, "mixed": args.mixed, "cells": []}
+    report: dict = {"label": args.label, "tokens": args.tokens, "mixed": args.mixed, "warmup_reply_tokens": 0 if args.skip_warmup else 16, "cells": []}
     token_counts = {item["name"]: len(item["prompt"]) for item in pool if isinstance(item["prompt"], list)}
     if token_counts:
         report["prompt_token_counts"] = token_counts
@@ -264,7 +265,8 @@ def main() -> None:
                 specs = [(item, args.seed + i if temp > 0 else args.seed) for i in range(max(levels))]
             if args.no_seed:
                 specs = [(spec[0], None) for spec in specs]
-            together(args.base, args.model, specs[:1], 16, temp, api_key=api_key)  # warm-up
+            if not args.skip_warmup:
+                together(args.base, args.model, specs[:1], 16, temp, api_key=api_key)  # warm-up
             alone: dict[tuple[str, int | None], dict] = {}
             if args.alone or args.serial:
                 for spec in specs:
