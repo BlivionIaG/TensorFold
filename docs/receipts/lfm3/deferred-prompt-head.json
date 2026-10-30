@@ -206,6 +206,10 @@
     "state_logits_snapshots_resume_16_decode_equal": true,
     "receipt_sha256": "578d28c60b74a562c647de3bbf8fd62efc828bb46be419c316e1d02155d36db0",
     "log_sha256": "18de5b86c6617d2535e31170c66517cbc26a6a267c020ace5ed891ee1e9bae14",
-    "M5_status": "Packet prepared; pending device run"
+    "M5_status": "Passed: same corrected injected rows; full state/logits, two snapshots, resumed prefix257 and16 decode tokens equal; two heads skipped. No fresh tower or timing claim.",
+    "M5_manifest_sha256": "5f22ce436a487a3571d752c3a8faf153fe70676656e628973f1ea84e425f1a38",
+    "M5_receipt_sha256": "03dd2eed55e94ab08b1cc709825ac104321111428b569e834c2a2bd27e15d133",
+    "M5_result_sha256": "bf3ecda81358da9c03799605fffc4fbd2d9fe4140f76737f2b432afad2a65b69",
+    "M5_log_sha256": "18de5b86c6617d2535e31170c66517cbc26a6a267c020ace5ed891ee1e9bae14"
   }
 }
