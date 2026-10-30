@@ -135,7 +135,7 @@ pub fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     return exe;
 }
 
-pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, build_options: *std.Build.Step.Options, test_step: *std.Build.Step, risk_fast: bool) void {
+pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, build_options: *std.Build.Step.Options, test_step: *std.Build.Step, risk_fast: bool, defer_head: bool) void {
     const metal_std = b.option([]const u8, "metal-std", "Metal language version (default: MLX's for this macOS)") orelse mlxMetalStd(b);
 
     // MLX's mx.fast.metal_kernel JIT: MTLCompileOptions mathMode safe, fp32 functions fast (the default), its...
@@ -150,7 +150,7 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     b.getInstallStep().dependOn(&b.addInstallFile(fast_lib, "lib/nemotron_fastmath.metallib").step);
     b.getInstallStep().dependOn(&lib_install.step);
 
-    const mods = metalEngineModules(b, target, optimize, draft_ids, risk_fast);
+    const mods = metalEngineModules(b, target, optimize, draft_ids, risk_fast, defer_head);
     const metal = mods.metal;
     const kernels_mod = embedded(b, lib, "tensorfold.metallib");
     counters_build.targets(b, target, optimize, metal, mods.sources, test_step);
@@ -291,6 +291,7 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         .{ .name = "tf-qwen35-exact", .path = "zig/tests/qwen35_exact.zig", .about = "Qwen3.5-2B forward and committed-state exactness" },
         .{ .name = "tf-lfm3-forward", .path = "zig/tests/lfm3_forward.zig", .about = "LFM3 native teacher-forced BF16 logits" },
         .{ .name = "tf-lfm3-vision", .path = "zig/tests/lfm3_vision.zig", .about = "LFM3-VL native tower and projector outputs" },
+        .{ .name = "tf-lfm3-deferred-head", .path = "zig/tests/lfm3_deferred_head.zig", .about = "LFM3 deferred prompt heads: logits, state, observers and resume" },
         .{ .name = "tf-lfm3-exact", .path = "zig/tests/lfm3_exact.zig", .about = "LFM3 prompt, window, snapshot and concurrent cache equality" },
         .{ .name = "tf-lfm3-profile", .path = "zig/tests/lfm3_profile.zig", .about = "LFM3 calibrated GPU class costs with final-logit byte identity" },
         .{ .name = "tf-lfm3-dual-project", .path = "zig/tests/lfm3_dual_project.zig", .about = "Actual checkpoint paired projection byte comparison" },
@@ -476,7 +477,7 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     }
 }
 
-pub fn metalEngineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, risk_fast: bool) struct { metal: *std.Build.Module, lanes: *std.Build.Module, fabric: *std.Build.Module, sources: *std.Build.Module, engine: *std.Build.Module, living: *std.Build.Module, qwen27: qwen27_build.Shared } {
+pub fn metalEngineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, risk_fast: bool, defer_head: bool) struct { metal: *std.Build.Module, lanes: *std.Build.Module, fabric: *std.Build.Module, sources: *std.Build.Module, engine: *std.Build.Module, living: *std.Build.Module, qwen27: qwen27_build.Shared } {
     const metal = b.createModule(.{
         .root_source_file = b.path("zig/src/metal/metal.zig"),
         .target = target,
@@ -501,12 +502,13 @@ pub fn metalEngineModules(b: *std.Build, target: std.Build.ResolvedTarget, optim
     });
     const lfm3_options = b.addOptions();
     lfm3_options.addOption(bool, "risk_fast", risk_fast);
+    lfm3_options.addOption(bool, "defer_prompt_head", defer_head);
     engine.addOptions("lfm3_options", lfm3_options);
     return .{ .metal = metal, .lanes = lanes, .fabric = fabric, .sources = sources, .engine = engine, .living = living, .qwen27 = qwen27_build.engineModules(b, target, metal, sources, engine) };
 }
 
 pub fn distMetalServer(b: *std.Build, target: std.Build.ResolvedTarget, draft_ids: *std.Build.Module, build_options: *std.Build.Step.Options, sdk: []const u8) *std.Build.Step.Compile {
-    const m = metalEngineModules(b, target, .fast, draft_ids, false);
+    const m = metalEngineModules(b, target, .fast, draft_ids, false, false);
     // the release binary embeds the same prebuilt packed-kernel metallib as the development build
     const flags = [_][]const u8{ b.fmt("-std={s}", .{mlxMetalStd(b)}), "-fmetal-math-mode=safe", "-fmetal-math-fp32-functions=fast" };
     m.sources.addImport("nemotron_packed_metallib", embedded(b, metallib(b, "nemotron_packed", &nemotron_packed, &flags), "nemotron_packed.metallib"));

@@ -12,7 +12,7 @@ const be = lanes.backend;
 const prefill_control = @import("prefill_control.zig");
 pub const greedy = @import("greedy.zig");
 
-pub const Options = struct { capacity: usize, chunk: usize = 128, streams: u32 = 8 };
+pub const Options = struct { capacity: usize, chunk: usize = 128, streams: u32 = 8, defer_prompt_head: bool = @import("lfm3_options").defer_prompt_head };
 
 pub const Metal = struct {
     residency: ?mtl.ResidencySet.Follow = null,
@@ -148,7 +148,11 @@ pub const Metal = struct {
             };
             while (mark < stream.reuse.marks.len and stream.reuse.marks[mark] <= at) mark += 1;
             if (mark < stream.reuse.marks.len) end = @min(end, stream.reuse.marks[mark]);
-            try fwd.runWithImages(self.model, &self.scratch, &.{.{ .cache = cache, .rows = end - at }}, ids[at..end], false, .last, image_rows);
+            // Reuse observers need logits at marks, and at any chunk if cancellation or yield may call them.
+            const marked = std.mem.indexOfScalar(u32, stream.reuse.marks, @intCast(end)) != null;
+            const interrupted_observer = stream.reuse.hook != null and (stream.cancel_check != null or stream.yield_check != null);
+            const head: fwd.Head = if (prefill_control.deferHead(self.options.defer_prompt_head, end == ids.len, stream.reuse.hook != null and marked, interrupted_observer)) .none else .last;
+            try fwd.runWithImages(self.model, &self.scratch, &.{.{ .cache = cache, .rows = end - at }}, ids[at..end], false, head, image_rows);
             at = end;
             prefill_control.completed(stream, at);
             if (stream.reuse.hook) |hk| if (std.mem.indexOfScalar(u32, stream.reuse.marks, @intCast(at)) != null)

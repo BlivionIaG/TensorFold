@@ -13,7 +13,8 @@ const Buffer = mtl.Buffer;
 pub const counters = @import("../../core/gpu_counters.zig");
 
 pub const Segment = struct { cache: *st.Cache, rows: usize };
-pub const Head = enum { last, all };
+/// `none` commits prompt state without publishing logits; callers must retain every observed head.
+pub const Head = enum { last, all, none };
 pub var gpu_seconds: f64 = 0;
 pub const Trace = struct {
     ctx: *anyopaque,
@@ -158,6 +159,7 @@ pub fn runTraceWithImages(m: *Model, s: *st.Scratch, segments: []const Segment, 
 }
 
 fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, images: ?@import("image_rows.zig").Images, trace: ?Trace) !void {
+    if (head == .none and (record or trace != null)) return error.InvalidDeferredLfmHead;
     if (trace != null and m.profile != null) return error.ConflictingLfmDiagnostics;
     if (images != null and (record or segments.len != 1)) return error.InvalidLfmImageSegments;
     if (tokens.len == 0 or tokens.len > s.rows or (record and tokens.len > st.batch_rows)) return error.LfmRowsExceeded;
@@ -249,7 +251,7 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     }
 
     try stage(&enc, trace, "final_norm", s.x, total, c.hidden, &cb, &ended);
-    if (head == .all) try enc.projection(embedding, s.x, 0, s.logits, 0, total) else {
+    if (head == .all) try enc.projection(embedding, s.x, 0, s.logits, 0, total) else if (head == .last) {
         try enc.projection(embedding, s.x, (total - 1) * c.hidden * 2, s.logits, 0, 1);
     }
     if (m.profile) |profile| try profile.finishEncoding(&enc.e) else enc.e.end();
@@ -265,7 +267,7 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     var base: usize = 0;
     for (segments) |seg| {
         const logit_row = if (head == .all) base + seg.rows - 1 else 0;
-        @memcpy(seg.cache.logits.contents()[0 .. c.vocab * 2], (s.logits.contents() + logit_row * c.vocab * 2)[0 .. c.vocab * 2]);
+        if (head != .none) @memcpy(seg.cache.logits.contents()[0 .. c.vocab * 2], (s.logits.contents() + logit_row * c.vocab * 2)[0 .. c.vocab * 2]);
         seg.cache.commit(s, base, seg.rows, record);
         base += seg.rows;
     }

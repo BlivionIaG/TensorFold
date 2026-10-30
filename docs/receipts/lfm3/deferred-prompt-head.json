@@ -1,0 +1,142 @@
+{
+  "status": "Default-off development option; numerical gates passed on M4 and small cold-TTFT reductions observed",
+  "date": "2026-10-30",
+  "build_option": "-Dlfm3-defer-prompt-head=true",
+  "default_enabled": false,
+  "release_builds": "Enabled option refused with explicit release version; distribution and host-only engine modules remain disabled",
+  "change": "Skip vocabulary projection and logits copy only on unobserved intermediate prompt chunks; retain transformer work and cache commits. Final heads, marked reuse observers and arbitrary interruption observers retain logits. Recorded/trace forwards reject Head.none.",
+  "model": {
+    "family": "LFM3-VL-2B-MLX-4bit",
+    "weights_sha256": "58268dfdf441ae4020d2a52fc97a814645e8a9624946e2d490403d4dcd71a255",
+    "config_sha256": "0efb7708e0771e3e104ac628954cdc71070dd436e0b7974615bd1b9eb836f9d9"
+  },
+  "device": "Apple M4",
+  "model_qualification": {
+    "prompt_tokens": [
+      2048,
+      8192
+    ],
+    "skipped_intermediate_heads": [
+      14,
+      62
+    ],
+    "chunk_rows": 128,
+    "mark_boundaries": [
+      129,
+      257
+    ],
+    "checks": [
+      "Every chunk active full-addressed KV and convolution state bytes",
+      "Observed and final full-width BF16 logits",
+      "Skipped-head cache logits remain unchanged",
+      "Snapshot bytes at marks",
+      "Saved prefix257 resume state and final logits",
+      "16 greedy output IDs and full logits/state per decode step",
+      "Real backend mark, cancellation, yield, interrupted-cache cleanup, saved-prefix resume and first-token equality"
+    ],
+    "observer_events_per_mode": [
+      2,
+      3,
+      3
+    ],
+    "negative_control": "Deliberately omitting final head rejected with DeferredHeadByteMismatch",
+    "summary_sha256": "793b02d962098d013878d14768ede9f4d764697fa8ad546482f941f5220877cc",
+    "prompt_fixture_sha256": {
+      "vl-2048.npy": "82c7dac5126bf3f7bf789f2a7385214044ad7ace0d151c52935e139ad99bcf2b",
+      "vl-8192.npy": "b371a7a09adfed00451d2aeba2dc64f5851e7ee62136dddcd8f77e1e07673581"
+    },
+    "prompt_sources": [
+      "docs/receipts/lfm3/cold-prompts/vl-2048.ids.json",
+      "docs/receipts/lfm3/cold-prompts/vl-8192.ids.json"
+    ]
+  },
+  "image_qualification": {
+    "scope": "Injected actual-cat-derived70 projected image rows, previously byte-identical native, into derived512token prompt: original90 image-prompt IDs plus422 text IDs. Vision tower not rerun.",
+    "image_start": 4,
+    "image_rows": 70,
+    "prompt_tokens": 512,
+    "skipped_heads": 2,
+    "checks": [
+      "active KV/conv bytes",
+      "final logits",
+      "mark snapshots",
+      "prefix resume",
+      "16 decode IDs and logits"
+    ],
+    "summary_sha256": "f044d2d922184927cf60e416fcccb0535cb44a23a0b53113553aca9fb0509692"
+  },
+  "served_comparison": {
+    "scope": "LOCAL M4 VL4 matched private native false/true deferredhead served cold2k8k, two legs each, not MLX comparison",
+    "order": [
+      "baseline",
+      "candidate",
+      "candidate",
+      "baseline"
+    ],
+    "samples_per_route": 2,
+    "prompt_cache": false,
+    "output_tokens": 16,
+    "prompt_ids": "Exact pinned token arrays checked through native tokenize endpoint for both routes",
+    "output_identity": "All response text digests equal. Cold client does not emit token IDs; separate model qualification proves16 IDs/full logits.",
+    "baseline_binary_sha256": "628c8ef425c003cc4ac22036a46612aada21f8d8bf6dbf2ff382d21fb98389bc",
+    "candidate_binary_sha256": "65b13cb701af5d30b7d9411352b63972a5e546e48836854671da7cf5ffa37700",
+    "predeclared_baseline_drift_limit": 0.05,
+    "cases": [
+      {
+        "prompt_tokens": 2048,
+        "baseline_ttft_s": [
+          3.3865730413235724,
+          3.3919462081976235
+        ],
+        "candidate_ttft_s": [
+          3.3729968750849366,
+          3.3754817922599614
+        ],
+        "baseline_median_s": 3.389259624760598,
+        "candidate_median_s": 3.374239333672449,
+        "baseline_over_candidate": 1.0044514599003862,
+        "baseline_first_last_drift": 0.0015866088841098858,
+        "stable_at_5percent": true,
+        "output_text_sha256_equal": true,
+        "output_token_id_equality": "not emitted by cold client; separate model qualification covers16 IDs/logits",
+        "prompt_ids": "both routes /tokenize exact pinned arrays"
+      },
+      {
+        "prompt_tokens": 8192,
+        "baseline_ttft_s": [
+          17.143353125080466,
+          17.1442855829373
+        ],
+        "candidate_ttft_s": [
+          17.07568662473932,
+          17.081687083933502
+        ],
+        "baseline_median_s": 17.143819354008883,
+        "candidate_median_s": 17.07868685433641,
+        "baseline_over_candidate": 1.0038136714038957,
+        "baseline_first_last_drift": 5.4391801302289267e-05,
+        "stable_at_5percent": true,
+        "output_text_sha256_equal": true,
+        "output_token_id_equality": "not emitted by cold client; separate model qualification covers16 IDs/logits",
+        "prompt_ids": "both routes /tokenize exact pinned arrays"
+      }
+    ],
+    "summary_sha256": "ba05fd65735fa1c6c8dbb10405d8f991d0360e8f71507c7befd84a1597553473",
+    "limitations": "Small observed gains from two samples per route; no statistical confidence interval, M5, MLX comparison, fresh vision-tower or broad checkpoint claim. Public build option plumbing uses existing lfm3_options; measured pair used equivalent explicit native backend option."
+  },
+  "reproduce": "Build tf-lfm3-deferred-head; run MODEL TOKENS.npy OUTPUT.json, optionally IMAGE_ROWS.bf16 IMAGE_START. Use --bad-final for planted rejection. Inputs require258..8192 tokens. Compare matched native builds with option false/true using the same cold requests, cache disabled and exclusive device admission.",
+  "public_integration_validation": {
+    "default_build": "native, tf-lfm3-deferred-head, dev-tools, test-lfm3-prefill-host: passed",
+    "enabled_build": "native, tf-lfm3-deferred-head, test-lfm3-prefill-host with optiontrue: passed",
+    "cpu": "apple_m1",
+    "release_enabled_control": "Rejected with Deferred prompt head is a development-only option",
+    "lean": {
+      "baseline": 428,
+      "current": 428,
+      "new": 0
+    },
+    "enabled_native_sha256": "c7229956a5349fa31df3301c4cbe051da2c028c61c761a68a321b885c5b54ef3",
+    "qualifier_sha256": "32dc59e753e11aa8253e79b028d6aac97f6aa900a8262fdc194785a0627a16ca",
+    "public_gpu": "Pending separate bounded run; model and serving evidence above is from the equivalent private implementation"
+  }
+}
