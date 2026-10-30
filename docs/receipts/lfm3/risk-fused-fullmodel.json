@@ -131,5 +131,6 @@
   ],
   "serving_receipt": "risk-fused-serving.json",
   "width_image_receipt": "risk-fused-width-image.json",
-  "text_widths_receipt": "risk-fused-text-widths.json"
+  "text_widths_receipt": "risk-fused-text-widths.json",
+  "m4_receipt": "risk-fused-m4.json"
 }

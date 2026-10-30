@@ -201,5 +201,6 @@
     "No MLX performance comparison in this experiment",
     "No image-request serving timing or6/8-bit serving timing",
     "No full-suite or all-platform qualification claim"
-  ]
+  ],
+  "m4_receipt": "risk-fused-m4.json"
 }
