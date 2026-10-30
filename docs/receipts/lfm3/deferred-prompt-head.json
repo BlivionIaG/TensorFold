@@ -51,7 +51,7 @@
     ]
   },
   "image_qualification": {
-    "scope": "Injected actual-cat-derived70 projected image rows, previously byte-identical native, into derived512token prompt: original90 image-prompt IDs plus422 text IDs. Vision tower not rerun.",
+    "scope": "Legacy cat-derived projected rows from earlier preprocessing, not the corrected current processor. Injected70rows into derived512tokens; vision tower not rerun.",
     "image_start": 4,
     "image_rows": 70,
     "prompt_tokens": 512,
@@ -161,5 +161,51 @@
       ],
       "manifest_sha256": "4d299d86188ebf06f6cca420aa0144b722fb58f0bd215bcd7500fba568b19b64"
     }
+  },
+  "public_m5_qualification": {
+    "scope": "Public compiled optiontrue; text2k/8k, legacyinjectedimage512; no M5 timing claim",
+    "skipped_heads": [
+      14,
+      62,
+      2
+    ],
+    "full_state_logits_resume_16_decode_equal": true,
+    "actual_backend_callbacks_pass": true,
+    "negative_final_control_rejected": true,
+    "summary_sha256": "f667e2c499b34781fb8b24be3cf45a35a23d1efaa8a0c852fc61f73ae291b96a",
+    "stage_receipts": {
+      "smoke": {
+        "exits": [
+          0
+        ],
+        "receipt_sha256": "38dd8dd4d4df72cf2157a3fa21e66abeb6877bbfefe48e9afc2601dabd1e4aca"
+      },
+      "positive": {
+        "exits": [
+          0,
+          0
+        ],
+        "receipt_sha256": "a901095aa17e91746684785a5fb186154734da0e3f5b4b50201540a80f224c46"
+      },
+      "controls": {
+        "exits": [
+          1
+        ],
+        "receipt_sha256": "dca51f989b46fc574eaca1df22d70aa33214683e9e3579584c5ad7ca7f9a72d3"
+      }
+    }
+  },
+  "corrected_image_qualification": {
+    "device": "Apple M4",
+    "scope": "Corrected current-processor cat70projectedrows injected into same512token prompt; tower not rerun in this gate",
+    "projected_rows_sha256": "ffa0401f452f39a07833d6692ac9eff0d5485cc93a14fb3433bdad74c42ab05e",
+    "patches_sha256": "9d39c11551f105b8982e3a9acceffcdf687d360c17a7931b7fff21757a6e5473",
+    "independent_prescribed_native_equal_words": 143360,
+    "legacy_vs_corrected_different_words": 126898,
+    "skipped_heads": 2,
+    "state_logits_snapshots_resume_16_decode_equal": true,
+    "receipt_sha256": "578d28c60b74a562c647de3bbf8fd62efc828bb46be419c316e1d02155d36db0",
+    "log_sha256": "18de5b86c6617d2535e31170c66517cbc26a6a267c020ace5ed891ee1e9bae14",
+    "M5_status": "Packet prepared; pending device run"
   }
 }
