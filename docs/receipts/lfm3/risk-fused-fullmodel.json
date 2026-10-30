@@ -124,10 +124,11 @@
     "scope": "Host contract, golden and Cortheon fuzz targets; not the full zig build test suite"
   },
   "remaining": [
-    "Actual image inputs and other checkpoint widths",
+    "Fresh image-to-decoder inputs and separate LFM3-1.7B text checkpoint widths",
     "Live cancellation and concurrent-stream baseline/candidate comparisons",
     "Full host and device test suites",
     "Other GPU generations and backends"
   ],
-  "serving_receipt": "risk-fused-serving.json"
+  "serving_receipt": "risk-fused-serving.json",
+  "width_image_receipt": "risk-fused-width-image.json"
 }

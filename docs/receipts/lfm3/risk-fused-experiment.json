@@ -1,5 +1,5 @@
 {
-  "status": "default-off measured operator and served TTFT improvement; wider checkpoint/image qualification pending",
+  "status": "default-off measured operator/served improvement; VL4/6/8 baseline equivalence passed, separate text-family qualification pending",
   "date": "2026-10-30",
   "backend": "Metal",
   "device": "Apple M5 Ultra",
@@ -556,5 +556,6 @@
     "manifest_sha256": "5b6223276399163e9c626634639a1e13a162de3edf7e31cd296702ebb7e6d508"
   },
   "fullmodel_receipt": "risk-fused-fullmodel.json",
-  "serving_receipt": "risk-fused-serving.json"
+  "serving_receipt": "risk-fused-serving.json",
+  "width_image_receipt": "risk-fused-width-image.json"
 }
