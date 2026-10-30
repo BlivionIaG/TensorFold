@@ -1,5 +1,5 @@
 {
-  "status": "default-off measured operator improvement; real-checkpoint 2k/8k equivalence passed, serving pending",
+  "status": "default-off measured operator and served TTFT improvement; wider checkpoint/image qualification pending",
   "date": "2026-10-30",
   "backend": "Metal",
   "device": "Apple M5 Ultra",
@@ -501,9 +501,9 @@
   },
   "remaining": [
     "Full public kernel contract suite",
-    "Cold 2k/8k prefill and complete serving before/after measurements",
     "M1-M4 and other backend qualification not established by this M5 receipt",
-    "Broader image, checkpoint-width, cancellation and concurrent-stream baseline/candidate validation"
+    "Broader image, checkpoint-width, cancellation and concurrent-stream baseline/candidate validation",
+    "Broader served contexts, image requests,6/8-bit checkpoints, decode/ITL and MLX comparisons"
   ],
   "reproduce": [
     "python3 tools/check_lfm3_risk.py",
@@ -555,5 +555,6 @@
     "log_sha256": "35e5a0c0e68c2f0a0c72b66f72f29c2636fabb3ee6027b6d060b7f1d7f218c2e",
     "manifest_sha256": "5b6223276399163e9c626634639a1e13a162de3edf7e31cd296702ebb7e6d508"
   },
-  "fullmodel_receipt": "risk-fused-fullmodel.json"
+  "fullmodel_receipt": "risk-fused-fullmodel.json",
+  "serving_receipt": "risk-fused-serving.json"
 }

@@ -1,6 +1,6 @@
 {
   "date": "2026-10-30",
-  "status": "2k/8k real-checkpoint attention equivalence passed; remains default-off pending serving and broader qualification",
+  "status": "2k/8k checkpoint equivalence and isolated served TTFT improvement passed; remains default-off pending broader qualification",
   "device": "Apple M5 Ultra",
   "os": "macOS27.0 build26A428",
   "backend": "Metal",
@@ -124,10 +124,10 @@
     "scope": "Host contract, golden and Cortheon fuzz targets; not the full zig build test suite"
   },
   "remaining": [
-    "Isolated served cold2k/8k TTFT and complete request comparison",
     "Actual image inputs and other checkpoint widths",
     "Live cancellation and concurrent-stream baseline/candidate comparisons",
     "Full host and device test suites",
     "Other GPU generations and backends"
-  ]
+  ],
+  "serving_receipt": "risk-fused-serving.json"
 }
