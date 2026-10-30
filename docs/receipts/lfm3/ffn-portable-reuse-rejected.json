@@ -13,9 +13,10 @@
     "cached4": "Four rows, decode fourcolumns into64floatlane cache before originalpairouterloop; preserves oneactivationloadperpair.",
     "cached8": "Same decodedlane cache across eightrows.",
     "triples": "Existing public three-row BF16-storage helper with original two/one-rowtails.",
-    "shared-pairs-float-LDS": "Four SIMDgroups each retain2rows/4cols; share decodedFP32codes and duplicatedcoefficients via9216byteLDS, two barriers/K512."
+    "shared-pairs-float-LDS": "Four SIMDgroups each retain2rows/4cols; share decodedFP32codes and duplicatedcoefficients via9216byteLDS, two barriers/K512.",
+    "compact-transposed-LDS": "Same2rows/SG,128threads4SG, ushortcodes[col][element][lane] and pergroupBF16coefficients;4352byteLDSvs9216; same2barriers/K512. No measured hardwarebankstall attribution."
   },
-  "gates": "Cached4/8 and triples:25case byteidentity screens including GS32/64 bits4/6/8 tails/NF, actualslice everycolumnFP64no-worse and plantednegativecontrols. Shared-pairs: bounded actualslice canonical/FP64gate. These are not full66 or full-model qualifications.",
+  "gates": "Cached4/8 and triples:25case byteidentity screens including GS32/64 bits4/6/8 tails/NF, actualslice everycolumnFP64no-worse and plantednegativecontrols. Shared-pairs: bounded actualslice canonical/FP64gate. These are not full66 or full-model qualifications. CompactLDS:14case screen actual64+derived65tail and6format9rowfinite/NF, everyactualcolumnFP64no-worse, two plantedcontrols.",
   "cost_protocol": {
     "balanced_rounds": 5,
     "legs": 20,
@@ -92,8 +93,19 @@
       "baseline_first_last_drift": 0.0001514320707756145,
       "analysis_sha256": "eea69bcd98dc39c4d917eb955437027e252bf6408a48c042cfbf744c258937fd",
       "full_output_matches_frozen_canonical": true
+    },
+    {
+      "device": "Apple M4",
+      "variant": "compact-transposed-LDS",
+      "baseline_seconds_per_op": 0.00026341683042119257,
+      "candidate_seconds_per_op": 0.00034259798121638596,
+      "median_candidate_over_public_throughput": 0.7688219515629374,
+      "stable": true,
+      "baseline_first_last_drift": -0.00029217137416359673,
+      "analysis_sha256": "16b418f778bd3b66dae4219f5b2b860e1cc018d13d84452177b8f1826b6d5ad1",
+      "full_output_matches_frozen_canonical": true
     }
   ],
   "conclusion": "All listed variants are slower than their matched public row-pair baseline. Do not promote or extrapolate a gain from source-level weight reuse. No measured register-spill, cache-miss or LDS-bank-stall attribution is established.",
-  "pending": "Three-row M5 timing not included. Any compact/transposed LDS followup is a separate hypothesis and needs fresh qualification."
+  "pending": "M5 three-row and compactLDS timings not included. Stop nearby reuse tuning until new profiling evidence."
 }
