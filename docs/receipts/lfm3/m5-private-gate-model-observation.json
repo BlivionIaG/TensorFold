@@ -210,7 +210,7 @@
   "limitations": [
     "Many downstream BF16 words differ despite matching sixteen greedy tokens; these differences are not shown no-worse against a full-model FP64 reference.",
     "Initial128-token smoke generates the same repeated token; longer prompts yield meaningful matching token sequences.",
-    "First integrated gate input/output binding verification is a separate pending test, required before interpreting differences as expected rounding propagation.",
+    "First integrated gate now matches the genuine input and standalone primary-qualified output exactly. This excludes an initial adapter binding/input mismatch; downstream differences are consistent with propagation of changed BF16 values but have not been shown no-worse against a full-model reference or for all later candidate-propagated inputs.",
     "Extra scan and loss of dual gate/up batching must be included in future serving measurement."
   ],
   "raw_receipts": {
@@ -228,5 +228,35 @@
       "log_hashes_independently_verified": true,
       "lock_released": true
     }
+  },
+  "first_integrated_gate_binding": {
+    "result": {
+      "scope": "integrated first gate binding/primary validation only; diagnostic command boundaries; no full-model fidelity or timing claim",
+      "checks": {
+        "baseline_norm_matches_genuine128": true,
+        "baseline_gate_matches_standalone": true,
+        "candidate_norm_matches_genuine128": true,
+        "candidate_gate_matches_standalone": true
+      },
+      "baseline": {
+        "rms": 0.0006554460990912766,
+        "max_abs": 0.007761517306789756,
+        "worst_column_rms": 0.007279313909585347
+      },
+      "candidate": {
+        "rms": 0.0006554460950282121,
+        "max_abs": 0.007761517306789756,
+        "worst_column_rms": 0.007279313909585347
+      },
+      "primary_per_column_no_worse": true,
+      "public_words_corrected": 125,
+      "candidate_matches_frozen_primary_qualified_words": true
+    },
+    "candidate_completed": 1,
+    "diagnostic_command_boundaries": true,
+    "receipt_sha256": "72635da8f181a33cf89a5bc620855daca4976d79b841577626e6e72185021518",
+    "analysis_sha256": "286c1504e8a2b2b9c074e209dbd8fd4c278d53420c1602967cade410e9ad4d5a",
+    "capture_log_sha256": "e99c327f90777d4f4abd0ba45cc55be59ffe96627297a7f1fddf230fc1831ccc",
+    "logs_exits_and_lease_release_independently_verified": true
   }
 }
