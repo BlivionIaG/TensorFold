@@ -137,6 +137,29 @@
     },
     "enabled_native_sha256": "c7229956a5349fa31df3301c4cbe051da2c028c61c761a68a321b885c5b54ef3",
     "qualifier_sha256": "32dc59e753e11aa8253e79b028d6aac97f6aa900a8262fdc194785a0627a16ca",
-    "public_gpu": "Pending separate bounded run; model and serving evidence above is from the equivalent private implementation"
+    "public_gpu": {
+      "device": "Apple M4",
+      "compiled_development_default": true,
+      "text_prompt_tokens": 2048,
+      "text_skipped_heads": 14,
+      "injected_image_prompt_tokens": 512,
+      "image_skipped_heads": 2,
+      "full_state_logits_resume_and_16_decode_equal": true,
+      "actual_backend_mark_cancel_yield_pass": true,
+      "bad_final_control": "Rejected with DeferredHeadByteMismatch",
+      "runs_exit_codes": [
+        0,
+        0,
+        1
+      ],
+      "runner_passed": true,
+      "receipt_sha256": "3ac964afb306ff2b9cdc174e12980169de8d3a202b3c232480aaf900c24bf999",
+      "log_sha256": [
+        "d799f4634441be1b978e2ceffd7f4032ff312a1f54dc2c8f62b2f93d23cc186c",
+        "18de5b86c6617d2535e31170c66517cbc26a6a267c020ace5ed891ee1e9bae14",
+        "1172a8168a0b5e984c0bba5040ff453a87df314216f8ced4a425ddcdda3b1c7e"
+      ],
+      "manifest_sha256": "4d299d86188ebf06f6cca420aa0144b722fb58f0bd215bcd7500fba568b19b64"
+    }
   }
 }
