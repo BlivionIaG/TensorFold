@@ -258,5 +258,20 @@
     "analysis_sha256": "286c1504e8a2b2b9c074e209dbd8fd4c278d53420c1602967cade410e9ad4d5a",
     "capture_log_sha256": "e99c327f90777d4f4abd0ba45cc55be59ffe96627297a7f1fddf230fc1831ccc",
     "logs_exits_and_lease_release_independently_verified": true
+  },
+  "inline_error_substitution": {
+    "scope": "Removed separate error scan dispatch; repeat model observation with fusedfinalflagatomic. No arithmetic change.",
+    "prompt_lengths": [
+      128,
+      2048,
+      8192
+    ],
+    "prior_baseline_and_candidate_full_state_logits_hashes_identical": true,
+    "original_scan_poison_publication_and_nonvacuous_hit_checks_repeated": true,
+    "receipt_sha256": {
+      "smoke": "c7f500948b37a26f4573cb7c4c55a705826456f17f71a48808cfe6d1cbd7f900",
+      "positive": "984f406761505af5c5e5698cad9066c58ebbd6b1ed7897e1beee859ab3f47887"
+    },
+    "all_children_exit_zero_logs_hash_verified_and_leases_released": true
   }
 }
