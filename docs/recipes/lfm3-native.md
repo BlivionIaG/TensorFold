@@ -124,3 +124,39 @@ Long-context model fidelity, maximum image budgets, 6/8-bit performance and othe
 Structured output requires the native grammar library; logprobs and video are not advertised.
 A complete earlier global M5 contract run found one Qwen4 failure that also reproduces on the unchanged pinned base.
 It is not a final-source global pass. Agree model-fidelity and performance gates on #1491 before claiming release readiness.
+
+## Default-off tiled prompt experiments
+
+Two development build options expose the current M5 experiments independently. Both default to `false`;
+release-version builds reject either option when enabled.
+
+```sh
+zig build native -Dcpu=apple_m1 -Dlfm3-residual-ffn=true -Dlfm3-tiled-attention=true
+```
+
+`lfm3-residual-ffn` changes only the FFN gate, up and down projections. It reconstructs each affine weight
+as a BF16 high part and residual part, accumulates both products in FP32, and rounds the result to BF16.
+The candidate requires 4-bit weights, groups of 64, 33–128 rows, dimensions divisible by 64, and K at most
+12,288. Flagged nonfinite tiles use the existing row projection. Other shapes and widths retain that path.
+`lfm3-tiled-attention` uses 64-query/32-key tiles, strict QK products, and BF16 high-plus-residual
+probabilities for PV with FP32 accumulation. It handles nonshared slices of 9–64 rows, causal full attention
+or the 256-token sliding window. Shared rows and slices of at most eight rows retain the existing attention.
+Both modules check tensor-unit capability before compiling their optional pipelines; M4 and older devices
+retain the existing paths. Enabling the build options selects the candidates when the serving backend initializes.
+Direct `Model.load` developer harnesses must explicitly enable the corresponding candidate to exercise it.
+
+These are work-in-progress arithmetic changes, not release-qualified replacements. The
+[combined provisional serving receipt](../receipts/lfm3/m5-composed-prompt-provisional-serving.json)
+records the frozen private prototype's cold 2k/8k measurements. Its bounded Text4 comparison used 128 prompt
+tokens and 16 fixed teacher-forced continuations against an independent FP32 graph and actual official MLX BF16.
+The combined candidate passed separate prompt/continuation logit RMS and maximum-error comparisons, while
+the proposed top-20 probability diagnostics retained breaches. Those diagnostic metrics are an explicit proposal
+under the [FP32 criterion](https://github.com/ashhart/TensorFold/issues/1491#issuecomment-6516252750),
+not a verbatim maintainer specification or a reason to hide the breaches.
+The [held-input attention receipt](../receipts/lfm3/m5-composed-attention-held-input.json) covers 22 actual
+128-row cells from baseline and candidate histories; it does not substitute for propagated full-model checks.
+
+Integrated-source kernel contracts, nonfinite attention behavior, arbitrary tails, cache/resume/partial-acceptance
+seams, cancellation/concurrency, wider quantizations, images and longer contexts remain qualification work.
+Earlier family receipts above do not automatically qualify these opt-in arithmetic paths. No decode-throughput
+or M4 candidate speed improvement is claimed.

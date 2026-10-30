@@ -30,6 +30,8 @@ pub const Metal = struct {
     pub fn init(gpa: std.mem.Allocator, model: *Model, options: Options) !*Metal {
         if (options.chunk == 0 or options.capacity == 0 or options.capacity > st.max_context or options.streams == 0)
             return error.InvalidLfmOptions;
+        if (@import("lfm3_options").residual_ffn) try model.enableResidualFFN();
+        if (@import("lfm3_options").tiled_attention) try model.enableTiledAttention();
         const out = try gpa.create(Metal);
         errdefer gpa.destroy(out);
         out.* = .{ .gpa = gpa, .model = model, .options = options, .scratch = try st.Scratch.init(gpa, model.device, &model.config.layer_types, @max(options.chunk, st.batch_rows)) };

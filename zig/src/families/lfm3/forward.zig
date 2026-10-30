@@ -32,6 +32,7 @@ const Encoder = struct {
     scratch: *st.Scratch,
     record: bool,
     binned_prepared: ?Prepared = null,
+    allow_residual_ffn: bool = false,
 
     fn begin(self: *Encoder, kind: counters.Class) !void {
         if (self.m.profile) |profile| try profile.beginSpan(&self.e, kind);
@@ -75,11 +76,15 @@ const Encoder = struct {
             } else try pairs.encode(self.e, &self.m.kernels.rows, w, x, x_off, y, y_off, rows);
         } else if (self.m.projection_candidate) |*candidate| {
             try candidate.encode(self.e, &self.m.kernels.rows, w, x, x_off, self.scratch.sums orelse return error.MissingProjectionCandidateScratch, y, y_off, rows);
+        } else if (self.allow_residual_ffn and self.m.residual_ffn != null) {
+            try self.m.residual_ffn.?.encode(self.e, &self.m.kernels.rows, w, x, x_off, self.scratch.sums orelse return error.MissingProjectionCandidateScratch, y, y_off, rows);
         } else try pairs.encode(self.e, &self.m.kernels.rows, w, x, x_off, y, y_off, rows);
         try self.end();
     }
 
     fn pairedProjection(self: *Encoder, a: row.Weights, b: row.Weights, input: Buffer, first: Buffer, second: Buffer, rows: usize) !bool {
+        if (self.allow_residual_ffn and self.m.residual_ffn != null and
+            (@import("residual_ffn.zig").supports(a, rows) or @import("residual_ffn.zig").supports(b, rows))) return false;
         if (self.m.projection_candidate != null or self.m.binned_candidate != null or !dual.compatible(a, b)) return false;
         try self.begin(.dense);
         try dual.encode(self.e, &self.m.kernels.dual, a, b, input, 0, first, 0, second, 0, rows);
@@ -132,7 +137,7 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
 /// Developer projection fixture through the production selector, with no tokenizer or model-state update.
 pub fn project(m: *Model, s: *st.Scratch, w: row.Weights, input: Buffer, output: Buffer, rows: usize) !void {
     if (m.profile != null or rows == 0 or rows > s.rows) return error.InvalidLfmProjectionFixture;
-    if (m.projection_candidate != null) try s.prepareProjectionCandidate();
+    if (m.projection_candidate != null or m.residual_ffn != null) try s.prepareProjectionCandidate();
     if (m.binned_candidate != null) try s.prepareBinnedProjectionCandidate();
     const cb = m.queue.commandBuffer();
     var enc = Encoder{ .e = cb.compute(.serial), .m = m, .scratch = s, .record = false };
@@ -174,7 +179,7 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     @memcpy(s.ids.slice(u32, total), tokens);
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
-    if (m.projection_candidate != null) try s.prepareProjectionCandidate();
+    if (m.projection_candidate != null or m.residual_ffn != null) try s.prepareProjectionCandidate();
     if (m.binned_candidate != null) try s.prepareBinnedProjectionCandidate();
     if (segments.len > 1) {
         if (!record) return error.InvalidLfmSegments;
@@ -229,6 +234,7 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
 
         try layerStage(&enc, trace, &name, i, "ffn_norm", s.x, total, c.hidden, &cb, &ended);
         const ffn = block.ffn;
+        enc.allow_residual_ffn = true;
         const paired = try enc.pairedProjection(ffn.gate, ffn.up, s.x, s.gate, s.up, total);
         if (!paired) try enc.projection(ffn.gate, s.x, 0, s.gate, 0, total);
         try layerStage(&enc, trace, &name, i, "gate", s.gate, total, c.intermediate, &cb, &ended);
@@ -244,6 +250,7 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
         try enc.end();
         try layerStage(&enc, trace, &name, i, "act", s.act, total, c.intermediate, &cb, &ended);
         try enc.projection(ffn.down, s.act, 0, s.r, 0, total);
+        enc.allow_residual_ffn = false;
         try layerStage(&enc, trace, &name, i, "down", s.r, total, c.hidden, &cb, &ended);
         const next_norm = if (i + 1 < m.weights.blocks.len) m.weights.blocks[i + 1].operator_norm else m.weights.norm;
         try enc.postNorm(s.r, block.post_ffn_norm, next_norm, s.h, s.x, total);
@@ -443,6 +450,20 @@ fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, segments: []const 
             const last_chunk = (first + rows + st.chunk_keys - 1) / st.chunk_keys;
             const args = AttnArgs{ .len = @intCast(first), .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .window = if (sliding) c.sliding_window else 0, .chunk_base = @intCast(chunk_base) };
             try enc.begin(.attention);
+            if (enc.m.tiled_attention) |pipeline| {
+                if (@import("attention_tiled.zig").eligible(rows, args.window)) {
+                    enc.e.setPipeline(pipeline);
+                    enc.e.setBuffer(s.queries, (base + at) * c.hidden * 2, 0);
+                    enc.e.setBuffer(cache.keys, 0, 1);
+                    enc.e.setBuffer(cache.values, 0, 2);
+                    enc.e.setBytes(std.mem.asBytes(&args), 3);
+                    enc.e.setBuffer(s.y, (base + at) * c.hidden * 2, 8);
+                    enc.e.setValue(@as(u32, @intCast(rows)), 9);
+                    enc.groups(.{ (rows + 63) / 64, c.query_heads, 1 }, .{ 128, 1, 1 });
+                    try enc.end();
+                    continue;
+                }
+            }
             enc.pipe("lfm3_attn_partial");
             enc.e.setBuffer(s.queries, (base + at) * c.hidden * 2, 0);
             enc.e.setBuffer(cache.keys, 0, 1);

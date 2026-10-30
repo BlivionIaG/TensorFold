@@ -25,6 +25,7 @@ pub const lfm2_attn_nax = @embedFile("lfm2/lfm2_attn_nax.metal");
 
 pub const lfm3 = @embedFile("lfm3/ops.metal");
 pub const lfm3_attention = @embedFile("lfm3/attention.metal");
+pub const lfm3_attention_tiled = @embedFile("lfm3/attention_tiled.metal");
 pub const lfm3_image_rows = @embedFile("lfm3/image_rows.metal");
 pub const lfm3_vision = @embedFile("lfm3/vision.metal");
 pub const lfm3_projection_dual = @embedFile("lfm3/projectiondual.metal");
@@ -207,3 +208,6 @@ pub const core_weight_only = @embedFile("core/weight_only.metal");
 pub const core_hc_activation_body = @embedFile("core/hc_activation.h");
 pub const core_hc_activation = @embedFile("core/hc_activation.metal");
 pub const core_hc_pointwise = @embedFile("core/hc_pointwise.metal");
+
+/// Development-only residual-weight LFM3 prompt FFN.
+pub const lfm3_residual_ffn = @embedFile("lfm3/residual_ffn.metal");
