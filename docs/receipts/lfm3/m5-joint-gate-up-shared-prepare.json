@@ -118,7 +118,7 @@
   "gpu_latency_reduction_fraction": 0.03574965318941248,
   "limitations": [
     "Prior gate-only model integration regressed TTFT despite a standalone projection gain. Joint operator gain does not establish a serving gain.",
-    "Gate-only injected failure followed by successfulup sticky-error control remains required before jointmodel integration.",
+    "Joint gate-only sticky-error control passed; private full-model integration still requires actual binding, publication/poison and downstream observation before serving timing.",
     "Full-model FP64no-worse remains open; prior model observation matched16tokens but had substantial logits/state differences."
   ],
   "raw_receipt_sha256": {
@@ -126,5 +126,14 @@
     "controls": "dfbe06d45513e84c18dab9be0a2b7c5c84fb78f05e4921a7f2cd4d5e42fb5f5b",
     "cost": "761d49511ebd89f630ced5d2ed44e66c30be9e8f23e6c87e6d26cbf2a1261376"
   },
-  "independent_verification": "All raw log hashes, actual exits, final lease release and frozen costanalyzer verified locally."
+  "independent_verification": "All raw log hashes, actual exits, final lease release and frozen costanalyzer verified locally.",
+  "joint_sticky_error_control": {
+    "positive": "Five repetitions inject actual final repairflag2 in gate only; up succeeds and all its final flags are zero, all outputs canonical, shared failure remains1 and check rejects.",
+    "negative": "Planted error reset in UP actualexit1 MissingStickyFailure",
+    "receipt_sha256": "77ec655d82c1a8415ed14d5e030dfe21ea3fbd01935f9798787ef924e2810e4e",
+    "events_sha256": "aaed52a6cbc4ca558d47d1ebfae800211492e363ca9df64beb7ff0166809e865",
+    "positive_log_sha256": "d12c3e65d67abc17e4de9d204a97f3bf2862510f8771191d92d5b305a07d6903",
+    "negative_log_sha256": "732fca853c6f7e81872b3e25d36efb49925b5763d7e302861277734fcb645ec2",
+    "independent_actual_exits_log_hashes_and_lease_release_verified": true
+  }
 }
