@@ -134,7 +134,15 @@ pub fn main(init: std.process.Init) !void {
     }
     if (skipped == 0) return error.NoDeferredHeads;
     if (images == null) try @import("lfm3_deferred_callbacks.zig").check(init.gpa, m, ids[0..@min(ids.len, 512)]);
-    const out = try std.json.Stringify.valueAlloc(init.gpa, .{ .prompt_tokens = ids.len, .skipped_heads = skipped, .mark_snapshots_equal = marks, .resumed_prefix = resumed_at, .resume_state_logits_equal = true, .full_active_kv_conv_equal = true, .full_logits_equal = true, .decode_tokens = tokens, .vision_rows = images != null, .scope = "real checkpoint differential correctness; backend callbacks exercised separately for text fixtures; not served timing" }, .{ .whitespace = .indent_2 });
+    const final_snapshot = try q.snapshot.save(init.gpa, &m.config.layer_types, &a, @intCast(a.len));
+    defer q.snapshot.drop(init.gpa, final_snapshot);
+    var state_hash: [32]u8 = undefined;
+    var logits_hash: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(final_snapshot.bytes, &state_hash, .{});
+    std.crypto.hash.sha2.Sha256.hash(a.logits.contents()[0 .. c.vocab * 2], &logits_hash, .{});
+    const state_hex = std.fmt.bytesToHex(state_hash, .lower);
+    const logits_hex = std.fmt.bytesToHex(logits_hash, .lower);
+    const out = try std.json.Stringify.valueAlloc(init.gpa, .{ .final_state_sha256 = state_hex[0..], .final_logits_sha256 = logits_hex[0..], .prompt_tokens = ids.len, .skipped_heads = skipped, .mark_snapshots_equal = marks, .resumed_prefix = resumed_at, .resume_state_logits_equal = true, .full_active_kv_conv_equal = true, .full_logits_equal = true, .decode_tokens = tokens, .vision_rows = images != null, .scope = "real checkpoint differential correctness; backend callbacks exercised separately for text fixtures; not served timing" }, .{ .whitespace = .indent_2 });
     defer init.gpa.free(out);
     try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[3], .data = out });
     std.debug.print("DEFERRED_HEAD_PASS {s}\n", .{out});

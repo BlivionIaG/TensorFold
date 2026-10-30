@@ -211,5 +211,48 @@
     "M5_receipt_sha256": "03dd2eed55e94ab08b1cc709825ac104321111428b569e834c2a2bd27e15d133",
     "M5_result_sha256": "bf3ecda81358da9c03799605fffc4fbd2d9fe4140f76737f2b432afad2a65b69",
     "M5_log_sha256": "18de5b86c6617d2535e31170c66517cbc26a6a267c020ace5ed891ee1e9bae14"
+  },
+  "composed_attention_deferred_m5": {
+    "scope": "Same-source native build options false/false versus true/true; VL4 text2k/8k and corrected injected image512. No fresh tower, wider checkpoint or timing claim.",
+    "manifest_sha256": "aceb3c983a5fbad89672433cbb2c65c6b74682ffe607537af6e0bc30dabd2d5e",
+    "cross_binary_final_active_kv_conv_logits_sha_and_16_tokens_equal": true,
+    "per_binary_all_chunk_state_observed_logits_marks_resume_callbacks_pass": true,
+    "nonvacuous_skipped_heads": [
+      14,
+      62,
+      2
+    ],
+    "negative_controls": [
+      "final head omitted: DeferredHeadByteMismatch",
+      "planted snapshot hash: ComposedStateMismatch"
+    ],
+    "stages": {
+      "smoke": {
+        "receipt_sha256": "76913a198435a0319a1f411dd2848da1236f8bb56523d66ba4d0bf4b6fe5b6e3",
+        "exit_codes": [
+          0,
+          0,
+          0
+        ]
+      },
+      "positive": {
+        "receipt_sha256": "ee303349a99247bd055609fd7b3c23b526743de5b55cac8e1917bb8cd88df520",
+        "exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "controls": {
+        "receipt_sha256": "e45833c6999f45aa9c425e474d28778b6e4948f1600b1c9d9bca36d9468e8952",
+        "exit_codes": [
+          1,
+          1
+        ]
+      }
+    }
   }
 }
