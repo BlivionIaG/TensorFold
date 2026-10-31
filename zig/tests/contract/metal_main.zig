@@ -17,6 +17,9 @@ const drama_combine = @import("metal_drama_combine.zig");
 const drama_cfg = @import("metal_drama_cfg.zig");
 const glm_eh_k = @import("metal_glm_eh.zig");
 const glm_rows_k = @import("metal_glm_rows.zig");
+const pair_k = @import("metal_pair.zig");
+const pair_controls = @import("metal_pair_controls.zig");
+const minimax_k = @import("metal_minimax.zig");
 
 const flash_pool = @import("metal_flashnext_pool.zig");
 const flash = @import("metal_flashnext.zig");
@@ -285,6 +288,32 @@ pub fn main(init: std.process.Init) !u8 {
         try rows_list.append(a, r);
         try kernels.append(a, r.kernel());
     }
+    var pair_list: std.ArrayList(*pair_k.Pair) = .empty;
+    defer {
+        for (pair_list.items) |p| {
+            p.deinit();
+            a.destroy(p);
+        }
+        pair_list.deinit(a);
+    }
+    for (std.enums.values(pair_controls.Mutation)) |m| {
+        for (pair_k.all) |w| {
+            const control_for = switch (m) {
+                .none => true,
+                .stage_peer_half => w == .stage,
+                .gather_own_halves => w == .gather,
+                .argmax_high_tie, .argmax_no_flag => w == .argmax,
+                .pick_no_flag, .pick_high_tie => w == .pick,
+            };
+            if (!control_for) continue;
+            if (!wanted(o, if (m == .none) pair_k.spec(w).name else m.name())) continue;
+            const p = try a.create(pair_k.Pair);
+            errdefer a.destroy(p);
+            p.* = try pair_k.Pair.init(a, device, queue, w, m);
+            try pair_list.append(a, p);
+            try kernels.append(a, p.kernel());
+        }
+    }
     var flash_list: [8]flash.Probe = undefined;
     var flash_made: usize = 0;
     defer for (flash_list[0..flash_made]) |*probe| probe.deinit();
@@ -412,6 +441,18 @@ pub fn main(init: std.process.Init) !u8 {
     var nemotron_experts: @import("metal_nemotron_experts.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
     defer nemotron_experts.deinit();
     try nemotron_experts.collect(o.only);
+    var nemotron_pages: @import("metal_nemotron_pages.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer nemotron_pages.deinit();
+    try nemotron_pages.collect(o.only);
+    var nemotron_attention: @import("metal_nemotron_attention.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer nemotron_attention.deinit();
+    try nemotron_attention.collect(o.only);
+    var nemotron_unroll: @import("metal_nemotron_unroll.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer nemotron_unroll.deinit();
+    try nemotron_unroll.collect(o.only);
+    var minimax: minimax_k.Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer minimax.deinit();
+    try minimax.collect(o.only);
     const weight_only = @import("metal_weight_only.zig");
     const weight_source = try weight_only.text(a);
     defer a.free(weight_source);

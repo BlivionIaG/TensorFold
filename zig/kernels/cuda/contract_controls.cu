@@ -155,6 +155,15 @@ TF_CTL_TAIL(tf_ctl_tail_drop_sum, tf_rms_tail::SUM)
 TF_CTL_TAIL(tf_ctl_tail_drop_row, tf_rms_tail::ROW)
 #undef TF_CTL_TAIL
 
+// Gate 3: norms.cu's MoE residual (tf_moe_add_rms_rows_bf16h) with the slots' sum kept in fp32 before the add.
+#include "norms_strided.cuh"
+
+extern "C" __global__ void __launch_bounds__(tf_rms_strided::LT) tf_ctl_tail_moe_keep_f32(
+    const __nv_bfloat16* x, const void* ys, int y_f32, const float* wt, const __nv_bfloat16* w, __nv_bfloat16* h,
+    __nv_bfloat16* y, float* xs, float eps, int width, int routed, int slots) {
+    tf_rms_strided::moe_row<true>(x, ys, y_f32, wt, w, h, y, xs, eps, width, routed, slots);
+}
+
 // Gate 3: window_rows.cu's kernels at head dims 256 and 512, each with one planted fault (window_rows.cuh's Fault).
 #include "window_rows.cuh"
 
@@ -342,3 +351,17 @@ TF_CTL_SWIGLU_L2(tf_ctl_swiglu_l2_drop_gs, tf_act_l2::US | tf_act_l2::PROD)
 TF_CTL_SWIGLU_L2(tf_ctl_swiglu_l2_drop_us, tf_act_l2::GS | tf_act_l2::PROD)
 TF_CTL_SWIGLU_L2(tf_ctl_swiglu_l2_drop_prod, tf_act_l2::GS | tf_act_l2::US)
 #undef TF_CTL_SWIGLU_L2
+
+// Gate 1: tf_pocket_in (a warp a neuron, act rows 64 wide) with relu as fmaxf(s, 0), which turns a NaN sum into 0.
+extern "C" __global__ void __launch_bounds__(128) tf_ctl_pocket_in_fmax(const __nv_bfloat16* y, int d, const float* up,
+                                                                       const int* used, float* act, int rows) {
+    const int lane = threadIdx.x & 31, j = blockIdx.x * 4 + (threadIdx.x >> 5), r = blockIdx.y;
+    if (j >= *used || r >= rows) return;
+    float s = 0.0f;
+    for (int i = lane; i < d; i += 32) s += up[static_cast<int64_t>(j) * d + i] * tf_ctl_x(y, static_cast<int64_t>(r) * d + i);
+    for (int o = 16; o > 0; o >>= 1) s += __shfl_xor_sync(0xffffffffu, s, o);
+    if (lane == 0) {
+        const float z = fmaxf(s, 0.0f);
+        act[static_cast<int64_t>(r) * 64 + j] = z * z;
+    }
+}
