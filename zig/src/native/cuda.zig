@@ -167,7 +167,7 @@ pub const Host = struct {
     /// The family's backend, each call made with the context current on the calling thread.
     fn backend(h: *Host) lanes.backend.Backend {
         h.vtable = lane_backend.vtable(Host, h.inner.vtable.*);
-        return .{ .ptr = h, .round_observer = h.inner.round_observer, .vtable = &h.vtable, .first_before_draft = h.inner.first_before_draft, .penalties = h.inner.penalties };
+        return .{ .ptr = h, .round_observer = h.inner.round_observer, .vtable = &h.vtable, .first_before_draft = h.inner.first_before_draft, .penalties = h.inner.penalties, .chunk_invariant = h.inner.chunk_invariant };
     }
 };
 const refusals = @import("cuda_refusal.zig");
@@ -326,6 +326,14 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
                 );
                 return null;
             },
+            error.ModeloptNeedsSm80 => {
+                problem.* = try std.fmt.allocPrint(
+                    a,
+                    "{s} is sm_{d}: {s} (the 4-bit checkpoints run on it)",
+                    .{ name, capability, qwen35.modelopt.modeloptRefusal(capability).? },
+                );
+                return null;
+            },
             else => {
                 problem.* = try std.fmt.allocPrint(
                     a,
@@ -337,6 +345,10 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
         }
     };
     defer if (!opened) loaded.deinit(loaded.ctx);
+    if (o.learn_conversations and kv_pages.ownCache(loaded)) {
+        problem.* = "--learn-conversations writes the host prompt cache's states, and TF_QWEN_KV_SHARE keeps prompts as pool pages instead: serve with one of the two";
+        return null;
+    }
     const taps = record.taps(loaded); // --record is refused before the host is made, so a refusal holds nothing
     if (o.record) |dir| if (try record.refusal(a, io, o.model_type, dir, taps)) |why| {
         problem.* = why;
@@ -399,13 +411,15 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
     const kept = kv_pages.kept(F, loaded, paged, o, room, held, host_budget, host_cache);
     const cache = kept.copied;
     const cache_capacity = kv_pages.capacity(F, loaded, kept, @intCast(window));
-    const shown = try kv_pages.text(F, a, served.stream_bytes, layout, paged, kv_pages.enginePaged(loaded), @intCast(window), kept, o.kv8);
+    const shown = try kv_pages.text(F, a, served.stream_bytes, layout, paged, kv_pages.enginePaged(loaded), kv_pages.allOnPages(loaded), @intCast(window), kept, o.kv8);
+    // TF_QWEN_KV_SHARE: the family keeps prompts itself, over its pool's pages
+    const cache_text = if (kv_pages.ownCache(loaded)) ", the prompt cache over the pool's pages" else shown[1];
     h.startup = try std.fmt.allocPrint(gpa, @import("cuda_startup.zig").format, .{
         capability, device,                                                                                                       name, if (after.unified) ", memory shared with the host" else "", toGib(model), if (learn_bytes > 0) try std.fmt.allocPrint(a, " and {d:.2} GiB kept for --slide's trainer", .{toGib(learn_bytes)}) else "", streams, if (streams == 1) "" else "s", shown[0], toGib(room), toGib(after.reserve), @import("cuda_startup.zig").rows(F, loaded), if (segments > 1) try std.fmt.allocPrint(a, ", {d} staggered segments a call", .{segments}) else "",
-        shown[1],   if (kernels) |dir| try std.fmt.allocPrint(a, "glue kernels captured at {s}", .{dir}) else "own glue kernels",
+        cache_text, if (kernels) |dir| try std.fmt.allocPrint(a, "glue kernels captured at {s}", .{dir}) else "own glue kernels",
     });
     errdefer gpa.free(h.startup);
-    if (@hasDecl(F, "snap_save") and cache > 0) {
+    if (@hasDecl(F, "snap_save") and cache > 0 and !kv_pages.ownCache(loaded)) {
         const pc = api.prompt_cache;
         const store = try gpa.create(pc.Store);
         errdefer gpa.destroy(store);
@@ -465,6 +479,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
         .startup = h.startup,
         .policy = if (@hasField(@TypeOf(loaded), "policy")) loaded.policy else "",
         .prompt_cache = h.store != null,
+        .decode_share = o.decode_share,
         .prompt_cache_capacity = cache_capacity,
         .warm_turns = h.store != null and @hasDecl(F, "warm_quiet"),
         .logprobs = served.backend.vtable.first_row != null,
@@ -496,7 +511,7 @@ test {
     _ = windows;
 }
 
-test "CUDA host preserves prefill_step and first-before-draft capability" {
+test "CUDA host preserves prefill_step, first-before-draft and chunk-invariance capability" {
     var target: lanes.fake.Fake = .{ .gpa = std.testing.allocator, .prefill_chunks = 3 };
     defer target.deinit();
     var h: Host = undefined;
@@ -508,6 +523,9 @@ test "CUDA host preserves prefill_step and first-before-draft capability" {
     try std.testing.expect(!h.backend().penalties);
     h.inner.penalties = true;
     try std.testing.expect(h.backend().penalties);
+    try std.testing.expect(h.backend().chunk_invariant); // the fake declares it; the wrapper must carry it
+    h.inner.chunk_invariant = false;
+    try std.testing.expect(!h.backend().chunk_invariant);
 }
 
 test "every registered family and d1's decision engine are listed for capabilities" {
