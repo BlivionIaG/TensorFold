@@ -57,5 +57,5 @@ pub const Candidate = struct {
 };
 
 pub fn supports(w: row.Weights, rows: usize) bool {
-    return rows > 32 and rows <= 128 and w.bits == 4 and w.group == 64 and w.sum == .f32 and w.n % 64 == 0 and w.k % 64 == 0 and w.k <= 12288;
+    return rows > 32 and rows <= @import("lfm3_options").prompt_rows and w.bits == 4 and w.group == 64 and w.sum == .f32 and w.n % 64 == 0 and w.k % 64 == 0 and w.k <= 12288;
 }

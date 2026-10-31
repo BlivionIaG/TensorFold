@@ -135,7 +135,7 @@ pub fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     return exe;
 }
 
-pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, build_options: *std.Build.Step.Options, test_step: *std.Build.Step, risk_fast: bool, defer_head: bool, residual_ffn: bool, tiled_attention: bool) void {
+pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, build_options: *std.Build.Step.Options, test_step: *std.Build.Step, risk_fast: bool, defer_head: bool, residual_ffn: bool, tiled_attention: bool, prompt_rows: u32) void {
     const metal_std = b.option([]const u8, "metal-std", "Metal language version (default: MLX's for this macOS)") orelse mlxMetalStd(b);
 
     // MLX's mx.fast.metal_kernel JIT: MTLCompileOptions mathMode safe, fp32 functions fast (the default), its...
@@ -150,7 +150,7 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     b.getInstallStep().dependOn(&b.addInstallFile(fast_lib, "lib/nemotron_fastmath.metallib").step);
     b.getInstallStep().dependOn(&lib_install.step);
 
-    const mods = metalEngineModules(b, target, optimize, draft_ids, risk_fast, defer_head, residual_ffn, tiled_attention);
+    const mods = metalEngineModules(b, target, optimize, draft_ids, risk_fast, defer_head, residual_ffn, tiled_attention, prompt_rows);
     const metal = mods.metal;
     const kernels_mod = embedded(b, lib, "tensorfold.metallib");
     counters_build.targets(b, target, optimize, metal, mods.sources, test_step);
@@ -477,7 +477,7 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     }
 }
 
-pub fn metalEngineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, risk_fast: bool, defer_head: bool, residual_ffn: bool, tiled_attention: bool) struct { metal: *std.Build.Module, lanes: *std.Build.Module, fabric: *std.Build.Module, sources: *std.Build.Module, engine: *std.Build.Module, living: *std.Build.Module, qwen27: qwen27_build.Shared } {
+pub fn metalEngineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, risk_fast: bool, defer_head: bool, residual_ffn: bool, tiled_attention: bool, prompt_rows: u32) struct { metal: *std.Build.Module, lanes: *std.Build.Module, fabric: *std.Build.Module, sources: *std.Build.Module, engine: *std.Build.Module, living: *std.Build.Module, qwen27: qwen27_build.Shared } {
     const metal = b.createModule(.{
         .root_source_file = b.path("zig/src/metal/metal.zig"),
         .target = target,
@@ -505,12 +505,13 @@ pub fn metalEngineModules(b: *std.Build, target: std.Build.ResolvedTarget, optim
     lfm3_options.addOption(bool, "defer_prompt_head", defer_head);
     lfm3_options.addOption(bool, "residual_ffn", residual_ffn);
     lfm3_options.addOption(bool, "tiled_attention", tiled_attention);
+    lfm3_options.addOption(u32, "prompt_rows", prompt_rows);
     engine.addOptions("lfm3_options", lfm3_options);
     return .{ .metal = metal, .lanes = lanes, .fabric = fabric, .sources = sources, .engine = engine, .living = living, .qwen27 = qwen27_build.engineModules(b, target, metal, sources, engine) };
 }
 
 pub fn distMetalServer(b: *std.Build, target: std.Build.ResolvedTarget, draft_ids: *std.Build.Module, build_options: *std.Build.Step.Options, sdk: []const u8) *std.Build.Step.Compile {
-    const m = metalEngineModules(b, target, .fast, draft_ids, false, false, false, false);
+    const m = metalEngineModules(b, target, .fast, draft_ids, false, false, false, false, 128);
     // the release binary embeds the same prebuilt packed-kernel metallib as the development build
     const flags = [_][]const u8{ b.fmt("-std={s}", .{mlxMetalStd(b)}), "-fmetal-math-mode=safe", "-fmetal-math-fp32-functions=fast" };
     m.sources.addImport("nemotron_packed_metallib", embedded(b, metallib(b, "nemotron_packed", &nemotron_packed, &flags), "nemotron_packed.metallib"));

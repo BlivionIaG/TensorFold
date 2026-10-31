@@ -12,7 +12,8 @@ const be = lanes.backend;
 const prefill_control = @import("prefill_control.zig");
 pub const greedy = @import("greedy.zig");
 
-pub const Options = struct { capacity: usize, chunk: usize = 128, streams: u32 = 8, defer_prompt_head: bool = @import("lfm3_options").defer_prompt_head };
+pub const prompt_rows = @import("lfm3_options").prompt_rows;
+pub const Options = struct { capacity: usize, chunk: usize = prompt_rows, streams: u32 = 8, defer_prompt_head: bool = @import("lfm3_options").defer_prompt_head };
 
 pub const Metal = struct {
     residency: ?mtl.ResidencySet.Follow = null,
@@ -28,7 +29,7 @@ pub const Metal = struct {
     timed: usize = 0,
 
     pub fn init(gpa: std.mem.Allocator, model: *Model, options: Options) !*Metal {
-        if (options.chunk == 0 or options.capacity == 0 or options.capacity > st.max_context or options.streams == 0)
+        if (options.chunk == 0 or options.chunk > 2048 or options.capacity == 0 or options.capacity > st.max_context or options.streams == 0)
             return error.InvalidLfmOptions;
         if (@import("lfm3_options").residual_ffn) try model.enableResidualFFN();
         if (@import("lfm3_options").tiled_attention) try model.enableTiledAttention();

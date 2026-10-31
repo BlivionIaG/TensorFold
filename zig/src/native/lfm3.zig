@@ -76,7 +76,7 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
     h.model = model;
     h.resident = null;
     h.vision = null;
-    const chunk = prompt_chunk;
+    const chunk = q.backend.prompt_rows;
     h.metal = try q.backend.Metal.init(gpa, model, .{ .capacity = window, .chunk = chunk, .streams = @max(o.lanes, 2) });
     errdefer h.metal.deinit();
     if (model.config.kind == .vision_language) {
