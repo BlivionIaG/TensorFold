@@ -70,20 +70,21 @@ pub const Probe = struct {
             .out = .bf16,
             .nan = .{ .stated = "visible-query/key/value nonfinite classes; masked future values must not contaminate" },
             .served = &.{
-                .{ .rows = 9, .n = 2048, .k = 0 },     .{ .rows = 17, .n = 2048, .k = 31 },
-                .{ .rows = 31, .n = 2048, .k = 255 },  .{ .rows = 32, .n = 2048, .k = 256 },
-                .{ .rows = 33, .n = 2048, .k = 257 },  .{ .rows = 63, .n = 2048, .k = 2048 },
-                .{ .rows = 64, .n = 2048, .k = 8192 },
+                .{ .rows = 1, .n = 2048, .k = 0 },     .{ .rows = 5, .n = 2048, .k = 2043 },
+                .{ .rows = 8, .n = 2048, .k = 257 },   .{ .rows = 9, .n = 2048, .k = 0 },
+                .{ .rows = 17, .n = 2048, .k = 31 },   .{ .rows = 31, .n = 2048, .k = 255 },
+                .{ .rows = 32, .n = 2048, .k = 256 },  .{ .rows = 33, .n = 2048, .k = 257 },
+                .{ .rows = 63, .n = 2048, .k = 2048 }, .{ .rows = 64, .n = 2048, .k = 8192 },
             },
-            .tiles = .{ .{ .size = 64, .min = 9 }, .{}, .{ .size = 32, .min = 0 } },
+            .tiles = .{ .{ .size = 64, .min = 1 }, .{}, .{ .size = 32, .min = 0 } },
             .sums = .{ .f16 = 0, .bf16 = 0, .exact = false, .why = "uniform-score structural fixture; no claimed 100x reduced-accumulator witness" },
         } };
     }
     pub fn prepare(p: *Probe, requested: c.Shape, fill: g.Fill, seed: u64) !bool {
         var s = requested;
-        if (fill != .random and s.rows < 9) {
-            std.debug.print("tiled structural {t}: expanding fixture rows {d} to eligible 9\n", .{ fill, s.rows });
-            s.rows = 9;
+        if (fill != .random and s.rows < 5) {
+            std.debug.print("tiled structural {t}: expanding fixture rows {d} to eligible 5\n", .{ fill, s.rows });
+            s.rows = 5;
         }
         if (fill == .nonfinite and p.sliding and s.k < 257) {
             std.debug.print("tiled sliding nonfinite: expanding history to 257 for a masked-past plant\n", .{});

@@ -63,16 +63,16 @@ pub const Probe = struct {
             .none => null,
             .pack => .shapes,
             .nonfinite => .nonfinite,
-        }, .spec = .{ .name = name(p.fault), .accum = .f32, .depth = depth, .out = .bf16, .tiles = .{ .{ .size = 64, .min = 33 }, .{ .size = 64, .step = 64, .min = 64 }, .{ .size = 64, .step = 64, .min = 64 } }, .served = &.{ .{ .rows = 128, .n = 7680, .k = 2048 }, .{ .rows = 128, .n = 2048, .k = 7680 }, .{ .rows = 33, .n = 128, .k = 64 } } } };
+        }, .spec = .{ .name = name(p.fault), .accum = .f32, .depth = depth, .out = .bf16, .tiles = .{ .{ .size = 64, .min = 1 }, .{ .size = 64, .step = 64, .min = 64 }, .{ .size = 64, .step = 64, .min = 64 } }, .served = &.{ .{ .rows = 128, .n = 7680, .k = 2048 }, .{ .rows = 128, .n = 2048, .k = 7680 }, .{ .rows = 33, .n = 128, .k = 64 }, .{ .rows = 1, .n = 128, .k = 64 }, .{ .rows = 5, .n = 128, .k = 64 }, .{ .rows = 8, .n = 128, .k = 64 } } } };
     }
     fn prepare(ctx: *anyopaque, requested: c.Shape, fill: g.Fill, seed: u64) !bool {
         const p = parent(ctx);
         var shape = requested;
-        if ((fill == .nonfinite or fill == .stress) and shape.rows < 33) {
-            shape.rows = 33;
-            std.debug.print("FIXTURE {s}: {t} rows {d} expanded to 33 for the enabled route\n", .{ name(p.fault), fill, requested.rows });
+        if ((fill == .nonfinite or fill == .stress) and shape.rows < 5) {
+            shape.rows = 5;
+            std.debug.print("FIXTURE {s}: {t} rows {d} expanded to 5 for the enabled prompt-tail route\n", .{ name(p.fault), fill, requested.rows });
         }
-        if (shape.rows < 33 or shape.rows > 128 or shape.n % 64 != 0 or shape.k % 64 != 0) return false;
+        if (shape.rows == 0 or shape.rows > 128 or shape.n % 64 != 0 or shape.k % 64 != 0) return false;
         if (!try p.inner.prepare(shape, fill, seed)) return false;
         p.flags = try p.inner.rig.scratch(((shape.rows + 63) / 64) * (shape.n / 64) * 4);
         return true;
