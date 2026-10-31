@@ -4,7 +4,9 @@ const std = @import("std");
 const mtl = @import("metal");
 const tf = @import("tensorfold");
 const contract = @import("contract");
+const lfm3_residual = @import("metal_lfm3_residual.zig");
 const lfm3 = @import("metal_lfm3.zig");
+const lfm3_tiled = @import("metal_lfm3_tiled.zig");
 const lfm3_vision = @import("metal_lfm3_vision.zig");
 const lfm3_sums = @import("metal_lfm3_sums.zig");
 const lfm3_attention_sums = @import("metal_lfm3_attention_sums.zig");
@@ -138,6 +140,28 @@ pub fn main(init: std.process.Init) !u8 {
         gemma_list.deinit(a);
     }
     var kernels: std.ArrayList(g.Kernel) = .empty;
+    var residual_probes: [3]lfm3_residual.Probe = undefined;
+    var residual_count: usize = 0;
+    defer for (residual_probes[0..residual_count]) |*probe| probe.deinit();
+    if (tensor) for (std.enums.values(lfm3_residual.Fault)) |fault| {
+        if (!wanted(o, lfm3_residual.name(fault))) continue;
+        residual_probes[residual_count] = try lfm3_residual.Probe.init(a, device, queue, fault);
+        residual_count += 1;
+    };
+    for (residual_probes[0..residual_count]) |*probe| try kernels.append(a, probe.kernel());
+    var tiled_probes: [4]lfm3_tiled.Probe = undefined;
+    var tiled_count: usize = 0;
+    defer for (tiled_probes[0..tiled_count]) |*probe| probe.deinit();
+    for ([_]bool{ false, true }) |sliding| for (std.enums.values(lfm3_tiled.Fault)) |fault| {
+        if (sliding and fault != .none or !wanted(o, lfm3_tiled.name(sliding, fault))) continue;
+        if (!tensor) {
+            std.debug.print("SKIP {s}: requires tensor units\n", .{lfm3_tiled.name(sliding, fault)});
+            continue;
+        }
+        tiled_probes[tiled_count] = try lfm3_tiled.Probe.init(a, device, queue, sliding, fault);
+        tiled_count += 1;
+    };
+    for (tiled_probes[0..tiled_count]) |*probe| try kernels.append(a, probe.kernel());
     var lfm3_probes: [std.enums.values(lfm3.Kind).len]lfm3.Probe = undefined;
     var lfm3_count: usize = 0;
     defer for (lfm3_probes[0..lfm3_count]) |*probe| probe.deinit();

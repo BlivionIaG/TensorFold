@@ -31,6 +31,14 @@ fn launchOf(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch) !La
             return std.mem.indexOf(u8, s, p) != null;
         }
     }.f;
+    if (std.mem.startsWith(u8, d.name, "LFM3 tiled attention ")) {
+        const body = try std.mem.concat(a, u8, &.{ sources.lfm3_attention, "\n", sources.lfm3_attention_tiled });
+        return .{ .decl = d, .function = fun, .here = body, .pre_m5 = body };
+    }
+    if (std.mem.startsWith(u8, d.name, "LFM3 residual FFN ")) {
+        const body = try std.mem.concat(a, u8, &.{ sources.core_row_projection, "\n", sources.nax, "\n", sources.lfm3_residual_ffn });
+        return .{ .decl = d, .function = fun, .here = body, .pre_m5 = body };
+    }
     if (std.mem.startsWith(u8, d.name, "binned ")) {
         const prefix = if (has(d.name, " bad-rows ")) "#define TF_BP_BAD_ROWS 1\n" else if (has(d.name, " bad-acc ")) "#define TF_BP_BAD_ACC 1\n" else if (has(d.name, " bad-nonfinite ")) "#define TF_BP_BAD_NONFINITE 1\n" else "";
         const source = try tf.lfm3.binned_projection.source(device, a);
@@ -165,7 +173,15 @@ pub fn onThisGpu(a: std.mem.Allocator, device: mtl.Device, l: Launch, control: b
 pub fn gate(a: std.mem.Allocator, io: std.Io, device: mtl.Device, offline: ?[]const u8) !usize {
     var n = try registry.checkMetal(a, &registry.all_metal, false);
     std.debug.print("{s} limits: {d} registered Metal launches against M1-M5, {d} problems\n", .{ if (n == 0) "PASS" else "FAIL", registry.all_metal.len, n });
-    for (registry.all_metal) |d| n += try onThisGpu(a, device, try launchOf(a, device, d), false);
+    for (registry.all_metal) |d| {
+        if (!device.tensorUnits() and (std.mem.startsWith(u8, d.name, "LFM3 residual FFN ") or
+            std.mem.startsWith(u8, d.name, "LFM3 tiled attention ")))
+        {
+            std.debug.print("SKIP limits here {s}: requires tensor units\n", .{d.name});
+            continue;
+        }
+        n += try onThisGpu(a, device, try launchOf(a, device, d), false);
+    }
     for (registry.metal_controls) |d| {
         const red = try registry.checkMetal(a, &.{d}, true) + try onThisGpu(a, device, try launchOf(a, device, d), true);
         if (red == 0) n += 1;

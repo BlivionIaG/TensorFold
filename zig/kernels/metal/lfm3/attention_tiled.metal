@@ -252,7 +252,7 @@ inline void mma_pv_residual(thread frag<float>& lo,thread frag<float>& hi,const 
 // One 64-query block of one head, online softmax over 32-key blocks; P holds the ATTN_PARAMS fields, F[0] the scale.
 template <typename T, typename Out, bool AQ, bool AK, bool CAUSAL>
 inline void attention_nax(const device T* Q, const device T* K, const device T* V, device Out* O, const thread int* P,
-                          const thread float* F, uint3 tg, uint sg, uint lane) {
+                          const thread float* F, uint3 tg, uint sg, uint lane, thread uint& nonfinite_rows) {
   constexpr int BQ = 64, BK = 32;
   const int qs = P[14], ks = P[17], vs = P[20], os = P[23];
   const int kv = int(tg.y) / P[4];
@@ -397,6 +397,17 @@ inline void attention_nax(const device T* Q, const device T* K, const device T* 
       acc[i][e] = acc[i][e] * inv[e >> 2];
     }
   }
+  // Each SIMD group owns 16 rows; every lane receives the same repair mask.
+  uint local_nonfinite_rows = 0;
+  TF_UNROLL
+  for (short i = 0; i < 8; i++) {
+    TF_UNROLL
+    for (short e = 0; e < 8; e++) {
+      if (!isfinite(float(bfloat(acc[i][e]))))
+        local_nonfinite_rows |= 1u << (home.y + (e >> 2) * 8);
+    }
+  }
+  nonfinite_rows = simd_or(local_nonfinite_rows);
   O += tm * os;
   if (!AQ && last_q) {
     if (q_rows <= 0) {
@@ -426,5 +437,17 @@ inline void attention_nax(const device T* Q, const device T* K, const device T* 
 #ifdef TF_TILED_BAD_SCALE
  F[0]*=0.5f;
 #endif
- tfp::attention_nax<bfloat,bfloat,false,false,true>(q,k,v,out,P,F,tg,sg,lane);
+ uint nonfinite_rows = 0;
+ tfp::attention_nax<bfloat,bfloat,false,false,true>(q,k,v,out,P,F,tg,sg,lane,nonfinite_rows);
+ // Fragment stores and replay stores assign columns to different lanes.
+ if (nonfinite_rows != 0) simdgroup_barrier(mem_flags::mem_device);
+ // Replay only affected visible rows using the established causal/window and extended-range path.
+ for (uint i=0;i<16;++i) {
+  const uint row=tg.x*64+sg*16+i;
+  if (row>=rows || (nonfinite_rows & (1u<<i))==0) continue;
+  l3_x repaired[4];
+  l3_attention_replay(q,k,v,a,tg.y,row,lane,repaired);
+  for(uint j=0;j<4;++j)
+   reinterpret_cast<device ushort*>(out)[(size_t(row)*16+tg.y)*128+lane+32*j]=l3_x_pack(repaired[j]);
+ }
 }

@@ -2,6 +2,7 @@
 const M = @import("limits.zig").MetalLaunch;
 
 pub const metal = [_]M{
+    .{ .name = "LFM3 tiled attention lfm3_attn_tiled_bf16", .threads = 128, .tg_memory = 0, .reserved = 128, .offline = false },
     .{ .name = "binned bad-nonfinite tf_binned_twin_q4_g64", .threads = 64, .tg_memory = 0, .reserved = 64 },
     .{ .name = "binned bad-nonfinite tf_binned_sums", .threads = 64, .tg_memory = 0, .reserved = 64 },
     .{ .name = "binned bad-nonfinite tf_binned_q4_g64", .threads = 64, .tg_memory = 5776, .reserved = 64 },
@@ -88,4 +89,6 @@ pub const metal = [_]M{
     .{ .name = "lfm3 lfm3_attn_merge", .threads = 32, .tg_memory = 0, .reserved = 32 },
     .{ .name = "lfm3 postnorm-bad lfm3_post_norm", .threads = 256, .tg_memory = 144, .reserved = 256 },
     .{ .name = "lfm3 lfm3_post_norm", .threads = 256, .tg_memory = 144, .reserved = 256 },
+    .{ .name = "LFM3 residual FFN lfm3_nax_prompt_q4", .threads = 128, .tg_memory = 18448, .reserved = 128, .offline = false },
+    .{ .name = "LFM3 residual FFN lfm3_nax_nf_repair_q4", .threads = 64, .tg_memory = 0, .reserved = 64, .offline = false },
 };
