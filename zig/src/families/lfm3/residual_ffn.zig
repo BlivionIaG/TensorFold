@@ -29,8 +29,11 @@ pub const Candidate = struct {
         self.* = .{};
     }
     pub fn encode(self: *Candidate, e: mtl.ComputeEncoder, fallback: *const pairs.Pipelines, w: row.Weights, x: mtl.Buffer, x_off: usize, scratch: mtl.Buffer, y: mtl.Buffer, y_off: usize, rows: usize) !void {
+        return self.encodePrompt(e, fallback, w, x, x_off, scratch, y, y_off, rows, false);
+    }
+    pub fn encodePrompt(self: *Candidate, e: mtl.ComputeEncoder, fallback: *const pairs.Pipelines, w: row.Weights, x: mtl.Buffer, x_off: usize, scratch: mtl.Buffer, y: mtl.Buffer, y_off: usize, rows: usize, allow_tail: bool) !void {
         try w.validate();
-        const eligible = supports(w, rows);
+        const eligible = supportsPrompt(w, rows, allow_tail);
         if (eligible) if (self.pipes) |ps| {
             const flags = ((rows + 63) / 64) * (w.n / 64) * 4;
             if (scratch.length() < flags) return error.MissingTileFlags;
@@ -57,5 +60,9 @@ pub const Candidate = struct {
 };
 
 pub fn supports(w: row.Weights, rows: usize) bool {
-    return rows > 32 and rows <= @import("lfm3_options").prompt_rows and w.bits == 4 and w.group == 64 and w.sum == .f32 and w.n % 64 == 0 and w.k % 64 == 0 and w.k <= 12288;
+    return supportsPrompt(w, rows, false);
+}
+
+pub fn supportsPrompt(w: row.Weights, rows: usize, allow_tail: bool) bool {
+    return (rows > 32 or (allow_tail and rows > 0)) and rows <= @import("lfm3_options").prompt_rows and w.bits == 4 and w.group == 64 and w.sum == .f32 and w.n % 64 == 0 and w.k % 64 == 0 and w.k <= 12288;
 }

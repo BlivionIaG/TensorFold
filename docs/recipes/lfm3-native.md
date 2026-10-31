@@ -136,7 +136,8 @@ zig build native -Dcpu=apple_m1 -Dlfm3-residual-ffn=true -Dlfm3-tiled-attention=
 
 `lfm3-residual-ffn` changes only the FFN gate, up and down projections. It reconstructs each affine weight
 as a BF16 high part and residual part, accumulates both products in FP32, and rounds the result to BF16.
-The candidate requires 4-bit weights, groups of 64, 33–128 rows, dimensions divisible by 64, and K at most
+The candidate requires 4-bit weights, groups of 64, 33 rows through the configured prompt-row limit, dimensions
+divisible by 64, and K at most
 12,288. Flagged nonfinite tiles use the existing row projection. Other shapes and widths retain that path.
 `lfm3-tiled-attention` uses 64-query/32-key tiles, strict QK products, and BF16 high-plus-residual
 probabilities for PV with FP32 accumulation. It handles nonshared slices of 9–64 rows, causal full attention
@@ -144,6 +145,25 @@ or the 256-token sliding window. Shared rows and slices of at most eight rows re
 Both modules check tensor-unit capability before compiling their optional pipelines; M4 and older devices
 retain the existing paths. Enabling the build options selects the candidates when the serving backend initializes.
 Direct `Model.load` developer harnesses must explicitly enable the corresponding candidate to exercise it.
+
+`-Dlfm3-prompt-rows=256` or `2048` selects a larger development prompt batch; the default remains 128.
+Both tiled options are required for a larger batch, and release-version builds reject them.
+Cache marks retain their existing 128-row policy and can split a larger batch. Cancellation and background yield
+are checked at chunk boundaries; a 2048-row chunk remains one atomic forward pass.
+
+For 2048-row serving, long-prompt prefill explicitly permits partial FFN tiles of 1–32 rows and attention
+tiles of 1–8 rows. This keeps the tiled arithmetic across short message-boundary cuts, including a five-token
+assistant header. The context belongs to that forward call; decode, verification, short prompts, and the
+128/256-row serving modes keep their previous selectors. No private environment selector is needed:
+
+```sh
+zig build native -Dcpu=apple_m1 -Dlfm3-residual-ffn=true -Dlfm3-tiled-attention=true -Dlfm3-prompt-rows=2048
+```
+
+The earlier private 2048-row path changed an 8k reply at the short header cut. The prompt-only tail route
+restored byte equality for all 17 vocabulary rows and full KV/convolution state in the fixed 8k+16 comparison.
+This is bounded same-engine evidence. Broader small-tail nonfinite checks, independent propagated FP32/BF16
+fidelity, and final-source lifecycle validation remain separate gates; the 2048-row mode is still work in progress.
 
 These are work-in-progress arithmetic changes, not release-qualified replacements. The
 [combined provisional serving receipt](../receipts/lfm3/m5-composed-prompt-provisional-serving.json)

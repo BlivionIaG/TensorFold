@@ -80,9 +80,9 @@ pub fn build(b: *std.Build) void {
     const lfm3_defer_head = b.option(bool, "lfm3-defer-prompt-head", "Developer LFM3 unobserved intermediate prompt head omission") orelse false;
     const residual_ffn = b.option(bool, "lfm3-residual-ffn", "Development-only residual-weight LFM3 prompt FFN") orelse false;
     const tiled_attention = b.option(bool, "lfm3-tiled-attention", "Development-only tiled LFM3 prompt attention") orelse false;
-    const prompt_rows = b.option(u32, "lfm3-prompt-rows", "Development-only LFM3 prompt rows: 128 or 256") orelse 128;
+    const prompt_rows = b.option(u32, "lfm3-prompt-rows", "Development-only LFM3 prompt rows: 128, 256 or 2048") orelse 128;
     switch (prompt_rows) {
-        128, 256 => {},
+        128, 256, 2048 => {},
         else => @panic("Invalid LFM3 prompt row count"),
     }
     if (prompt_rows > 128 and (!residual_ffn or !tiled_attention))

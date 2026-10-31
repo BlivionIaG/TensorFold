@@ -15,6 +15,18 @@ pub const counters = @import("../../core/gpu_counters.zig");
 pub const Segment = struct { cache: *st.Cache, rows: usize };
 /// `none` commits prompt state without publishing logits; callers must retain every observed head.
 pub const Head = enum { last, all, none };
+pub const PromptTiles = enum(u2) {
+    baseline,
+    ffn,
+    attention,
+    both,
+    fn ffnTail(self: PromptTiles) bool {
+        return self == .ffn or self == .both;
+    }
+    fn attentionTail(self: PromptTiles) bool {
+        return self == .attention or self == .both;
+    }
+};
 pub var gpu_seconds: f64 = 0;
 pub const Trace = struct {
     ctx: *anyopaque,
@@ -33,6 +45,7 @@ const Encoder = struct {
     record: bool,
     binned_prepared: ?Prepared = null,
     allow_residual_ffn: bool = false,
+    prompt_tiles: PromptTiles = .baseline,
 
     fn begin(self: *Encoder, kind: counters.Class) !void {
         if (self.m.profile) |profile| try profile.beginSpan(&self.e, kind);
@@ -77,14 +90,14 @@ const Encoder = struct {
         } else if (self.m.projection_candidate) |*candidate| {
             try candidate.encode(self.e, &self.m.kernels.rows, w, x, x_off, self.scratch.sums orelse return error.MissingProjectionCandidateScratch, y, y_off, rows);
         } else if (self.allow_residual_ffn and self.m.residual_ffn != null) {
-            try self.m.residual_ffn.?.encode(self.e, &self.m.kernels.rows, w, x, x_off, self.scratch.sums orelse return error.MissingProjectionCandidateScratch, y, y_off, rows);
+            try self.m.residual_ffn.?.encodePrompt(self.e, &self.m.kernels.rows, w, x, x_off, self.scratch.sums orelse return error.MissingProjectionCandidateScratch, y, y_off, rows, self.prompt_tiles.ffnTail());
         } else try pairs.encode(self.e, &self.m.kernels.rows, w, x, x_off, y, y_off, rows);
         try self.end();
     }
 
     fn pairedProjection(self: *Encoder, a: row.Weights, b: row.Weights, input: Buffer, first: Buffer, second: Buffer, rows: usize) !bool {
         if (self.allow_residual_ffn and self.m.residual_ffn != null and
-            (@import("residual_ffn.zig").supports(a, rows) or @import("residual_ffn.zig").supports(b, rows))) return false;
+            (@import("residual_ffn.zig").supportsPrompt(a, rows, self.prompt_tiles.ffnTail()) or @import("residual_ffn.zig").supportsPrompt(b, rows, self.prompt_tiles.ffnTail()))) return false;
         if (self.m.projection_candidate != null or self.m.binned_candidate != null or !dual.compatible(a, b)) return false;
         try self.begin(.dense);
         try dual.encode(self.e, &self.m.kernels.dual, a, b, input, 0, first, 0, second, 0, rows);
@@ -152,18 +165,22 @@ pub fn project(m: *Model, s: *st.Scratch, w: row.Weights, input: Buffer, output:
 }
 
 pub fn runWithImages(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, images: ?@import("image_rows.zig").Images) !void {
-    return execute(m, s, segments, tokens, record, head, images, null);
+    return execute(m, s, segments, tokens, record, head, images, null, .baseline);
 }
 
 pub fn runTrace(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, head: Head, trace: Trace) !void {
-    return execute(m, s, segments, tokens, false, head, null, trace);
+    return execute(m, s, segments, tokens, false, head, null, trace, .baseline);
 }
 
 pub fn runTraceWithImages(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, head: Head, images: ?@import("image_rows.zig").Images, trace: Trace) !void {
-    return execute(m, s, segments, tokens, false, head, images, trace);
+    return execute(m, s, segments, tokens, false, head, images, trace, .baseline);
 }
 
-fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, images: ?@import("image_rows.zig").Images, trace: ?Trace) !void {
+pub fn runPromptWithImages(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, head: Head, images: ?@import("image_rows.zig").Images, tiles: PromptTiles) !void {
+    return execute(m, s, segments, tokens, false, head, images, null, tiles);
+}
+
+fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, images: ?@import("image_rows.zig").Images, trace: ?Trace, tiles: PromptTiles) !void {
     if (head == .none and (record or trace != null)) return error.InvalidDeferredLfmHead;
     if (trace != null and m.profile != null) return error.ConflictingLfmDiagnostics;
     if (images != null and (record or segments.len != 1)) return error.InvalidLfmImageSegments;
@@ -186,7 +203,7 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
         try prepareSharedConv(m, s, segments);
     }
     var cb = m.queue.commandBuffer();
-    var enc = Encoder{ .e = cb.compute(.serial), .m = m, .scratch = s, .record = record };
+    var enc = Encoder{ .e = cb.compute(.serial), .m = m, .scratch = s, .record = record, .prompt_tiles = tiles };
     var ended = false;
     if (m.profile) |profile| profile.beginCommand(cb) catch |err| {
         enc.e.end();
@@ -451,7 +468,7 @@ fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, segments: []const 
             const args = AttnArgs{ .len = @intCast(first), .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .window = if (sliding) c.sliding_window else 0, .chunk_base = @intCast(chunk_base) };
             try enc.begin(.attention);
             if (enc.m.tiled_attention) |pipeline| {
-                if (@import("attention_tiled.zig").eligible(rows, args.window)) {
+                if (@import("attention_tiled.zig").eligiblePrompt(rows, args.window, enc.prompt_tiles.attentionTail())) {
                     enc.e.setPipeline(pipeline);
                     enc.e.setBuffer(s.queries, (base + at) * c.hidden * 2, 0);
                     enc.e.setBuffer(cache.keys, 0, 1);

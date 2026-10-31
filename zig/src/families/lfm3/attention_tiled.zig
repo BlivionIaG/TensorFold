@@ -20,3 +20,7 @@ pub fn load(device: mtl.Device) !?mtl.Pipeline {
 pub fn eligible(rows: usize, window: usize) bool {
     return rows > 8 and rows <= 64 and (window == 0 or window == 256);
 }
+
+pub fn eligiblePrompt(rows: usize, window: usize, allow_tail: bool) bool {
+    return eligible(rows, window) or (allow_tail and rows > 0 and rows <= 8 and (window == 0 or window == 256));
+}

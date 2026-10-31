@@ -155,7 +155,8 @@ pub const Metal = struct {
             const marked = std.mem.indexOfScalar(u32, stream.reuse.marks, @intCast(end)) != null;
             const interrupted_observer = stream.reuse.hook != null and (stream.cancel_check != null or stream.yield_check != null);
             const head: fwd.Head = if (prefill_control.deferHead(self.options.defer_prompt_head, end == ids.len, stream.reuse.hook != null and marked, interrupted_observer)) .none else .last;
-            try fwd.runWithImages(self.model, &self.scratch, &.{.{ .cache = cache, .rows = end - at }}, ids[at..end], false, head, image_rows);
+            const tiles: fwd.PromptTiles = if (prompt_rows == 2048 and self.options.chunk > 128 and ids.len > 128) .both else .baseline;
+            try fwd.runPromptWithImages(self.model, &self.scratch, &.{.{ .cache = cache, .rows = end - at }}, ids[at..end], head, image_rows, tiles);
             at = end;
             prefill_control.completed(stream, at);
             if (stream.reuse.hook) |hk| if (std.mem.indexOfScalar(u32, stream.reuse.marks, @intCast(at)) != null)
