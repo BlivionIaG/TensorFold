@@ -3,6 +3,8 @@ const std = @import("std");
 const M = @import("limits.zig").MetalLaunch;
 // The drafter kernels carry M1 and M2 limits too, recorded from the offline compile; no run covers those chips.
 pub const records = [_]M{
+    .{ .name = "metal lfm2 norm tap lfm2_norm_tap", .threads = 512, .tg_memory = 144, .m1 = 1024, .m2 = 1024 },
+    .{ .name = "metal lfm2 combine norm tap lfm2_combine_norm_tap", .threads = 512, .tg_memory = 144, .m1 = 1024, .m2 = 1024 },
     .{ .name = "metal lfm2 argmax lfm2_argmax", .threads = 1024, .tg_memory = 384, .m1 = 1024, .m2 = 1024 },
     .{ .name = "metal lfm2 stream conv lfm2_conv_segs", .threads = 256, .tg_memory = 0, .m1 = 1024, .m2 = 1024 },
     .{ .name = "metal lfm2 stream attention qk lfm2_qk_segs", .threads = 32, .tg_memory = 0, .m1 = 832, .m2 = 832 },

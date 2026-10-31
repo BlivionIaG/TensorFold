@@ -256,3 +256,43 @@ constant constexpr uint BF16_ROWS = 16;
   threadgroup bfloat vs[2][KB * KP];
   lfm2_attn_rows<1, true>(queries, keys, values, p, pm, pl, po, rows, tg, tid, sg, lane, ks, vs);
 }
+
+[[kernel]] void lfm2_norm_tap(device bfloat* h [[buffer(0)]], const device bfloat* r [[buffer(1)]], const device bfloat* w [[buffer(2)]],
+                          constant float& eps [[buffer(3)]], constant uint& add [[buffer(4)]], device bfloat* x [[buffer(5)]], device bfloat* taps [[buffer(6)]], constant uint2& tap_at [[buffer(7)]],
+                          uint row [[threadgroup_position_in_grid]], uint t [[thread_position_in_threadgroup]],
+                          uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  const size_t base = size_t(row) * D + 4 * t;
+  float v[4];
+  for (int j = 0; j < 4; ++j) {
+    bfloat hv = h[base + j];
+    if (add != 0) {
+      hv = hv + r[base + j];
+      h[base + j] = hv;
+    }
+    v[j] = hv;
+  }
+  threadgroup float sums[32], inv[1];
+  lfm2_rms(v, w, eps, x, base, t, sg, lane, sums, inv);
+  *(device bfloat4*)(taps + size_t(row) * tap_at.x + tap_at.y + 4 * t) = *(device bfloat4*)(h + base);
+}
+
+[[kernel]] void lfm2_combine_norm_tap(const device bfloat* y [[buffer(0)]], const device bfloat* wts [[buffer(1)]], device bfloat* h [[buffer(2)]],
+                                  const device bfloat* w [[buffer(3)]], constant float& eps [[buffer(4)]], device bfloat* x [[buffer(5)]], device bfloat* taps [[buffer(6)]], constant uint2& tap_at [[buffer(7)]],
+                                  uint row [[threadgroup_position_in_grid]], uint t [[thread_position_in_threadgroup]],
+                                  uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  const size_t base = size_t(row) * D + 4 * t;
+  float v[4];
+  for (int j = 0; j < 4; ++j) {
+    float acc = 0.0f;
+    for (uint k = 0; k < TOPK; ++k) {
+      const size_t slot = size_t(row) * TOPK + k;
+      acc += float(static_cast<bfloat>(float(y[slot * D + 4 * t + j]) * float(wts[slot])));
+    }
+    const bfloat hv = h[base + j] + static_cast<bfloat>(acc);
+    h[base + j] = hv;
+    v[j] = hv;
+  }
+  threadgroup float sums[32], inv[1];
+  lfm2_rms(v, w, eps, x, base, t, sg, lane, sums, inv);
+  *(device bfloat4*)(taps + size_t(row) * tap_at.x + tap_at.y + 4 * t) = *(device bfloat4*)(h + base);
+}

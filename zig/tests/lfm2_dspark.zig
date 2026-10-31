@@ -196,6 +196,17 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(ids);
     for (ids, 0..) |*id, i| id.* = @intCast((i * 7919 + 13) % 120000);
     try q.forward.run(m, &scratch, &.{.{ .cache = &cache, .rows = length }}, ids, false, .last);
+    // Repeated target layers are legal: every requested column must receive the same hidden row.
+    const tapped = taps.buf.slice(u16, length * width);
+    for (cfg.taps[0..cfg.tap_count], 0..) |layer, i| for (cfg.taps[0..i], 0..) |other, j| {
+        if (layer != other) continue;
+        for (0..length) |row| {
+            const a = tapped[row * width + i * c.hidden ..][0..c.hidden];
+            const b = tapped[row * width + j * c.hidden ..][0..c.hidden];
+            if (!std.mem.eql(u16, a, b)) return error.RepeatedTapMismatch;
+        }
+        std.debug.print("ok repeated tap {d}, columns {d} and {d}, {d} rows\n", .{ layer, j, i, length });
+    };
     // the context: rows [0, length - 1); the pending token is the last id, at position length - 1
     const ctx = length - 1;
     const lane = try d.newLane(length + 32);

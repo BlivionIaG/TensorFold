@@ -72,26 +72,56 @@ const Encoder = struct {
         } else tile.encodeTwin(self.e, t, matrix(w), x, x_off, y, y_off, rows) catch unreachable;
     }
     /// h += r unless first, then x = norm(h); `combine`: r is the decode experts' combine, taken here instead.
-    fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize, combine: bool) void {
+    fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize, combine: bool, tap_layer: ?usize) void {
+        const tap_index: ?usize = if (tap_layer) |layer| blk: {
+            const taps = s.taps orelse break :blk null;
+            for (taps.layers[0..taps.count], 0..) |l, i| if (l == layer) break :blk i;
+            break :blk null;
+        } else null;
         if (combine) {
-            self.pipe("lfm2_combine_norm");
+            if (tap_index != null) self.pipe("lfm2_combine_norm_tap") else self.pipe("lfm2_combine_norm");
             self.e.setBuffer(s.experts, 0, 0);
             self.e.setBuffer(s.weights, 0, 1);
             self.e.setBuffer(s.h, 0, 2);
             self.tensor(weight, 3);
             self.e.setValue(c.eps, 4);
             self.e.setBuffer(s.x, 0, 5);
+            if (tap_index) |i| {
+                const taps = s.taps.?;
+                self.e.setBuffer(taps.buf, 0, 6);
+                self.e.setValue([2]u32{ taps.count * c.hidden, @intCast(i * c.hidden) }, 7);
+            }
             self.groups(.{ rows, 1, 1 }, .{ c.hidden / 4, 1, 1 });
+            self.copyRepeatedTaps(s, tap_layer, tap_index, rows);
             return;
         }
-        self.pipe("lfm2_norm");
+        if (tap_index != null) self.pipe("lfm2_norm_tap") else self.pipe("lfm2_norm");
         self.e.setBuffer(s.h, 0, 0);
         self.e.setBuffer(s.r, 0, 1);
         self.tensor(weight, 2);
         self.e.setValue(c.eps, 3);
         self.e.setValue(@as(u32, @intFromBool(!first)), 4);
         self.e.setBuffer(s.x, 0, 5);
+        if (tap_index) |i| {
+            const taps = s.taps.?;
+            self.e.setBuffer(taps.buf, 0, 6);
+            self.e.setValue([2]u32{ taps.count * c.hidden, @intCast(i * c.hidden) }, 7);
+        }
         self.groups(.{ rows, 1, 1 }, .{ c.hidden / 4, 1, 1 });
+        self.copyRepeatedTaps(s, tap_layer, tap_index, rows);
+    }
+    /// A drafter may request the same target layer more than once.
+    fn copyRepeatedTaps(self: Encoder, s: *st.Scratch, layer: ?usize, first: ?usize, rows: usize) void {
+        const target = layer orelse return;
+        const start = first orelse return;
+        const taps = s.taps.?;
+        for (taps.layers[start + 1 .. taps.count], start + 1..) |l, i| if (l == target) {
+            self.pipe("lfm2_tap");
+            self.e.setBuffer(s.h, 0, 0);
+            self.e.setBuffer(taps.buf, 0, 1);
+            self.e.setValue([2]u32{ taps.count * c.hidden, @intCast(i * c.hidden) }, 2);
+            self.threads(.{ c.hidden / 8, rows, 1 }, .{ 256, 1, 1 });
+        };
     }
     fn swiglu(self: Encoder, s: *st.Scratch, count: usize) void {
         self.pipe("lfm2_swiglu");
@@ -164,14 +194,13 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
     enc.threads(.{ units, total, 1 }, .{ 256, 1, 1 });
     var combine = false; // the previous block's decode experts, combined by the next norm
     for (m.weights.blocks, 0..) |block, i| {
-        enc.norm(s, block.operator_norm, i == 0, total, combine);
+        enc.norm(s, block.operator_norm, i == 0, total, combine, if (i > 0) i - 1 else null);
         combine = false;
-        if (i > 0) tap(enc, s, i - 1, total);
         switch (block.mixer) {
             .conv => |cv| conv(enc, s, cv, i, segments, total),
             .attention => |a| attention(enc, s, a, &m.config, segments, i, total),
         }
-        enc.norm(s, block.ffn_norm, false, total, false);
+        enc.norm(s, block.ffn_norm, false, total, false, null);
         switch (block.ffn) {
             .dense => |d| {
                 enc.projection(d.gate, s.x, 0, s.gate, 0, total);
@@ -182,8 +211,7 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
             .moe => |x| combine = moe(enc, s, x, m.config.scale, total),
         }
     }
-    enc.norm(s, m.weights.norm, false, total, combine);
-    tap(enc, s, c.layers - 1, total);
+    enc.norm(s, m.weights.norm, false, total, combine, c.layers - 1);
     if (head == .all) {
         enc.projection(embedding, s.x, 0, s.logits, 0, total);
         enc.pipe("lfm2_argmax");
@@ -208,18 +236,6 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
         seg.cache.commit(s, base, seg.rows, record);
         base += seg.rows;
     }
-}
-
-/// Layer `layer`'s output rows (h, just summed by the next norm) into each tap of it, when a drafter reads them.
-fn tap(enc: Encoder, s: *st.Scratch, layer: usize, total: usize) void {
-    const taps = s.taps orelse return;
-    for (taps.layers[0..taps.count], 0..) |l, t| if (l == layer) {
-        enc.pipe("lfm2_tap");
-        enc.e.setBuffer(s.h, 0, 0);
-        enc.e.setBuffer(taps.buf, 0, 1);
-        enc.e.setValue([2]u32{ taps.count * c.hidden, @intCast(t * c.hidden) }, 2);
-        enc.threads(.{ c.hidden / 8, total, 1 }, .{ 256, 1, 1 });
-    };
 }
 
 fn conv(enc: Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []const Segment, total: usize) void {
