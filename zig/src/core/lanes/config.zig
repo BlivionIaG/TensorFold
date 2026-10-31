@@ -16,6 +16,7 @@ pub const Model = struct {
     root_copies: bool = false, // verified context copies precede head drafts and skip their proposal pass
     copy_drafts: bool = true, // global serving switch, independent of shared verification capacity
     own_copy_rates: bool = false, // a copy window is priced by its stream's own copies, not copy_rate's prior
+    matched_copy_rates: bool = false, // strong context matches keep a separate learned price
 
     exact_width: u32 = 1, // the widest window that reproduces one-token steps bit for bit
     first_copy_rows: u32 = 0, // a lone stream's first copy window (0: the exact width)
@@ -60,6 +61,7 @@ pub const Config = struct {
     family_width: u32,
     max_copy: u32,
     own_copy_rates: bool = false, // Model.own_copy_rates
+    matched_copy_rates: bool = false, // Model.matched_copy_rates
     first_copy: u32,
     base_width: u32,
     family_mtp: bool,
@@ -145,6 +147,7 @@ pub const Config = struct {
             .family_width = width,
             .max_copy = max_copy,
             .own_copy_rates = m.own_copy_rates,
+            .matched_copy_rates = m.matched_copy_rates and m.own_copy_rates,
             .first_copy = first_copy,
             .base_width = @min(width, first_copy + 1),
             .family_mtp = m.mtp and width >= 2 and m.speculate,

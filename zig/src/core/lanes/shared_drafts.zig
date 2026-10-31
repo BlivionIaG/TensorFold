@@ -23,7 +23,8 @@ pub fn budgets(e: *Engine, plans: []const win.Plan, heads: []const usize, out: [
         }
         const copy = try win.copyProposal(e, s);
         if (copy.tokens.len > 0) {
-            const rate = if (e.cfg.own_copy_rates) win.copiedRate(e, s, copy.recalled) else e.cfg.copy_rate;
+            const trusted = e.cfg.matched_copy_rates and !copy.recalled and win.trustedCopy(s);
+            const rate = win.pricedCopiedRate(e, s, copy.recalled, trusted);
             pr.* = try alloc.chainProbabilities(a, &.{rate}, copy.tokens.len);
             continue;
         }

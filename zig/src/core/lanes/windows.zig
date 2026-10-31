@@ -252,7 +252,8 @@ pub fn allocate(e: *Engine, plans: []Plan) !void {
             pr.* = &.{};
         } else if (p.kind == .copy) {
             fx.* = 1;
-            const rate = if (e.cfg.own_copy_rates) copiedRate(e, p.stream, p.recalled) else e.cfg.copy_rate;
+            const trusted = e.cfg.matched_copy_rates and !p.recalled and trustedCopy(p.stream);
+            const rate = pricedCopiedRate(e, p.stream, p.recalled, trusted);
             pr.* = try alloc.chainProbabilities(a, &.{rate}, n);
         } else {
             fx.* = 1;
@@ -361,7 +362,7 @@ pub const early_reply = 64;
 const short_rate = 0.08;
 
 /// A copy after a long match, or out of the prompt within the reply's first early_reply tokens.
-fn trustedCopy(s: *const Stream) bool {
+pub fn trustedCopy(s: *const Stream) bool {
     const pr = s.proposer orelse return true;
     if (pr.lastMatch() >= long_match) return true;
     const at = pr.lastEnd() orelse return false;
@@ -406,6 +407,19 @@ pub fn copiedRate(e: *const Engine, s: *Stream, recalled: bool) f64 {
         s.copied_broke[i] = copied_prior * (1 - e.cfg.copy_rate);
     }
     return s.copied_landed[i] / (s.copied_landed[i] + s.copied_broke[i]);
+}
+
+/// Strong context matches learn separately from weaker copies; Recall keeps its own source history.
+pub fn pricedCopiedRate(e: *const Engine, s: *Stream, recalled: bool, trusted: bool) f64 {
+    if (!e.cfg.own_copy_rates) return e.cfg.copy_rate;
+    if (e.cfg.matched_copy_rates and !recalled and trusted) return copyRate(e, s, true);
+    return copiedRate(e, s, recalled);
+}
+
+/// Update both the existing source history and, when enabled, the strong-match history.
+pub fn observePricedCopied(e: *const Engine, s: *Stream, recalled: bool, trusted: bool, kept: usize, offered: usize) void {
+    observeCopied(e, s, recalled, kept, offered);
+    if (e.cfg.matched_copy_rates and !recalled and trusted) observeCopy(e, s, true, kept, offered);
 }
 
 /// A verified copy window of `offered` rows, `kept` landing: its source's counters, then its own rate's history.

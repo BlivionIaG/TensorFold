@@ -117,7 +117,10 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
     errdefer if (h.wrap) |*w| w.deinit();
     var facts = if (h.wrap) |*w| w.facts(h.metal.facts()) else h.metal.facts();
     // a drafting stream prices its copy windows by its own copies: on distinct prompts they keep breaking
-    if (h.wrap != null) facts.own_copy_rates = true;
+    if (h.wrap != null) {
+        facts.own_copy_rates = true;
+        facts.matched_copy_rates = true;
+    }
     h.config = try lanes.Config.init(gpa, facts, q.state.window_rows, q.state.window_rows - 1);
     errdefer h.config.deinit(gpa);
     h.clock = .{ .io = io };
