@@ -1,4 +1,4 @@
-//! Default-off M5 prompt experiment. Broad kernel/model qualification remains open.
+//! Development M5 prompt experiment. Broad kernel/model qualification remains open.
 const std = @import("std");
 const mtl = @import("metal");
 const sources = @import("kernel_sources");

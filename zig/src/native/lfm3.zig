@@ -76,7 +76,7 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
     h.model = model;
     h.resident = null;
     h.vision = null;
-    const chunk = q.backend.prompt_rows;
+    const chunk: u32 = if (model.device.tensorUnits()) q.backend.prompt_rows else 128;
     h.metal = try q.backend.Metal.init(gpa, model, .{ .capacity = window, .chunk = chunk, .streams = @max(o.lanes, 2) });
     errdefer h.metal.deinit();
     if (model.config.kind == .vision_language) {

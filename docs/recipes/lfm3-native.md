@@ -125,10 +125,11 @@ Structured output requires the native grammar library; logprobs and video are no
 A complete earlier global M5 contract run found one Qwen4 failure that also reproduces on the unchanged pinned base.
 It is not a final-source global pass. Agree model-fidelity and performance gates on #1491 before claiming release readiness.
 
-## Default-off tiled prompt experiments
+## Development-default tiled prompt experiments
 
-Two development build options expose the current M5 experiments independently. Both default to `false`;
-release-version builds reject either option when enabled.
+Development builds enable both tiled options and 2048 prompt rows by default on tensor-unit devices.
+On devices without tensor units serving uses 128 rows and existing kernels. Release-version builds default to
+the existing path and reject either tiled option when explicitly enabled. These remain draft experiments.
 
 ```sh
 zig build native -Dcpu=apple_m1 -Dlfm3-residual-ffn=true -Dlfm3-tiled-attention=true
@@ -145,8 +146,9 @@ or the 256-token sliding window. Shared rows and slices of at most eight rows re
 Both modules check tensor-unit capability before compiling their optional pipelines; M4 and older devices
 retain the existing paths. Enabling the build options selects the candidates when the serving backend initializes.
 Direct `Model.load` developer harnesses must explicitly enable the corresponding candidate to exercise it.
+To select the prior development baseline, build with `-Dlfm3-residual-ffn=false -Dlfm3-tiled-attention=false`.
 
-`-Dlfm3-prompt-rows=256` or `2048` selects a larger development prompt batch; the default remains 128.
+`-Dlfm3-prompt-rows=128`, `256`, or `2048` selects the development prompt batch; its tensor-unit default is 2048.
 Both tiled options are required for a larger batch, and release-version builds reject them.
 Cache marks retain their existing 128-row policy and can split a larger batch. Cancellation and background yield
 are checked at chunk boundaries; a 2048-row chunk remains one atomic forward pass.
@@ -163,7 +165,7 @@ zig build native -Dcpu=apple_m1 -Dlfm3-residual-ffn=true -Dlfm3-tiled-attention=
 The earlier private 2048-row path changed an 8k reply at the short header cut. The prompt-only tail route
 restored byte equality for all 17 vocabulary rows and full KV/convolution state in the fixed 8k+16 comparison.
 This is bounded same-engine evidence. Broader small-tail nonfinite checks, independent propagated FP32/BF16
-fidelity, and final-source lifecycle validation remain separate gates; the 2048-row mode is still work in progress.
+fidelity, and final-source lifecycle validation remain separate gates; the development-default 2048-row mode is still work in progress.
 
 These are work-in-progress arithmetic changes, not release-qualified replacements. The
 [combined provisional serving receipt](../receipts/lfm3/m5-composed-prompt-provisional-serving.json)

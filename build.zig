@@ -78,9 +78,10 @@ pub fn build(b: *std.Build) void {
     build_options.addOption(bool, "slide_test_hooks", slide_test_hooks);
     const lfm3_risk_fast = b.option(bool, "lfm3-risk-fast", "Developer LFM3 fused range predicate candidate") orelse false;
     const lfm3_defer_head = b.option(bool, "lfm3-defer-prompt-head", "Developer LFM3 unobserved intermediate prompt head omission") orelse false;
-    const residual_ffn = b.option(bool, "lfm3-residual-ffn", "Development-only residual-weight LFM3 prompt FFN") orelse false;
-    const tiled_attention = b.option(bool, "lfm3-tiled-attention", "Development-only tiled LFM3 prompt attention") orelse false;
-    const prompt_rows = b.option(u32, "lfm3-prompt-rows", "Development-only LFM3 prompt rows: 128, 256 or 2048") orelse 128;
+    const residual_ffn = b.option(bool, "lfm3-residual-ffn", "Development-only residual-weight LFM3 prompt FFN") orelse (release_version == null);
+    const tiled_attention = b.option(bool, "lfm3-tiled-attention", "Development-only tiled LFM3 prompt attention") orelse (release_version == null);
+    const prompt_rows = b.option(u32, "lfm3-prompt-rows", "Development-only LFM3 prompt rows: 128, 256 or 2048") orelse
+        (if (release_version == null and residual_ffn and tiled_attention) @as(u32, 2048) else 128);
     switch (prompt_rows) {
         128, 256, 2048 => {},
         else => @panic("Invalid LFM3 prompt row count"),
