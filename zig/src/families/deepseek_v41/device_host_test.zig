@@ -21,3 +21,23 @@ test {
 test {
     _ = @import("review_handoff_test.zig");
 }
+
+test {
+    _ = @import("model_supervisor_test.zig");
+}
+
+test {
+    _ = @import("round_progress_test.zig");
+}
+
+test {
+    _ = @import("session_stall_test.zig");
+}
+
+test {
+    _ = @import("union_stall_test.zig");
+}
+
+test {
+    _ = @import("model_health_test.zig");
+}

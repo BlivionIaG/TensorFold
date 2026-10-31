@@ -233,8 +233,15 @@ On MLX, `--parallel auto` is the default: requests share rounds within the confi
 budget. Every admitted prompt prefills a chunk at a time beside the others. Each chunk goes to a foreground prompt
 before a background one, then to the prompt with the fewest tokens left, and a prompt passed over for 8 chunks takes
 the next one: a short request starts at the next chunk, and a long prompt still finishes. Running replies take rounds
-between chunks for `--decode-share` of each chunk's time (default 0.25). That flag is the Python 0.6.6 engine's, and the
-native binary refuses it. In that engine, `--decode-share 0` prefills each prompt whole
+between chunks for `--decode-share` of each chunk's time (0.25 is the Python engine's default). On a native server
+the flag is the reply's share, and the prompt owes its complement: it also offers a 512-row cap on a filling
+prompt's chunks to families that declare chunk-independent prompt arithmetic. That offer is gated per family
+behind device token-hash qualification; every native family is gated out today, so no native server caps chunk
+rows yet. Absent the flag the engines keep their own cuts and `TENSORFOLD_PREFILL_SHARE` keeps its old meaning:
+the prompt's share of a fill step's wall time, time only, never smaller chunks. The CUDA, qwen27 Metal and
+hip_serve servers pass the flag to their lane host and take its time share; the DeepSeek, Spark-X on Metal, Qwen4
+and XPU servers do not parse or apply the flag. `--decode-share 0` prefills each prompt
+whole
 first, in arrival order, as 0.3.6.2 did. Background work waits behind foreground requests. An active background
 request yields when a foreground request needs its lane or memory, then restarts with already-delivered tokens
 suppressed.
@@ -345,7 +352,8 @@ Drafting stays enabled and uses the same grammar masks as plain decoding.
 
 This requires the loaded backend's structured-output capability and `libtfgrammar`. Nemotron, Qwen3.5-2B,
 Qwen3.8-27B (`qwen27`), Gemma 4 31B, Step-5, LFM2 MoE and Flash Next shared sessions on Metal have that capability; Qwen27 on Intel also has it.
-Flash Next on CUDA has it too.
+Flash Next and Gemma 4 on CUDA have it too. Gemma 4 on CUDA picks a greedy row under a grammar on the host, among the
+allowed tokens of its logits read back; sampled rows are masked on the device before the draw.
 Qwen3.8-27B applies the grammar to its first draw, each verified row and each branch of its draft proposals.
 Structured requests use its shared lane core, including when the ordinary lone-request serial optimization is enabled.
 CUDA determines support from its loaded backend's mask hook. GLM Metal
@@ -604,9 +612,12 @@ cap below needs their room. After a restart, a crash or an eviction from RAM, th
 instead of reading the conversation again from its first token. Qwen3.8-27B, Nemotron, Flash Next and GLM-5.3-Flash on
 one Mac and Nemotron on CUDA keep them; other engines refuse the flag at startup.
 
-The engine stages an owned copy between rounds, and an I/O thread writes and fsyncs it. Staging has a 1 GiB byte
-permit and at most eight jobs; when either is full, the save is skipped. The copy waits for its GPU producers before
-RAM can be reused. A state becomes available for reuse only after all its files have been written and synced.
+The engine stages an owned copy between rounds, and an I/O thread writes and fsyncs it. Staging has a 1 GiB byte permit
+and at most eight jobs. A save that finds either full but would fit alone waits in the queue until a write finishes; one
+that cannot fit even then is skipped. So is a waiting save whose state leaves RAM, unless `--spill-gib` copies it then
+(below); that copy, like any made at an eviction, is skipped when the permit is full. A block still being written is
+charged and copied once, however many saves name it. The copy waits for its GPU producers before RAM can be reused. A
+state becomes available for reuse only after all its files have been written and synced.
 A planned stop (SIGTERM or SIGINT) drains writes for up to 20 seconds, then cancels the remainder; a blocked syscall
 can finish later using only its private temporary files and staged bytes. A killed server loses unfinished saves.
 Rows a stored state already holds for the same tokens are written once, so ten
@@ -656,11 +667,11 @@ publication.
 On CUDA, Nemotron, the Qwen3.5 hybrids and Flash Next take `--spill-gib` and `--checkpoint-slots` with the same store
 and cap as a Mac. At an eviction the engine thread stages a copy of the state into host memory, waiting for the GPU
 work that produced it, then releases its RAM entry and goes on; the I/O thread writes and fsyncs the copy while the
-engine decodes. Staging holds at most 1 GiB and eight jobs: a state whose new bytes (rows not already on disk) do not
-fit what is free is not saved, so one past 1 GiB never is, and a later request for it prefills. When the engine closes,
-at a planned stop (SIGTERM or SIGINT) or an idle unload, it saves the states still in RAM, newest first, within the same
-disk cap and 20-second stop budget. While other streams run, a queued request whose state is on disk has it read ahead
-on an I/O thread, as described above.
+engine decodes. Staging holds at most 1 GiB and eight jobs: a state whose new bytes (rows neither on disk nor being
+written) do not fit what is free is not saved, so one past 1 GiB never is, and a later request for it prefills. When the
+engine closes, at a planned stop (SIGTERM or SIGINT) or an idle unload, it saves the states still in RAM, newest first,
+within the same disk cap and 20-second stop budget. While other streams run, a queued request whose state is on disk has
+it read ahead on an I/O thread, as described above.
 
 Three routes let a client such as the Mac app ask about a conversation. Each takes the body of a chat completion
 (`messages`, `tools`, `chat_template_kwargs`), renders it as that request would be rendered, and answers on the engine's

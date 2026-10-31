@@ -129,7 +129,8 @@ pub const Served = struct {
         s.host.on_thread = .{ .ctx = m, .run = bindContext };
         // /metrics' device memory: bytes this rank holds in cuda.DeviceBuffers (weights, KV pool, staging), peak
         s.host.memory = .{ .read = readMemory };
-        s.host.health = .{ .ctx = &m.ctx, .read = contextHealthy };
+        s.host.health = .{ .ctx = m, .read = @import("model_health.zig").serving };
+        @import("model_health.zig").attach(m, &s.host);
         // TF_DSV41_PREFILL_PIECES=1: the batcher plans the rounds; served shape only, same setting on every rank
         s.sched = null;
         if (model.Model.piecesEnv()) {
@@ -167,10 +168,6 @@ pub const Served = struct {
     fn readMemory(_: ?*anyopaque, reset_peak: bool) ?api.Memory {
         const u = @import("cuda").usage(reset_peak);
         return .{ .active = u.device, .cache = 0, .peak = u.peak };
-    }
-
-    fn contextHealthy(ctx: *anyopaque) bool {
-        return @as(*@import("cuda").Context, @ptrCast(@alignCast(ctx))).healthy();
     }
 
     fn bindContext(ctx: *anyopaque) anyerror!void {
