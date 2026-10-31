@@ -85,6 +85,8 @@ pub const DevPlan = struct {
     inplace: u64 = 0,
     timings: []timing_.Timing = &.{},
     timing_epoch: ?cuda.Event = null,
+    /// Pause during draft capture: repeating an event's external record makes graph instantiation fail.
+    timing_paused: bool = false,
     trace_mem: ?cuda.DeviceBuffer = null,
     trace_checkpoint_fn: ?cuda.Function = null,
 
@@ -148,7 +150,7 @@ pub const DevPlan = struct {
         var timing_epoch: ?cuda.Event = if (timing_requested) try cuda.Event.init(d, true) else null;
         errdefer if (timing_epoch) |*epoch| epoch.deinit();
         if (timing_epoch) |epoch| {
-            try epoch.recordExternal(side);
+            try timing_.mark(epoch, side);
             for (timings) |*timing| try timing.initialize(side);
             try side.synchronize();
             for (timings) |*timing| try timing.initializeAfterConsumers(epoch);
@@ -341,6 +343,11 @@ pub const DevPlan = struct {
         return dp.timings[index].sampleAfterConsumers(dp.overlap, dp.timing_epoch orelse return error.InvalidOffloadTiming);
     }
 
+    /// Whether the layer markers record now.
+    fn timed(dp: *const DevPlan) bool {
+        return dp.timings.len != 0 and !dp.timing_paused;
+    }
+
     pub fn samplePoolAfterConsumers(dp: *const DevPlan, pool: *const pool_.Pool) !telemetry.Device {
         if (!pool.telemetry_valid) return error.TelemetryCounterRegression;
         var total = pool.telemetry_device;
@@ -458,17 +465,17 @@ pub const DevPlan = struct {
         c.add(work);
         c.add(work_n);
         if (!dp.overlap) {
-            if (dp.timings.len != 0) try dp.timings[i].copy_start.recordExternal(s);
+            if (dp.timed()) try timing_.mark(dp.timings[i].copy_start, s);
             try cuda.launch.launch(dp.copy_fn, .{ .grid = .{ .x = dp.copy_blocks }, .block = .{ .x = 256 } }, s, &c);
-            if (dp.timings.len != 0) try dp.timings[i].copy_end.recordExternal(s);
+            if (dp.timed()) try timing_.mark(dp.timings[i].copy_end, s);
             return;
         }
         // the copies on the side stream (a fork in a captured graph); `s` joins them before the misses' experts
         try dp.ev_plan.record(s);
         try dp.side.wait(dp.ev_plan);
-        if (dp.timings.len != 0) try dp.timings[i].copy_start.recordExternal(dp.side);
+        if (dp.timed()) try timing_.mark(dp.timings[i].copy_start, dp.side);
         try cuda.launch.launch(dp.copy_fn, .{ .grid = .{ .x = dp.copy_blocks }, .block = .{ .x = 256 } }, dp.side, &c);
-        if (dp.timings.len != 0) try dp.timings[i].copy_end.recordExternal(dp.side);
+        if (dp.timed()) try timing_.mark(dp.timings[i].copy_end, dp.side);
         try dp.ev_copy.record(dp.side);
     }
 };
@@ -533,21 +540,21 @@ pub fn release(st: *State) void {
 /// One offloaded layer's experts on the device plan: plan + copies, then `Experts.run` on the pool's tables, as the
 pub fn runLayer(dp: *DevPlan, st: cuda.Stream, i: usize, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
     if (i >= dp.pools.len) return error.Invalid;
-    if (dp.timings.len != 0) try dp.timings[i].start.recordExternal(st);
+    if (dp.timed()) try timing_.mark(dp.timings[i].start, st);
     try dp.plan(st, i, picks, rows);
     if (!dp.overlap) {
         try ex.run(st, layer, xin, 2560, .bf16, picks, wts, rows, out, sc);
     } else {
         // held experts while the copies run, then the misses' experts and (expert parallel) the combine of every slot
         try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr, 0, rows, 0, sc);
-        if (dp.timings.len != 0) try dp.timings[i].held_end.recordExternal(st);
+        if (dp.timed()) try timing_.mark(dp.timings[i].held_end, st);
         try st.wait(dp.ev_copy);
-        if (dp.timings.len != 0) try dp.timings[i].joined.recordExternal(st);
+        if (dp.timed()) try timing_.mark(dp.timings[i].joined, st);
         try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr + dp.max_rows * 11 * 4, wts, rows, out, sc);
     }
     try dp.restore(st, i);
-    if (dp.timings.len != 0) {
-        try dp.timings[i].end.recordExternal(st);
+    if (dp.timed()) {
+        try timing_.mark(dp.timings[i].end, st);
         dp.timings[i].recorded = true;
     }
 }

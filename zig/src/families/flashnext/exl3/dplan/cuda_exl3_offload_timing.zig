@@ -3,6 +3,11 @@ const cuda = @import("cuda");
 
 pub const Sample = @import("../model/exl3_telemetry.zig").LayerTiming;
 
+/// Capture records an external event node; eager records are plain because the driver rejects the flag.
+pub fn mark(event: cuda.Event, stream: cuda.Stream) !void {
+    if (try cuda.graph.captureStatus(stream) != .none) try event.recordExternal(stream) else try event.record(stream);
+}
+
 pub const Timing = struct {
     start: cuda.Event,
     copy_start: cuda.Event,
@@ -40,7 +45,7 @@ pub const Timing = struct {
 
     pub fn initialize(timing: *Timing, stream: cuda.Stream) !void {
         inline for (.{ "start", "copy_start", "copy_end", "held_end", "joined", "end" }) |field| {
-            try @field(timing, field).recordExternal(stream);
+            try mark(@field(timing, field), stream);
         }
     }
 
@@ -129,4 +134,39 @@ test "exl3: timing owns exactly six events and unwinds every constructor prefix"
     timing.deinit();
     epoch.deinit();
     try std.testing.expectEqual(@as(usize, 7), Fake.destroyed);
+}
+
+test "exl3: timing markers use an external record only while the stream is capturing" {
+    // The old unconditional external records failed eager decode with CUDA_ERROR_ILLEGAL_STATE.
+    const Fake = struct {
+        var status: cuda.abi.CaptureStatus = .none;
+        var plain: usize = 0;
+        var external: usize = 0;
+        fn capturing(_: cuda.abi.Stream, out: *cuda.abi.CaptureStatus) callconv(.c) c_int {
+            out.* = status;
+            return 0;
+        }
+        fn record(_: cuda.abi.Event, _: cuda.abi.Stream) callconv(.c) c_int {
+            plain += 1;
+            return 0;
+        }
+        fn recordWithFlags(_: cuda.abi.Event, _: cuda.abi.Stream, flags: c_uint) callconv(.c) c_int {
+            if (status == .none or flags != cuda.abi.event_record_external) return cuda.abi.error_not_ready;
+            external += 1;
+            return 0;
+        }
+    };
+    var driver: cuda.Driver = undefined;
+    driver.api.cuStreamIsCapturing = Fake.capturing;
+    driver.api.cuEventRecord = Fake.record;
+    driver.api.cuEventRecordWithFlags = Fake.recordWithFlags;
+    const stream: cuda.Stream = .{ .d = &driver, .handle = null };
+    const event: cuda.Event = .{ .d = &driver, .handle = null };
+    try mark(event, stream);
+    try std.testing.expectEqual(@as(usize, 1), Fake.plain);
+    try std.testing.expectEqual(@as(usize, 0), Fake.external);
+    Fake.status = .active;
+    try mark(event, stream);
+    try std.testing.expectEqual(@as(usize, 1), Fake.plain);
+    try std.testing.expectEqual(@as(usize, 1), Fake.external);
 }
