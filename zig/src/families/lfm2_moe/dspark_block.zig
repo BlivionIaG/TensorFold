@@ -142,6 +142,18 @@ const Enc = struct {
         x.e.dispatchGroups(mtl.Size.of(c.query_heads + c.kv_heads, rows, 1), mtl.Size.of(32, 1, 1));
     }
 
+    /// Context rows need only keys and values, not discarded queries.
+    fn kv(x: Enc, k: Ref, v: Ref, layer: usize, lane: *const Lane, len: u64, rows: usize) void {
+        x.pipe("lfm2_dspark_kv");
+        x.e.setBuffer(k.buf, k.off, 0);
+        x.e.setBuffer(v.buf, v.off, 1);
+        x.e.setBuffer(x.d.w.layers[layer].k_norm, 0, 2);
+        x.e.setValue(QkArgs{ .len = @intCast(len), .cap = @intCast(lane.cap), .eps = c.eps, .log2_theta = std.math.log2(x.d.config.theta) }, 3);
+        x.e.setBuffer(lane.mem, lane.kv(layer, false).off, 4);
+        x.e.setBuffer(lane.mem, lane.kv(layer, true).off, 5);
+        x.e.dispatchGroups(mtl.Size.of(c.kv_heads, rows, 1), mtl.Size.of(32, 1, 1));
+    }
+
     /// The chunks' partials of query rows [row, row + rows) against the lane's keys, at partial row `part`.
     fn partials(x: Enc, layer: usize, lane: *const Lane, row: usize, rows: usize, keys: u64, part: usize) void {
         const s = &x.d.s;
@@ -274,8 +286,7 @@ fn absorbOn(encoder: Enc, pieces: []const Piece, gather: ?*usize) !void {
         x.sync();
         var at: usize = 0;
         for (pieces) |pc| {
-            const q = Ref{ .buf = s.fcx, .off = at * c.hidden * 2 };
-            x.qk(q, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, i, pc.lane, pc.p0, .{ .buf = s.dump }, pc.rows);
+            x.kv(.{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, i, pc.lane, pc.p0, pc.rows);
             at += pc.rows;
         }
         x.sync();

@@ -214,6 +214,78 @@ test "lfm2 dspark: lfm2_qk on half-split rows and gains gives interleaved RoPE's
     }
 }
 
+test "lfm2 dspark: context-only rotation preserves every KV byte and leaves surrounding positions untouched" {
+    var r = try Rig.init();
+    defer r.deinit();
+    const kw = c.kv_heads * c.head_dim;
+    const Args = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32 };
+    const cases = [_][2]u32{ .{ 1, 0 }, .{ 9, 7 }, .{ 33, 777 }, .{ ds.absorb_rows, 3 } };
+    for (cases) |case| {
+        const rows = case[0];
+        const cap = case[1] + rows + 3;
+        const cache_n = c.kv_heads * cap * c.head_dim;
+        const q = try r.buffer(u16, rows * c.hidden);
+        defer q.deinit();
+        const k = try r.buffer(u16, (rows + 1) * kw);
+        defer k.deinit();
+        const v = try r.buffer(u16, (rows + 1) * kw);
+        defer v.deinit();
+        const gain = try r.buffer(u16, c.head_dim);
+        defer gain.deinit();
+        const queries = try r.buffer(u16, rows * c.hidden);
+        defer queries.deinit();
+        const out = try r.buffer(u16, 4 * cache_n);
+        defer out.deinit();
+        noise(31, k.slice(u16, (rows + 1) * kw), 3);
+        noise(32, v.slice(u16, (rows + 1) * kw), 2);
+        noise(33, gain.slice(u16, c.head_dim), 1.5);
+        const sentinel: u16 = 0x3e81;
+        @memset(out.slice(u16, 4 * cache_n), sentinel);
+        const args = Args{ .len = case[1], .cap = cap, .eps = c.eps, .log2_theta = std.math.log2(@as(f32, 1e7)) };
+        const cb = r.queue.commandBuffer();
+        defer cb.release();
+        const e = cb.compute(.serial);
+        inline for (.{ false, true }) |kv_only| {
+            e.setPipeline(r.k.get(if (kv_only) "lfm2_dspark_kv" else "lfm2_qk"));
+            if (kv_only) {
+                e.setBuffer(k, kw * 2, 0);
+                e.setBuffer(v, kw * 2, 1);
+                e.setBuffer(gain, 0, 2);
+                e.setValue(args, 3);
+                e.setBuffer(out, 2 * cache_n * 2, 4);
+                e.setBuffer(out, 3 * cache_n * 2, 5);
+            } else {
+                e.setBuffer(q, 0, 0);
+                e.setBuffer(k, kw * 2, 1);
+                e.setBuffer(v, kw * 2, 2);
+                e.setBuffer(gain, 0, 3);
+                e.setBuffer(gain, 0, 4);
+                e.setValue(args, 5);
+                e.setBuffer(queries, 0, 6);
+                e.setBuffer(out, 0, 7);
+                e.setBuffer(out, cache_n * 2, 8);
+            }
+            e.dispatchGroups(mtl.Size.of((if (kv_only) 0 else c.query_heads) + c.kv_heads, rows, 1), mtl.Size.of(32, 1, 1));
+        }
+        e.end();
+        cb.commit();
+        cb.wait();
+        if (cb.failure()) |_| return error.GpuFailed;
+        const actual = out.slice(u16, 4 * cache_n);
+        try std.testing.expectEqualSlices(u16, actual[0 .. 2 * cache_n], actual[2 * cache_n ..]);
+        for (0..c.kv_heads) |head| for (0..cap) |pos| {
+            const at = (head * cap + pos) * c.head_dim;
+            if (pos < args.len or pos >= args.len + rows) {
+                for (actual[2 * cache_n + at ..][0..c.head_dim]) |value| try std.testing.expectEqual(sentinel, value);
+                for (actual[3 * cache_n + at ..][0..c.head_dim]) |value| try std.testing.expectEqual(sentinel, value);
+            } else {
+                const src = ((pos - args.len + 1) * c.kv_heads + head) * c.head_dim;
+                try std.testing.expectEqualSlices(u16, v.slice(u16, (rows + 1) * kw)[src..][0..c.head_dim], actual[3 * cache_n + at ..][0..c.head_dim]);
+            }
+        };
+    }
+}
+
 /// lfm2_draft_ids on one pick (token, nonfinite flag) at a stride of 4 words: the id it wrote and the bad flag.
 fn draftIds(r: *Rig, pick: Pick) ![2]u32 {
     const picks = try r.buffer(u32, 4);

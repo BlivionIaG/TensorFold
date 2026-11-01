@@ -1,5 +1,13 @@
 // DSpark's Markov step, compiled after lfm2.metal's text (its includes and constants).
 
+// Absorbed context has no queries: preserve the target's key arithmetic without computing a discarded query row.
+[[kernel]] void lfm2_dspark_kv(const device bfloat* k [[buffer(0)]], const device bfloat* v [[buffer(1)]],
+                              const device bfloat* kn [[buffer(2)]], constant lfm2_qk_args& p [[buffer(3)]],
+                              device bfloat* keys [[buffer(4)]], device bfloat* values [[buffer(5)]],
+                              uint2 tg [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
+  lfm2_qk_row(nullptr, k, v, nullptr, kn, p, nullptr, keys, values, QH + tg.x, tg.y, lane);
+}
+
 // DSpark's Markov scan, W2 as 8-bit codes (BF16 false) or bf16 as released (true): a threadgroup's best of 512 tokens.
 struct lfm2_markov_args { uint stride, rank, vocab, prev_stride; };
 constant constexpr uint MARKOV_SPAN = 512;

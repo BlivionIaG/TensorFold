@@ -138,6 +138,9 @@ The loader reads the checkpoint one matrix at a time and keeps the released bf16
 Metal buffer (its layers' keys and values, then its staged rows), and its bytes join the streams the load limit
 admits. At load the drafter logs its weights, scratch and a stream's bytes. `tf-lfm2-dspark` also counts host
 allocations over twenty served drafter rounds, which must be none.
+Context absorption rotates only keys and stores values with the target's existing numerical helper; it does
+not compute unused query heads. This removes an 8 MiB write-only scratch buffer at the released geometry.
+The KV bytes, surrounding cache positions and later drafts remain unchanged; this is not a throughput claim.
 
 A hold runs on one concurrent encoder with a barrier only where a step reads an earlier step's writes: q, k and v,
 and gate and up, share one sums pass, and the blocks of a shared hold attend side by side. An 8-bit projection takes

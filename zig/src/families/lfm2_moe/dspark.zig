@@ -69,7 +69,6 @@ pub const Scratch = struct {
     logits: mtl.Buffer,
     sums: mtl.Buffer,
     fcx: mtl.Buffer, // an absorb pass's context rows: fc's output, normed in place
-    dump: mtl.Buffer, // the query heads lfm2_qk rotates from context rows, which no one reads
     best: mtl.Buffer, // the Markov scan's best score and token of each threadgroup, by stream
     at: mtl.Buffer,
     picks: mtl.Buffer,
@@ -165,7 +164,6 @@ pub const Drafter = struct {
             .logits = try d.buffer(r * c.vocab * 2),
             .sums = try d.buffer(sums * 4),
             .fcx = try d.buffer(absorb_rows * c.hidden * 2),
-            .dump = try d.buffer(absorb_rows * c.hidden * 2),
             .best = try d.buffer(r * block.scan_groups * 4),
             .at = try d.buffer(r * block.scan_groups * 4),
             .picks = try d.buffer(d.config.block * r * 8),

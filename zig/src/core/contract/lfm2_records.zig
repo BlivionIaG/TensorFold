@@ -21,6 +21,7 @@ pub const records = [_]M{
     .{ .name = "metal lfm2 block attention lfm2_attn_block", .threads = 128, .tg_memory = 18688, .reserved = 128 },
     .{ .name = "metal lfm2 block attention merge lfm2_attn_block_merge", .threads = 32, .tg_memory = 0, .m1 = 1024, .m2 = 1024 },
     .{ .name = "metal lfm2 dspark confidence lfm2_dspark_confidence", .threads = 256, .tg_memory = 32, .m1 = 1024, .m2 = 1024 },
+    .{ .name = "metal lfm2 dspark context kv lfm2_dspark_kv", .threads = 32, .tg_memory = 0, .m1 = 1024, .m2 = 1024 },
 };
 
 test "the LFM2 launches fit every Apple family" {

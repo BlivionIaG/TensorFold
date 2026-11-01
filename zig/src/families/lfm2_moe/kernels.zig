@@ -39,6 +39,7 @@ const names = [_][:0]const u8{
     "lfm2_markov_pick",
     "lfm2_draft_ids",
     "lfm2_dspark_confidence",
+    "lfm2_dspark_kv",
 };
 
 pub const Kernels = struct {
