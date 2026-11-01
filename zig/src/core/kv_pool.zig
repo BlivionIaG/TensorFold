@@ -1,5 +1,6 @@
 //! One pool of KV pages for every stream: a family's layout, page ids and their holders, and the streams' leases.
 const std = @import("std");
+const free_ids = @import("kv_pool_free.zig");
 const Allocator = std.mem.Allocator;
 
 /// A family's stream memory: a fixed part at any length, paged caches a token, and a kept snapshot's slot.
@@ -166,8 +167,10 @@ pub const Pool = struct {
     gpa: Allocator,
     refs: []u32, // holders a page: each lease that maps it once, the store once
     leased: []u32, // of those, the leases'
-    free: []u32, // a stack of free ids, `nfree` deep
+    free: []u32, // free ids below `mapped`, `nfree` deep: a stack, or a min-heap when `lowest`
     nfree: usize,
+    mapped: usize, // ids below it are usable; the pages past it have no memory yet (Options.mapped)
+    lowest: bool, // the lowest free id is taken first, so the tail of the ids empties out (Options.lowest_first)
     promised: usize = 0,
     nreclaimable: usize = 0, // one non-lease holder, so eviction can free the page
     nkept: usize = 0, // pages with a holder beyond their leases; may also be leased
@@ -178,7 +181,21 @@ pub const Pool = struct {
     depth: u8 = 0, // public changes in progress: the outermost one notifies, after nested calls and rollbacks
     freed: ?Freed = null,
 
+    /// Opt-in elastic capacity: ids at or past `mapped` are held back until `grow`.
+    pub const Options = struct {
+        /// Pages usable at first (null: all of `count`); `grow` and `shrink` move it within `count`.
+        mapped: ?usize = null,
+        /// Hand out the lowest free id first, singles and runs alike (default: the last freed, runs from the top).
+        lowest_first: bool = false,
+    };
+
     pub fn init(gpa: Allocator, count: usize, page_bytes: u64) !Pool {
+        return initWith(gpa, count, page_bytes, .{});
+    }
+
+    pub fn initWith(gpa: Allocator, count: usize, page_bytes: u64, o: Options) !Pool {
+        const mapped = o.mapped orelse count;
+        std.debug.assert(mapped <= count);
         const refs = try gpa.alloc(u32, count);
         errdefer gpa.free(refs);
         const leased = try gpa.alloc(u32, count);
@@ -186,8 +203,8 @@ pub const Pool = struct {
         const free = try gpa.alloc(u32, count);
         @memset(refs, 0);
         @memset(leased, 0);
-        for (free, 0..) |*f, i| f.* = @intCast(count - 1 - i); // page 0 taken first
-        return .{ .gpa = gpa, .refs = refs, .leased = leased, .free = free, .nfree = count, .page_bytes = page_bytes };
+        for (free[0..mapped], 0..) |*f, i| f.* = @intCast(if (o.lowest_first) i else mapped - 1 - i); // a heap, or page 0 on top
+        return .{ .gpa = gpa, .refs = refs, .leased = leased, .free = free, .nfree = mapped, .mapped = mapped, .lowest = o.lowest_first, .page_bytes = page_bytes };
     }
 
     pub fn deinit(p: *Pool) void {
@@ -197,8 +214,52 @@ pub const Pool = struct {
         p.* = undefined;
     }
 
+    /// Pages usable now: `capacity` unless the pool is elastic and holds some back.
     pub fn total(p: *const Pool) usize {
+        return p.mapped;
+    }
+
+    /// Page ids the pool can ever use: the bound `grow` stops at.
+    pub fn capacity(p: *const Pool) usize {
         return p.refs.len;
+    }
+
+    /// Whether ids from `new_mapped` up hold nothing and the pages left still cover every promise.
+    pub fn tailIdle(p: *const Pool, new_mapped: usize) bool {
+        if (new_mapped >= p.mapped) return true;
+        for (p.refs[new_mapped..p.mapped]) |r| if (r != 0) return false;
+        return p.nfree - (p.mapped - new_mapped) >= p.promised;
+    }
+
+    /// Ids from `new_mapped` up leave the pool (<= total); Busy when `tailIdle` is false, and nothing changes then.
+    pub fn shrink(p: *Pool, new_mapped: usize) error{Busy}!void {
+        std.debug.assert(new_mapped <= p.mapped);
+        p.enter();
+        defer p.leave();
+        if (!p.tailIdle(new_mapped)) return error.Busy;
+        var n: usize = 0;
+        for (p.free[0..p.nfree]) |id| if (id < new_mapped) {
+            p.free[n] = id;
+            n += 1;
+        };
+        std.debug.assert(n + (p.mapped - new_mapped) == p.nfree);
+        p.nfree = n;
+        p.mapped = new_mapped;
+        free_ids.heapify(p);
+    }
+
+    /// Ids up to `new_mapped` (<= capacity) join the pool free, the lowest taken first.
+    pub fn grow(p: *Pool, new_mapped: usize) void {
+        std.debug.assert(new_mapped >= p.mapped and new_mapped <= p.refs.len);
+        p.enter();
+        defer p.leave();
+        if (p.lowest) {
+            for (p.mapped..new_mapped) |id| free_ids.push(p, @intCast(id));
+        } else {
+            var id = new_mapped;
+            while (id > p.mapped) : (id -= 1) free_ids.push(p, @intCast(id - 1)); // the stack's top is the new lowest id
+        }
+        p.mapped = new_mapped;
     }
 
     /// Pages free and not promised to a stream.
@@ -238,8 +299,7 @@ pub const Pool = struct {
         p.ownership(id, p.refs[id] - 1, p.leased[id] - 1);
         if (p.refs[id] > 0) return;
         if (p.freed) |f| f.call(f.ctx, id);
-        p.free[p.nfree] = id;
-        p.nfree += 1;
+        free_ids.push(p, id);
     }
 
     pub fn idle(p: *const Pool) bool {
@@ -275,8 +335,7 @@ pub const Pool = struct {
         p.ownership(id, p.refs[id] - 1, p.leased[id]);
         if (p.refs[id] > 0) return;
         if (p.freed) |f| f.call(f.ctx, id);
-        p.free[p.nfree] = id;
-        p.nfree += 1;
+        free_ids.push(p, id);
     }
 
     /// Promise `n` more pages to `l`, the store reclaiming first if it must; LaneMemory when they do not fit.
@@ -300,8 +359,7 @@ pub const Pool = struct {
         };
         if (p.available() < out.len) return false;
         for (out) |*id| {
-            p.nfree -= 1;
-            id.* = p.free[p.nfree];
+            id.* = free_ids.pop(p);
             p.ownership(id.*, 1, 0);
         }
         return true;
@@ -321,8 +379,7 @@ pub const Pool = struct {
         defer p.leave();
         if (l.promised == 0) return error.PastReservation;
         try l.ids.ensureUnusedCapacity(p.gpa, 1);
-        p.nfree -= 1;
-        const id = p.free[p.nfree];
+        const id = free_ids.pop(p);
         p.ownership(id, 1, 1);
         l.promised -= 1;
         p.promised -= 1;
@@ -358,7 +415,7 @@ pub const Pool = struct {
         p.enter();
         defer p.leave();
         const old = l.ids.items.len;
-        errdefer p.shrink(l, old);
+        errdefer p.untake(l, old);
         while (l.ids.items.len < n) _ = try p.take(l);
         if (table) |t| if (l.ids.items.len > old) try t.write(t.ctx, l.ids.items, old);
     }
@@ -372,7 +429,7 @@ pub const Pool = struct {
         const start = p.findAligned(n, step) orelse return p.cover(l, n, table);
         p.claimAt(l, start, n);
         for (0..n) |i| l.ids.appendAssumeCapacity(@intCast(start + i)); // held as `take` holds a page: `finish` frees them
-        errdefer p.shrink(l, 0);
+        errdefer p.untake(l, 0);
         if (table) |t| try t.write(t.ctx, l.ids.items, 0);
     }
 
@@ -380,11 +437,11 @@ pub const Pool = struct {
     pub fn trim(p: *Pool, l: *Lease, n: usize) void {
         p.enter();
         defer p.leave();
-        p.shrink(l, n);
+        p.untake(l, n);
     }
 
     /// Pages past `n` in `l`'s table go back to its promise, as they were before it took them.
-    fn shrink(p: *Pool, l: *Lease, n: usize) void {
+    fn untake(p: *Pool, l: *Lease, n: usize) void {
         while (l.ids.items.len > n) {
             const id = l.ids.pop().?;
             p.unlease(id);
@@ -393,10 +450,22 @@ pub const Pool = struct {
         }
     }
 
-    /// The first id of `k` consecutive free pages, highest first (the free stack hands out low ids), or null.
+    /// The first id of `k` consecutive free pages: highest first (the stack hands out low ids), lowest if `lowest`.
     pub fn findRun(p: *const Pool, k: usize) ?u32 {
-        if (k == 0 or k > p.refs.len) return null;
-        var end = p.refs.len;
+        if (k == 0 or k > p.mapped) return null;
+        if (p.lowest) {
+            var start: usize = 0;
+            while (start + k <= p.mapped) {
+                var i = start + k;
+                while (i > start) {
+                    i -= 1;
+                    if (p.refs[i] != 0) break;
+                } else return @intCast(start);
+                start = i + 1;
+            }
+            return null;
+        }
+        var end = p.mapped;
         while (end >= k) {
             const start = end - k;
             const busy = for (p.refs[start..end], start..) |r, i| {
@@ -407,10 +476,17 @@ pub const Pool = struct {
         return null;
     }
 
-    /// The highest first id of `k` free consecutive pages at a multiple of `step` (> 0), or null.
+    /// The first id of `k` free consecutive pages at a multiple of `step` (> 0): the highest, the lowest if `lowest`.
     pub fn findAligned(p: *const Pool, k: usize, step: usize) ?u32 {
-        if (k == 0 or k > p.refs.len) return null;
-        var start = (p.refs.len - k) / step * step;
+        if (k == 0 or k > p.mapped) return null;
+        if (p.lowest) {
+            var start: usize = 0;
+            while (start + k <= p.mapped) : (start += step) {
+                if (std.mem.allEqual(u32, p.refs[start..][0..k], 0)) return @intCast(start);
+            }
+            return null;
+        }
+        var start = (p.mapped - k) / step * step;
         while (true) : (start -= step) {
             if (std.mem.allEqual(u32, p.refs[start..][0..k], 0)) return @intCast(start);
             if (start < step) return null;
@@ -436,6 +512,7 @@ pub const Pool = struct {
         };
         std.debug.assert(n + k == p.nfree);
         p.nfree = n;
+        free_ids.heapify(p);
         @memset(p.refs[start..][0..k], 1);
         @memset(p.leased[start..][0..k], 1); // held as a lease holds its pages: never the store's to reclaim
         p.nleased += k; // every page in this free run gained its first lease and no other holder
@@ -451,8 +528,7 @@ pub const Pool = struct {
             if (p.refs[id] != 1 or p.leased[id] != 1) std.debug.panic("kv pool: run page {d} released while not a run's", .{id});
             p.ownership(id, 0, 0);
             if (p.freed) |f| f.call(f.ctx, @intCast(id));
-            p.free[p.nfree] = @intCast(id);
-            p.nfree += 1;
+            free_ids.push(p, @intCast(id));
         }
     }
 
@@ -486,4 +562,5 @@ test {
     _ = @import("kv_pool_counts_test.zig");
     _ = @import("kv_pool_walk_test.zig");
     _ = @import("kv_pool_notify_test.zig");
+    _ = @import("kv_pool_elastic_test.zig");
 }
