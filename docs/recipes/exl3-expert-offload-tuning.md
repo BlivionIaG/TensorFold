@@ -30,4 +30,18 @@ Set controls before constructing the engine. They remain constant for its lifeti
 
 No additional speculative prefetch is enabled. Existing byte-budget and reader-release dependencies remain in force. Do not change expert weights, routing, accumulation order or graph-owned addresses to improve a result.
 
-The acceptance workload is exactly 16,384 admitted input tokens and 1,024 complete output tokens at concurrency 1 and 8. Compare code and prose with the same parallel capacity, context, draft mode, pool bytes and cache state. Use eight distinct token-array prompts for the mixed-expert concurrency-8 load. Verify observed token usage and zero cached tokens; do not infer length from a text estimate or silently queue through a smaller parallel cap. Record TTFT, prefill/decode throughput, aggregate throughput, mean/p95 ITL, full output hashes, observed device/pinned allocations and device-wide PCIe samples. Keep counters, event diagnostics and uninstrumented performance in separate receipts. Reject a candidate that fails actual graph replay, solo/plain equality, TP equality, cancellation or restored-cache checks.
+The acceptance workload is exactly 16,384 admitted input tokens and 1,024 complete output tokens at concurrency 1 and 4. Compare code and prose with the same parallel capacity, context, draft mode, pool bytes and cache state. Use distinct token-array prompts for the mixed-expert concurrency-4 load. Verify observed token usage and zero cached tokens; do not infer length from a text estimate or silently queue through a smaller parallel cap. Record TTFT, prefill/decode throughput, aggregate throughput, mean/p95 ITL, full output hashes, observed device/pinned allocations and device-wide PCIe samples. Keep counters, event diagnostics and uninstrumented performance in separate receipts. Reject a candidate that fails actual graph replay, solo/plain equality, TP equality, cancellation or restored-cache checks.
+
+## Timing requirements and graph capture
+
+`TF_FLASHNEXT_EXL3_OFFLOAD_TIMING=1` requires `TF_FLASHNEXT_EXL3_LAYER_TELEMETRY=1`. Without it, requests fail with `OffloadTimingNeedsLayerTelemetry`.
+
+Timing markers are event records on the device planner's streams. `CU_EVENT_RECORD_EXTERNAL` is accepted by the driver only while a stream is capturing, so eager rounds use plain event records and graph captures use external record nodes that every replay records again.
+
+A draft-chain capture holds conditional step bodies that re-run the MTP head's pool layer. One graph cannot hold the same event's external record more than once, so instantiation failed with `CUDA_ERROR_INVALID_VALUE` and every chain ran eagerly. The chain capture now pauses layer markers. Captured chain replays therefore give the head (MTP) pool no timing samples; decoder-layer samples come from decode and verify rounds, and eager chain rounds still record.
+
+Timing runs are instrumented (extra events, per-round synchronization at sample points). Report them as instrumented, not as serving speed.
+
+## Benchmark layout for the 16k/1k workload
+
+TP1 c=1 (docs prompt, code prompt) and c=4; TP2 c=1 (docs prompt, code prompt) and c=4, with MTP drafts and graphs on. Use distinct exact-16,384-token raw token-array prompts, 1,024 output tokens, `--skip-warmup` and prefix cache off. Request i of a level sends prompt i mod 8. A separate reference pass records solo-drafted and plain (`--no-drafts`) full-output hashes per prompt; concurrent outputs must equal them, and TP2 outputs must equal TP1.
