@@ -10,47 +10,8 @@ const mtp = @import("cuda_mtp.zig");
 const telemetry = @import("cuda_prompt_telemetry.zig");
 const kvl = @import("cuda_kv_lanes.zig");
 
-pub const Identity = extern struct {
-    config: [32]u8,
-    index: [32]u8,
-    program: [32]u8,
-    checkpoint: [32]u8,
-    context: u64,
-    chunk: u64,
-    decode_graph: u64 = 0,
-    mtp: u64 = 0,
-    head_sharded: u64 = 0,
-    image_tokens: u64 = 0,
-    max_images: u64 = 0,
-    /// Positions a page of the core KV pool holds on this rank (0: no pool), and whether every stream is on pages.
-    kv_pages: u64 = 0,
-    kv_pages_all: u64 = 0,
-};
-
-fn fileHash(a: std.mem.Allocator, io: std.Io, path: []const u8) ![32]u8 {
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(1 << 28));
-    defer a.free(bytes);
-    var out: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(bytes, &out, .{});
-    return out;
-}
-
-/// The checkpoint's bytes as both ranks see them: TENSORFOLD_CHECKPOINT_SHA256 when set, else the cached full digest.
-pub fn identity(a: std.mem.Allocator, io: std.Io, dir: []const u8, context: usize, chunk: usize) !Identity {
-    var checkpoint: [32]u8 = undefined;
-    if (std.c.getenv("TENSORFOLD_CHECKPOINT_SHA256")) |given| {
-        const digest = std.mem.span(given);
-        if (digest.len != 64) return error.NoCheckpointIdentity;
-        _ = std.fmt.hexToBytes(&checkpoint, digest) catch return error.NoCheckpointIdentity;
-    } else checkpoint = try @import("core").checkpoint_identity.fullIdentity(a, io, dir);
-    const config = try std.fs.path.join(a, &.{ dir, "config.json" });
-    defer a.free(config);
-    const index = try std.fs.path.join(a, &.{ dir, "model.safetensors.index.json" });
-    defer a.free(index);
-    const program = try std.process.executablePathAlloc(io, a);
-    defer a.free(program);
-    return .{ .config = try fileHash(a, io, config), .index = try fileHash(a, io, index), .program = try fileHash(a, io, program), .checkpoint = checkpoint, .context = context, .chunk = chunk, .decode_graph = @intFromBool(@import("cuda_round_graph.zig").enabled()), .head_sharded = @intFromBool(try @import("cuda_head.zig").enabled()), .kv_pages = try kvl.paging(), .kv_pages_all = @intFromBool(kvl.pagedOnly()) };
-}
+pub const Identity = @import("cuda_rank_identity.zig").Identity;
+pub const identity = @import("cuda_rank_identity.zig").identity;
 
 /// How long a rank waits for its peer: a minute with a given digest, 30 when the peer may be hashing every byte.
 pub fn linkWait() u64 {
@@ -74,6 +35,7 @@ pub const Session = struct {
     drafting: bool = false,
     stopped: bool = false,
     available: std.atomic.Value(bool) = .init(true),
+    reply: u64 = 0, // the `arg` of the ack a follower sends next: a resize's census
 
     /// `wait_ms` bounds the link and the hello: the peer may still be reading every byte for its digest (`linkWait`).
     pub fn init(a: std.mem.Allocator, io: std.Io, host: []const u8, port: u16, rank: usize, mine: Identity, wait_ms: u64) !*Session {
@@ -172,10 +134,26 @@ pub const Session = struct {
 
     pub fn ack(s: *Session, sent: wire.Header) !void {
         errdefer s.poison();
+        _ = try s.ackReply(sent);
+    }
+
+    /// The peer's ack of `sent` and its `arg` (0 but for a resize's census).
+    fn ackReply(s: *Session, sent: wire.Header) !u64 {
         const h = try s.link.receiveHeader(wire.deadline(30_000));
-        if (h.kind != .ack or h.sequence != sent.sequence or h.object != sent.object or h.bytes != 0 or h.arg != 0) return error.BadRankFrame;
+        if (h.kind != .ack or h.sequence != sent.sequence or h.object != sent.object or h.bytes != 0 or (h.arg != 0 and sent.kind != .resize)) return error.BadRankFrame;
         if (h.flags == 1) return error.OutOfDeviceMemory;
         if (h.flags != 0) return error.RemoteRank;
+        return h.arg;
+    }
+
+    /// Both ranks' K/V pools at `target` mapped pages, every stream of both quiescent; a split poisons (resizeMapped).
+    pub fn resizeKv(s: *Session, target: usize) !void {
+        const pool = s.pool orelse return error.BadRankFrame;
+        try pool.resizeMapped(target); // refused here: the peer has heard nothing
+        const h = try s.command(.{ .kind = .resize, .arg = target }, &.{});
+        errdefer s.poison();
+        const theirs = try s.ackReply(h);
+        if (theirs != pool.tally()) return error.RemoteRank; // one rank mapped what the other did not
     }
 
     /// A stream's caches given back: a pool lane's to the pool, else freed (a window's swapped-in states first).
@@ -334,7 +312,8 @@ pub const Session = struct {
                 s.link.sendHeader(.{ .kind = .ack, .sequence = h.sequence, .object = h.object, .flags = 2 }, wire.deadline(30_000)) catch {};
                 return err;
             };
-            try s.link.sendHeader(.{ .kind = .ack, .sequence = h.sequence, .object = h.object }, wire.deadline(30_000));
+            try s.link.sendHeader(.{ .kind = .ack, .sequence = h.sequence, .object = h.object, .arg = s.reply }, wire.deadline(30_000));
+            s.reply = 0;
             if (stop) {
                 s.stopped = true;
                 s.available.store(false, .release);
@@ -434,6 +413,11 @@ pub const Session = struct {
                 const entry = s.saved.fetchRemove(h.object) orelse return error.UnknownRankSnapshot;
                 snaps.drop(s.gpa, s.engine.stream.*, entry.value);
             },
+            .resize => {
+                const pool = s.pool orelse return error.BadRankFrame;
+                try pool.resizeMapped(@intCast(h.arg));
+                s.reply = pool.tally();
+            },
             .stop => return true,
             else => return error.BadRankFrame,
         }
@@ -476,6 +460,7 @@ pub fn shape(h: wire.Header) !void {
         .round => if (h.object != 0 or h.arg != 0 or h.flags != 0 or h.bytes == 0 or h.bytes % 12 != 0 or h.bytes / 12 > 32) return error.BadRankFrame,
         .save, .restore => if (h.object == 0 or h.arg == 0 or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
         .drop_seq, .drop_snap => if (h.object == 0 or h.arg != 0 or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
+        .resize => if (h.object != 0 or h.arg > std.math.maxInt(u32) or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
         .stop => if (h.object != 0 or h.arg != 0 or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
         else => return error.BadRankFrame,
     }
@@ -510,6 +495,9 @@ test "rank identity binds checkpoint, config, index, program and execution setti
     other = base;
     other.kv_pages_all = 1;
     try std.testing.expect(!sameIdentity(base, other));
+    other = base;
+    other.kv_elastic = 1;
+    try std.testing.expect(!sameIdentity(base, other));
 }
 
 test "rank operations refuse invalid geometry and unsupported hooks before execution" {
@@ -520,6 +508,8 @@ test "rank operations refuse invalid geometry and unsupported hooks before execu
     try shape(.{ .kind = .round, .bytes = 24 });
     try shape(.{ .kind = .verify, .object = 1, .bytes = mtp.max_rows * 4 });
     try shape(.{ .kind = .keep, .object = 1, .arg = mtp.max_rows });
+    try shape(.{ .kind = .resize, .arg = 4096 }); // a K/V pool's mapped pages
+    for ([_]wire.Header{ .{ .kind = .resize, .object = 1 }, .{ .kind = .resize, .bytes = 4 }, .{ .kind = .resize, .flags = 1 }, .{ .kind = .resize, .arg = 1 << 32 } }) |bad| try std.testing.expectError(error.BadRankFrame, shape(bad));
     for ([_]wire.Header{
         .{ .kind = .verify, .object = 1, .bytes = (mtp.max_rows + 1) * 4 },
         .{ .kind = .verify, .object = 1, .bytes = 3 },

@@ -28,6 +28,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Dory on CUDA takes its RoPE tables from core's exact helper, so they match transformers' words (they moved by up to 5 ulp) (#2035, part of #1852).
 
+- Flash Next on CUDA, opt-in: `TF_FLASHNEXT_KV_ELASTIC=1` (with `TF_FLASHNEXT_KV_PAGES`) keeps the K/V pages in one CUDA virtual range reserved at the pool's full size and maps its chunks on demand, so device memory can move between the K/V pages and something else while every base pointer and captured graph stays valid; `TF_FLASHNEXT_KV_ELASTIC_MIN_PAGES` sets the fewest pages kept mapped. A resize is refused while a page past the target is held, a map, fill or unmap that fails leaves the mapping as it was, and with two ranks both apply it or neither. Nothing calls a resize yet, a host tier (`TF_FLASHNEXT_KV_HOST`) is refused, and unset, nothing changes.
+
 ## 1.2.2
 
 - CUDA lanes: Gemma 4, MiniMax M3, Kolibri-1, Spark 2.5 and Dory can verify root and context copies as Nemotron does, opt-in: set `TF_GEMMA4_COPIES`, `TF_MINIMAX_COPIES`, `TF_KOLIBRI_COPIES`, `TF_SPARK_COPIES` or `TF_DORY_COPIES` to 1. Replies equal `"draft": false`, and unset is the old policy (#2022, part of #1910).
@@ -1176,7 +1178,6 @@ These changes are not shipped in 1.1.0 and remain conditional on their final gat
 - GLM CUDA fresh-prompt batching, prompt scoring, structured output and required/named tool-call follow-ups (#1014, #1016, #1017, #1018). Thanks to @BobClawblaw and @Bizuayeu.
 
 MiMo-V2.6-Flash (#728) is held for a later 1.1.x, outside the current 1.1.1 series: its eight native CUDA launches, then its model and device gates, remain owed, and its source in this release is not a shipped native backend. Thanks to @ajensenwaud and @jayleaton.
-
 Known issues:
 - GLM-5.3-Flash's ModelOpt NVFP4 checkpoint on two CUDA ranks was not run for this release: on two GB10s the weights leave no room for its streams beside the memory reserve. Code that path shares changed in this release (NVFP4 scale planes and their tensor-parallel slices, the copy-source owner, NCCL's allocations and the RoCE cap on the ranks), so it stays a known issue until its regression run; the EXL3 checkpoint is the two-rank path measured for this release.
 - The reported M3 Ultra peak for Qwen3.8-27B on Metal is 4.1 GB higher than 1.0.12 because the second DeltaNet bank is allocated at startup; reducing that allocation remains follow-up work.

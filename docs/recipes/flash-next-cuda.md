@@ -186,6 +186,38 @@ Images, through the cuBLASLt tower, are not qualified that way yet. The glue ker
 the Python engine's do, with IEEE division and square root and a within-one-ulp exp; the router and the 4-bit
 hyper-connection dots run on mma tiles with K in ascending order.
 
+## Elastic K/V arena (opt-in, experimental)
+
+`TF_FLASHNEXT_KV_ELASTIC=1` (with `TF_FLASHNEXT_KV_PAGES`) keeps the pool's K/V pages in one virtual address range
+reserved at the pool's full size, with chunks of it mapped on demand, so device memory can move between the K/V pages and
+something else (the EXL3 expert lines) without a base pointer or a kernel argument moving: captured CUDA graphs stay
+valid. `TF_FLASHNEXT_KV_ELASTIC_MIN_PAGES=n` is the fewest pages kept mapped (default: a page and a run for every lane,
+and never fewer than one). Unset, the pool is the one cuMemAlloc arena as before.
+
+- Which planes: the plain pool's single plane, the K/V rows and the indexer rows of a page together, are elastic. The
+  arena's address, the index base and every lane's cache and table pointers equal the non-elastic layout's. A host tier
+  (`TF_FLASHNEXT_KV_HOST`) is refused with `BadFlashNextKvElastic`: its frames and its logical pages in host memory are not
+  mapped by page count.
+- Granularity: chunks are the driver's recommended granularity (never less than 2 MiB). `n` pages need the first
+  `ceil(n x page bytes / chunk)` chunks; a page is usable only if it lies wholly inside mapped bytes, and the pool
+  publishes exactly the requested pages, so a chunk's slack past them stays unused until the next grow. The pool starts
+  fully mapped, every chunk zero-filled as the one arena was.
+- `Pool.resizeMapped(pages)` is the one primitive, for a rank whose every stream is quiescent (no graph in flight; it
+  waits for the rank's stream first). Growing maps the chunks, zero-fills each and waits for the fills, then lets the pool
+  hand the pages out. Shrinking asks the pool first: it refuses with `Busy` unless every page from the target up is free
+  and the pages left still cover every promise, then unmaps the tail chunks. Lowest-first page allocation (on in this
+  mode only) empties the tail as streams end. A failed map or fill leaves the earlier pages and chunks as they were.
+- Two ranks: `Session.resizeKv(pages)` on the leader applies the target locally (a refusal sends nothing), commands the
+  peer (`resize`), and compares the peer's resulting mapped and free pages with its own; a split poisons the session. The
+  hello also compares the knob, since both ranks must resize alike. A caller that trades the memory for expert lines
+  runs the same resize at the same point on both ranks.
+- Memory: the mapped bytes count as device bytes where the arena did (`cuda.usage().device`, the allocation limit), and
+  `cuda.usage().mapped` shows how many of them are VMM chunks. The expert-lines startup ledger is made before the pool
+  exists, so it does not list them; the startup line `elastic K/V` names the range and the bytes mapped.
+- Needs CUDA virtual memory; where the driver lacks it startup fails with `FlashNextKvElasticUnavailable` rather than
+  falling back. A capacity control only: pages are zero-filled before they are used and addresses never change, but
+  nothing here has a GPU receipt yet.
+
 ## Checks
 
 - `tf-cuda-test flashnext-hc`, `flashnext-attn` and `route-rows`, and `norm-rows` for the shared rows: each kernel

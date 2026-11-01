@@ -5,14 +5,15 @@ const abi = @import("abi.zig");
 const Driver = @import("driver.zig").Driver;
 const Error = @import("driver.zig").Error;
 
-/// Bytes this process holds in DeviceBuffers and HostBuffers, and device/pinned peaks since the last reset.
-pub const Usage = struct { device: u64, host: u64, peak: u64, host_peak: u64 = 0, allocs: u64 = 0 };
+/// Bytes in DeviceBuffers and HostBuffers, peaks since the last reset; `mapped` (VMM, see mapHold) is part of `device`.
+pub const Usage = struct { device: u64, host: u64, peak: u64, host_peak: u64 = 0, allocs: u64 = 0, mapped: u64 = 0 };
 
 var device_bytes: std.atomic.Value(u64) = .init(0);
 var host_bytes: std.atomic.Value(u64) = .init(0);
 var host_peak_bytes: std.atomic.Value(u64) = .init(0);
 var peak_bytes: std.atomic.Value(u64) = .init(0);
 var driver_allocs: std.atomic.Value(u64) = .init(0); // live DeviceBuffers from cuMemAlloc itself, not from a hook
+var mapped_bytes: std.atomic.Value(u64) = .init(0); // device bytes held as mapped VMM chunks (a subset of device_bytes)
 var counts_mutex: std.atomic.Mutex = .unlocked;
 var allocation_limit: ?u64 = null;
 var reserved_bytes: u64 = 0;
@@ -34,6 +35,18 @@ fn reserveAllocation(n: usize) Error!void {
     const used = device_bytes.load(.monotonic) +| host_bytes.load(.monotonic) +| reserved_bytes;
     if (allocation_limit) |cap| if (n > cap -| used) return error.OutOfDeviceMemory;
     reserved_bytes = std.math.add(u64, reserved_bytes, n) catch return error.OutOfDeviceMemory;
+}
+
+/// `n` bytes of VMM chunks about to be mapped count as device bytes, the limit applying; `mapFree` gives them back.
+pub fn mapHold(n: usize) Error!void {
+    try reserveAllocation(n);
+    finishAllocation(&device_bytes, n);
+    _ = mapped_bytes.fetchAdd(n, .monotonic);
+}
+
+pub fn mapFree(n: usize) void {
+    freed(&device_bytes, n);
+    _ = mapped_bytes.fetchSub(n, .monotonic);
 }
 
 /// A failed driver call refunds its reservation without changing usage or the measured allocation peak.
@@ -76,7 +89,7 @@ fn sample(reset_peak: bool, hook: anytype, pre_reset: bool) Usage {
         peak_bytes.store(now, .monotonic);
         host_peak_bytes.store(host, .monotonic);
     }
-    return .{ .device = now, .host = host, .allocs = driver_allocs.load(.monotonic), .peak = if (pre_reset) peak else @max(now, peak_bytes.load(.monotonic)), .host_peak = if (pre_reset) host_peak else @max(host, host_peak_bytes.load(.monotonic)) };
+    return .{ .device = now, .host = host, .allocs = driver_allocs.load(.monotonic), .mapped = mapped_bytes.load(.monotonic), .peak = if (pre_reset) peak else @max(now, peak_bytes.load(.monotonic)), .host_peak = if (pre_reset) host_peak else @max(host, host_peak_bytes.load(.monotonic)) };
 }
 
 fn recordAllocation(counter: *std.atomic.Value(u64), n: usize) void {

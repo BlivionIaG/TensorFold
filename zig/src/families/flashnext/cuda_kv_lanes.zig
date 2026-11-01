@@ -9,6 +9,7 @@ const snap = @import("cuda_snap.zig");
 const wt = @import("cuda_prompt_wt.zig");
 const host_tier = @import("exl3/kv/cuda_exl3_kvhost.zig");
 const kvt = @import("exl3/kv/cuda_exl3_kvtier.zig");
+const kvel = @import("cuda_kv_elastic.zig");
 
 /// Rows past a request's prompt and reply its pages hold: one drafted window's.
 pub const window_rows: u32 = mtp.max_rows;
@@ -131,6 +132,9 @@ const Lane = struct {
     itable: cuda.DeviceBuffer = undefined, // on a host tier: the index plane's table, logical page ids
 };
 
+/// The elastic arena's state: its chunks, the fewest pages it keeps mapped, and the bytes a page strides in the arena.
+const Elastic = struct { span: kvel.Span, min_pages: usize, stride: usize };
+
 pub const Pool = struct {
     gpa: std.mem.Allocator,
     e: *prompt.Engine,
@@ -146,9 +150,15 @@ pub const Pool = struct {
     arena: cuda.DeviceBuffer,
     ibase: u64, // where the index plane starts in the arena: after `count` pages of the K/V plane
     lanes: []Lane,
+    elastic: ?Elastic = null, // the arena is one virtual range with chunks mapped on demand (kvel): a plain pool only
 
     /// `streams` lanes and `count` pages of layout `l`, made and touched now; a lane holds only its table idle.
     pub fn init(gpa: std.mem.Allocator, e: *prompt.Engine, l: kv.Layout, capacity: usize, head: ?Head, streams: usize, count: usize) !*Pool {
+        return initWith(gpa, e, l, capacity, head, streams, count, try kvel.fromEnv());
+    }
+
+    /// `init`, the elastic arena named (null: one cuMemAlloc arena, as always); an elastic one needs the plain pool.
+    pub fn initWith(gpa: std.mem.Allocator, e: *prompt.Engine, l: kv.Layout, capacity: usize, head: ?Head, streams: usize, count: usize, el: ?kvel.Elastic) !*Pool {
         if (!pages.valid(l.page_tokens) or capacity > prompt.max_tokens or count > @as(usize, std.math.maxInt(c_int)) + 1) return error.BadFlashNextKvPages;
         const page_bytes = try std.math.mul(usize, @intCast(l.token_bytes), l.page_tokens);
         if (page_bytes == 0) return error.BadFlashNextKvPages;
@@ -160,6 +170,7 @@ pub const Pool = struct {
         const ix_page = pages.indexPageBytes(l.page_tokens, layers);
         // a host tier: `logical` pages in host RAM, `frames` of them on the device at once; else every page is a frame
         const mib = try host_tier.hostMiB();
+        if (el != null and mib > 0) return error.BadFlashNextKvElastic; // a tier's frames and logical pages are not mapped by page count
         const slot_frames = if (mib > 0) try kvt.slotFrames() else 0;
         const per_stream = kvt.framesFor(l.runPages(), slot_frames);
         const mine_pages = if (mib > 0) mib * (1 << 20) / kv_page else count;
@@ -169,9 +180,19 @@ pub const Pool = struct {
         const logical = agreed.host_pages;
         const frames = agreed.frames;
         if (logical == 0 or frames == 0 or (mib > 0 and frames < per_stream)) return error.BadFlashNextKvHost;
-        var arena = try cuda.DeviceBuffer.alloc(e.driver, try std.math.add(usize, try std.math.mul(usize, frames, kv_page), try std.math.mul(usize, logical, ix_page)));
+        const stride = kv_page + ix_page;
+        const min_pages = if (el) |x| @max(1, x.min_pages orelse streams * (l.runPages() + 1)) else 0;
+        if (min_pages > count) return error.BadFlashNextKvElastic;
+        const arena_len = try std.math.add(usize, try std.math.mul(usize, frames, kv_page), try std.math.mul(usize, logical, ix_page));
+        const zero: kvel.Zero = .{ .d = e.driver, .stream = e.stream.* };
+        var span: ?kvel.Span = if (el) |x| try kvel.Span.open(gpa, e.driver, x.open, zero, arena_len) else null;
+        errdefer if (span) |*s| s.close();
+        if (span) |*s| try s.grow(s.chunksFor(arena_len)); // every page mapped and zeroed, as the one arena was
+        var arena: cuda.DeviceBuffer = if (span) |s| .{ .d = e.driver, .ptr = s.maps.base, .len = arena_len, .borrowed = true } else try cuda.DeviceBuffer.alloc(e.driver, arena_len);
         errdefer arena.free();
-        p.* = .{ .gpa = gpa, .e = e, .layout = l, .capacity = capacity, .head = head, .plain = undefined, .pool = undefined, .arena = arena, .ibase = arena.ptr + frames * kv_page, .lanes = &.{} };
+        const elastic: ?Elastic = if (span) |s| .{ .span = s, .min_pages = min_pages, .stride = stride } else null;
+        p.* = .{ .gpa = gpa, .e = e, .layout = l, .capacity = capacity, .head = head, .plain = undefined, .pool = undefined, .arena = arena, .ibase = arena.ptr + frames * kv_page, .lanes = &.{}, .elastic = elastic };
+        if (elastic) |x| if (!@import("builtin").is_test) std.log.info("flashnext: elastic K/V: {d} pages of {d} bytes in a {d} MiB virtual range, {d} MiB mapped in {d} KiB chunks, at least {d} pages", .{ count, stride, arena_len >> 20, x.span.mappedBytes() >> 20, x.span.maps.chunk >> 10, min_pages });
         p.planes = mib > 0;
         if (mib > 0) {
             p.host = try host_tier.Host.create(gpa, e.driver, logical, frames, kv_page);
@@ -180,7 +201,7 @@ pub const Pool = struct {
             std.log.info("flashnext: host tier: {d} logical pages ({d} MiB pinned), {d} frames on the device", .{ logical, logical * kv_page >> 20, frames });
             p.pool = &p.host.?.tier.pool;
         } else {
-            p.plain = try kv.Pool.init(gpa, count, page_bytes);
+            p.plain = try kv.Pool.initWith(gpa, count, page_bytes, .{ .lowest_first = span != null });
             p.pool = &p.plain;
         }
         errdefer if (p.host) |h| h.destroy(gpa) else p.plain.deinit();
@@ -201,7 +222,7 @@ pub const Pool = struct {
             }
         }
         errdefer cuda.completion.drain(e.driver, e.stream.*, "flashnext: failed pool initialization did not drain");
-        try arena.fill8(0, e.stream.handle);
+        if (span == null) try arena.fill8(0, e.stream.handle);
         for (p.lanes) |x| try x.seq.paged.?.table.fill8(0, e.stream.handle);
         if (p.host != null) for (p.lanes) |x| try x.itable.fill8(0, e.stream.handle);
         try e.stream.synchronize();
@@ -244,9 +265,46 @@ pub const Pool = struct {
         }
         p.gpa.free(p.lanes);
         p.arena.free();
+        if (p.elastic) |*x| x.span.close();
         if (p.kern) |*kn| kn.unload();
         if (p.host) |h| h.destroy(p.gpa) else p.plain.deinit();
         p.gpa.destroy(p);
+    }
+
+    /// Pages mapped now: the ones the pool may promise and hand out (all of them unless the arena is elastic).
+    pub fn mappedPages(p: *const Pool) usize {
+        return p.pool.total();
+    }
+
+    /// Device bytes the arena holds now: the mapped chunks whole when it is elastic, else all of it.
+    pub fn mappedBytes(p: *const Pool) usize {
+        return if (p.elastic) |x| x.span.mappedBytes() else p.arena.len;
+    }
+
+    /// The pages mapped and the pages free as one word, what two ranks compare after a resize.
+    pub fn tally(p: *const Pool) u64 {
+        const c = p.pool.census();
+        return (@as(u64, c.total) << 32) | c.free;
+    }
+
+    /// `target` pages mapped in place, ranks quiescent; Busy and a failed map, fill or unmap leave the mapping as is.
+    pub fn resizeMapped(p: *Pool, target: usize) !void {
+        const x = if (p.elastic) |*ex| ex else return error.BadFlashNextKvElastic;
+        const want = std.math.clamp(target, x.min_pages, p.plain.capacity());
+        const have = p.plain.total();
+        try p.e.stream.synchronize();
+        const chunks = x.span.chunksFor(want * x.stride);
+        if (want > have) {
+            try x.span.grow(chunks);
+            p.plain.grow(want);
+        } else if (want < have) {
+            const mapped = x.span.chunks;
+            try p.plain.shrink(want);
+            // the pages left idle, so the chunks that did unmap come back zeroed and the pages are published again
+            errdefer if (x.span.grow(mapped)) p.plain.grow(have) else |_| {};
+            return x.span.shrink(chunks);
+        }
+        try x.span.shrink(chunks); // also what an earlier unmap left behind
     }
 
     /// Whether a lane is free, the pool can promise a cache of `cap` rows and a run now, and a run is free.
@@ -485,4 +543,5 @@ test "exl3: host-tier admission follows frame reservations rather than logical c
 test {
     _ = @import("cuda_kv_init_test.zig");
     _ = @import("cuda_kv_lifetime_test.zig");
+    _ = @import("cuda_kv_elastic_test.zig");
 }
