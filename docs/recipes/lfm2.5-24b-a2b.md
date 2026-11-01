@@ -22,6 +22,10 @@ over every row (`lfm2_segments.metal`), from a table of each stream's cache addr
 one-stream windows keep the per-stream launches. A greedy row takes the GPU's pick of its logits (`lfm2_argmax`);
 sampled and masked rows draw on the host. The dense twin takes its MMA window only for matrices of 4,096 outputs or
 more (the short conv's input and the head); narrower ones keep the scalar passes.
+For sampled `top_k` from 1 through 128, a bounded stack selector orders finite BF16 words by value and token id,
+then uses the unchanged FP64 keyed sampler without heap allocations or a second candidate sort. Larger and
+unbounded cuts retain the general path. Verification uses the GPU's whole-row finite flag; a nonfinite value
+still errors even when a grammar mask hides it.
 
 `zig build test-lfm2` runs the family's tests. `tf-kernel-contract --only lfm2` checks the shared-round kernels and
 the pick, and `tf-lfm2-exact` compares windows and shared rounds with one-row decode on the real weights.

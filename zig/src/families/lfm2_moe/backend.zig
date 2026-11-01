@@ -7,6 +7,7 @@ const c = @import("config.zig");
 const st = @import("state.zig");
 const fwd = @import("forward.zig");
 const snapshot = @import("snapshot.zig");
+const topk = @import("draw_topk.zig");
 const Model = @import("model.zig").Model;
 const be = lanes.backend;
 
@@ -374,13 +375,7 @@ pub const Metal = struct {
             if (o.sampled.len != w.rows() or o.drafts.len != w.rows() - 1) return error.InvalidLfmOutputs;
             for (o.sampled, w.positions, 0..) |*t, p, r| {
                 const mask = if (w.masks.len > 0) w.masks[r * mask_words ..][0..mask_words] else &.{};
-                // A greedy row takes the GPU's pick, the host's draw on the same logits; a nonfinite row errors there.
-                const greedy = if (w.stream.sampling) |s| s.temperature <= 0 else true;
-                if (greedy and mask.len == 0 and best[2 * (base + r) + 1] == 0) {
-                    t.* = best[2 * (base + r)];
-                    continue;
-                }
-                t.* = try draw(self.gpa, logits[(base + r) * c.vocab ..][0..c.vocab], w.stream.sampling, p, mask);
+                t.* = try drawRow(self.gpa, logits[(base + r) * c.vocab ..][0..c.vocab], w.stream.sampling, p, mask, best[2 * (base + r) ..][0..2].*);
             }
             @memcpy(o.drafts, self.scratch.ids.slice(u32, base + w.rows())[base + 1 ..][0 .. w.rows() - 1]);
             base += w.rows();
@@ -433,8 +428,19 @@ pub fn value(word: u16) f64 {
     return @as(f32, @bitCast(@as(u32, word) << 16));
 }
 
+/// The GPU has checked every logit; its flag is authoritative even when a mask hides the bad token.
+inline fn drawRow(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.Sampling, position: u64, mask: []const u32, picked: [2]u32) !u32 {
+    if (picked[1] != 0) return error.NonfiniteLfmLogits;
+    if (mask.len > 0) return draw(gpa, logits, settings, position, mask);
+    const sampling = settings orelse return picked[0];
+    if (sampling.temperature <= 0) return picked[0];
+    if (try topk.draw(logits, sampling, position, mask)) |token| return token;
+    return sampleFinite(gpa, logits, sampling, position, mask, logits.len);
+}
+
 /// The unchanged top-k candidates for the shared fp64 keyed sampler; a `mask` keeps its allowed ones (-inf's draw).
 pub fn draw(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.Sampling, position: u64, mask: []const u32) !u32 {
+    if (settings) |s| if (try topk.draw(logits, s, position, mask)) |token| return token;
     var best: ?usize = null;
     var allowed: usize = 0;
     for (logits, 0..) |word, id| {
@@ -447,6 +453,11 @@ pub fn draw(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.Sampli
     if (best == null) return error.NoAllowedLfmToken;
     const sampling = settings orelse return @intCast(best.?);
     if (sampling.temperature <= 0) return @intCast(best.?);
+    return sampleFinite(gpa, logits, sampling, position, mask, allowed);
+}
+
+/// Finite logits and a nonempty allowed set; both checked by `draw` or the GPU row's pick.
+fn sampleFinite(gpa: std.mem.Allocator, logits: []const u16, sampling: lanes.Sampling, position: u64, mask: []const u32, allowed: usize) !u32 {
     const k = if (sampling.top_k == 0) allowed else @min(allowed, sampling.top_k);
     const values = try gpa.alloc(f64, k);
     defer gpa.free(values);
@@ -517,11 +528,11 @@ test "candidate selection preserves full-vocabulary keyed draws and tie order" {
         v.* = value(w.*);
         id.* = i;
     }
-    for ([_]u32{ 0, 1, 20, 257, c.vocab }) |k| {
+    for ([_]u32{ 0, 1, 20, 128, 257, c.vocab }) |k| {
         for ([_]u64{ 0, 128, 65536 }) |position| {
             const s: lanes.Sampling = .{ .seed = 1234, .top_k = k, .temperature = 0.7, .top_p = 0.95, .min_p = 0.1 };
             const want = try lanes.sampling.choose(gpa, values, ids, position, s);
-            try std.testing.expectEqual(want, try draw(gpa, words, s, position, &.{}));
+            try std.testing.expectEqual(want, try drawRow(gpa, words, s, position, &.{}, .{ 0, 0 }));
         }
     }
     try std.testing.expectEqual(try draw(gpa, words, null, 0, &.{}), try draw(gpa, words, .{ .seed = 7, .temperature = 0 }, 99, &.{}));
