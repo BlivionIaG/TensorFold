@@ -81,8 +81,8 @@ pub fn absorb(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
         if (it.start + f.rows + d.config.block > l.cap) return error.DraftContextGap;
         _ = try owned(l, f, it.start, width);
     }
-    const pool = mtl.objc.Pool.push();
-    defer pool.pop();
+    var pool: ?mtl.objc.Pool = null;
+    defer if (pool) |p| p.pop();
     var run: ?@TypeOf(block.begin(d)) = null;
     errdefer if (run) |r| r.e.end(); // an encoding error closes the open encoder
     var pieces: [32]block.Piece = undefined;
@@ -103,7 +103,10 @@ pub fn absorb(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
             l.staged += f.rows;
             continue;
         }
-        if (run == null) run = block.begin(d);
+        if (run == null) {
+            pool = mtl.objc.Pool.push();
+            run = block.begin(d);
+        }
         const e = run.?.e;
         if (ds.Drafter.stagedPiece(l)) |pc| {
             if (count == pieces.len or rows + pc.rows > ds.absorb_rows) {

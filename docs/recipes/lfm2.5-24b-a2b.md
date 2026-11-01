@@ -166,6 +166,9 @@ contains only its row-address table: 16 KiB at 2048 rows, without a second 40 Mi
 The prompt's last row remains in the lane across unrelated forwards, avoiding a copied 20 KiB anchor per stream.
 A declined final snapshot leaves that anchor in place; a valid prefix snapshot still materializes its context.
 Generic diagnostic capture retains its raw scratch storage.
+Metadata-only absorb keeps every context update without creating an autorelease pool; encoding paths retain
+their pool through command completion and error cleanup. Shared scheduling avoids constructing an unused
+second set of stream descriptors. These host-work reductions do not establish throughput qualification.
 
 Shared verification past the 16-row qualified window uses measured increments
 from the shared forward path through 32 rows, anchored at the 16-row window
