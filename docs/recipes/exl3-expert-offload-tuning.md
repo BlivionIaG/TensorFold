@@ -32,6 +32,16 @@ No additional speculative prefetch is enabled. Existing byte-budget and reader-r
 
 The acceptance workload is exactly 16,384 admitted input tokens and 1,024 complete output tokens at concurrency 1 and 4. Compare code and prose with the same parallel capacity, context, draft mode, pool bytes and cache state. Use distinct token-array prompts for the mixed-expert concurrency-4 load. Verify observed token usage and zero cached tokens; do not infer length from a text estimate or silently queue through a smaller parallel cap. Record TTFT, prefill/decode throughput, aggregate throughput, mean/p95 ITL, full output hashes, observed device/pinned allocations and device-wide PCIe samples. Keep counters, event diagnostics and uninstrumented performance in separate receipts. Reject a candidate that fails actual graph replay, solo/plain equality, TP equality, cancellation or restored-cache checks.
 
+## Fill-what-fits expert lines (opt-in)
+
+`TF_FLASHNEXT_EXPERT_LINES=fit` sizes every layer's expert lines at load to the most this rank has room for, instead of a fixed count. `TF_FLASHNEXT_EXPERT_LINES_FLOOR=<n>` is the fewest lines a layer may get: an integer, at least the pool minimum (10, also the default); a rank whose fit is below it fails startup with `PoolTooSmall` and a log line naming the floor and the fit. A floor without `fit`, a floor below 10 and a value that is neither `fit` nor an integer are refused at load.
+
+- Opt-in and unset by default. With `TF_FLASHNEXT_EXPERT_LINES` unset the sizing is unchanged (it already takes what fits, with the pool minimum as its floor); an explicit count keeps its meaning, including a rank taking more than the asked count at world 2.
+- The fit uses the same ledger as an unset count: free device bytes after the reserve (`TF_FLASHNEXT_EXPERT_RESERVE_MB` if set), the stream caches, retained graphs, the planner state and the two-chunk prefill window. The floor also sets the pool bytes the prefill window must leave room for. There is no upper bound beyond the free memory.
+- At TP2 each rank fits its own free memory, so the two ranks may hold different line counts. That is already the case for an unset count and for a count raised by a rank with room, and nothing exchanges line counts between ranks. Each rank logs `expert lines mode=fit floor=… fit=… lines=…` with its rank.
+- Combinations: `TF_FLASHNEXT_EXL3_LINE_DELTAS*` and `TF_FLASHNEXT_EXL3_PROFILE_SIZING=1` redistribute the fit count exactly as they redistribute an unset count; `TF_FLASHNEXT_EXL3_UNIFORM_LINES=1` only applies to an explicit count and does nothing here.
+- This is a capacity control, not a speed recommendation. Residency never changes output bytes, but a candidate still needs a GPU exactness receipt (solo/plain/TP equality at the fitted line counts) before it is used, and any speed claim needs the uninstrumented ABAB comparison above.
+
 ## Timing requirements and graph capture
 
 `TF_FLASHNEXT_EXL3_OFFLOAD_TIMING=1` requires `TF_FLASHNEXT_EXL3_LAYER_TELEMETRY=1`. Without it, requests fail with `OffloadTimingNeedsLayerTelemetry`.

@@ -58,6 +58,69 @@ test "exl3: a rank with room beyond the asked lines takes them, the binding rank
     try std.testing.expectEqual(@as(usize, 80), rankLines(80, 1, 90));
 }
 
+/// How a rank's expert lines are chosen.
+pub const LinesSetting = union(enum) {
+    /// Nothing set: what fits, at least the pool minimum.
+    auto,
+    /// TF_FLASHNEXT_EXPERT_LINES=<n>: the asked count (a rank with room may take more at world 2, see rankLines).
+    explicit: usize,
+    /// TF_FLASHNEXT_EXPERT_LINES=fit: opt-in, what fits, refused below this floor.
+    fit: usize,
+};
+
+/// EXPERT_LINES: a count or `fit`; EXPERT_LINES_FLOOR (only with `fit`): an integer >= `min_lines`.
+pub fn parseLines(text: ?[]const u8, floor_text: ?[]const u8, min_lines: usize) !LinesSetting {
+    const value = text orelse {
+        if (floor_text != null) return error.ExpertLinesFloorWithoutFit;
+        return .auto;
+    };
+    if (!std.mem.eql(u8, value, "fit")) {
+        if (floor_text != null) return error.ExpertLinesFloorWithoutFit;
+        return .{ .explicit = try std.fmt.parseInt(usize, value, 10) };
+    }
+    const floor = if (floor_text) |f| try std.fmt.parseInt(usize, f, 10) else min_lines;
+    if (floor < min_lines) return error.ExpertLinesFloorBelowMinimum;
+    return .{ .fit = floor };
+}
+
+/// The lines a rank takes in fit mode: every line that fits, or PoolTooSmall when that is below the floor.
+pub fn fitLines(fit: usize, floor: usize) error{PoolTooSmall}!usize {
+    if (fit < floor) return error.PoolTooSmall;
+    return fit;
+}
+
+test "exl3: unset lines stay automatic and an explicit count keeps its meaning" {
+    try std.testing.expectEqual(LinesSetting.auto, try parseLines(null, null, 10));
+    try std.testing.expectEqual(LinesSetting{ .explicit = 80 }, try parseLines("80", null, 10));
+    try std.testing.expectEqual(LinesSetting{ .explicit = 5 }, try parseLines("5", null, 10)); // refused later as PoolTooSmall, as before
+}
+
+test "exl3: fit mode takes the pool minimum as its default floor and a larger floor as given" {
+    try std.testing.expectEqual(LinesSetting{ .fit = 10 }, try parseLines("fit", null, 10));
+    try std.testing.expectEqual(LinesSetting{ .fit = 10 }, try parseLines("fit", "10", 10));
+    try std.testing.expectEqual(LinesSetting{ .fit = 64 }, try parseLines("fit", "64", 10));
+}
+
+test "exl3: lines settings that are not integers, floors below the minimum and conflicting combinations are refused" {
+    try std.testing.expectError(error.InvalidCharacter, parseLines("many", null, 10));
+    try std.testing.expectError(error.InvalidCharacter, parseLines("Fit", null, 10));
+    try std.testing.expectError(error.InvalidCharacter, parseLines("", null, 10));
+    try std.testing.expectError(error.InvalidCharacter, parseLines("fit", "ten", 10));
+    try std.testing.expectError(error.InvalidCharacter, parseLines("fit", "", 10));
+    try std.testing.expectError(error.InvalidCharacter, parseLines("fit", "12.5", 10));
+    try std.testing.expectError(error.ExpertLinesFloorBelowMinimum, parseLines("fit", "9", 10));
+    try std.testing.expectError(error.ExpertLinesFloorBelowMinimum, parseLines("fit", "0", 10));
+    try std.testing.expectError(error.ExpertLinesFloorWithoutFit, parseLines("80", "20", 10));
+    try std.testing.expectError(error.ExpertLinesFloorWithoutFit, parseLines(null, "20", 10));
+}
+
+test "exl3: fit mode takes every line that fits and refuses a rank below the floor" {
+    try std.testing.expectEqual(@as(usize, 66), try fitLines(66, 10));
+    try std.testing.expectEqual(@as(usize, 64), try fitLines(64, 64));
+    try std.testing.expectError(error.PoolTooSmall, fitLines(63, 64));
+    try std.testing.expectError(error.PoolTooSmall, fitLines(0, 10));
+}
+
 pub fn laneRoom(local: u64, graph_reservation: u64) u64 {
     return local -| graph_reservation;
 }
