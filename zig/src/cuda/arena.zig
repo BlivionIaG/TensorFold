@@ -267,21 +267,39 @@ pub const Vmm = struct {
     fn chunk(ctx: *anyopaque, len: usize) ?u64 {
         const v: *Vmm = @ptrCast(@alignCast(ctx));
         if (v.va + v.va_len - v.next < len) return v.fail("the reserved range", 0);
+        const at = v.next;
+        v.mapAt(at, len) catch return null;
+        v.next += len;
+        return at;
+    }
+
+    /// `len` bytes mapped at `at` in the reservation (both granular); none stay on failure; `next` is not moved.
+    pub fn mapAt(v: *Vmm, at: u64, len: usize) Error!void {
+        const room = at >= v.va and at - v.va <= v.va_len and len <= v.va_len - (at - v.va);
+        if (!room or len == 0 or at % v.granularity != 0 or len % v.granularity != 0) return v.failWith("the reserved range", 0);
         var h: u64 = 0;
         const rc = v.api.create(&h, len, &v.prop, 0);
-        if (rc != abi.success) return v.fail("cuMemCreate", rc);
+        if (rc != abi.success) return v.failWith("cuMemCreate", rc);
         defer _ = v.api.release(h); // the mapping holds the memory until it is unmapped
-        const at = v.next;
         const rm = v.api.map(at, len, 0, h, 0);
-        if (rm != abi.success) return v.fail("cuMemMap", rm);
+        if (rm != abi.success) return v.failWith("cuMemMap", rm);
         const desc: AccessDesc = .{ .loc_id = v.device };
         const ra = v.api.setAccess(at, len, &desc, 1);
         if (ra != abi.success) {
             _ = v.api.unmap(at, len);
-            return v.fail("cuMemSetAccess", ra);
+            return v.failWith("cuMemSetAccess", ra);
         }
-        v.next += len;
-        return at;
+    }
+
+    /// The memory mapped at [at, at + len) goes back to the driver; the virtual range stays reserved for `mapAt`.
+    pub fn unmapAt(v: *Vmm, at: u64, len: usize) Error!void {
+        const rc = v.api.unmap(at, len);
+        if (rc != abi.success) return v.failWith("cuMemUnmap", rc);
+    }
+
+    fn failWith(v: *Vmm, call: []const u8, code: c_int) error{CudaFailed} {
+        _ = v.fail(call, code);
+        return error.CudaFailed;
     }
 
     fn fail(v: *Vmm, call: []const u8, code: c_int) ?u64 {
@@ -456,6 +474,68 @@ test "arena: VMM keeps the first failed driver call and its code, later failures
     v.failed = null; // past the reserved range: no driver call at all
     try t.expectEqual(@as(?u64, null), be.chunk(be.ctx, 8 << 20));
     try t.expectEqualStrings("the reserved range", v.failed.?.call);
+}
+
+test "arena: VMM maps and unmaps chunks at fixed addresses inside the reservation and leaves the bump pointer alone" {
+    const t = std.testing;
+    const Api = struct {
+        var map_rc: abi.Result = abi.success;
+        var creates: u32 = 0;
+        var releases: u32 = 0;
+        var maps: [4]u64 = undefined;
+        var nmaps: usize = 0;
+        var unmaps: [4]u64 = undefined;
+        var nunmaps: usize = 0;
+        fn create(h: *u64, _: usize, _: *const Vmm.Prop, _: c_ulonglong) callconv(.c) abi.Result {
+            creates += 1;
+            h.* = 7;
+            return abi.success;
+        }
+        fn release(_: u64) callconv(.c) abi.Result {
+            releases += 1;
+            return abi.success;
+        }
+        fn map(at: u64, _: usize, _: usize, _: u64, _: c_ulonglong) callconv(.c) abi.Result {
+            if (map_rc != abi.success) return map_rc;
+            maps[nmaps] = at;
+            nmaps += 1;
+            return abi.success;
+        }
+        fn unmap(at: u64, _: usize) callconv(.c) abi.Result {
+            unmaps[nunmaps] = at;
+            nunmaps += 1;
+            return abi.success;
+        }
+        fn setAccess(_: u64, _: usize, _: *const Vmm.AccessDesc, _: usize) callconv(.c) abi.Result {
+            return abi.success;
+        }
+    };
+    var v: Vmm = .{ .lib = undefined, .device = 0, .prop = .{}, .granularity = 2 << 20, .va = 1 << 40, .va_len = 8 << 20, .next = 1 << 40, .api = undefined };
+    v.api.create = Api.create;
+    v.api.release = Api.release;
+    v.api.map = Api.map;
+    v.api.unmap = Api.unmap;
+    v.api.setAccess = Api.setAccess;
+    const g: u64 = 2 << 20;
+    try v.mapAt((1 << 40) + 3 * g, g); // the last chunk first: addresses do not depend on the order
+    try v.mapAt((1 << 40) + g, 2 * g);
+    try t.expectEqual(@as([2]u64, .{ (1 << 40) + 3 * g, (1 << 40) + g }), Api.maps[0..2].*);
+    try t.expectEqual(@as(u64, 1 << 40), v.next);
+    try t.expectEqual(Api.creates, Api.releases); // the mapping holds the memory, not the handle
+    try v.unmapAt((1 << 40) + g, 2 * g);
+    try t.expectEqual(@as(u64, (1 << 40) + g), Api.unmaps[0]);
+    const before = Api.creates;
+    for ([_][2]u64{ .{ (1 << 40) + 4 * g, g }, .{ (1 << 40) - g, g }, .{ (1 << 40) + 1, g }, .{ 1 << 40, g + 1 }, .{ 1 << 40, 0 } }) |bad| {
+        v.failed = null;
+        try t.expectError(error.CudaFailed, v.mapAt(bad[0], @intCast(bad[1])));
+        try t.expectEqualStrings("the reserved range", v.failed.?.call);
+    }
+    try t.expectEqual(before, Api.creates); // refused before any driver call
+    v.failed = null;
+    Api.map_rc = 2;
+    try t.expectError(error.CudaFailed, v.mapAt(1 << 40, g));
+    try t.expectEqualStrings("cuMemMap", v.failed.?.call);
+    try t.expectEqual(Api.creates, Api.releases); // the handle of the failed map went back
 }
 
 test "Failure boundaries: a free range survives failure inserting its live address" {
