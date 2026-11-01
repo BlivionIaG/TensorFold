@@ -160,8 +160,15 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
 pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, held: []const Held, wait: ?Wait) !void {
     if (tokens.len == 0 or tokens.len > s.rows or (record and tokens.len > st.batch_rows)) return error.LfmRowsExceeded;
     var total: usize = 0;
+    const table_only = if (s.taps) |taps| taps.table_at == 0 else false;
     for (segments) |seg| {
         if (seg.rows == 0 or seg.cache.len + seg.rows > seg.cache.capacity) return error.LfmContextFull;
+        // Table-only serving must not interpret its address table as captured feature storage.
+        if (table_only) switch (seg.tap) {
+            .scratch => return error.BadLfmTapDestination,
+            .stage => |p| if (p.buf.id == s.taps.?.buf.id) return error.BadLfmTapDestination,
+            .none => {},
+        };
         total += seg.rows;
     }
     if (total != tokens.len or (head == .all and total > st.batch_rows) or (!record and segments.len != 1)) return error.InvalidLfmSegments;

@@ -37,6 +37,7 @@ const lfm2_dspark = @import("metal_lfm2_dspark.zig");
 const lfm2_bf16 = @import("metal_lfm2_bf16.zig");
 const lfm2_attn = @import("metal_lfm2_attn.zig");
 const lfm2_conf = @import("metal_lfm2_confidence.zig");
+const lfm2_kv = @import("metal_lfm2_kv.zig");
 const g = contract.gates;
 const usage = "usage: tf-kernel-contract [--only TEXT] [--no-gates] [--no-limits] [--offline DIR] [--seed N] [--repro] [--rotary-long] [--rotary-accuracy FILE]";
 
@@ -236,6 +237,7 @@ pub fn main(init: std.process.Init) !u8 {
     var drafter_list: std.ArrayList(*lfm2_dspark.Probe) = .empty;
     var block_list: std.ArrayList(*lfm2_attn.Probe) = .empty;
     var bf16_list: std.ArrayList(*lfm2_bf16.Probe) = .empty;
+    var kv_list: std.ArrayList(*lfm2_kv.Probe) = .empty;
     defer {
         for (drafter_list.items) |p| {
             p.deinit();
@@ -249,9 +251,14 @@ pub fn main(init: std.process.Init) !u8 {
             p.deinit();
             a.destroy(p);
         }
+        for (kv_list.items) |p| {
+            p.deinit();
+            a.destroy(p);
+        }
         drafter_list.deinit(a);
         block_list.deinit(a);
         bf16_list.deinit(a);
+        kv_list.deinit(a);
     }
     for (std.enums.values(lfm2_controls.Mutation)) |m| {
         const drafter_which: ?lfm2_dspark.Which = switch (m) {
@@ -295,6 +302,14 @@ pub fn main(init: std.process.Init) !u8 {
             try block_list.append(a, p);
             try kernels.append(a, p.kernel());
         }
+    }
+    for ([_]lfm2_controls.Mutation{ .none, .context_kv_first_row, .context_kv_theta }) |m| {
+        if (!wanted(o, if (m == .none) lfm2_kv.name else m.name())) continue;
+        const p = try a.create(lfm2_kv.Probe);
+        errdefer a.destroy(p);
+        p.* = try lfm2_kv.Probe.init(a, device, queue, m);
+        try kv_list.append(a, p);
+        try kernels.append(a, p.kernel());
     }
     var conf_list: std.ArrayList(*lfm2_conf.Probe) = .empty;
     defer {

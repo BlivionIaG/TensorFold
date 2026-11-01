@@ -81,6 +81,32 @@ fn untouched(words: []const u16) bool {
     return true;
 }
 
+/// Table-only capture must reject raw/table destinations before encoding, and match generic capture.
+fn tableOnlyTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []const u32, record: bool, want: []const u16, x: []const u8, logits: []const u8) !void {
+    const original = scratch.taps.?;
+    defer scratch.taps = original;
+    var taps = original;
+    taps.table_at = 0;
+    taps.buf = try m.device.buffer(scratch.rows * @sizeOf(u64), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+    defer taps.buf.deinit();
+    scratch.taps = taps;
+    const width = taps.count * c.hidden * 2;
+    const stage = try m.device.buffer((ids.len + 2) * width, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+    defer stage.deinit();
+    @memset(stage.slice(u16, stage.length() / 2), 0x7fc0);
+    var cache = try st.Cache.init(gpa, m.device, &m.config.attention, ids.len + 16);
+    defer cache.deinit();
+    const spent = q.forward.gpu_seconds;
+    for ([_]q.forward.Tap{ .scratch, .{ .stage = .{ .buf = taps.buf, .off = 0 } } }) |tap| {
+        if (q.forward.run(m, scratch, &.{.{ .cache = &cache, .rows = ids.len, .tap = tap }}, ids, record, .last)) |_| return error.InvalidTapDestinationAccepted else |err| if (err != error.BadLfmTapDestination) return err;
+        if (cache.len != 0 or q.forward.gpu_seconds != spent or !untouched(stage.slice(u16, stage.length() / 2))) return error.InvalidTapDestinationEncoded;
+    }
+    try q.forward.run(m, scratch, &.{.{ .cache = &cache, .rows = ids.len, .tap = .{ .stage = .{ .buf = stage, .off = width } } }}, ids, record, .last);
+    if (!std.mem.eql(u16, want, stage.slice(u16, stage.length() / 2)[width / 2 ..][0..want.len])) return error.TableOnlyTapsDiffer;
+    if (!untouched(stage.slice(u16, width / 2)) or !untouched(stage.slice(u16, stage.length() / 2)[(ids.len + 1) * (width / 2) ..])) return error.TableOnlyTapGuardChanged;
+    if (!std.mem.eql(u8, x, scratch.x.contents()[0..x.len]) or !std.mem.eql(u8, logits, scratch.logits.contents()[0..logits.len])) return error.TableOnlyTargetOutputMismatch;
+}
+
 /// The forward capturing into a stage, into none, and beside a stream with none.
 fn stageTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []const u32, record: bool, taps: st.Taps, x: []const u8, logits: []const u8) !void {
     const n = ids.len;
@@ -106,6 +132,7 @@ fn stageTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []c
         }
         if (!std.mem.eql(u16, want, got[row_words..][0 .. n * row_words]) or !untouched(got[0..row_words]) or !untouched(got[(n + 1) * row_words ..])) return error.StagedTapsDiffer;
     }
+    try tableOnlyTaps(gpa, m, scratch, ids, record, want, x, logits);
     if (2 * n > st.batch_rows or 2 * n > scratch.rows) return;
     // two streams in one recorded call: the first captured into the stage, the second nowhere
     @memset(got, 0x7fc0);

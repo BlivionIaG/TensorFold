@@ -140,7 +140,9 @@ admits. At load the drafter logs its weights, scratch and a stream's bytes. `tf-
 allocations over twenty served drafter rounds, which must be none.
 Context absorption rotates only keys and stores values with the target's existing numerical helper; it does
 not compute unused query heads. This removes an 8 MiB write-only scratch buffer at the released geometry.
-The KV bytes, surrounding cache positions and later drafts remain unchanged; this is not a throughput claim.
+The KV bytes, surrounding cache positions and later drafts remain unchanged. Hold query projection and
+normalization/rotation reuse the padded query buffer, removing another 128 KiB without changing arithmetic.
+These are storage/work reductions, not a throughput claim.
 
 A hold runs on one concurrent encoder with a barrier only where a step reads an earlier step's writes: q, k and v,
 and gate and up, share one sums pass, and the blocks of a shared hold attend side by side. An 8-bit projection takes
@@ -159,6 +161,11 @@ Captured target residuals use the same canonical bf16 arithmetic as plain forwar
 store of those bits, including duplicate columns in the same dispatch. Small staged gathers copy on the GPU
 before projection. Stage overflow projects only the retained prefix before the next capture's anchor, so a
 reused anchor can replace its old row without losing contiguous context.
+Serving captures prompt, decode and verify rows directly into that lane storage. The shared capture buffer
+contains only its row-address table: 16 KiB at 2048 rows, without a second 40 MiB raw-tap allocation.
+The prompt's last row remains in the lane across unrelated forwards, avoiding a copied 20 KiB anchor per stream.
+A declined final snapshot leaves that anchor in place; a valid prefix snapshot still materializes its context.
+Generic diagnostic capture retains its raw scratch storage.
 
 Shared verification past the 16-row qualified window uses measured increments
 from the shared forward path through 32 rows, anchored at the 16-row window

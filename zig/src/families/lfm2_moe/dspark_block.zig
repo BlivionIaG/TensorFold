@@ -309,11 +309,11 @@ fn attendBlocks(x: Enc, layer: usize, blocks: []const Block, n: u32, rows: usize
     const s = &x.d.s;
     const ly = &x.d.w.layers[layer];
     // the three projections, every block's keys, then waves of as many blocks as the partials hold at once
-    try x.projectAll(&.{ ly.q, ly.k, ly.v }, .{ .buf = s.x }, &.{ .{ .buf = s.q }, .{ .buf = s.k }, .{ .buf = s.v } }, rows);
+    try x.projectAll(&.{ ly.q, ly.k, ly.v }, .{ .buf = s.x }, &.{ .{ .buf = s.queries }, .{ .buf = s.k }, .{ .buf = s.v } }, rows);
     x.sync();
     for (blocks, 0..) |b, bi| {
         const at = bi * n;
-        x.qk(.{ .buf = s.q, .off = at * c.hidden * 2 }, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, layer, b.lane, b.anchor, .{ .buf = s.queries, .off = at * c.hidden * 2 }, n);
+        x.qk(.{ .buf = s.queries, .off = at * c.hidden * 2 }, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, layer, b.lane, b.anchor, .{ .buf = s.queries, .off = at * c.hidden * 2 }, n);
     }
     x.sync();
     const each = if (blocks.len == 1) out else n;

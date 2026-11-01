@@ -56,10 +56,9 @@ pub const Scratch = struct {
     x: mtl.Buffer,
     r: mtl.Buffer,
     y: mtl.Buffer,
-    q: mtl.Buffer,
     k: mtl.Buffer,
     v: mtl.Buffer,
-    queries: mtl.Buffer,
+    queries: mtl.Buffer, // projected Q, then normalized and rotated in place; padded for attention tiles
     pm: mtl.Buffer,
     pl: mtl.Buffer,
     po: mtl.Buffer,
@@ -151,7 +150,6 @@ pub const Drafter = struct {
             .x = try d.buffer(r * c.hidden * 2),
             .r = try d.buffer(r * c.hidden * 2),
             .y = try d.buffer(r * c.hidden * 2),
-            .q = try d.buffer(r * c.hidden * 2),
             .k = try d.buffer(wide * kw * 2),
             .v = try d.buffer(wide * kw * 2),
             .queries = try d.buffer((r + st.attn_rows) * c.hidden * 2),
@@ -317,8 +315,9 @@ pub const Drafter = struct {
     pub fn keepLane(d: *Drafter, s: *Stream, snap: *snapshot.Snap) !void {
         const l = d.lanes.get(s) orelse return;
         try d.settle();
+        // A final anchor is not absorbed yet: declining must leave its stage slot intact.
+        if (l.end + l.staged != snap.at) return;
         try d.flush(l);
-        if (l.end != snap.at) return;
         const bytes = try d.gpa.alloc(u8, @intCast(d.keptBytes(snap.at)));
         copyLane(d, l, snap.at, bytes, true);
         snap.draft = bytes;
