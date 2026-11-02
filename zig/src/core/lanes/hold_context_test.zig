@@ -418,3 +418,81 @@ test "row allocation retains a profitable lower-debt peer before a costly higher
         try std.testing.expectEqualSlices(u32, if (reversed) &.{ 0, 1 } else &.{ 1, 0 }, got);
     };
 }
+
+test "a lone no-confidence head prices newly staged context and retains whole-round observations" {
+    var contexts = [_]price.ContextCost{.{ .streams = 1, .rows = 64, .ms = 1000 }};
+    var target: fake.Fake = .{ .gpa = gpa };
+    defer target.deinit();
+    var strict: dt.Strict = .{ .inner = target.backend() };
+    defer strict.deinit();
+    var staged: Staged = .{ .head = .{ .facts_ = .{
+        .depth = 1,
+        .step_ms = 0.5,
+        .prior = &.{1},
+        .chances = false,
+        .hold_costs = &holds,
+        .hold_context_costs = &contexts,
+    } } };
+    defer staged.head.deinit();
+    var wrapped = try Drafted.init(gpa, strict.backend(), staged.drafter());
+    defer wrapped.deinit();
+    var costs: [8]@import("config.zig").Cost = undefined;
+    for (&costs, 1..) |*c, width| c.* = .{ .width = @intCast(width), .ms = 10 };
+    var cfg = try Config.init(gpa, wrapped.facts(.{
+        .exact_width = 8,
+        .window_costs = &costs,
+        .hidden_rows = true,
+        .batch_rows = 8,
+        .lone_copies = false,
+    }), 8, 7);
+    defer cfg.deinit(gpa);
+    cfg.timed = false;
+    var clock: fake.FixedClock = .{};
+    var engine = Engine.init(gpa, &cfg, wrapped.backend(), clock.clock());
+    defer engine.deinit();
+    engine.rule.k.depth_probe_every = 4;
+    var s = try sm.Stream.init(gpa, .{ .id = "lone-context", .prompt = &.{ 2, 7, 13 }, .max_new = 32 });
+    defer s.deinit(gpa);
+    try engine.addStream(&s);
+    defer engine.release(&s);
+    const initial_holds = staged.head.holds;
+    for (0..3) |_| {
+        const before_cache = s.cache_len;
+        const before_live = staged.head.live_rows;
+        const before_debt = s.hold_context_rows;
+        try engine.step();
+        try std.testing.expectEqual(@as(u32, 0), s.next.?.count);
+        try std.testing.expectEqual(initial_holds, staged.head.holds);
+        try std.testing.expectEqual(before_debt + @as(u32, @intCast(s.cache_len - before_cache)), s.hold_context_rows);
+        try std.testing.expectEqual(s.cache_len - before_cache, staged.head.live_rows - before_live);
+        try std.testing.expectEqualSlices(u32, s.context.items[0..@intCast(s.cache_len)], staged.head.lanes.getPtr(&s).?.history.items);
+    }
+    // The original no-confidence plain-depth probe still runs on its fourth round.
+    try engine.step();
+    try std.testing.expectEqual(@as(u32, 1), s.next.?.count);
+    try std.testing.expectEqual(initial_holds + 1, staged.head.holds);
+    try std.testing.expectEqual(@as(u32, 0), s.hold_context_rows);
+    const projected_end = s.cache_len;
+    try engine.step();
+    try std.testing.expectEqual(@as(u32, 0), s.next.?.count);
+    try std.testing.expectEqual(@as(u32, @intCast(s.cache_len - projected_end)), s.hold_context_rows);
+    try std.testing.expect(s.accepted > 0);
+    contexts[0].ms = 1;
+    try engine.step();
+    try std.testing.expectEqual(@as(u32, 1), s.next.?.count);
+    try std.testing.expectEqual(@as(u32, 0), s.hold_context_rows);
+    // Observed whole rounds already include context; an expensive quote must not be added again.
+    contexts[0].ms = 1000;
+    try engine.rule.observeCost(0, 10, false, win.who(&s));
+    try engine.rule.observeCost(1, 11, false, win.who(&s));
+    try engine.step();
+    try std.testing.expectEqual(@as(u32, 1), s.next.?.count);
+    try std.testing.expectEqual(@as(u32, 0), s.hold_context_rows);
+    var history: std.ArrayList(u32) = .empty;
+    defer history.deinit(gpa);
+    try history.appendSlice(gpa, s.prompt());
+    for (s.emitted(), 0..) |token, i| {
+        try std.testing.expectEqual(fake.next(history.items, null, s.prompt_len + i), token);
+        try history.append(gpa, token);
+    }
+}

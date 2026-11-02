@@ -151,6 +151,14 @@ Context-aware recovery prices the actual selected trial group's debt once while 
 optimism over allowed deeper clean shapes. An expensive due peer cannot veto a funded cheaper prefix.
 Zero-context and opt-out backends retain their original recovery semantics.
 
+The no-confidence depth fallback stages newly committed context before choosing a lone head depth.
+An unobserved positive-depth round includes its context quote once; an observed whole-round cost is
+already inclusive and is returned unchanged. Recorder and CUDA-bound adapters retain the optional
+preparation hook and the timing observer's own context.
+
+The working [causal diagnosis](../receipts/lfm2-dspark-review/diagnosis.md) separates incremental
+neural usefulness over copies, target M5 dispatch eligibility and unproven MLX-LM differences.
+
 Observed fixed overhead excludes encoding in its launch interval and GPU work in its settlement interval, each
 once. Pending CPU metadata remains only for later repricing, not a second charge at settlement. Accountable
 startup or out-of-round work is discarded before the clock starts. Actual timing does not also lose modeled
