@@ -187,10 +187,11 @@ const Enc = struct {
         const d = x.d;
         const s = &d.s;
         const width = d.tapBytes();
-        // A scalar context piece must not become an MMA window just because another lane joins it.
+        // Grouping must keep each piece in its original projection regime.
         const scalar = d.w.fc == .codes and d.target.kernels.twin and d.target.kernels.naxPipes(d.w.fc.codes.bits) == null;
-        const cap = if (scalar) scalar_rows else @min(x.bf16_rows_max, tile.twin_rows);
+        const row_cap = if (scalar) scalar_rows else @min(x.bf16_rows_max, tile.twin_rows);
         const is_bf16 = d.w.fc == .bf16;
+        const cap = if (is_bf16 and d.target.kernels.bf16_nax != null) @min(row_cap, bf16.tensorRows(c.hidden) - 1) else row_cap;
         var rows: usize = 0;
         var at: usize = 0;
         while (at < pieces.len) {

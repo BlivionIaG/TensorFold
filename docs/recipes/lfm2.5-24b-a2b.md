@@ -203,8 +203,9 @@ BF16 projections use M5 GPU tensor instructions from 8 physical rows for wide ma
 matrices no wider than the hidden state. This is GPU acceleration, not Apple Neural Engine execution.
 Without that pipeline, held blocks retain the original row kernel through 16 rows and context ingestion
 through 32, followed by 64x64 tiles. A hold gathers adjacent small staged pieces into preallocated scratch:
-at most 128 rows per hold and 32 per call, or 8 per call
-on the coded scalar twin without tensor units. This preserves each piece's projection regime; lone, larger or
+at most 128 rows per hold and 32 per call, or 8 per call on the coded scalar twin without tensor units.
+With the BF16 tensor pipeline, context-FC gathers stay below its tensor threshold; tensor-sized pieces
+retain separate calls. This keeps each piece's projection arithmetic unchanged. Lone, larger or
 out-of-room pieces use their original calls. A lane retains every verified raw tap in its own buffer before
 the target overwrites its taps. At most 2048 rows, clipped to the lane's capacity, wait for that lane's next
 hold, snapshot or overflow; an unrelated lane's absorb no longer flushes them. A later hold projects the
