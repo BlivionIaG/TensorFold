@@ -4,6 +4,18 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- LFM3's backends share one copy of the RoPE frequencies and the layer schedule, so every backend reads the same numbers, bit for bit as torch's (#1839). Thanks to @jschmied.
+
+- The CUDA kernel contract's NVFP4 expert-waves control goes red as planted on large GPUs such as the RTX 5090, where its test shape used to fit in one wave (#1832, fixes #1778). Thanks to @rootsbymenda.
+
+- The server's linear-time tests count thread cycles on Windows, so a busy CI runner no longer fails them by chance (#1854). Thanks to @Bizuayeu.
+
+- Nemotron on Intel GPUs refuses a config with an unknown `layers_block_type` name at load, instead of serving that layer as attention (#1865). Thanks to @jschmied.
+
+- GLM-5.3-Flash on CUDA refuses `TF_GLM_CHUNK_SOLO=4096` beside `--drafter` at load with a clear error, instead of holding 1.6 to 1.9 GiB of prompt buffers that no pass uses (#1842). Thanks to @Bizuayeu.
+
+- The Intel GPU host tests build again: `zig build test-slide-xpu-host` no longer stops with a missing kernel image (#1840). Thanks to @jschmied.
+
 - LFM2 DSpark holds gather adjacent small context pieces in preallocated scratch. Target normalization carries raw BF16 residuals in captured tap columns instead of storing them twice. Bounded, admission-priced lane storage retains verified taps until a hold, snapshot or overflow needs their projections, preserving context across zero-grant rounds and target-tap overwrites.
 
 - `tools/bench_lfm2_dspark.py` records the complete same-head no-drafter/BF16/8-bit qualification matrix, checks token equality across solo, draft-disabled and concurrent runs, and fails every cell below its plain baseline. Reduced runs are explicitly smoke evidence, not qualification.
