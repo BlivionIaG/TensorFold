@@ -172,8 +172,11 @@ admits. At load the drafter logs its weights, scratch and a stream's bytes. `tf-
 allocations over twenty served drafter rounds, which must be none.
 Context absorption rotates only keys and stores values with the target's existing numerical helper; it does
 not compute unused query heads. This removes an 8 MiB write-only scratch buffer at the released geometry.
-The KV bytes, surrounding cache positions and later drafts remain unchanged. Hold query projection and
-normalization/rotation reuse the padded query buffer, removing another 128 KiB without changing arithmetic.
+The KV bytes, surrounding cache positions and later drafts remain unchanged. Target and drafter project
+queries into `queries`, then normalize and rotate into the existing `x` buffer after its projection consumers
+finish. Attention reads `x`; its padding moves with that role. The Metal input/output arguments stay disjoint,
+without another buffer. Target scratch no longer retains unused Q or sort-order backing. BF16 drafter sums
+retain only the quantized target-head requirement; coded drafters retain their original larger capacity.
 These are storage/work reductions, not a throughput claim.
 
 A hold runs on one concurrent encoder with a barrier only where a step reads an earlier step's writes: q, k and v,
