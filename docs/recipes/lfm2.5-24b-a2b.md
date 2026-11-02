@@ -77,7 +77,8 @@ The drafter runs the released bf16 matrices as they are (`--drafter-bits 0`, the
 quantizes them at load to 8-bit MLX affine codes in groups of 64: about 361 MiB of weights
 against 625 MiB. Weight storage does not guarantee serving throughput; the server logs the mode, and 4 bits is refused.
 Both run on the family's kernels
-(bf16 on `lfm2_bf16_rows`, `lfm2_bf16_mma` and `lfm2_markov_scan_bf16`, 8-bit on `core/tile_qmm`); the q and k rows are reordered so that the target's half-split RoPE kernel gives the
+(bf16 on `lfm2_bf16_rows`, `lfm2_bf16_mma`, the M5 GPU tensor path and `lfm2_markov_scan_bf16`,
+8-bit on `core/tile_qmm`); the q and k rows are reordered so that the target's half-split RoPE kernel gives the
 checkpoint's interleaved RoPE. Its own kernels are `lfm2_tap`, `lfm2_attn_block` and `lfm2_attn_block_merge`
 (non-causal block attention, the target's attention kernels with a template flag), `lfm2_markov_scan` and
 `lfm2_markov_pick` (a Markov step) and `lfm2_draft_ids` (a hold's drafts into the next verify's rows on the GPU, so
@@ -111,9 +112,10 @@ each stream gets its own verify length, and the next hold drafts as deep as the 
 running on the GPU is priced by its lane's last confidences, so the host does not wait for it. A checkpoint
 without the head verifies by the core's depth rule, from each stream's measured acceptance by depth.
 
-The BF16 row path fuses gate/up projection and SwiGLU for at most 16 physical rows. Each projection
-retains its original accumulation order and rounds to BF16 before the canonical SwiGLU arithmetic;
-only the final activation is stored. Wider passes retain the separate projections and activation.
+Without the BF16 GPU tensor pipeline, wide gate/up projections fuse with SwiGLU for 4 through 16 physical rows.
+Each projection retains its original accumulation order and rounds to BF16 before the canonical SwiGLU
+arithmetic; only the final activation is stored. Other shapes and tensor-capable devices retain separate
+projections and activation. The 8-bit path is unchanged.
 
 A stream with a copy ahead verifies the copy and asks no hold, and a drafting stream prices its copy
 windows by its own copies. The lane core also weighs the hold pass itself: the drafter measures clean
@@ -174,6 +176,10 @@ The loader reads the checkpoint one matrix at a time and keeps the released bf16
 Metal buffer (its layers' keys and values, then its staged rows), and its bytes join the streams the load limit
 admits. At load the drafter logs its weights, scratch and a stream's bytes. `tf-lfm2-dspark` also counts host
 allocations over twenty served drafter rounds, which must be none.
+Ordinary BF16 weights, `W1` and the confidence head load directly into their final Metal buffers. Paired
+Q/K matrices use one staging matrix and write their reordered rows directly to the destination. Coded
+weights apply that row mapping during quantization; 8-bit output needs no pre-clear, while 4-bit packing
+retains its required clear. These reduce load work and peak backing, not retained model payload.
 Context absorption rotates only keys and stores values with the target's existing numerical helper; it does
 not compute unused query heads. This removes an 8 MiB write-only scratch buffer at the released geometry.
 The KV bytes, surrounding cache positions and later drafts remain unchanged. Target and drafter project
@@ -183,13 +189,21 @@ without another buffer. Target scratch no longer retains unused Q or sort-order 
 retain only the quantized target-head requirement; coded drafters retain their original larger capacity.
 These are storage/work reductions, not a throughput claim.
 
+Target Q/K/V and gate/up projections reuse row sums only when their input width, group size and sums
+regime agree; each projection retains its own code width. A sorted expert combine can feed the next
+normalization, or the final normalization and raw taps, in one dispatch without changing expert-pick order
+or BF16 rounding boundaries. This applies to prompt and sorted fallback execution; the qualified native
+twin path is unchanged.
+
 A hold runs on one concurrent encoder with a barrier only where a step reads an earlier step's writes: q, k and v,
 and gate and up, share one sums pass, and the blocks of a shared hold attend side by side. An 8-bit projection takes
 the scalar twin up to 8 rows and the window kernel past them where the GPU has no tensor units. With tensor units,
 wide projections use them from 9 rows, the head from 5, and projections no wider than the hidden state from 33.
-Held blocks use one bf16 16-row group, then 64x64 tiles past 16 rows. Context ingestion
-keeps the original row kernel through 32 rows, preserving the persistent context projections. A hold gathers
-adjacent small staged pieces into preallocated scratch: at most 128 rows per hold and 32 per call, or 8 per call
+BF16 projections use M5 GPU tensor instructions from 8 physical rows for wide matrices and 16 for
+matrices no wider than the hidden state. This is GPU acceleration, not Apple Neural Engine execution.
+Without that pipeline, held blocks retain the original row kernel through 16 rows and context ingestion
+through 32, followed by 64x64 tiles. A hold gathers adjacent small staged pieces into preallocated scratch:
+at most 128 rows per hold and 32 per call, or 8 per call
 on the coded scalar twin without tensor units. This preserves each piece's projection regime; lone, larger or
 out-of-room pieces use their original calls. A lane retains every verified raw tap in its own buffer before
 the target overwrites its taps. At most 2048 rows, clipped to the lane's capacity, wait for that lane's next
@@ -208,8 +222,13 @@ Generic diagnostic capture retains its raw scratch storage.
 Tap destinations cache their live allocation's GPU base; snapshots retain bytes and state, not virtual addresses.
 Metadata-only absorb keeps every context update without creating an autorelease pool, and a zero-row rewind
 encodes no command buffer. Encoding paths retain their pool through command completion and error cleanup.
+A completed native all-row verification marks the exact scratch owner. Keeping that unchanged full frame
+does not recopy already-committed convolution state and logits. Partial, reordered, generic and last-row
+frames retain the copy path; snapshots, context and release ordering are unchanged.
 A successful shared hold preserves its completed picks for surviving peers even if its timing receipt is unusable.
-Shared scheduling avoids constructing unused stream descriptors. These changes do not establish throughput qualification.
+Shared scheduling avoids constructing unused stream descriptors. Chain-only windows construct positions
+without temporary parent/depth arrays; tree windows retain their parent and depth handling.
+These changes do not establish throughput qualification.
 
 Shared verification past the 16-row qualified window uses measured increments
 from the shared forward path through 32 rows, anchored at the 16-row window

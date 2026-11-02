@@ -2,7 +2,7 @@
 const std = @import("std");
 const mtl = @import("metal");
 const rig_ = @import("dspark_test.zig");
-const glu = @import("dspark_glu.zig");
+const bf16_ops = @import("dspark_bf16.zig");
 const quant = @import("dspark_quant.zig");
 
 const Args = extern struct { rows: u32, n: u32, k: u32 };
@@ -96,7 +96,7 @@ test "lfm2 dspark: fused BF16 gate/up gives exact SwiGLU bytes across 16 rows an
             e.setBuffer(want, guard * 2, 2);
             e.setValue(rows * n, 3);
             e.dispatchThreads(mtl.Size.of(rows * n / 8, 1, 1), mtl.Size.of(256, 1, 1));
-            glu.encode(e, &r.k, .{ .w = gate, .n = n, .k = k }, .{ .w = up, .n = n, .k = k }, x, Ref{ .buf = got, .off = guard * 2 }, rows);
+            bf16_ops.glu(e, &r.k, .{ .w = gate, .n = n, .k = k }, .{ .w = up, .n = n, .k = k }, x, Ref{ .buf = got, .off = guard * 2 }, rows);
             e.barrier();
             e.end();
             cb.commit();

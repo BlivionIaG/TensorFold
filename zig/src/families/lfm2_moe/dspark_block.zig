@@ -10,7 +10,7 @@ const round = @import("tree_round_gpu");
 const ds = @import("dspark.zig");
 const dw = @import("dspark_weights.zig");
 const timing = @import("dspark_time.zig");
-const glu = @import("dspark_glu.zig");
+const bf16 = @import("dspark_bf16.zig");
 const Drafter = ds.Drafter;
 const Lane = ds.Lane;
 
@@ -24,7 +24,6 @@ fn attnArgs(lane: *const Lane, keys: u64) AttnArgs {
     return .{ .len = @intCast(keys - 1), .cap = @intCast(lane.cap), .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .subs = st.subs };
 }
 const Pick = round.contract.Pick;
-const Bf16Args = extern struct { rows: u32, n: u32, k: u32 };
 const MarkovArgs = extern struct { stride: u32, rank: u32, vocab: u32, prev_stride: u32 };
 const ConfidenceArgs = extern struct { n: u32, pass: u32, vocab: u32, rank: u32, hidden: u32 };
 /// Tokens a Markov scan threadgroup takes (the kernel's MARKOV_SPAN), and threadgroups a stream's row takes.
@@ -35,8 +34,6 @@ pub const scan_groups = (c.vocab + scan_span - 1) / scan_span;
 const scalar_rows = 8;
 /// Rows from which the target's head (128,000 outputs) runs on the tensor units, where the GPU has them.
 const head_rows = 5;
-/// The measured BF16 tensor crossover in physical projection rows, independent of stream count.
-const bf16_tensor_rows = 16;
 
 /// Rows from which `w` runs on the tensor units: outputs of the hidden width or fewer stay on the twin to its rows.
 fn naxFrom(w: tile.Matrix) usize {
@@ -73,7 +70,7 @@ const Enc = struct {
     /// y_i[rows] = x[rows] W_i^T on one input and shape: bf16 matrices straight, else one sums pass, products overlap.
     fn projectAll(x: Enc, lins: []const dw.Linear, in: Ref, outs: []const Ref, rows: usize) !void {
         if (lins[0] == .bf16) {
-            for (lins, outs) |lin, out| x.bf16(lin.bf16, in, out, rows);
+            for (lins, outs) |lin, out| bf16.project(x.e, &x.d.target.kernels, lin.bf16, in, out, rows, x.bf16_rows_max);
             return;
         }
         var buf: [4]tile.Matrix = undefined;
@@ -101,30 +98,6 @@ const Enc = struct {
         tile.encodeSums(x.e, t, k, in.buf, in.off, x.d.s.sums, rows);
         x.sync();
         for (ws, outs) |w, out| try tile.encode(x.e, t, w, in.buf, in.off, x.d.s.sums, 0, out.buf, out.off, rows);
-    }
-
-    /// Released BF16 weights: 16-row tensor tiles, else the original scalar rows or 64x64 SIMD tiles.
-    fn bf16(x: Enc, m: dw.Bf16, in: Ref, out: Ref, rows: usize) void {
-        const args = Bf16Args{ .rows = @intCast(rows), .n = @intCast(m.n), .k = @intCast(m.k) };
-        const tensor = if (rows >= bf16_tensor_rows) x.d.target.kernels.bf16_nax else null;
-        if (tensor) |p| {
-            x.e.setPipeline(p);
-            x.e.setBuffer(in.buf, in.off, 0);
-            x.e.setBuffer(m.w, 0, 1);
-            x.e.setValue(args, 2);
-            x.e.setBuffer(out.buf, out.off, 3);
-            x.e.dispatchGroups(mtl.Size.of((m.n + 127) / 128, (rows + 15) / 16, 1), mtl.Size.of(128, 1, 1));
-            return;
-        }
-        const few = rows <= x.bf16_rows_max;
-        if (few) x.pipe("lfm2_bf16_rows") else x.pipe("lfm2_bf16_mma");
-        x.e.setBuffer(in.buf, in.off, 0);
-        x.e.setBuffer(m.w, 0, 1);
-        x.e.setBytes(std.mem.asBytes(&args), 2);
-        x.e.setBuffer(out.buf, out.off, 3);
-        if (few) {
-            x.e.dispatchGroups(mtl.Size.of((m.n + 7) / 8, (rows + 15) / 16, 1), mtl.Size.of(256, 1, 1));
-        } else x.e.dispatchGroups(mtl.Size.of((m.n + 63) / 64, (rows + 63) / 64, 1), mtl.Size.of(128, 1, 1));
     }
 
     /// h += r when `add`, then out = norm(h) * gain: LFM2's own norm (the drafter's width and eps are the target's).
@@ -462,8 +435,9 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
         x.sync();
         x.norm(s.h, s.r, ly.post_norm, true, s.x, out);
         x.sync();
-        if (out <= 16 and ly.gate == .bf16 and ly.up == .bf16) {
-            glu.encode(x.e, &d.target.kernels, ly.gate.bf16, ly.up.bf16, Ref{ .buf = s.x }, Ref{ .buf = s.act }, out);
+        const row_glu = out >= 4 and out <= 16 and d.target.kernels.bf16_nax == null;
+        if (row_glu and ly.gate == .bf16 and ly.up == .bf16 and ly.gate.bf16.n > c.hidden) {
+            bf16.glu(x.e, &d.target.kernels, ly.gate.bf16, ly.up.bf16, Ref{ .buf = s.x }, Ref{ .buf = s.act }, out);
         } else {
             try x.projectAll(&.{ ly.gate, ly.up }, .{ .buf = s.x }, &.{ .{ .buf = s.gate }, .{ .buf = s.up } }, out);
             x.sync();
