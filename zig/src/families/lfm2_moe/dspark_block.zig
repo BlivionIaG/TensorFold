@@ -62,7 +62,7 @@ const Enc = struct {
         x.e.setPipeline(x.d.target.kernels.get(key));
     }
 
-    /// y[rows] = x[rows] W^T: the M5's tensor units from naxFrom rows, else the twin (scalar to scalar_rows) or tiles.
+    /// y[rows] = x[rows] W^T: BF16 on tensor units where available, codes from naxFrom, else the old rows/tiles.
     fn project(x: Enc, w: dw.Linear, in: Ref, out: Ref, rows: usize) !void {
         return x.projectAll(&.{w}, in, &.{out}, rows);
     }
@@ -100,9 +100,18 @@ const Enc = struct {
         for (ws, outs) |w, out| try tile.encode(x.e, t, w, in.buf, in.off, x.d.s.sums, 0, out.buf, out.off, rows);
     }
 
-    /// y[rows] = x[rows] W^T over the released bf16 matrix: one 16-row pass of W, else 64x64 tiles.
+    /// Released BF16 weights: 16-row tensor tiles, else the original scalar rows or 64x64 SIMD tiles.
     fn bf16(x: Enc, m: dw.Bf16, in: Ref, out: Ref, rows: usize) void {
         const args = Bf16Args{ .rows = @intCast(rows), .n = @intCast(m.n), .k = @intCast(m.k) };
+        if (x.d.target.kernels.bf16_nax) |p| {
+            x.e.setPipeline(p);
+            x.e.setBuffer(in.buf, in.off, 0);
+            x.e.setBuffer(m.w, 0, 1);
+            x.e.setValue(args, 2);
+            x.e.setBuffer(out.buf, out.off, 3);
+            x.e.dispatchGroups(mtl.Size.of((m.n + 127) / 128, (rows + 15) / 16, 1), mtl.Size.of(128, 1, 1));
+            return;
+        }
         const few = rows <= x.bf16_rows_max;
         if (few) x.pipe("lfm2_bf16_rows") else x.pipe("lfm2_bf16_mma");
         x.e.setBuffer(in.buf, in.off, 0);
@@ -259,7 +268,7 @@ pub fn fcRows(d: *Drafter, e: mtl.ComputeEncoder, conc: bool, pieces: []const Pi
 
 fn absorbOn(encoder: Enc, pieces: []const Piece, gather: ?*usize) !void {
     var x = encoder;
-    x.bf16_rows_max = absorb_bf16_rows; // preserve the context cache's original projection arithmetic
+    x.bf16_rows_max = absorb_bf16_rows; // the fallback retains the context cache's original projection arithmetic
     const d = x.d;
     const s = &d.s;
     const rows = try x.fc(pieces, gather);

@@ -111,6 +111,7 @@ pub const Drafter = struct {
         d.* = .{ .gpa = gpa, .io = io, .target = target, .config = try dc.Config.read(gpa, io, dir), .w = undefined, .options = options, .s = undefined };
         d.event = try target.device.event();
         errdefer d.event.deinit();
+        if (options.bits == 0) try target.kernels.loadBf16(target.device);
         d.w = try dw.load(gpa, target.device, io, dir, &d.config, options.bits);
         errdefer d.w.deinit(gpa);
         try d.prepare();

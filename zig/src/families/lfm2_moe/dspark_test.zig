@@ -27,7 +27,10 @@ pub const Rig = struct {
         errdefer device.deinit();
         const queue = try device.queue();
         errdefer queue.deinit();
-        return .{ .device = device, .queue = queue, .k = try kernels.load(device) };
+        var k = try kernels.load(device);
+        errdefer k.deinit();
+        try k.loadBf16(device);
+        return .{ .device = device, .queue = queue, .k = k };
     }
 
     pub fn deinit(r: *Rig) void {
@@ -328,10 +331,11 @@ test "lfm2 dspark: small staged pieces sharing one fc call give the bytes each g
         .{ .sizes = &@as([24]usize, @splat(6)), .used = 120, .scalar_used = 0 },
         .{ .sizes = &@as([40]usize, @splat(4)), .used = 128, .scalar_used = 128 },
     };
-    for ([_]u8{ 0, 1, 2 }) |mode| { // bf16; 8-bit with the tiles; 8-bit with the twin
+    for ([_]u8{ 0, 1, 2, 3 }) |mode| { // BF16 tensor if present; 8-bit tiles; 8-bit twin; original BF16 fallback
+        target.kernels.bf16_nax = if (mode == 3) null else rig.k.bf16_nax;
         target.kernels.twin = mode == 2;
         const scalar = mode == 2 and target.kernels.naxPipes(8) == null;
-        d.w.fc = if (mode == 0)
+        d.w.fc = if (mode == 0 or mode == 3)
             .{ .bf16 = .{ .w = w16, .n = c.hidden, .k = k } }
         else
             .{ .codes = .{ .w = wq, .scales = scales, .biases = biases, .n = c.hidden, .k = k, .bits = 8 } };

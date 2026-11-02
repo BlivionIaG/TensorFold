@@ -286,6 +286,7 @@ pub fn main(init: std.process.Init) !u8 {
         };
         if (m == .none or bf16_which != null) {
             for (std.enums.values(lfm2_bf16.Which)) |w| {
+                if (w == .tensor and !tensor) continue;
                 if (m != .none and w != bf16_which.?) continue;
                 if (!wanted(o, if (m == .none) lfm2_bf16.spec(w).name else m.name())) continue;
                 const p = try a.create(lfm2_bf16.Probe);
@@ -583,6 +584,7 @@ pub fn main(init: std.process.Init) !u8 {
         lim += try gemma.limits(a, device, o.only);
         lim += try gemma_embed.limits(a, device, o.only);
         lim += try gemma_mixed.limits(a, device, o.only);
+        lim += try lfm2_bf16.tensorLimits(a, device, o.only);
     }
     const t2 = std.Io.Clock.awake.now(init.io);
     const ms = struct {
