@@ -214,9 +214,10 @@ pub const Metal = struct {
         if (layers.len == 0 or layers.len > st.max_taps) return error.BadLfmTaps;
         for (layers) |l| if (l >= c.layers) return error.BadLfmTaps;
         if (self.scratch.taps) |t| return if (std.mem.eql(u32, t.layers[0..t.count], layers)) {} else error.BadLfmTaps;
-        var t: st.Taps = .{ .count = @intCast(layers.len), .buf = undefined, .table_at = if (self.stage_source == null) self.scratch.rows * layers.len * c.hidden * 2 else 0 };
+        const table_at = if (self.stage_source == null) self.scratch.rows * layers.len * c.hidden * 2 else 0;
+        const buf = try self.scratch.memory.alloc(table_at + self.scratch.rows * @sizeOf(u64));
+        var t: st.Taps = .{ .count = @intCast(layers.len), .buf = buf, .gpu_base = buf.gpuAddress(), .table_at = table_at };
         @memcpy(t.layers[0..layers.len], layers);
-        t.buf = try self.scratch.memory.alloc(t.table_at + self.scratch.rows * @sizeOf(u64));
         self.scratch.taps = t;
     }
 

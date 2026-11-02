@@ -12,7 +12,8 @@ const segs = @import("segments.zig");
 const Buffer = mtl.Buffer;
 /// Where a segment's tapped rows go: the scratch's taps, nowhere, or a stage.
 pub const Tap = union(enum) { scratch, none, stage: Place };
-pub const Place = struct { buf: Buffer, off: usize };
+/// `gpu_base` belongs to the live `buf` allocation; `off` remains a raw byte offset.
+pub const Place = struct { buf: Buffer, gpu_base: u64, off: usize };
 pub const Segment = struct { cache: *st.Cache, rows: usize, tap: Tap = .scratch };
 /// GPU seconds of every call so far (the bench reports a chunk's GPU time beside its wall time).
 pub var gpu_seconds: f64 = 0;
@@ -31,12 +32,12 @@ fn tapTable(e: mtl.ComputeEncoder, s: *st.Scratch, segments: []const Segment) vo
     var base: usize = 0;
     for (segments) |seg| {
         const place: ?Place = switch (seg.tap) {
-            .scratch => .{ .buf = taps.buf, .off = base * width },
+            .scratch => .{ .buf = taps.buf, .gpu_base = taps.gpu_base, .off = base * width },
             .none => null,
             .stage => |p| p,
         };
         if (place) |p| e.useResource(p.buf, mtl.ResourceUsage.read | mtl.ResourceUsage.write);
-        const address = if (place) |p| p.buf.gpuAddress() + p.off else null;
+        const address = if (place) |p| p.gpu_base + p.off else null;
         for (table[base..][0..seg.rows], 0..) |*dst, i| dst.* = if (address) |a| a + i * width else 0;
         base += seg.rows;
     }

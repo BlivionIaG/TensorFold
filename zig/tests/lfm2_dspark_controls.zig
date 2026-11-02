@@ -88,20 +88,22 @@ fn tableOnlyTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids:
     var taps = original;
     taps.table_at = 0;
     taps.buf = try m.device.buffer(scratch.rows * @sizeOf(u64), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+    taps.gpu_base = taps.buf.gpuAddress();
     defer taps.buf.deinit();
     scratch.taps = taps;
     const width = taps.count * c.hidden * 2;
     const stage = try m.device.buffer((ids.len + 2) * width, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
     defer stage.deinit();
+    const stage_base = stage.gpuAddress();
     @memset(stage.slice(u16, stage.length() / 2), 0x7fc0);
     var cache = try st.Cache.init(gpa, m.device, &m.config.attention, ids.len + 16);
     defer cache.deinit();
     const spent = q.forward.gpu_seconds;
-    for ([_]q.forward.Tap{ .scratch, .{ .stage = .{ .buf = taps.buf, .off = 0 } } }) |tap| {
+    for ([_]q.forward.Tap{ .scratch, .{ .stage = .{ .buf = taps.buf, .gpu_base = taps.gpu_base, .off = 0 } } }) |tap| {
         if (q.forward.run(m, scratch, &.{.{ .cache = &cache, .rows = ids.len, .tap = tap }}, ids, record, .last)) |_| return error.InvalidTapDestinationAccepted else |err| if (err != error.BadLfmTapDestination) return err;
         if (cache.len != 0 or q.forward.gpu_seconds != spent or !untouched(stage.slice(u16, stage.length() / 2))) return error.InvalidTapDestinationEncoded;
     }
-    try q.forward.run(m, scratch, &.{.{ .cache = &cache, .rows = ids.len, .tap = .{ .stage = .{ .buf = stage, .off = width } } }}, ids, record, .last);
+    try q.forward.run(m, scratch, &.{.{ .cache = &cache, .rows = ids.len, .tap = .{ .stage = .{ .buf = stage, .gpu_base = stage_base, .off = width } } }}, ids, record, .last);
     if (!std.mem.eql(u16, want, stage.slice(u16, stage.length() / 2)[width / 2 ..][0..want.len])) return error.TableOnlyTapsDiffer;
     if (!untouched(stage.slice(u16, width / 2)) or !untouched(stage.slice(u16, stage.length() / 2)[(ids.len + 1) * (width / 2) ..])) return error.TableOnlyTapGuardChanged;
     if (!std.mem.eql(u8, x, scratch.x.contents()[0..x.len]) or !std.mem.eql(u8, logits, scratch.logits.contents()[0..logits.len])) return error.TableOnlyTargetOutputMismatch;
@@ -117,7 +119,7 @@ fn stageTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []c
     defer stage.deinit();
     const got = stage.slice(u16, (n + 2) * row_words);
     const scratch_taps = taps.buf.slice(u16, n * row_words);
-    const place: q.forward.Place = .{ .buf = stage, .off = row_words * 2 };
+    const place: q.forward.Place = .{ .buf = stage, .gpu_base = stage.gpuAddress(), .off = row_words * 2 };
     for ([_]q.forward.Tap{ .{ .stage = place }, .none }, 0..) |tap, mode| {
         @memset(got, 0x7fc0);
         @memset(scratch_taps, 0x7fc0);
@@ -173,6 +175,7 @@ pub fn targetTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids
             }
             taps.table_at = n * taps.count * c.hidden * 2;
             taps.buf = try m.device.buffer(taps.table_at + scratch.rows * @sizeOf(u64), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+            taps.gpu_base = taps.buf.gpuAddress();
             defer {
                 scratch.taps = null;
                 taps.buf.deinit();

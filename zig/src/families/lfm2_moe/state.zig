@@ -58,6 +58,7 @@ pub const Taps = struct {
     layers: [max_taps]u32 = @splat(0),
     count: u32 = 0,
     buf: mtl.Buffer,
+    gpu_base: u64, // `buf`'s base address, cached for this allocation (not `table_at`)
     table_at: usize,
 };
 /// Latest scratch rows from `row`, or owned stage bytes from `stage`; gen 0 keeps a prompt anchor across forwards.

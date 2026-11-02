@@ -34,6 +34,7 @@ pub const Options = struct { capacity: usize, bits: u8 = 0 };
 /// One stream's context keys and values a layer ([kv head][cap][head dim], as the target's attention reads them).
 pub const Lane = struct {
     mem: mtl.Buffer, // each layer's keys then values, then the staged rows (shared storage)
+    gpu_base: u64, // `mem`'s base address for this allocation, never part of a snapshot
     cap: usize, // positions each holds: the context and one block past it
     stage_at: usize, // the staged rows' byte offset in `mem`
     end: u64 = 0, // context rows absorbed: positions [0, end)
@@ -288,7 +289,8 @@ pub const Drafter = struct {
         const l = try d.gpa.create(Lane);
         errdefer d.gpa.destroy(l);
         const at: usize = @intCast(d.keptBytes(capacity + d.config.block));
-        l.* = .{ .mem = try d.target.device.buffer(d.laneBytes(capacity), shared), .cap = capacity + d.config.block, .stage_at = at };
+        const mem = try d.target.device.buffer(d.laneBytes(capacity), shared);
+        l.* = .{ .mem = mem, .gpu_base = mem.gpuAddress(), .cap = capacity + d.config.block, .stage_at = at };
         return l;
     }
 
@@ -479,7 +481,8 @@ pub const Drafter = struct {
         errdefer d.gpa.destroy(l);
         const cap = stage_rows + d.config.block;
         const bytes: usize = @intCast(d.keptBytes(cap));
-        l.* = .{ .mem = try d.target.device.buffer(bytes, shared), .cap = cap, .stage_at = bytes };
+        const mem = try d.target.device.buffer(bytes, shared);
+        l.* = .{ .mem = mem, .gpu_base = mem.gpuAddress(), .cap = cap, .stage_at = bytes };
         return l;
     }
 
