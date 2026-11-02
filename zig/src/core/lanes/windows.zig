@@ -4,6 +4,7 @@ const accept = @import("accept.zig");
 const cut = @import("window_cut.zig");
 const lone_costs = @import("lone_costs.zig");
 const alloc = @import("allocate.zig");
+const verify_cost = @import("verify_cost.zig");
 const be = @import("backend.zig");
 const depth = @import("depth.zig");
 const trim = @import("trim.zig");
@@ -230,7 +231,7 @@ pub fn probe(e: *Engine) depth.Probe {
 }
 
 pub fn who(s: *Stream) depth.Who {
-    return .{ .state = &s.depth, .draft_room = s.draftRoom(), .finished = s.finished, .forced = s.force.items.len > 0, .granted = s.granted, .grant_short = s.grant_short, .gain = s.grant_gain, .stream = s, .sampled = s.sampling != null };
+    return .{ .state = &s.depth, .draft_room = s.draftRoom(), .finished = s.finished or s.paused, .forced = s.force.items.len > 0, .granted = s.granted, .grant_short = s.grant_short, .gain = s.grant_gain, .stream = s, .sampled = s.sampling != null, .row_ms = verify_cost.rowMs(s) };
 }
 
 /// Whether any of a round's streams draws keyed samples (its rows carry their host work).
@@ -243,6 +244,8 @@ pub fn anySampled(plans: []const Plan) bool {
 pub fn allocate(e: *Engine, plans: []Plan) !void {
     if (e.trim) |t| return trimmed(e, plans, t);
     const a = e.arena.allocator();
+    const explicit = e.cfg.draft_confidence != null;
+    const live = plans.len == 1 and lone_costs.enabled(e, plans[0]);
     const fixed = try a.alloc(u32, plans.len);
     const probs = try a.alloc([]const f64, plans.len);
     for (plans, fixed, probs) |p, *fx, *pr| {
@@ -272,8 +275,6 @@ pub fn allocate(e: *Engine, plans: []Plan) !void {
         try p.stream.draft_chances.appendSlice(e.gpa, chances);
     };
     const untimed: @import("table.zig").Table = .{};
-    const explicit = e.cfg.draft_confidence != null;
-    const live = plans.len == 1 and lone_costs.enabled(e, plans[0]);
     if (live and !plans[0].stream.prices_seeded) {
         const s = plans[0].stream;
         s.prices_seeded = true;
@@ -283,7 +284,7 @@ pub fn allocate(e: *Engine, plans: []Plan) !void {
     const own = if (live) try lone_costs.prices(e, plans[0]) else untimed;
     const costs = if (explicit) &untimed else if (live) &own else &e.cfg.shared_costs;
     const overhead = if (explicit or live) 0 else e.rule.overheadMs(plans.len, anySampled(plans));
-    const counts = try alloc.allocate(a, fixed, probs, costs, overhead, @max(plans.len, e.cfg.batch_rows));
+    const counts = try alloc.allocateDrafts(a, fixed, probs, costs, overhead, @max(plans.len, e.cfg.batch_rows), .{ .row_ms = try verify_cost.snapshot(a, plans, !explicit and !live) });
     const trial = if (live) lone_costs.probe(e, plans[0]) else null;
     if (trial) |count| {
         counts[0] = count;

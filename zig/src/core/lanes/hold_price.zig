@@ -108,6 +108,7 @@ pub const Base = struct {
     streams: usize,
     rows: u32,
     tokens: f64,
+    host_ms: f64 = 0, // committed rows' host work, including copies and forced rows
 
     /// Every stream awaits one row and keeps one token (a round no reservation has touched).
     pub fn pending(streams: usize) Base {
@@ -135,11 +136,11 @@ pub const ProbeCache = struct {
 };
 
 /// Retains paying full holds or the best prefix; only tried drafts cap raw gain by observed acceptance.
-pub fn prefix(costs: *const Table, holds: []const HoldCost, base: Base, fixed: f64, probabilities: []const f64, observed: []const f64, tried: usize, wanted: i64) ?Prefix {
+pub fn prefix(costs: *const Table, holds: []const HoldCost, base: Base, fixed: f64, row_ms: f64, probabilities: []const f64, observed: []const f64, tried: usize, wanted: i64) ?Prefix {
     if (holds.len == 0 or wanted <= 0 or probabilities.len == 0) return null;
     const full: usize = @min(probabilities.len, @as(usize, @intCast(wanted)));
     const plain = costs.get(base.rows) orelse return null;
-    const plain_score = base.tokens / (plain + fixed);
+    const plain_score = base.tokens / (plain + fixed + base.host_ms);
     const seen = @min(tried, observed.len);
     var survival: f64 = 1;
     var observed_gain: f64 = 0;
@@ -159,7 +160,7 @@ pub fn prefix(costs: *const Table, holds: []const HoldCost, base: Base, fixed: f
         if (last) lowered = seen_gain < raw;
         const depth: i64 = if (last) wanted else @intCast(n);
         const verify = costs.get(@as(i64, base.rows) + @as(i64, @intCast(n))) orelse continue;
-        const score = (base.tokens + gain) / (verify + fixed + holdMs(holds, 1, depth));
+        const score = (base.tokens + gain) / (verify + fixed + base.host_ms + @as(f64, @floatFromInt(n)) * row_ms + holdMs(holds, 1, depth));
         if (last and score > plain_score) {
             best = .{ .depth = depth, .gain = gain, .rows = @floatFromInt(n), .lowered = false, .shortened = false, .pays = true };
             break;
@@ -182,9 +183,11 @@ pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
     if (holds.len == 0) return true;
     var heads: u32 = 0;
     var depth: u32 = 0;
+    var row_ms = std.math.inf(f64);
     for (whos) |w| {
         if (w.finished or w.forced or w.draft_room <= 1) continue;
         heads += 1;
+        row_ms = @min(row_ms, w.row_ms); // unknown routes quote zero, retaining an optimistic recovery bound
         const room: i64 = @min(@as(i64, rule.most_drafts), w.draft_room - 1);
         depth = @max(depth, @as(u32, @intCast(room)));
     }
@@ -197,6 +200,7 @@ pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
         const x: u64 = v;
         hasher.update(std.mem.asBytes(&x));
     }
+    hasher.update(std.mem.asBytes(&row_ms));
     for (holds) |c| {
         const w = [3]u64{ c.streams, c.depth, @as(u64, @bitCast(c.ms)) };
         hasher.update(std.mem.asBytes(&w));
@@ -225,7 +229,7 @@ pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
                 const last = @min(room_rows, padded * blocks);
                 while (extra <= last) : (extra += 1) {
                     const verify = costs.get(@as(i64, base.rows) + extra) orelse return true;
-                    lowest = @min(lowest, (verify - plain + hold) / @as(f64, @floatFromInt(extra)));
+                    lowest = @min(lowest, (verify - plain + hold) / @as(f64, @floatFromInt(extra)) + row_ms);
                 }
             }
         }
@@ -233,7 +237,7 @@ pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
         break :m lowest;
     };
     if (!std.math.isFinite(cheapest)) return false;
-    return base.tokens * cheapest < plain + fixed;
+    return base.tokens * cheapest < plain + fixed + base.host_ms;
 }
 
 /// Ignore work settled outside this round; the clock measures only what follows its start.
@@ -325,23 +329,23 @@ test "a prefix carries whether its score strictly beats the plain round" {
     const costs: Table = .{ .slots = &slots };
     const base = Base.pending(1); // plain: 1 token in 10 ms
     const even = [_]HoldCost{.{ .streams = 1, .depth = 1, .ms = 5 }};
-    const tie = prefix(&costs, &even, base, 0, &.{0.5}, &.{}, 0, 1).?; // 1.5 tokens in 15 ms
+    const tie = prefix(&costs, &even, base, 0, 0, &.{0.5}, &.{}, 0, 1).?; // 1.5 tokens in 15 ms
     try std.testing.expectEqual(@as(f64, 0.5), tie.gain);
     try std.testing.expect(!tie.pays and !tie.shortened);
     const cheaper = [_]HoldCost{.{ .streams = 1, .depth = 1, .ms = 4 }};
-    try std.testing.expect(prefix(&costs, &cheaper, base, 0, &.{0.5}, &.{}, 0, 1).?.pays);
+    try std.testing.expect(prefix(&costs, &cheaper, base, 0, 0, &.{0.5}, &.{}, 0, 1).?.pays);
     // a second draft that costs a whole extra pass leaves the paying first one
     const chain = [_]HoldCost{ .{ .streams = 1, .depth = 1, .ms = 2 }, .{ .streams = 1, .depth = 2, .ms = 2 } };
-    const first = prefix(&costs, &chain, base, 0, &.{ 0.9, 0 }, &.{}, 0, 2).?;
+    const first = prefix(&costs, &chain, base, 0, 0, &.{ 0.9, 0 }, &.{}, 0, 2).?;
     try std.testing.expect(first.pays and first.shortened);
     try std.testing.expectEqual(@as(i64, 1), first.depth);
     // none pays: the best prefix is still offered, as not paying
     const dear = [_]HoldCost{ .{ .streams = 1, .depth = 1, .ms = 50 }, .{ .streams = 1, .depth = 2, .ms = 50 } };
-    const none = prefix(&costs, &dear, base, 0, &.{ 0.9, 0 }, &.{}, 0, 2).?;
+    const none = prefix(&costs, &dear, base, 0, 0, &.{ 0.9, 0 }, &.{}, 0, 2).?;
     try std.testing.expect(!none.pays);
     try std.testing.expectEqual(@as(i64, 1), none.depth);
     // a paying full hold ends the search
-    const full = prefix(&costs, &chain, base, 0, &.{ 0.9, 0.9 }, &.{}, 0, 2).?;
+    const full = prefix(&costs, &chain, base, 0, 0, &.{ 0.9, 0.9 }, &.{}, 0, 2).?;
     try std.testing.expect(full.pays and !full.shortened);
     try std.testing.expectEqual(@as(i64, 2), full.depth);
 }

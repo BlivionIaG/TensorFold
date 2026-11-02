@@ -36,7 +36,8 @@ fn tapTable(e: mtl.ComputeEncoder, s: *st.Scratch, segments: []const Segment) vo
             .stage => |p| p,
         };
         if (place) |p| e.useResource(p.buf, mtl.ResourceUsage.read | mtl.ResourceUsage.write);
-        for (table[base..][0..seg.rows], 0..) |*dst, i| dst.* = if (place) |p| p.buf.gpuAddress() + p.off + i * width else 0;
+        const address = if (place) |p| p.buf.gpuAddress() + p.off else null;
+        for (table[base..][0..seg.rows], 0..) |*dst, i| dst.* = if (address) |a| a + i * width else 0;
         base += seg.rows;
     }
 }

@@ -51,6 +51,7 @@ pub const Who = struct {
     prices: []const f64 = &.{}, // fresh reserved prefix's joint chances (empty: only the generic aggregate is known)
     stream: ?*anyopaque = null,
     sampled: bool = false, // keyed draws: host work a row that a greedy round does not have
+    row_ms: f64 = 0, // observed host verification work per row; unknown routes retain the optimistic zero model
 };
 
 /// Whether a copied continuation is ahead of a stream (the round loop proposes; Python `_copy_proposal`).
@@ -300,7 +301,17 @@ pub const Rule = struct {
                 o.* = if (r.granted_depth) inner else try r.headDepth(w, @min(inner, granted + r.k.draft_slack), probe);
             }
             if (r.granted_depth) capPass(out, r.batch_rows);
-            if (r.granted_depth and r.k.hold_costs.len > 0) try r.payHolds(whos, sampled, out, @import("hold_price.zig").Base.pending(whos.len));
+            if (r.granted_depth and r.k.hold_costs.len > 0) {
+                var base = @import("hold_price.zig").Base.pending(0);
+                for (whos) |w| {
+                    if (w.finished) continue;
+                    base.streams += 1;
+                    base.rows += 1;
+                    base.tokens += 1;
+                    base.host_ms += w.row_ms;
+                }
+                try r.payHolds(whos, sampled, out, base);
+            }
             return;
         }
         const most = try r.gpa.alloc(i64, whos.len);
@@ -310,26 +321,39 @@ pub const Rule = struct {
         var made: usize = 0;
         defer for (probs[0..made]) |p| r.gpa.free(p);
         for (whos, most, probs) |w, *m, *p| {
-            m.* = @min(@as(i64, r.most_drafts), @max(1, w.draft_room - 1));
-            p.* = try alloc.chainProbabilities(r.gpa, try r.rates(w), @intCast(m.*));
+            m.* = if (w.finished) 0 else @min(@as(i64, r.most_drafts), @max(1, w.draft_room - 1));
+            p.* = try alloc.chainProbabilities(r.gpa, if (w.finished) r.prior else try r.rates(w), @intCast(m.*));
             made += 1;
         }
         const ones = try r.gpa.alloc(u32, whos.len);
         defer r.gpa.free(ones);
-        @memset(ones, 1);
+        var row_ms: []f64 = &.{};
+        defer r.gpa.free(row_ms);
+        var live: usize = 0;
+        for (whos, ones, 0..) |w, *fixed, i| {
+            fixed.* = @intFromBool(!w.finished);
+            live += fixed.*;
+            if (w.finished) continue;
+            if (w.row_ms > 0 and row_ms.len == 0) {
+                row_ms = try r.gpa.alloc(f64, whos.len);
+                @memset(row_ms, 0);
+            }
+            if (row_ms.len > 0) row_ms[i] = w.row_ms;
+        }
         const own_steps = r.draft_step_ms != 0; // the backend's own draft step prices a stream's drafts past its first
         const head: alloc.HeadCost = if (own_steps)
-            .{ .step_ms = r.draft_step_ms, .batched = r.batched_heads and pricedBatched(), .free_first = true, .hold_costs = r.k.hold_costs, .hold_rows = r.k.hold_rows }
+            .{ .step_ms = r.draft_step_ms, .batched = r.batched_heads and pricedBatched(), .free_first = true, .hold_costs = r.k.hold_costs, .hold_rows = r.k.hold_rows, .row_ms = row_ms }
         else
-            .{ .step_ms = r.mtp_step_ms, .batched = r.batched_heads, .hold_costs = r.k.hold_costs, .hold_rows = r.k.hold_rows };
+            .{ .step_ms = r.mtp_step_ms, .batched = r.batched_heads, .hold_costs = r.k.hold_costs, .hold_rows = r.k.hold_rows, .row_ms = row_ms };
         // a timed hold grid prices the pass itself: the overhead beyond it is the fixed one either way
-        const overhead = if (own_steps and r.k.hold_costs.len == 0) r.overheadMs(whos.len, sampled) else r.fixedMs(whos.len, sampled);
-        const counts = try alloc.allocateDrafts(r.gpa, ones, probs, r.shared_costs, overhead, @max(whos.len, r.batch_rows), head);
+        const overhead = if (own_steps and r.k.hold_costs.len == 0) r.overheadMs(live, sampled) else r.fixedMs(live, sampled);
+        const counts = try alloc.allocateDrafts(r.gpa, ones, probs, r.shared_costs, overhead, @max(live, r.batch_rows), head);
         defer r.gpa.free(counts);
         r.probeShared(whos, most, counts);
         if (r.plain_guard) {
             // no draft where none pays; a probe after a growing run of plain rounds
             for (whos, counts) |w, *c| {
+                if (w.finished) continue;
                 const st = &w.state.*.?;
                 st.rounds += 1;
                 if (c.* != 0) {
@@ -348,7 +372,8 @@ pub const Rule = struct {
         r.shared_rounds +%= 1;
         const every = r.k.depth_probe_every;
         if (whos.len == 0 or every == 0 or r.shared_rounds % every != 0) return;
-        var rows: u64 = whos.len;
+        var rows: u64 = 0;
+        for (whos) |w| rows += @intFromBool(!w.finished);
         for (counts) |c| rows += c;
         if (rows >= @max(whos.len, r.batch_rows)) return;
         const first: usize = @intCast((r.shared_rounds / every -% 1) % whos.len);
@@ -395,7 +420,7 @@ pub const Rule = struct {
         return r.mtp_step_ms * @as(f64, @floatFromInt(steps));
     }
 
-    /// `sampled`: the round drew keyed samples, so it counts for sampled streams' overhead alone; `head_ms` its drafts.
+    /// `ms` excludes separately priced host draws and extra head steps; `head_ms` is this interval's settled hold work.
     pub fn observeOverhead(r: *Rule, streams: u32, rows: u64, ms: f64, sampled: bool, head_ms: f64) !void {
         const forward = r.shared_costs.get(@intCast(rows)) orelse return;
         const extra = if (ms - forward > 0.0) ms - forward else 0.0;

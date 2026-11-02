@@ -8,6 +8,7 @@ const st = @import("state.zig");
 const fwd = @import("forward.zig");
 const snapshot = @import("snapshot.zig");
 const topk = @import("draw_topk.zig");
+const draw_timing = @import("draw_timing.zig");
 const Model = @import("model.zig").Model;
 const be = lanes.backend;
 
@@ -334,6 +335,8 @@ pub const Metal = struct {
 
     fn verifyFn(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) !void {
         const self = cast(ptr);
+        draw_timing.reset(windows);
+        errdefer draw_timing.reset(windows);
         var segments: [st.batch_rows]fwd.Segment = undefined;
         var ids: [st.batch_rows]u32 = undefined;
         var held: [st.batch_rows]fwd.Held = undefined;
@@ -373,10 +376,7 @@ pub const Metal = struct {
         var base: usize = 0;
         for (windows, out) |w, o| {
             if (o.sampled.len != w.rows() or o.drafts.len != w.rows() - 1) return error.InvalidLfmOutputs;
-            for (o.sampled, w.positions, 0..) |*t, p, r| {
-                const mask = if (w.masks.len > 0) w.masks[r * mask_words ..][0..mask_words] else &.{};
-                t.* = try drawRow(self.gpa, logits[(base + r) * c.vocab ..][0..c.vocab], w.stream.sampling, p, mask, best[2 * (base + r) ..][0..2].*);
-            }
+            try draw_timing.drawWindow(drawRow, self.gpa, w, o.sampled, logits[base * c.vocab ..][0 .. w.rows() * c.vocab], best[2 * base ..][0 .. 2 * w.rows()], draw_timing.Monotonic{});
             @memcpy(o.drafts, self.scratch.ids.slice(u32, base + w.rows())[base + 1 ..][0 .. w.rows() - 1]);
             base += w.rows();
         }
@@ -502,6 +502,7 @@ fn factsFor(width: u32, streams: u32, costs: []const lanes.config.Cost) lanes.Mo
 
 test {
     _ = @import("segments.zig"); // a shared round's table, with the family's tests
+    try @import("draw_timing_test.zig").check(drawRow);
 }
 
 test "after a failed wider-lanes check every forward is one stream's one row, so no window or by-expert twin runs" {

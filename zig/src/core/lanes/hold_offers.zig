@@ -6,14 +6,22 @@ pub const Offer = struct {
     index: usize,
     gain: f64,
     rows: f64,
+    row_ms: f64,
     depth: i64,
     lowered: bool,
     shortened: bool,
     pays: bool,
+    kept: bool = false, // incumbent membership survives cost-aware reordering
 
     fn less(_: void, x: Offer, y: Offer) bool {
         const gx = x.gain * y.rows;
         const gy = y.gain * x.rows;
+        return gx > gy or (gx == gy and x.index < y.index);
+    }
+
+    fn lessAt(rate: f64, x: Offer, y: Offer) bool {
+        const gx = (x.gain - rate * x.rows * x.row_ms) * y.rows;
+        const gy = (y.gain - rate * y.rows * y.row_ms) * x.rows;
         return gx > gy or (gx == gy and x.index < y.index);
     }
 };
@@ -50,13 +58,14 @@ fn offerFor(rule: anytype, who: anytype, index: usize, wanted: i64, base: price.
     const observed: []const f64 = if (who.state.*) |state| state.observed else &.{};
     const tried = if (who.state.*) |state| state.tried else 0;
     const prefix = if (rule.granted_depth)
-        price.prefix(rule.shared_costs, rule.k.hold_costs, base, fixed, who.prices, observed, tried, wanted)
+        price.prefix(rule.shared_costs, rule.k.hold_costs, base, fixed, who.row_ms, who.prices, observed, tried, wanted)
     else
         null;
     const offer: Offer = if (prefix) |p| .{
         .index = index,
         .gain = p.gain,
         .rows = p.rows,
+        .row_ms = who.row_ms,
         .depth = p.depth,
         .lowered = p.lowered,
         .shortened = p.shortened,
@@ -67,13 +76,14 @@ fn offerFor(rule: anytype, who: anytype, index: usize, wanted: i64, base: price.
             .index = index,
             .gain = gain,
             .rows = @floatFromInt(@max(1, who.granted orelse 1)),
+            .row_ms = who.row_ms,
             .depth = wanted,
             .lowered = (who.granted orelse 0) > 0 and who.gain != null and gain < who.gain.?,
             .shortened = false,
             .pays = false,
         };
         if (rule.shared_costs.get(@as(i64, base.rows) + @as(i64, @intFromFloat(held.rows)))) |verify| {
-            held.pays = (base.tokens + held.gain) / (verify + fixed + price.holdMs(rule.k.hold_costs, 1, held.depth)) > plain;
+            held.pays = (base.tokens + held.gain) / (verify + fixed + base.host_ms + held.rows * who.row_ms + price.holdMs(rule.k.hold_costs, 1, held.depth)) > plain;
         }
         break :legacy held;
     };
@@ -100,7 +110,7 @@ pub fn pay(rule: anytype, whos: anytype, sampled: bool, out: []i64, base: price.
         return;
     };
     const fixed = rule.fixedMs(base.streams, sampled);
-    const plain = base.tokens / (forward + fixed);
+    const plain = base.tokens / (forward + fixed + base.host_ms);
     var normal: usize = 0;
     var probes: usize = 0;
     for (whos, out, 0..) |who, wanted, index| {
@@ -141,6 +151,7 @@ pub fn pay(rule: anytype, whos: anytype, sampled: bool, out: []i64, base: price.
     }
     var rows: f64 = @floatFromInt(base.rows);
     var tokens = base.tokens;
+    var host_ms = base.host_ms;
     var deepest: i64 = 0;
     if (probes > 0) {
         const possible = price.canExplore(rule, whos, base, fixed);
@@ -156,6 +167,7 @@ pub fn pay(rule: anytype, whos: anytype, sampled: bool, out: []i64, base: price.
             }
             rows += probe.rows;
             tokens += probe.gain;
+            host_ms += probe.rows * who.row_ms;
             deepest = @max(deepest, probe.depth);
         }
         if (!possible) probes = 0;
@@ -166,24 +178,47 @@ pub fn pay(rule: anytype, whos: anytype, sampled: bool, out: []i64, base: price.
     const starting_forward = rule.shared_costs.get(@intFromFloat(@ceil(rows))) orelse return;
     for (order) |item| out[item.index] = 0;
     const probe_ms = passCost(rule, out, probes, deepest);
-    var best = tokens / (starting_forward + fixed + probe_ms);
-    var keep: usize = 0;
-    for (order, 1..) |item, count| {
-        rows += item.rows;
-        tokens += item.gain;
-        deepest = @max(deepest, item.depth);
-        const verify = rule.shared_costs.get(@intFromFloat(@ceil(rows))) orelse break;
-        out[item.index] = item.depth;
-        const now = tokens / (verify + fixed + passCost(rule, out, count + probes, deepest));
-        if (now > best) {
-            best = now;
-            keep = count;
+    var best = tokens / (starting_forward + fixed + host_ms + probe_ms);
+    const mixed = for (order[1..]) |item| {
+        if (item.row_ms != order[0].row_ms) break true;
+    } else false;
+    while (true) {
+        var current_rows = rows;
+        var current_tokens = tokens;
+        var current_host_ms = host_ms;
+        var current_deepest = deepest;
+        var keep: ?usize = null;
+        for (order, 1..) |item, count| {
+            current_rows += item.rows;
+            current_tokens += item.gain;
+            current_host_ms += item.rows * item.row_ms;
+            current_deepest = @max(current_deepest, item.depth);
+            const verify = rule.shared_costs.get(@intFromFloat(@ceil(current_rows))) orelse break;
+            out[item.index] = item.depth;
+            const now = current_tokens / (verify + fixed + current_host_ms + passCost(rule, out, count + probes, current_deepest));
+            if (now > best) {
+                best = now;
+                keep = count;
+            }
         }
+        if (keep) |count| for (order, 0..) |*item, index| {
+            item.kept = index < count;
+        };
+        // Equal quotes retain the old gain/row prefixes and their deterministic ties.
+        if (!mixed) break;
+        const changed = for (order[1..], order[0 .. order.len - 1]) |next, previous| {
+            if (Offer.lessAt(best, next, previous)) break true;
+        } else false;
+        if (!changed) break;
+        // Strictly improving incumbents over finite deterministic orders terminate without an iteration cap.
+        std.mem.sort(Offer, order, best, Offer.lessAt);
+        for (order) |item| out[item.index] = 0;
+        // Restart only normal offers: admitted probes and their spent cadence stay fixed.
     }
-    for (order, 0..) |item, index| {
+    for (order) |item| {
         if (whos[item.index].state.*) |*state|
-            state.hold_capped = item.lowered and (index >= keep or item.shortened);
-        if (index >= keep) out[item.index] = 0;
+            state.hold_capped = item.lowered and (!item.kept or item.shortened);
+        out[item.index] = if (item.kept) item.depth else 0;
     }
 }
 

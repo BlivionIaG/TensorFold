@@ -131,6 +131,15 @@ Observed fixed overhead excludes the completed hold's GPU time in the round that
 the modeled price of a new unwaited hold. Work settled outside a round is discarded before its clock starts.
 Reading this accounting never submits GPU work or adds a wait; backends without it retain modeled pricing.
 
+For stable, unmasked LFM2 verify routes, each successful window quotes its host draw time per verified
+row. The existing allocator charges pending, copied, forced and neural rows at their stream's quote,
+including companion rows when it prices a physical hold cohort. Actual quoted draw spans leave fixed
+overhead once; predicted row prices are never subtracted from observed time. Greedy GPU picks quote zero.
+Failed and first-draw work cannot leak into a later verify span. Grammar or masked routes retain their
+host work in residual overhead rather than publishing a reusable quote. Unknown target costs keep the
+existing exploration path; confidence-only controls and complete measured lone-round prices do not add
+this surcharge. These accounting changes still require the complete throughput qualification above.
+
 [Controller regression and native API receipts](../receipts/dspark-chain-restack/hold-value-controller.json)
 record the constructed timing cases and source hashes; they are not device-throughput qualification.
 

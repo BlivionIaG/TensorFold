@@ -214,6 +214,8 @@ pub const Engine = struct {
         const windows = [_]be.Window{try win.build(e, plan, early)};
         const rows = windows[0].rows();
         var out = [_]be.Verified{.{ .sampled = try a.alloc(u32, rows), .drafts = try a.alloc(u32, rows - 1), .rows = if (s.logprobs != null) try a.alloc(LogRow, rows) else &.{} }};
+        s.verify_host_ms = 0;
+        defer s.verify_host_ms = 0; // failed or unpriced rounds must never leave a span for a later round
         try e.backend.verify(&windows, &out);
         const tokens = try win.tokens(e, windows[0], out[0]);
         const parents = try win.rowParents(e, windows[0]);
@@ -250,7 +252,7 @@ pub const Engine = struct {
         if (e.cfg.timed and plan.kind == .head) {
             const ms = e.clock.elapsedMs(.overhead);
             try trail.event(e, &.{ f("ev", str("overhead")), f("streams", int(1)), f("rows", int(rows)), f("ms", ev.bits(ms)) });
-            try e.rule.observeOverhead(1, rows, ms, s.sampling != null, @import("hold_price.zig").observedHeadMs(e.backend, &e.rule, &.{}));
+            try e.rule.observeOverhead(1, rows, ms - takeVerifyHostMs(&windows), s.sampling != null, @import("hold_price.zig").observedHeadMs(e.backend, &e.rule, &.{}));
         }
         if (e.backend.round_observer != null) e.backend.observed(&.{o.path});
         return .{ .rows = @intCast(rows), .keep = @intCast(o.path.len), .got = o.got };
@@ -273,6 +275,10 @@ pub const Engine = struct {
             o.* = .{ .sampled = try a.alloc(u32, w.rows()), .drafts = try a.alloc(u32, w.rows() - 1), .rows = if (p.stream.logprobs != null) try a.alloc(LogRow, w.rows()) else &.{} };
             total += w.rows();
         }
+        for (windows) |w| w.stream.verify_host_ms = 0;
+        defer for (windows) |w| {
+            w.stream.verify_host_ms = 0;
+        };
         try e.backend.verify(windows, out);
         const outcomes = try a.alloc(Outcome, plans.len);
         const paths = try a.alloc([]const u32, plans.len);
@@ -321,9 +327,19 @@ pub const Engine = struct {
             const extra = @import("hold_price.zig").extraStepMs(budgets, e.cfg.draft_step_ms, e.cfg.draft_step_ms != 0 and e.cfg.draft_streams and depth.pricedBatched());
             const ms = e.clock.elapsedMs(.overhead) - extra;
             try trail.event(e, &.{ f("ev", str("overhead")), f("streams", int(plans.len)), f("rows", int(total)), f("ms", ev.bits(ms)) });
-            try e.rule.observeOverhead(@intCast(plans.len), total, ms, sampled, @import("hold_price.zig").observedHeadMs(e.backend, &e.rule, budgets));
+            try e.rule.observeOverhead(@intCast(plans.len), total, ms - takeVerifyHostMs(windows), sampled, @import("hold_price.zig").observedHeadMs(e.backend, &e.rule, budgets));
         }
         if (e.backend.round_observer != null) e.backend.observed(paths);
+    }
+
+    /// Drain completed spans once; unquoted routes retain their old residual-overhead price.
+    fn takeVerifyHostMs(windows: []const be.Window) f64 {
+        var ms: f64 = 0;
+        for (windows) |w| {
+            if (w.stream.verify_row_ms != null and w.stream.grammar == null) ms += w.stream.verify_host_ms;
+            w.stream.verify_host_ms = 0;
+        }
+        return ms;
     }
 
     /// Commit the target-sampled path (after the thinking budget's cut), each token with its path row's logprob row.

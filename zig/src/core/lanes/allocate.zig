@@ -1,4 +1,4 @@
-//! Shared rows by landing probability and forward costs between timed widths (Python allocate.py, extend_costs).
+//! Shared rows by landing probability, host draw prices and forward costs between timed widths.
 const std = @import("std");
 const hold_price = @import("hold_price.zig");
 const Allocator = std.mem.Allocator;
@@ -24,6 +24,7 @@ pub const HeadCost = struct {
     free_first: bool = false,
     hold_costs: []const hold_price.HoldCost = &.{},
     charged: []const bool = &.{},
+    row_ms: []const f64 = &.{}, // each stream's host draw cost per verified row, independent of the neural mask
     hold_rows: u32 = 0,
 };
 
@@ -67,50 +68,79 @@ pub fn allocateDrafts(gpa: Allocator, fixed: []const u32, probs: []const []const
     const counts = try gpa.alloc(u32, probs.len);
     defer gpa.free(counts);
     const best_counts = try gpa.alloc(u32, probs.len);
-    @memset(counts, 0);
     @memset(best_counts, 0);
-    var rows: u64 = 0;
-    for (fixed) |f| rows += f;
-    var expected: f64 = @floatFromInt(rows);
-    var drafts: u64 = 0;
-    var deepest: u32 = 0;
-    var firsts: u64 = 0;
+    var fixed_rows: u64 = 0;
+    var fixed_host_ms: f64 = 0;
+    for (fixed, 0..) |f, i| {
+        fixed_rows += f;
+        if (head.row_ms.len > 0) {
+            fixed_host_ms += @as(f64, @floatFromInt(f)) * head.row_ms[i];
+        }
+    }
     const grid = head.hold_costs.len > 0;
-    var pass: GridPass = .{ .costs = head.hold_costs, .batched = head.batched, .free = @intFromBool(head.free_first), .rows = head.hold_rows, .counts = counts, .charged = head.charged };
     const timed = !costs.empty();
-    var head_ms: f64 = 0.0; // the nodes counted so far: the head's price
-    var best = rate(costs, timed, rows, expected, overhead_ms);
-    while (rows < max_rows) {
-        // the likeliest next node, ties to the lowest stream (Python's heapq of (-p, stream))
-        var pick: ?usize = null;
-        var pick_p: f64 = 0.0;
+    const mixed_host = timed and head.row_ms.len > 0 and mixed: {
+        var quote: ?f64 = null;
         for (probs, 0..) |p, s| {
-            if (counts[s] >= p.len) continue;
-            const v = p[counts[s]];
-            if (pick == null or v > pick_p) {
-                pick = s;
-                pick_p = v;
+            if (p.len == 0) continue;
+            if (quote) |first| {
+                if (head.row_ms[s] != first) break :mixed true;
+            } else quote = head.row_ms[s];
+        }
+        break :mixed false;
+    };
+    var best = rate(costs, timed, fixed_rows, @floatFromInt(fixed_rows), overhead_ms + fixed_host_ms);
+    while (true) {
+        const incumbent = best;
+        // Unknown/nonfinite rates cannot price marginal utility (in particular, infinity * a free row).
+        const price_order = mixed_host and incumbent >= 0 and std.math.isFinite(incumbent);
+        @memset(counts, 0);
+        var rows = fixed_rows;
+        var host_ms = fixed_host_ms;
+        var expected: f64 = @floatFromInt(rows);
+        var drafts: u64 = 0;
+        var deepest: u32 = 0;
+        var firsts: u64 = 0;
+        var pass: GridPass = .{ .costs = head.hold_costs, .batched = head.batched, .free = @intFromBool(head.free_first), .rows = head.hold_rows, .counts = counts, .charged = head.charged };
+        var head_ms: f64 = 0.0; // the nodes counted so far: the head's price
+        while (rows < max_rows) {
+            // Equal/absent host prices keep the probability prefix; ties always favor the lowest stream.
+            var pick: ?usize = null;
+            var pick_p: f64 = 0.0;
+            var pick_score: f64 = 0.0;
+            for (probs, 0..) |p, s| {
+                if (counts[s] >= p.len) continue;
+                const v = p[counts[s]];
+                const score = if (price_order) v - incumbent * head.row_ms[s] else v;
+                if (pick == null or score > pick_score) {
+                    pick = s;
+                    pick_p = v;
+                    pick_score = score;
+                }
+            }
+            const s = pick orelse break;
+            counts[s] += 1;
+            rows += 1;
+            expected += pick_p;
+            if (head.row_ms.len > 0) host_ms += head.row_ms[s];
+            if (head.charged.len == 0 or head.charged[s]) {
+                firsts += @intFromBool(counts[s] == 1);
+                drafts += 1;
+                deepest = @max(deepest, counts[s]);
+                if (grid) head_ms = pass.grow(counts[s]);
+            }
+            if (!grid) {
+                const steps: f64 = @floatFromInt(if (head.batched) deepest -| @intFromBool(head.free_first) else drafts - (if (head.free_first) firsts else 0));
+                head_ms = head.step_ms * steps;
+            }
+            const now = rate(costs, timed, rows, expected, overhead_ms + host_ms + head_ms);
+            if (now > best or (!timed and head.step_ms == 0 and !grid)) {
+                best = now;
+                @memcpy(best_counts, counts);
             }
         }
-        const s = pick orelse break;
-        counts[s] += 1;
-        rows += 1;
-        expected += pick_p;
-        if (head.charged.len == 0 or head.charged[s]) {
-            firsts += @intFromBool(counts[s] == 1);
-            drafts += 1;
-            deepest = @max(deepest, counts[s]);
-            if (grid) head_ms = pass.grow(counts[s]);
-        }
-        if (!grid) {
-            const steps: f64 = @floatFromInt(if (head.batched) deepest -| @intFromBool(head.free_first) else drafts - (if (head.free_first) firsts else 0));
-            head_ms = head.step_ms * steps;
-        }
-        const now = rate(costs, timed, rows, expected, overhead_ms + head_ms);
-        if (now > best or (!timed and head.step_ms == 0 and !grid)) {
-            best = now;
-            @memcpy(best_counts, counts);
-        }
+        // Strict improvement over finite prefix orders terminates without claiming a global grid search.
+        if (!mixed_host or !(best > incumbent) or !std.math.isFinite(best)) break;
     }
     return best_counts;
 }
@@ -324,6 +354,63 @@ test "a hold grid charges only the streams the head drafts: a copy's nodes take 
     try std.testing.expectEqualSlices(u32, &.{ 1, 1 }, free);
 }
 
+test "host rows price pending work once and each optional draw even when the head does not charge it" {
+    const gpa = std.testing.allocator;
+    var flat = try extendCosts(gpa, &.{.{ .width = 8, .ms = 10 }}, 8);
+    defer flat.deinit(gpa);
+    const chances = [_][]const f64{&.{ 0.5, 0.2, 0.1 }};
+    for ([_]bool{ false, true }) |neural| {
+        const counts = try allocateDrafts(gpa, &.{1}, &chances, &flat, 0, 8, .{ .charged = &.{neural}, .row_ms = &.{8} });
+        defer gpa.free(counts);
+        // 1 / 18 < 1.5 / 26, but 1.7 / 34 loses. Omitting pending draw cost wrongly rejects the first.
+        try std.testing.expectEqualSlices(u32, &.{1}, counts);
+    }
+    const free = try allocateDrafts(gpa, &.{1}, &chances, &flat, 0, 8, .{ .row_ms = &.{0} });
+    defer gpa.free(free);
+    try std.testing.expectEqualSlices(u32, &.{3}, free);
+    const untimed: Table = .{};
+    const priced = try allocateDrafts(gpa, &.{1}, &chances, &untimed, 0, 8, .{ .row_ms = &.{8} });
+    defer gpa.free(priced);
+    // Unknown target cost is not a measured-free forward: preserve the untimed exploration path.
+    try std.testing.expectEqualSlices(u32, &.{3}, priced);
+}
+
+test "unequal mixed routes keep cheap rows in either order without charging all rows as sampled" {
+    const gpa = std.testing.allocator;
+    var flat = try extendCosts(gpa, &.{.{ .width = 9, .ms = 10 }}, 9);
+    defer flat.deinit(gpa);
+    for ([_]bool{ false, true }) |swapped| {
+        const greedy: usize = @intFromBool(swapped);
+        const sampled = 1 - greedy;
+        var fixed: [2]u32 = undefined;
+        var probabilities: [2][]const f64 = undefined;
+        var host: [2]f64 = undefined;
+        fixed[greedy] = 1;
+        fixed[sampled] = 3;
+        probabilities[greedy] = &.{ 0.9, 0.8, 0.7 };
+        probabilities[sampled] = &.{ 0.6, 0.2 };
+        host[greedy] = 0;
+        host[sampled] = 5;
+        const counts = try allocateDrafts(gpa, &fixed, &probabilities, &flat, 0, 9, .{ .row_ms = &host });
+        defer gpa.free(counts);
+        try std.testing.expectEqual(@as(u32, 3), counts[greedy]);
+        try std.testing.expectEqual(@as(u32, 0), counts[sampled]);
+    }
+}
+
+test "copied rows pay host draws but never inherit the neural hold price" {
+    const gpa = std.testing.allocator;
+    var flat = try extendCosts(gpa, &.{.{ .width = 4, .ms = 10 }}, 4);
+    defer flat.deinit(gpa);
+    const chances = [_][]const f64{ &.{0.99}, &.{0.8} };
+    const grid = [_]hold_price.HoldCost{.{ .streams = 1, .depth = 1, .ms = 20 }};
+    for ([_]f64{ 0, 30 }) |copy_ms| {
+        const counts = try allocateDrafts(gpa, &.{ 1, 1 }, &chances, &flat, 0, 4, .{ .hold_costs = &grid, .batched = true, .charged = &.{ false, true }, .row_ms = &.{ copy_ms, 0 } });
+        defer gpa.free(counts);
+        try std.testing.expectEqualSlices(u32, if (copy_ms == 0) &.{ 1, 0 } else &.{ 0, 0 }, counts);
+    }
+}
+
 test "a hold past the pass's rows is priced as the passes it takes: an asymmetric cohort stops where its blocks stop fitting" {
     const gpa = std.testing.allocator;
     var flat = try extendCosts(gpa, &.{ .{ .width = 1, .ms = 10.0 }, .{ .width = 32, .ms = 10.0 } }, 32);
@@ -361,4 +448,77 @@ test "extendCosts interpolates and extrapolates" {
     try std.testing.expectEqual(@as(?f64, 4.0), t.get(1));
     try std.testing.expectEqual(@as(?f64, 6.0), t.get(3));
     try std.testing.expectEqual(@as(?f64, 12.0), t.get(6));
+}
+
+test "mixed host prices keep the cheaper lower-probability row in either stream order" {
+    const gpa = std.testing.allocator;
+    var flat = try extendCosts(gpa, &.{.{ .width = 4, .ms = 10 }}, 4);
+    defer flat.deinit(gpa);
+    const untimed: Table = .{};
+    for ([_]bool{ false, true }) |swapped| {
+        const cheap: usize = @intFromBool(swapped);
+        const expensive = 1 - cheap;
+        var chances: [2][]const f64 = undefined;
+        var host: [2]f64 = undefined;
+        chances[cheap] = &.{0.8};
+        chances[expensive] = &.{0.9};
+        host[cheap] = 0;
+        host[expensive] = 100;
+        const counts = try allocateDrafts(gpa, &.{ 1, 1 }, &chances, &flat, 0, 4, .{ .row_ms = &host });
+        defer gpa.free(counts);
+        try std.testing.expectEqual(@as(u32, 1), counts[cheap]);
+        try std.testing.expectEqual(@as(u32, 0), counts[expensive]);
+        const unknown = try allocateDrafts(gpa, &.{ 1, 1 }, &chances, &untimed, 0, 4, .{ .row_ms = &host });
+        defer gpa.free(unknown);
+        try std.testing.expectEqualSlices(u32, &.{ 1, 1 }, unknown);
+    }
+}
+
+test "a later cheap cohort reprices an initially profitable expensive companion" {
+    const gpa = std.testing.allocator;
+    var flat = try extendCosts(gpa, &.{.{ .width = 11, .ms = 10 }}, 11);
+    defer flat.deinit(gpa);
+    const cheap_chain: [8]f64 = @splat(0.3);
+    for ([_]bool{ false, true }) |swapped| {
+        const cheap: usize = @intFromBool(swapped);
+        const expensive = 1 - cheap;
+        var chances: [2][]const f64 = undefined;
+        var host: [2]f64 = undefined;
+        chances[cheap] = &cheap_chain;
+        chances[expensive] = &.{0.9};
+        host[cheap] = 0;
+        host[expensive] = 3;
+        // First 2.9/16 beats 2.3/13; after eight cheap rows, 4.4/13 beats 5.3/16 without the expensive row.
+        const counts = try allocateDrafts(gpa, &.{ 1, 1 }, &chances, &flat, 0, 11, .{ .row_ms = &host });
+        defer gpa.free(counts);
+        try std.testing.expectEqual(@as(u32, 8), counts[cheap]);
+        try std.testing.expectEqual(@as(u32, 0), counts[expensive]);
+    }
+}
+
+test "uniform host quotes retain stream ties and the strict profit boundary" {
+    const gpa = std.testing.allocator;
+    var flat = try extendCosts(gpa, &.{.{ .width = 4, .ms = 10 }}, 4);
+    defer flat.deinit(gpa);
+    const chances = [_][]const f64{ &.{0.75}, &.{0.75} };
+    for ([_]f64{ 0, 5 }) |quote| {
+        const counts = try allocateDrafts(gpa, &.{ 1, 1 }, &chances, &flat, 0, 3, .{ .row_ms = &.{ quote, quote } });
+        defer gpa.free(counts);
+        try std.testing.expectEqualSlices(u32, &.{ 1, 0 }, counts);
+    }
+    const equal = [_][]const f64{ &.{0.5}, &.{0.5} };
+    const boundary = try allocateDrafts(gpa, &.{ 1, 1 }, &equal, &flat, 0, 4, .{ .row_ms = &.{ 5, 5 } });
+    defer gpa.free(boundary);
+    // 2/20 == 2.5/25 == 3/30: equality never purchases more work.
+    try std.testing.expectEqualSlices(u32, &.{ 0, 0 }, boundary);
+}
+
+test "an infinite measured baseline does not resweep mixed host quotes" {
+    const gpa = std.testing.allocator;
+    var flat = try extendCosts(gpa, &.{.{ .width = 3, .ms = 0 }}, 3);
+    defer flat.deinit(gpa);
+    const chances = [_][]const f64{ &.{0.9}, &.{0.8} };
+    const counts = try allocateDrafts(gpa, &.{ 0, 1 }, &chances, &flat, 0, 3, .{ .row_ms = &.{ 1, 0 } });
+    defer gpa.free(counts);
+    try std.testing.expectEqualSlices(u32, &.{ 0, 0 }, counts);
 }

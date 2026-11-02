@@ -2,6 +2,7 @@
 const std = @import("std");
 const win = @import("windows.zig");
 const alloc = @import("allocate.zig");
+const verify_cost = @import("verify_cost.zig");
 const Engine = @import("engine.zig").Engine;
 const depth = @import("depth.zig");
 
@@ -10,6 +11,7 @@ pub fn budgets(e: *Engine, plans: []const win.Plan, heads: []const usize, out: [
     const fixed = try a.alloc(u32, plans.len);
     const probs = try a.alloc([]const f64, plans.len);
     const neural = try a.alloc(bool, plans.len);
+    const row_ms = try verify_cost.snapshot(a, plans, true);
     const sampled = win.anySampled(plans);
     const limits = try costLimits(e, plans, heads, sampled, out);
     var live: usize = 0;
@@ -59,7 +61,7 @@ pub fn budgets(e: *Engine, plans: []const win.Plan, heads: []const usize, out: [
     }
     // Copies add verify rows, not head work; granted depths already pay in payReserved.
     const rich = e.cfg.k.hold_costs.len > 0 and !e.cfg.granted_depth;
-    const head_cost: alloc.HeadCost = if (rich) .{ .hold_costs = e.cfg.k.hold_costs, .hold_rows = e.cfg.k.hold_rows, .batched = e.cfg.draft_streams and depth.pricedBatched(), .charged = neural } else .{};
+    const head_cost: alloc.HeadCost = if (rich) .{ .hold_costs = e.cfg.k.hold_costs, .hold_rows = e.cfg.k.hold_rows, .batched = e.cfg.draft_streams and depth.pricedBatched(), .charged = neural, .row_ms = row_ms } else .{ .row_ms = row_ms };
     const overhead = if (rich) e.rule.fixedMs(@intCast(live), sampled) else e.rule.overheadMs(@intCast(live), sampled);
     const counts = try alloc.allocateDrafts(a, fixed, probs, &e.cfg.shared_costs, overhead, @max(live, e.cfg.batch_rows), head_cost);
     for (heads, out) |i, *budget| {
@@ -67,12 +69,15 @@ pub fn budgets(e: *Engine, plans: []const win.Plan, heads: []const usize, out: [
     }
     if (limits) |l| if (e.cfg.granted_depth) {
         var base = @import("hold_price.zig").Base.pending(live);
-        for (fixed, probs, neural, counts) |rows, chances, head, count| {
+        for (fixed, probs, neural, counts, 0..) |rows, chances, head, count, i| {
+            const ms = if (row_ms.len > 0) row_ms[i] else 0;
             if (rows == 0) continue;
+            base.host_ms += @as(f64, @floatFromInt(rows)) * ms;
             base.rows += rows - 1;
             base.tokens += @floatFromInt(rows - 1);
             if (head) continue;
             base.rows += count;
+            base.host_ms += @as(f64, @floatFromInt(count)) * ms;
             for (chances[0..@min(count, chances.len)]) |chance| base.tokens += chance;
         }
         try payReserved(e, l.who, probs, heads, sampled, out, base);
