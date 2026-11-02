@@ -517,8 +517,7 @@ test "fixed query blocks fund the real split instead of four cheap short heads" 
     for ([_]u32{ 0, 9, 0 }) |query_rows| {
         f.engine.rule.k.hold_block_rows = query_rows;
         try f.budgetsFor(&plans, &.{ 0, 1, 2, 3 }, &out);
-        // Variable one-row heads fit together: 7.2/16 pays. Four fixed nine-row blocks
-        // split 3+1 and tie plain at 7.2/18, but the first three still pay at 6.4/15.
+        // Four fixed queries split 3+1 and tie plain; the first three still pay.
         try std.testing.expectEqualSlices(i64, if (query_rows == 0) &.{ 1, 1, 1, 1 } else &.{ 1, 1, 1, 0 }, &out);
     }
 }

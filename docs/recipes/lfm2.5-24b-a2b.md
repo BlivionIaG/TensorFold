@@ -69,9 +69,13 @@ The drafter has no embedding and no head of its own:
 - Context: the target's captured rows after layers 2, 10, 18, 26 and 34, through `fc` and
   `hidden_norm`, give each of its five layers' context keys and values (k_norm, then RoPE at the row's position).
 - Block: the pending token and mask tokens run five Qwen3 layers with non-causal attention over the context and the
-  block, then the target's head. A block is as long as the deepest chain its pass holds, at most the nine rows the
-  drafter was trained on.
+  block, then the target's head. Every hold keeps the configured nine query rows and full pointwise tail,
+  including unused masks; a smaller grant retains a proposal prefix rather than shortening the backbone.
 - Markov head: row i's logits plus `W2 W1[previous token]` (rank 256); draft i is their argmax.
+
+Full-block attention reserves one tail chunk beyond the target's 131,072-key span for query masks.
+The target context window is unchanged. A GPU boundary oracle checks both the next scratch row and the
+extra keys' contribution to the result.
 
 The drafter runs the released bf16 matrices as they are (`--drafter-bits 0`, the default). `--drafter-bits 8` instead
 quantizes them at load to 8-bit MLX affine codes in groups of 64: about 361 MiB of weights
@@ -108,9 +112,10 @@ The drafter also carries a confidence head: a linear map of a draft's final bloc
 (2,304 inputs) to one logit, through a sigmoid (`lfm2_dspark_confidence`). It does not change the drafts.
 The verify rows follow it: a chain's chance at draft j is the product of its first j confidences. Each round the
 lane core's window allocator takes the likeliest drafts over all streams while the expected tokens a ms rise, so
-each stream gets its own verify length, and the next hold drafts as deep as the stream's grant. A hold still
-running on the GPU is priced by its lane's last confidences, so the host does not wait for it. A checkpoint
-without the head verifies by the core's depth rule, from each stream's measured acceptance by depth.
+each stream gets its own verify length, and the next hold returns that proposal prefix while keeping the
+full configured query block. A hold still running on the GPU is priced by its lane's last confidences, so
+the host does not wait for it. A checkpoint without the head verifies by the core's depth rule, from each
+stream's measured acceptance by depth.
 
 Without the BF16 GPU tensor pipeline, wide gate/up projections fuse with SwiGLU for 4 through 16 physical rows.
 Each projection retains its original accumulation order and rounds to BF16 before the canonical SwiGLU
@@ -119,9 +124,12 @@ projections and activation. The 8-bit path is unchanged.
 
 A stream with a copy ahead verifies the copy and asks no hold, and a drafting stream prices its copy
 windows by its own copies. The lane core also weighs the hold pass itself: the drafter measures clean
-holds of 1 to 16 blocks at every admissible depth. Each quote selects the best of three same-attempt
-precommit CPU-encoding plus GPU totals after a warm pass. Neighboring measured depths interpolate,
-preserving the cost changes at kernel transitions.
+holds at every legal physical block count and requested proposal depth. Every block still runs the
+checkpoint's configured nine bidirectional query rows, including unused masks; a smaller grant retains
+only its proposal prefix, not a shorter attention problem. Larger logical cohorts run as bounded
+32-row passes, without a stream-count cutoff. Both clean and context funding use those physical groups.
+Each quote selects the best of three same-attempt precommit CPU-encoding plus GPU totals after a warm
+pass. Neighboring measured depths interpolate, preserving the cost changes at kernel transitions.
 
 A separate 60-cell calibration uses the same cost currency for context projection: 1/2/4/8/16 streams at powers-of-two row
 counts from 1 to 2,048. Temporary K/V-only lanes share one nonzero raw fixture and are freed before serving;

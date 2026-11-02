@@ -16,6 +16,10 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - The Intel GPU host tests build again: `zig build test-slide-xpu-host` no longer stops with a missing kernel image (#1840). Thanks to @jschmied.
 
+- LFM2 DSpark retains the configured bidirectional query block when the scheduler asks for a shorter proposal prefix. Physical packing, clean calibration, context funding and the FP32 reference use the same fixed query width; larger logical cohorts still run as bounded passes. This corrects grant-dependent model inputs, not a claim of higher acceptance or throughput.
+
+- LFM2 DSpark attention reserves a tail chunk for full query masks at maximum context, without changing the target's context window or attention capacity. A real-GPU regression catches partials overwriting the next scratch row and checks that the extra keys contribute to the merged result.
+
 - LFM2 DSpark holds gather adjacent small context pieces in preallocated scratch. Target normalization carries raw BF16 residuals in captured tap columns instead of storing them twice. Bounded, admission-priced lane storage retains verified taps until a hold, snapshot or overflow needs their projections, preserving context across zero-grant rounds and target-tap overwrites.
 
 - `tools/bench_lfm2_dspark.py` records the complete same-head no-drafter/BF16/8-bit qualification matrix, checks token equality across solo, draft-disabled and concurrent runs, and fails every cell below its plain baseline. Reduced runs are explicitly smoke evidence, not qualification.
