@@ -358,7 +358,7 @@ pub const Rule = struct {
         if (r.plain_guard) {
             // no draft where none pays; a probe after a growing run of plain rounds
             for (whos, counts) |w, *c| {
-                if (w.finished) continue;
+                if (w.finished or w.forced) continue;
                 const st = &w.state.*.?;
                 st.rounds += 1;
                 if (c.* != 0) {

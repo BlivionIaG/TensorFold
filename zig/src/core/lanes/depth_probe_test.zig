@@ -156,3 +156,29 @@ test "depth picks the most tokens a ms and probes deeper" {
     const who: depth.Who = .{ .state = &st, .draft_room = 100, .finished = false, .forced = false };
     try t.expectEqual(@as(i64, 3), try rule.depth(who));
 }
+
+test "forced rounds retain a due plain-recovery trial until a draft can run" {
+    var slots = [_]?f64{ null, 10, 10 };
+    const costs: @import("table.zig").Table = .{ .slots = &slots };
+    var rule: depth.Rule = .{ .gpa = gpa, .prior = &.{0.5}, .most_drafts = 1, .family_costs = &costs, .shared_costs = &costs, .mtp_step_ms = 100, .plain_guard = true, .node_probabilities = false, .batch_rows = 2 };
+    defer rule.deinit();
+    var state: ?depth.State = .{ .p = try gpa.dupe(f64, &.{0.5}), .rounds = 19, .plain = 7, .wait = 8 };
+    defer state.?.deinit(gpa);
+    var whos = [_]depth.Who{.{ .state = &state, .draft_room = 64, .finished = false, .forced = true }};
+    var unused: u8 = 0;
+    const probe: depth.Probe = .{ .ptr = &unused, .copy = noCopy };
+    var out: [1]i64 = undefined;
+    for (0..3) |_| {
+        try rule.budgets(&whos, probe, false, &out);
+        try t.expectEqual(@as(i64, 0), out[0]);
+        try t.expectEqual(@as(?u64, 7), state.?.plain);
+        try t.expectEqual(@as(?u64, 8), state.?.wait);
+        try t.expectEqual(@as(u64, 19), state.?.rounds);
+    }
+    whos[0].forced = false;
+    try rule.budgets(&whos, probe, false, &out);
+    try t.expectEqual(@as(i64, 1), out[0]);
+    try t.expectEqual(@as(?u64, 0), state.?.plain);
+    try t.expectEqual(@as(?u64, 16), state.?.wait);
+    try t.expectEqual(@as(u64, 20), state.?.rounds);
+}
