@@ -14,12 +14,14 @@ pub fn splitHold(gpa: std.mem.Allocator, io: std.Io, d: *q.dspark.Drafter, ids: 
     const step_ms = d.step_ms;
     const hold_ms = d.hold_ms;
     const spent_ms = d.hold_spent_ms;
+    const encode_ms = d.encode_cpu_ms;
     defer {
         d.holds = real_grid;
         d.holds_len = real_len;
         d.step_ms = step_ms;
         d.hold_ms = hold_ms;
         d.hold_spent_ms = spent_ms;
+        d.encode_cpu_ms = encode_ms;
     }
     var pending: [8]u32 = undefined;
     for (&pending, 0..) |*p, i| p.* = ids[(i * 131 + 5) % ids.len];
@@ -53,8 +55,11 @@ pub fn splitHold(gpa: std.mem.Allocator, io: std.Io, d: *q.dspark.Drafter, ids: 
     // nothing pending (one 8-block signalled pass would be), and no lane points into a signalled pass
     if (d.pending != null or d.pass_len != 0) return error.SplitHoldLeftAPassPending;
     for (&streams) |*s| if (d.lanes.get(s).?.slot != null) return error.SplitHoldLaneInASignalledPass;
+    const gpu_ms = d.hold_spent_ms;
+    const cpu_ms = d.encode_cpu_ms;
     const taken = q.dspark_block.takeHoldMs(d);
     if (!(taken > 0) or q.dspark_block.takeHoldMs(d) != 0) return error.SplitHoldTimeNotTakenOnce;
+    if (taken != cpu_ms + gpu_ms or !(cpu_ms > 0) or !(gpu_ms > 0)) return error.SplitHoldComponentsNotTaken;
     if (taken > wall) return error.SplitHoldTimeExceedsWall;
     // each lane's picks: its depth of them, the same as the reference pass of its group
     for (&streams, refs, depths, 0..) |*s, ref, depth, i| {
@@ -74,7 +79,7 @@ pub fn splitHold(gpa: std.mem.Allocator, io: std.Io, d: *q.dspark.Drafter, ids: 
         };
         if (!ok) return error.SplitHoldGridStepsWrong;
     }
-    std.debug.print("split hold, 8 lanes at depths [9, 1 x 7]: passes of 3x9 and 5x1 rows, both synchronous; {d:.2} ms GPU taken once ({d:.2} ms wall); picks equal the reference groups'; 2-, 8- and 4-block passes repriced once, once and twice, 1- and 16-block passes untouched\n", .{ taken, wall });
+    std.debug.print("split hold, 8 lanes at depths [9, 1 x 7]: passes of 3x9 and 5x1 rows, both synchronous; {d:.3} ms CPU-encode + {d:.3} ms GPU = {d:.3} ms taken once ({d:.3} ms wall); picks equal the reference groups'; 2-, 8- and 4-block passes repriced once, once and twice, 1- and 16-block passes untouched\n", .{ cpu_ms, gpu_ms, taken, wall });
 }
 fn untouched(words: []const u16) bool {
     for (words) |v| if (v != 0x7fc0) return false;
@@ -210,6 +215,7 @@ pub fn nonfinite(gpa: std.mem.Allocator, d: *q.dspark.Drafter) !void {
     const step_ms = d.step_ms;
     const hold_ms = d.hold_ms;
     const spent_ms = d.hold_spent_ms;
+    const encode_ms = d.encode_cpu_ms;
     defer {
         d.w.w1 = old_w1;
         d.w.w2 = old_w2;
@@ -218,6 +224,7 @@ pub fn nonfinite(gpa: std.mem.Allocator, d: *q.dspark.Drafter) !void {
         d.step_ms = step_ms;
         d.hold_ms = hold_ms;
         d.hold_spent_ms = spent_ms;
+        d.encode_cpu_ms = encode_ms;
     }
     // Depth one reads only W1[0]; all its factors are one, so an isolated infinity cannot become 0*Inf.
     const w1 = try m.device.buffer(rank * 2, shared);

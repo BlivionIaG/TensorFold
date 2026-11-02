@@ -84,8 +84,8 @@ pub fn absorb(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
     }
     var pool: ?mtl.objc.Pool = null;
     defer if (pool) |p| p.pop();
-    var run: ?@TypeOf(block.begin(d)) = null;
-    errdefer if (run) |r| r.e.end(); // an encoding error closes the open encoder
+    var run: ?block.Run = null;
+    errdefer if (run) |r| block.abort(d, r);
     var pieces: [32]block.Piece = undefined;
     var count: usize = 0;
     var rows: usize = 0;
@@ -107,7 +107,7 @@ pub fn absorb(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
         }
         if (run == null) {
             pool = mtl.objc.Pool.push();
-            run = block.begin(d);
+            run = try block.begin(d);
         }
         const e = run.?.e;
         if (ds.Drafter.stagedPiece(l)) |pc| {
@@ -139,7 +139,7 @@ pub fn absorb(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
     const r = run orelse return;
     if (count > 0) try block.absorbPass(d, r.e, pieces[0..count]);
     run = null; // `end` closes the encoder, even when the buffer fails
-    try block.end(d, r.cb, r.e);
+    try block.end(d, r);
 }
 
 test "a forward's rows take the stage row after the kept ones, and a lane ahead of them rewinds" {

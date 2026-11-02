@@ -112,14 +112,38 @@ fn compare(label: []const u8, gpu: []const u16, row: []const f32, bias: []const 
     std.debug.print("{s}: cosine {d:.5}, worst difference {d:.3}\n", .{ label, dot / @sqrt(gg * rr), worst });
 }
 
-/// A hold's GPU ms: the blocks held in a signalled command buffer, waited on and read for its GPU times.
-fn gpuHold(d: *q.dspark.Drafter, blocks: []const q.dspark_block.Block) !f64 {
+const Cost = struct {
+    encode_cpu_ms: f64 = std.math.inf(f64),
+    gpu_ms: f64 = 0,
+
+    fn total(cost: Cost) f64 {
+        return cost.encode_cpu_ms + cost.gpu_ms;
+    }
+};
+
+/// Read the two receipts before the scalar callback consumes them; never infer CPU from wall minus GPU.
+fn takeCost(d: *q.dspark.Drafter) !Cost {
+    const cost = Cost{ .encode_cpu_ms = d.encode_cpu_ms, .gpu_ms = d.hold_spent_ms };
+    if (q.dspark_block.takeHoldMs(d) != cost.total() or q.dspark_block.takeHoldMs(d) != 0) return error.CostNotTakenOnce;
+    return cost;
+}
+
+/// Existing explicitly waited diagnostic pass: direct GPU receipt paired with that pass's precommit CPU span.
+fn signalledCost(d: *q.dspark.Drafter, blocks: []const q.dspark_block.Block) !Cost {
+    _ = q.dspark_block.takeHoldMs(d);
     d.signalled += 1;
     const cb = (try q.dspark_block.hold(d, blocks, .{ .event = d.event, .value = d.signalled })).?;
     defer cb.release();
+    defer {
+        // This diagnostic owns the returned buffer, not Drafter.pending/settle.
+        d.pass_context_rows = 0;
+        d.pass_encode_cpu_ms = 0;
+        _ = q.dspark_block.takeHoldMs(d);
+    }
+    const encode_cpu_ms = d.pass_encode_cpu_ms;
     cb.wait();
     if (cb.failure() != null) return error.GpuFailed;
-    return (cb.gpuEnd() - cb.gpuStart()) * 1000;
+    return .{ .encode_cpu_ms = encode_cpu_ms, .gpu_ms = (cb.gpuEnd() - cb.gpuStart()) * 1000 };
 }
 
 fn absorb(d: *q.dspark.Drafter, piece: q.dspark_block.Piece) !void {
@@ -229,9 +253,17 @@ fn deferred(gpa: std.mem.Allocator, d: *q.dspark.Drafter, taps: mtl.Buffer, ids:
     reference.end = anchor;
     _ = try q.dspark_block.hold(d, &.{.{ .lane = reference, .pending = ids[ctx], .anchor = anchor, .depth = 3 }}, null);
     const want = reference.held[0..3].*;
+    _ = q.dspark_block.takeHoldMs(d);
+    const context_rows = live.staged;
     try dr.hold(&.{.{ .stream = &s, .pending = ids[ctx], .position = anchor + 1, .depth = 3 }});
+    const encode_cpu_ms = d.pass_encode_cpu_ms;
+    if (!(encode_cpu_ms > 0) or d.hold_spent_ms != 0 or d.pass_context_rows != context_rows) return error.PendingCostComponentsWrong;
+    if (q.dspark_block.takeHoldMs(d) != encode_cpu_ms or d.pass_encode_cpu_ms != encode_cpu_ms) return error.PendingCpuNotTakenOnce;
     var got: [3]u32 = undefined;
     try dr.held(&.{&s}, &.{&got});
+    const settled = try takeCost(d);
+    if (settled.encode_cpu_ms != 0 or !(settled.gpu_ms > 0) or d.pass_encode_cpu_ms != 0 or d.pass_context_rows != 0) return error.SettledHoldRechargedCpu;
+    std.debug.print("deferred hold of 1 stream, depth 3, debt {d}: CPU-encode {d:.3} ms taken at launch, GPU {d:.3} ms taken at settle, total {d:.3} ms; pending CPU retained only for EMA\n", .{ context_rows, encode_cpu_ms, settled.gpu_ms, encode_cpu_ms + settled.gpu_ms });
     if (!std.mem.eql(u32, &want, &got)) return error.DeferredDraftMismatch;
     const bytes = anchor * c.head_dim * 2;
     for (0..d.config.layers) |layer| for ([_]bool{ false, true }) |values| for (0..c.kv_heads) |head| {
@@ -349,21 +381,23 @@ pub fn main(init: std.process.Init) !void {
         const step_ms = d.step_ms;
         const saved_hold_ms = d.hold_ms;
         const spent_ms = d.hold_spent_ms;
+        const encode_ms = d.encode_cpu_ms;
         defer {
             d.holds = grid;
             d.holds_len = grid_len;
             d.step_ms = step_ms;
             d.hold_ms = saved_hold_ms;
             d.hold_spent_ms = spent_ms;
+            d.encode_cpu_ms = encode_ms;
         }
         _ = q.dspark_block.takeHoldMs(d);
         try absorb(d, .{ .lane = lane, .src = .{ .buf = taps.buf, .off = (ctx - 1) * width * 2 }, .rows = 1, .p0 = ctx - 1 });
-        const absorb_ms = q.dspark_block.takeHoldMs(d);
-        if (!(absorb_ms > 0)) return error.AbsorbTimeNotTaken;
+        const absorb_cost = try takeCost(d);
+        if (!(absorb_cost.encode_cpu_ms > 0) or !(absorb_cost.gpu_ms > 0)) return error.AbsorbTimeNotTaken;
         for (grid[0..grid_len], d.holds[0..grid_len]) |before, now| if (before.ms != now.ms) return error.AbsorbRepricedAHold;
         _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }}, null);
-        const hold_ms = q.dspark_block.takeHoldMs(d);
-        if (!(hold_ms > 0) or q.dspark_block.takeHoldMs(d) != 0) return error.HoldTimeNotTakenOnce;
+        const hold_cost = try takeCost(d);
+        if (!(hold_cost.encode_cpu_ms > 0) or !(hold_cost.gpu_ms > 0)) return error.HoldTimeNotTakenOnce;
         if (d.holds_len != grid_len) return error.GridResized;
         var moved = false;
         for (grid[0..grid_len], d.holds[0..grid_len]) |before, now| {
@@ -371,7 +405,7 @@ pub fn main(init: std.process.Init) !void {
             if (before.streams == 1 and before.ms != now.ms) moved = true;
         }
         if (!moved) return error.SyncHoldNotRepriced;
-        std.debug.print("a synchronous hold of one block: {d:.2} ms GPU taken once, the one-block passes repriced toward it; a standalone absorb {d:.2} ms priced none\n", .{ hold_ms, absorb_ms });
+        std.debug.print("a synchronous hold of one block: CPU-encode {d:.3} ms + GPU {d:.3} ms = {d:.3} ms taken once, one-block passes repriced; standalone absorb CPU-encode {d:.3} ms + GPU {d:.3} ms = {d:.3} ms priced none\n", .{ hold_cost.encode_cpu_ms, hold_cost.gpu_ms, hold_cost.total(), absorb_cost.encode_cpu_ms, absorb_cost.gpu_ms, absorb_cost.total() });
     }
     if (cfg.block < 9) {
         std.debug.print("split-hold fixture skipped: this drafter's block is {d} rows and its depths [9, 1 x 7] need 9\n", .{cfg.block});
@@ -389,12 +423,16 @@ pub fn main(init: std.process.Init) !void {
     const depths = [_]u32{ 1, 3, cfg.block };
     for (depths) |depth| {
         var best: f64 = std.math.floatMax(f64);
+        var cost_best: Cost = .{};
         for (0..5) |_| {
+            _ = q.dspark_block.takeHoldMs(d);
             const t0 = std.Io.Clock.awake.now(init.io);
             _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = depth }}, null);
             best = @min(best, @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(init.io)).toNanoseconds())) / 1e6);
+            const cost = try takeCost(d);
+            if (cost.total() < cost_best.total()) cost_best = cost;
         }
-        std.debug.print("hold at depth {d}: {d:.2} ms (best of 5)\n", .{ depth, best });
+        std.debug.print("clean hold of 1 stream at depth {d}: wall best {d:.3} ms; best paired cost CPU-encode {d:.3} ms + GPU {d:.3} ms = {d:.3} ms (5 attempts)\n", .{ depth, best, cost_best.encode_cpu_ms, cost_best.gpu_ms, cost_best.total() });
     }
     // a shared round's hold: S streams' blocks of d rows in one pass (S x d at most pass_rows), each on this context
     var lanes_: [16]*q.dspark.Lane = undefined;
@@ -416,14 +454,15 @@ pub fn main(init: std.process.Init) !void {
         var blocks: [16]q.dspark_block.Block = undefined;
         for (blocks[0..streams], lanes_[0..streams]) |*b, l| b.* = .{ .lane = l, .pending = ids[ctx], .anchor = ctx, .depth = depth };
         var best: f64 = std.math.floatMax(f64);
-        var gpu_best: f64 = std.math.floatMax(f64);
+        var cost_best: Cost = .{};
         for (0..5) |_| {
             const t0 = std.Io.Clock.awake.now(init.io);
             _ = try q.dspark_block.hold(d, blocks[0..streams], null);
             best = @min(best, @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(init.io)).toNanoseconds())) / 1e6);
-            gpu_best = @min(gpu_best, try gpuHold(d, blocks[0..streams]));
+            const cost = try signalledCost(d, blocks[0..streams]);
+            if (cost.total() < cost_best.total()) cost_best = cost;
         }
-        std.debug.print("hold of {d} streams at depth {d}: {d:.2} ms, GPU {d:.2} ms (best of 5)\n", .{ streams, depth, best, gpu_best });
+        std.debug.print("clean hold of {d} streams at depth {d}: synchronous wall best {d:.3} ms; signalled best paired cost CPU-encode {d:.3} ms + GPU {d:.3} ms = {d:.3} ms (5 attempts each)\n", .{ streams, depth, best, cost_best.encode_cpu_ms, cost_best.gpu_ms, cost_best.total() });
     };
     try steady(gpa, d, taps.buf, ids, ctx);
     try deferred(gpa, d, taps.buf, ids, ctx);

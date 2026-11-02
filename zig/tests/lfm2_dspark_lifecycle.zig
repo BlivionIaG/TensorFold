@@ -214,12 +214,14 @@ pub fn run(gpa: std.mem.Allocator, d: *q.dspark.Drafter, taps: mtl.Buffer, ids: 
     const grid = d.holds;
     const grid_len = d.holds_len;
     const spent = d.hold_spent_ms;
+    const encode_ms = d.encode_cpu_ms;
     const step_ms = d.step_ms;
     const hold_ms = d.hold_ms;
     defer {
         d.holds = grid;
         d.holds_len = grid_len;
         d.hold_spent_ms = spent;
+        d.encode_cpu_ms = encode_ms;
         d.step_ms = step_ms;
         d.hold_ms = hold_ms;
     }
@@ -284,14 +286,23 @@ pub fn run(gpa: std.mem.Allocator, d: *q.dspark.Drafter, taps: mtl.Buffer, ids: 
     }, null);
     var expected: [16]u32 = undefined;
     @memcpy(expected[0..depth], reference2.held[0..depth]);
+    _ = q.dspark_block.takeHoldMs(d);
     try dr.hold(&.{
         .{ .stream = &first, .pending = ids[ctx], .position = ctx + 1, .depth = depth },
         .{ .stream = &resumed, .pending = ids[ctx], .position = ctx + 1, .depth = depth },
     });
     if (d.pending == null) return error.LifecycleHoldNotPending;
+    const pending_cpu_ms = d.pass_encode_cpu_ms;
+    const context_rows = d.pass_context_rows;
+    if (!(pending_cpu_ms > 0) or d.hold_spent_ms != 0) return error.PendingCostComponentsWrong;
+    if (q.dspark_block.takeHoldMs(d) != pending_cpu_ms or d.pass_encode_cpu_ms != pending_cpu_ms) return error.PendingCpuNotTakenOnce;
     dr.release(&first); // settles the shared hold before releasing lane storage
     first_open = false;
     if (d.pending != null or d.pass_len != 0 or d.lanes.contains(&first)) return error.CancelledLaneStillHeld;
+    if (d.pass_encode_cpu_ms != 0 or d.pass_context_rows != 0 or d.encode_cpu_ms != 0) return error.ReleasedHoldRechargedCpu;
+    const gpu_ms = d.hold_spent_ms;
+    if (!(gpu_ms > 0) or q.dspark_block.takeHoldMs(d) != gpu_ms or q.dspark_block.takeHoldMs(d) != 0) return error.ReleasedHoldGpuNotTakenOnce;
+    std.debug.print("release-settled hold of 2 streams, depth {d}, max debt {d}: CPU-encode {d:.3} ms taken at launch, GPU {d:.3} ms taken after release, total {d:.3} ms; pending CPU cleared, not recharged\n", .{ depth, context_rows, pending_cpu_ms, gpu_ms, pending_cpu_ms + gpu_ms });
     var got: [16]u32 = undefined;
     try dr.held(&.{&resumed}, &.{got[0..depth]});
     if (!std.mem.eql(u32, expected[0..depth], got[0..depth])) return error.SnapshotResumePicksDiffer;

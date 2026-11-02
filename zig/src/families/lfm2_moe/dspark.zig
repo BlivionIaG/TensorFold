@@ -87,7 +87,7 @@ pub const Drafter = struct {
     s: Scratch,
     owned: std.ArrayList(mtl.Buffer) = .empty,
     lanes: std.AutoHashMapUnmanaged(*Stream, *Lane) = .empty,
-    /// One stream's clean hold GPU ms at full depth, and that over the block (the depth rule's cost a draft).
+    /// One stream's clean CPU-encode + GPU ms at full depth, and that over the block (the depth rule's cost a draft).
     hold_ms: f64 = 0,
     step_ms: f64 = 0,
     holds: [2 * pass_rows]lanes.hold_price.HoldCost = undefined, // the power-of-two block counts sum to fewer than 2 * pass_rows depths
@@ -95,6 +95,7 @@ pub const Drafter = struct {
     contexts: [hold_grid.len * context_row_levels]lanes.hold_price.ContextCost = undefined,
     contexts_len: usize = 0,
     hold_spent_ms: f64 = 0, // GPU ms of every buffer waited on or settled; drained at round boundaries, never waits to read it
+    encode_cpu_ms: f64 = 0, // native precommit CPU spans, drained with hold_spent_ms without waiting
     event: mtl.Event = undefined,
     signalled: u64 = 0,
     pending: ?mtl.CommandBuffer = null,
@@ -102,6 +103,7 @@ pub const Drafter = struct {
     depths: [pass_rows]u32 = undefined,
     pass_len: usize = 0,
     pass_context_rows: u32 = 0, // largest actual staged debt, captured before the signalled hold clears it
+    pass_encode_cpu_ms: f64 = 0, // pending pass's CPU for EMA only; already charged to encode_cpu_ms at commit
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, target: *Model, dir: []const u8, options: Options) !*Drafter {
         const d = try gpa.create(Drafter);
@@ -405,6 +407,8 @@ pub const Drafter = struct {
         d.pending = null;
         const context_rows = d.pass_context_rows;
         d.pass_context_rows = 0;
+        const encode_ms = d.pass_encode_cpu_ms;
+        d.pass_encode_cpu_ms = 0;
         defer cb.release();
         cb.wait();
         if (cb.failure()) |msg| {
@@ -412,12 +416,13 @@ pub const Drafter = struct {
             return error.DraftGpuFailed;
         }
         const ms = cb.gpuSeconds() * 1000; // the whole buffer, its lanes' staged rows absorbed too
+        if (!(ms > 0) or !std.math.isFinite(ms)) return error.DraftTimingUnavailable;
         d.hold_spent_ms += ms;
-        d.priceHold(d.pass_len, std.mem.max(u32, d.depths[0..d.pass_len]), context_rows, ms);
+        d.priceHold(d.pass_len, std.mem.max(u32, d.depths[0..d.pass_len]), context_rows, encode_ms + ms);
         try block.readPicks(d, d.pass[0..d.pass_len], d.depths[0..d.pass_len]);
     }
 
-    /// Reprices the clean grid with whole GPU ms minus the calibrated context estimate, not a measured clean segment.
+    /// Reprices the clean grid with CPU-encode + GPU ms minus the matching calibrated context estimate.
     pub fn priceHold(d: *Drafter, streams: usize, depth: u32, context_rows: u32, ms: f64) void {
         const timed = d.holds[0..d.holds_len];
         if (timed.len == 0 or streams == 0 or !(ms > 0) or !std.math.isFinite(ms)) return;
@@ -486,9 +491,13 @@ pub const Drafter = struct {
         return l;
     }
 
-    /// Empty-context holds and context-only passes on the target queue, GPU best-of-three after each shape's warm pass.
+    /// Empty-context holds and context-only passes, best CPU-encode + GPU sum of three after each shape's warm pass.
     fn warm(d: *Drafter) !void {
-        defer d.hold_spent_ms = 0; // every startup buffer, including a failed calibration, is no round's work
+        defer {
+            // Every startup buffer, including a failed calibration, is no round's work.
+            d.hold_spent_ms = 0;
+            d.encode_cpu_ms = 0;
+        }
         var made: [hold_grid[hold_grid.len - 1]]*Lane = undefined;
         var n: usize = 0;
         defer for (made[0..n]) |l| d.dropLane(l);
@@ -542,7 +551,7 @@ pub const Drafter = struct {
         d.contexts_len = context_timed;
         d.hold_ms = d.holds[d.config.block - 1].ms; // the first grid count is one stream, depths 1..block
         d.step_ms = d.hold_ms / @as(f64, @floatFromInt(d.config.block));
-        std.log.info("lfm2 dspark: a 1-draft clean hold takes {d:.2} GPU ms, a {d}-draft hold {d:.2} GPU ms; {d} context quotes", .{ d.holds[0].ms, d.config.block, d.hold_ms, d.contexts_len });
+        std.log.info("lfm2 dspark: a 1-draft clean hold takes {d:.2} CPU-encode + GPU ms, a {d}-draft hold {d:.2} CPU-encode + GPU ms; {d} context quotes", .{ d.holds[0].ms, d.config.block, d.hold_ms, d.contexts_len });
         std.log.info("lfm2 dspark: weights {d:.1} MiB, scratch {d:.1} MiB, a stream {d} KiB a position and up to {d} KiB staged", .{ mibOf(d.w.buffers()), mibOf(d.owned.items), d.keptBytes(1) / 1024, d.stageBytes(d.options.capacity + d.config.block) / 1024 });
     }
 };

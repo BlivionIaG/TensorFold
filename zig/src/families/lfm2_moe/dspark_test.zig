@@ -371,7 +371,28 @@ test "lfm2 dspark: small staged pieces sharing one fc call give the bytes each g
     }
 }
 
-test "lfm2 dspark: a completed hold moves the timed passes at its block counts a tenth of the way to its GPU ms" {
+test "lfm2 dspark: timing consumes CPU and GPU once without consuming pending EMA metadata" {
+    var d: ds.Drafter = undefined;
+    d.encode_cpu_ms = 0.25;
+    d.hold_spent_ms = 0;
+    d.pass_encode_cpu_ms = 0.25;
+    d.pass_context_rows = 8;
+    try std.testing.expectEqual(@as(f64, 0.25), block.takeHoldMs(&d));
+    try std.testing.expectEqual(@as(f64, 0), d.encode_cpu_ms);
+    try std.testing.expectEqual(@as(f64, 0.25), d.pass_encode_cpu_ms);
+    try std.testing.expectEqual(@as(u32, 8), d.pass_context_rows);
+    try std.testing.expectEqual(@as(f64, 0), block.takeHoldMs(&d));
+    d.hold_spent_ms = 1.5;
+    try std.testing.expectEqual(@as(f64, 1.5), block.takeHoldMs(&d));
+    try std.testing.expectEqual(@as(f64, 0.25), d.pass_encode_cpu_ms);
+    try std.testing.expectEqual(@as(f64, 0), block.takeHoldMs(&d));
+    d.encode_cpu_ms = 0.5;
+    d.hold_spent_ms = 2;
+    try std.testing.expectEqual(@as(f64, 2.5), block.takeHoldMs(&d));
+    try std.testing.expectEqual(@as(f64, 0), block.takeHoldMs(&d));
+}
+
+test "lfm2 dspark: a completed hold moves its block counts a tenth of the way to CPU-encode plus GPU ms" {
     var d: ds.Drafter = undefined;
     const grid = [_]lanes.hold_price.HoldCost{ .{ .streams = 1, .depth = 1, .ms = 1 }, .{ .streams = 4, .depth = 1, .ms = 2 }, .{ .streams = 4, .depth = 4, .ms = 4 }, .{ .streams = 8, .depth = 1, .ms = 3 } };
     @memcpy(d.holds[0..grid.len], &grid);
@@ -382,7 +403,7 @@ test "lfm2 dspark: a completed hold moves the timed passes at its block counts a
     try std.testing.expectApproxEqAbs(@as(f64, 4.4), d.holds[2].ms, 1e-12);
     try std.testing.expectEqual(@as(f64, 1), d.holds[0].ms);
     try std.testing.expectEqual(@as(f64, 3), d.holds[3].ms);
-    d.priceHold(6, 1, 0, 0); // between 4 and 8 blocks, no GPU time: nothing learned
+    d.priceHold(6, 1, 0, 0); // between 4 and 8 blocks, no measured time: nothing learned
     try std.testing.expectEqual(@as(f64, 2.2), d.holds[1].ms);
     d.priceHold(6, 1, 0, 2.6 * 2); // both neighbors move
     try std.testing.expect(d.holds[1].ms > 2.2 and d.holds[3].ms > 3 and d.holds[0].ms == 1);
@@ -400,7 +421,7 @@ test "lfm2 dspark: hold repricing subtracts context and refuses nonpositive or n
     d.holds_len = 1;
     d.contexts[0] = .{ .streams = 4, .rows = 8, .ms = 3 };
     d.contexts_len = 1;
-    d.priceHold(4, 1, 5, 7); // seven whole GPU ms, three estimated context ms: the clean quote moves toward four
+    d.priceHold(4, 1, 5, 7); // seven CPU-encode + GPU ms, three estimated context ms: clean moves toward four
     try std.testing.expectApproxEqAbs(@as(f64, 2.2), d.holds[0].ms, 1e-12);
     for ([_]f64{ 3, 2, 0, -1, std.math.inf(f64), std.math.nan(f64) }) |ms| {
         d.priceHold(4, 1, 5, ms);
@@ -483,6 +504,7 @@ test "lfm2 dspark: an absorb owns the rows it stages, prompt rows too, and a ref
     try std.testing.expectEqualSlices(u8, second[40 * width .. 44 * width], stage[25 * width .. 29 * width]);
     try std.testing.expectEqual(@as(u64, 0), l.end);
     try std.testing.expectEqual(@as(f64, 0), d.hold_spent_ms); // staging runs no GPU work
+    try std.testing.expectEqual(@as(f64, 0), d.encode_cpu_ms); // no command encoder was opened
 }
 
 test "lfm2 dspark: packed lane accounting, alignment and a whole prompt chunk" {
@@ -561,6 +583,7 @@ test "lfm2 dspark: capture replacement and stream release keep the live context 
     try std.testing.expectEqual(@as(u32, 0), stream.hold_context_rows);
     try std.testing.expectEqual(@as(usize, 0), d.lanes.count());
     try std.testing.expectEqual(@as(f64, 0), d.hold_spent_ms);
+    try std.testing.expectEqual(@as(f64, 0), d.encode_cpu_ms);
 }
 
 test "lfm2 dspark: failed lane creation and map insertion clean up" {
