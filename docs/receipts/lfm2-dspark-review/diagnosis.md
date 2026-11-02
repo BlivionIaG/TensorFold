@@ -6,7 +6,7 @@ capacity fix passed actual M4/M5 checks. Simply enabling the existing target ten
 the private dispatch-only experiment failed 50 of 72 unchanged target forward/cache checks.
 Neither the corrected model input nor a component timing establishes the full MLX-LM gap.
 
-Working report. This is a causal diagnosis, not a claim of release or performance qualification.
+Historical causal report, not a release-qualification claim. The [current-main review update](750bca95c/README.md) records source `750bca95c`, complete serving medians, the task owner's separate 1% review criterion, exactness and CI. Measurements below retain their original source/device scope.
 
 ## What is actually wrong
 

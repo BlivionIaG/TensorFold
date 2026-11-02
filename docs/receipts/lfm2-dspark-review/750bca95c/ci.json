@@ -1,0 +1,121 @@
+{
+  "headRefOid": "750bca95c457dc2119505568dff593e151cbeed7",
+  "mergeStateStatus": "CLEAN",
+  "number": 1394,
+  "reviewDecision": "CHANGES_REQUESTED",
+  "state": "OPEN",
+  "statusCheckRollup": [
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:24:55Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567330/job/125613443693",
+      "name": "desktop",
+      "startedAt": "2026-11-02T23:12:38Z",
+      "status": "COMPLETED",
+      "workflowName": "App and mobile checks"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:19:20Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567278/job/125613443362",
+      "name": "benchmark-clients (ubuntu-latest)",
+      "startedAt": "2026-11-02T23:19:09Z",
+      "status": "COMPLETED",
+      "workflowName": "No GPU"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:14:45Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567308/job/125613442516",
+      "name": "fmt",
+      "startedAt": "2026-11-02T23:14:24Z",
+      "status": "COMPLETED",
+      "workflowName": "Zig format"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:18:31Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567278/job/125613443776",
+      "name": "benchmark-clients (windows-latest)",
+      "startedAt": "2026-11-02T23:18:02Z",
+      "status": "COMPLETED",
+      "workflowName": "No GPU"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:22:21Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567330/job/125613444058",
+      "name": "desktop-linux",
+      "startedAt": "2026-11-02T23:14:03Z",
+      "status": "COMPLETED",
+      "workflowName": "App and mobile checks"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:35:24Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567278/job/125613443779",
+      "name": "zig",
+      "startedAt": "2026-11-02T23:19:09Z",
+      "status": "COMPLETED",
+      "workflowName": "No GPU"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:19:27Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567330/job/125613444037",
+      "name": "appimage-linux",
+      "startedAt": "2026-11-02T23:17:10Z",
+      "status": "COMPLETED",
+      "workflowName": "App and mobile checks"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:38:31Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567278/job/125613443755",
+      "name": "zig-windows",
+      "startedAt": "2026-11-02T23:19:30Z",
+      "status": "COMPLETED",
+      "workflowName": "No GPU"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:20:42Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567330/job/125613444239",
+      "name": "mobile",
+      "startedAt": "2026-11-02T23:19:23Z",
+      "status": "COMPLETED",
+      "workflowName": "App and mobile checks"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:24:55Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567278/job/125613443596",
+      "name": "release-paths (ubuntu-24.04)",
+      "startedAt": "2026-11-02T23:20:45Z",
+      "status": "COMPLETED",
+      "workflowName": "No GPU"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-02T23:35:25Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/41543567278/job/125613443498",
+      "name": "zig-macos-dev-tools",
+      "startedAt": "2026-11-02T23:19:02Z",
+      "status": "COMPLETED",
+      "workflowName": "No GPU"
+    }
+  ],
+  "updatedAt": "2026-11-02T23:12:14Z",
+  "url": "https://github.com/ashhart/TensorFold/pull/1394"
+}
