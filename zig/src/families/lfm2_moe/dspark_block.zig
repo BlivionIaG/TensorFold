@@ -34,6 +34,8 @@ pub const scan_groups = (c.vocab + scan_span - 1) / scan_span;
 const scalar_rows = 8;
 /// Rows from which the target's head (128,000 outputs) runs on the tensor units, where the GPU has them.
 const head_rows = 5;
+/// The measured BF16 tensor crossover in physical projection rows, independent of stream count.
+const bf16_tensor_rows = 16;
 
 /// Rows from which `w` runs on the tensor units: outputs of the hidden width or fewer stay on the twin to its rows.
 fn naxFrom(w: tile.Matrix) usize {
@@ -103,7 +105,8 @@ const Enc = struct {
     /// Released BF16 weights: 16-row tensor tiles, else the original scalar rows or 64x64 SIMD tiles.
     fn bf16(x: Enc, m: dw.Bf16, in: Ref, out: Ref, rows: usize) void {
         const args = Bf16Args{ .rows = @intCast(rows), .n = @intCast(m.n), .k = @intCast(m.k) };
-        if (x.d.target.kernels.bf16_nax) |p| {
+        const tensor = if (rows >= bf16_tensor_rows) x.d.target.kernels.bf16_nax else null;
+        if (tensor) |p| {
             x.e.setPipeline(p);
             x.e.setBuffer(in.buf, in.off, 0);
             x.e.setBuffer(m.w, 0, 1);
