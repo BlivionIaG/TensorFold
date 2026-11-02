@@ -498,9 +498,7 @@ test "mixed hold prices re-sweep after a first improvement exposes a better chea
         }
         var out: [4]i64 = undefined;
         try f.freshHolds(&prices, &row_ms, &out);
-        // Raw prefixes all lose to 4/92. At that rate the 2 ms offer still leads
-        // the cheap offers: the first net-price sweep keeps it plus one cheap row
-        // at 5.7/94. Only the next order exposes both cheap rows' better 5.6/92.
+        // Repricing 4/92 first keeps 5.7/94; a second cost-aware sweep must find both cheap rows at 5.6/92.
         for (row_ms, out) |ms, wanted|
             try std.testing.expectEqual(@as(i64, if (ms == 0) 1 else 0), wanted);
     }
@@ -547,8 +545,7 @@ test "mixed hold reordering preserves an incumbent that is no longer a prefix an
         const row_ms = if (swapped) [2]f64{ 0, 2 } else [2]f64{ 2, 0 };
         var out: [2]i64 = undefined;
         try f.freshHolds(&prices, &row_ms, &out);
-        // The shallow hold wins at 2.9/15. Net gain/row puts the deep hold first,
-        // but its 3.6/20 and the padded pair's 4.5/30 cannot replace that incumbent.
+        // Reordering cannot replace shallow 2.9/15 with deep 3.6/20 or the padded pair's 4.5/30.
         for (row_ms, out) |ms, wanted|
             try std.testing.expectEqual(@as(i64, if (ms > 0) 1 else 0), wanted);
         f.engine.rule.k.hold_rows = 2;
