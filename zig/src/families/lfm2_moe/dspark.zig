@@ -416,10 +416,14 @@ pub const Drafter = struct {
             return error.DraftGpuFailed;
         }
         const ms = cb.gpuSeconds() * 1000; // the whole buffer, its lanes' staged rows absorbed too
-        if (!(ms > 0) or !std.math.isFinite(ms)) return error.DraftTimingUnavailable;
-        d.hold_spent_ms += ms;
-        d.priceHold(d.pass_len, std.mem.max(u32, d.depths[0..d.pass_len]), context_rows, encode_ms + ms);
+        const timed = ms > 0 and std.math.isFinite(ms);
+        if (timed) {
+            d.hold_spent_ms += ms;
+            d.priceHold(d.pass_len, std.mem.max(u32, d.depths[0..d.pass_len]), context_rows, encode_ms + ms);
+        }
+        // Releasing a peer must not discard completed picks when only the timing receipt is unavailable.
         try block.readPicks(d, d.pass[0..d.pass_len], d.depths[0..d.pass_len]);
+        if (!timed) return error.DraftTimingUnavailable;
     }
 
     /// Reprices the clean grid with CPU-encode + GPU ms minus the matching calibrated context estimate.
