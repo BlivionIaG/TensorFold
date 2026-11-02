@@ -351,9 +351,9 @@ pub const Rule = struct {
         const context_rows = work[whos.len..];
         for (context_rows, 0..) |*rows, i| rows.* = whos[i].hold_context_rows;
         const head: alloc.HeadCost = if (own_steps)
-            .{ .step_ms = r.draft_step_ms, .batched = r.batched_heads and pricedBatched(), .free_first = true, .hold_costs = r.k.hold_costs, .hold_context_costs = r.k.hold_context_costs, .hold_context_rows = context_rows, .hold_rows = r.k.hold_rows, .row_ms = row_ms }
+            .{ .step_ms = r.draft_step_ms, .batched = r.batched_heads and pricedBatched(), .free_first = true, .hold_costs = r.k.hold_costs, .hold_context_costs = r.k.hold_context_costs, .hold_context_rows = context_rows, .hold_rows = r.k.hold_rows, .hold_block_rows = r.k.hold_block_rows, .row_ms = row_ms }
         else
-            .{ .step_ms = r.mtp_step_ms, .batched = r.batched_heads, .hold_costs = r.k.hold_costs, .hold_context_costs = r.k.hold_context_costs, .hold_context_rows = context_rows, .hold_rows = r.k.hold_rows, .row_ms = row_ms };
+            .{ .step_ms = r.mtp_step_ms, .batched = r.batched_heads, .hold_costs = r.k.hold_costs, .hold_context_costs = r.k.hold_context_costs, .hold_context_rows = context_rows, .hold_rows = r.k.hold_rows, .hold_block_rows = r.k.hold_block_rows, .row_ms = row_ms };
         // a timed hold grid prices the pass itself: the overhead beyond it is the fixed one either way
         const overhead = if (own_steps and r.k.hold_costs.len == 0) r.overheadMs(live, sampled) else r.fixedMs(live, sampled);
         const counts = try alloc.allocateDrafts(r.gpa, ones, probs, r.shared_costs, overhead, @max(live, r.batch_rows), head);
@@ -423,7 +423,7 @@ pub const Rule = struct {
 
     /// Physical hold passes, or modeled head steps, excluded from measured fixed overhead.
     pub fn headMs(r: *const Rule, depths: []const i64) f64 {
-        if (r.k.hold_costs.len > 0) return @import("hold_price.zig").passMs(r.k.hold_costs, r.k.hold_rows, depths);
+        if (r.k.hold_costs.len > 0) return @import("hold_price.zig").passMs(r.k.hold_costs, r.k.hold_rows, r.k.hold_block_rows, depths);
         var steps: i64 = 0;
         for (depths) |d| steps = if (r.batched_heads) @max(steps, d) else steps + d;
         return r.mtp_step_ms * @as(f64, @floatFromInt(steps));

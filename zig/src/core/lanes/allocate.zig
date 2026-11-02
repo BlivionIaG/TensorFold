@@ -28,6 +28,7 @@ pub const HeadCost = struct {
     charged: []const bool = &.{},
     row_ms: []const f64 = &.{}, // each stream's host draw cost per verified row, independent of the neural mask
     hold_rows: u32 = 0,
+    hold_block_rows: u32 = 0,
 };
 
 /// Prices growing blocks in stream order; batched blocks pad to each physical pass's deepest, excluding free nodes.
@@ -38,6 +39,7 @@ const GridPass = struct {
     batched: bool,
     free: u32,
     rows: u32,
+    block_rows: u32,
     counts: []const u32, // the allocation so far, which prices a split batch exactly
     charged: []const bool,
     blocks: usize = 0, // batched: streams with a node past the free one
@@ -53,10 +55,10 @@ const GridPass = struct {
             p.blocks += @intFromBool(depth == 1);
             p.deepest = @max(p.deepest, depth);
             if (p.debts.len > 0) p.context_rows = @max(p.context_rows, p.debts[index]);
-            p.ms = if (p.rows == 0 or @as(i64, @intCast(p.blocks)) * p.deepest <= p.rows)
+            p.ms = if (p.rows == 0 or @as(i64, @intCast(p.blocks)) * @max(p.deepest, p.block_rows) <= p.rows)
                 hold_price.holdMs(p.costs, p.blocks, p.deepest) + hold_price.contextMs(p.contexts, p.blocks, p.context_rows)
             else
-                hold_price.countsMs(p.costs, p.contexts, p.rows, p.counts, p.charged, p.free, p.debts);
+                hold_price.countsMs(p.costs, p.contexts, p.rows, p.block_rows, p.counts, p.charged, p.free, p.debts);
         } else {
             p.ms += hold_price.holdMs(p.costs, 1, depth) - (if (depth > 1) hold_price.holdMs(p.costs, 1, depth - 1) else 0.0);
             if (depth == 1 and p.debts.len > 0) p.ms += hold_price.contextMs(p.contexts, 1, p.debts[index]);
@@ -116,7 +118,7 @@ pub fn allocateDrafts(gpa: Allocator, fixed: []const u32, probs: []const []const
         var drafts: u64 = 0;
         var deepest: u32 = 0;
         var firsts: u64 = 0;
-        var pass: GridPass = .{ .costs = head.hold_costs, .contexts = head.hold_context_costs, .debts = head.hold_context_rows, .batched = head.batched, .free = @intFromBool(head.free_first), .rows = head.hold_rows, .counts = counts, .charged = head.charged };
+        var pass: GridPass = .{ .costs = head.hold_costs, .contexts = head.hold_context_costs, .debts = head.hold_context_rows, .batched = head.batched, .free = @intFromBool(head.free_first), .rows = head.hold_rows, .block_rows = head.hold_block_rows, .counts = counts, .charged = head.charged };
         var head_ms: f64 = 0.0; // the nodes counted so far: the head's price
         while (rows < max_rows) {
             // Solo first-block context quotes order candidates; the complete physical group decides funding.
