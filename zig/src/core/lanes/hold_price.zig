@@ -126,7 +126,7 @@ pub const Prefix = struct {
     pays: bool, // its price score strictly beats the round's plain score
 };
 
-/// The cheapest per-extra-row price at which a perfect-acceptance pass could exist, for one cost shape.
+/// Cheapest verify-plus-hold cost per extra row; the live host-row quote is added after lookup.
 pub const ProbeCache = struct {
     rows: u32,
     heads: u32,
@@ -175,7 +175,7 @@ pub fn prefix(costs: *const Table, holds: []const HoldCost, base: Base, fixed: f
     return chosen;
 }
 
-/// Cached optimistic exploration bound; live cost changes invalidate it, and unknown costs remain feasible.
+/// Cached optimistic shape bound; live host quotes remain outside the cached minimum.
 pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
     const costs = rule.shared_costs;
     const holds = rule.k.hold_costs;
@@ -200,7 +200,6 @@ pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
         const x: u64 = v;
         hasher.update(std.mem.asBytes(&x));
     }
-    hasher.update(std.mem.asBytes(&row_ms));
     for (holds) |c| {
         const w = [3]u64{ c.streams, c.depth, @as(u64, @bitCast(c.ms)) };
         hasher.update(std.mem.asBytes(&w));
@@ -229,15 +228,16 @@ pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
                 const last = @min(room_rows, padded * blocks);
                 while (extra <= last) : (extra += 1) {
                     const verify = costs.get(@as(i64, base.rows) + extra) orelse return true;
-                    lowest = @min(lowest, (verify - plain + hold) / @as(f64, @floatFromInt(extra)) + row_ms);
+                    lowest = @min(lowest, (verify - plain + hold) / @as(f64, @floatFromInt(extra)));
                 }
             }
         }
         rule.explore_price = .{ .rows = base.rows, .heads = heads, .depth = depth, .stamp = stamp, .marginal = lowest };
         break :m lowest;
     };
-    if (!std.math.isFinite(cheapest)) return false;
-    return base.tokens * cheapest < plain + fixed + base.host_ms;
+    const live = cheapest + row_ms;
+    if (!std.math.isFinite(live)) return false;
+    return base.tokens * live < plain + fixed + base.host_ms;
 }
 
 /// Ignore work settled outside this round; the clock measures only what follows its start.

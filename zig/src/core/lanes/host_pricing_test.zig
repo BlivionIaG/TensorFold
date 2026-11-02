@@ -183,3 +183,25 @@ test "a profitable cheap hold survives an unprofitable higher-gain companion" {
     try rule.payHolds(&whos, true, &out, base);
     try std.testing.expectEqualSlices(i64, &.{ 0, 1 }, &out);
 }
+
+test "live host quotes change recovery funding across the strict boundary and back" {
+    var flat = try alloc.extendCosts(gpa, &.{.{ .width = 4, .ms = 10 }}, 4);
+    defer flat.deinit(gpa);
+    const holds = [_]depth.HoldCost{.{ .streams = 1, .depth = 1, .ms = 4 }};
+    var rule: Rule = .{ .gpa = gpa, .prior = &.{1}, .most_drafts = 1, .family_costs = &flat, .shared_costs = &flat, .mtp_step_ms = 0, .granted_depth = true, .plain_guard = true, .node_probabilities = true, .batch_rows = 4, .k = .{ .hold_costs = &holds } };
+    defer rule.deinit();
+    var states: [2]?State = @splat(null);
+    defer for (&states) |*state| if (state.*) |*s| s.deinit(gpa);
+    var whos = [_]Who{
+        .{ .state = &states[0], .draft_room = 2, .finished = false, .forced = false, .sampled = true, .granted = 0, .prices = &.{0.95} },
+        .{ .state = &states[1], .draft_room = 2, .finished = false, .forced = true, .row_ms = 1000 },
+    };
+    for ([_]f64{ 0, 1.5, 2, 2.5, 0, 1 }, [_]i64{ 1, 1, 0, 0, 1, 1 }) |row_ms, want| {
+        whos[0].row_ms = row_ms;
+        var base = @import("hold_price.zig").Base.pending(2);
+        base.host_ms = row_ms; // one host-drawn pending row and one GPU-only forced companion
+        var out = [_]i64{ 1, 0 };
+        try rule.payHolds(&whos, true, &out, base);
+        try std.testing.expectEqualSlices(i64, &.{ want, 0 }, &out);
+    }
+}

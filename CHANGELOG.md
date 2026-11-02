@@ -82,6 +82,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - LFM2 DSpark refuses isolated NaN and either infinity sign from the Markov scan on waited and asynchronous held paths. Empty scan groups retain their negative-infinity/invalid-token sentinel; finite arithmetic and lowest-token ties are unchanged.
 
+- DSpark recovery checks retain their shape-only exploration minimum when host-draw timing changes, applying the live draw quote at the funding boundary. Changed hold or forward prices still invalidate the cached shape; strict funding and recovery admission are unchanged.
+
 - MOSS-Image's image decoder (the checkpoint's FLUX.2 small VAE, in float32 as the pipeline runs it) runs on Metal inside the `moss_image` family, and `tf-moss-image` writes `picture.png` itself, so torch no longer decodes (#1687, #1504). Thanks to @BobClawblaw.
 
 - On CUDA, a driver older than CUDA 13.0 is refused at startup with a plain message naming the driver to install (R580 or newer), before any kernel loads; an R550 driver had ended the process with SIGILL inside libcuda on the first module load (#1791, #1724). Thanks to @rootsbymenda.
