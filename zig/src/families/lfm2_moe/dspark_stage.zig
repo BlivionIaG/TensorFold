@@ -105,6 +105,10 @@ pub fn absorb(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
             l.staged += f.rows;
             continue;
         }
+        if (f.rows == 0) {
+            l.end = it.start;
+            continue;
+        }
         if (run == null) {
             pool = mtl.objc.Pool.push();
             run = try block.begin(d);
