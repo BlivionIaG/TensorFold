@@ -322,3 +322,20 @@ inline void lfm2_store_columns(const device lfm2_tap_dst* dst, uint row, uint ma
   threadgroup float sums[32], inv[1];
   lfm2_rms(v, w, eps, x, base, t, sg, lane, sums, inv);
 }
+
+// Sorted experts' residual update, canonical norm and the same row-owned raw-state columns.
+[[max_total_threads_per_threadgroup(512)]]
+[[kernel]] void lfm2_combine_sorted_norm_tap(const device bfloat* y [[buffer(0)]], const device bfloat* wts [[buffer(1)]],
+                                             device bfloat* h [[buffer(2)]], const device bfloat* w [[buffer(3)]],
+                                             constant float& eps [[buffer(4)]], device bfloat* x [[buffer(5)]],
+                                             const device lfm2_tap_dst* dst [[buffer(6)]], constant uint& mask [[buffer(7)]],
+                                             const device uint* pos [[buffer(8)]], uint row [[threadgroup_position_in_grid]],
+                                             uint t [[thread_position_in_threadgroup]], uint sg [[simdgroup_index_in_threadgroup]],
+                                             uint lane [[thread_index_in_simdgroup]]) {
+  const bfloat4 saved = lfm2_sorted_state(y, wts, h, pos, row, t);
+  float v[4];
+  for (int j = 0; j < 4; ++j) v[j] = saved[j];
+  lfm2_store_columns(dst, row, mask, t, saved);
+  threadgroup float sums[32], inv[1];
+  lfm2_rms(v, w, eps, x, size_t(row) * D + 4 * t, t, sg, lane, sums, inv);
+}

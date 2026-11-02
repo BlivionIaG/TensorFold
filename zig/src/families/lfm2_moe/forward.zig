@@ -23,6 +23,8 @@ pub const Head = enum { last, all };
 const tile_rows = 33;
 /// A buffer and byte offset as core/affine_mm binds them.
 const Ref = struct { buf: Buffer, off: usize = 0 };
+/// The previous FFN's output stays live until the next operator norm, or the final norm.
+const Pending = enum { none, twin, sorted };
 
 /// Each row's tap destination into the scratch's table, every buffer it names declared on `e`.
 fn tapTable(e: mtl.ComputeEncoder, s: *st.Scratch, segments: []const Segment) void {
@@ -112,14 +114,21 @@ const Encoder = struct {
             } else tile.encode(self.e, t, matrix(w), x.buf, x.off, self.s.sums, 0, out.buf, out.off, rows) catch unreachable;
         }
     }
-    /// h += r unless first, then x = norm(h); `combine`: r is the decode experts' combine, taken here instead.
-    fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize, combine: bool, tap_layer: ?usize) void {
+    /// h += the pending FFN output (or r), then the canonical norm and optional raw-state tap.
+    fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize, combine: Pending, tap_layer: ?usize) void {
         var mask: u32 = 0; // the tap columns of this layer, bit i: column i
         if (s.taps) |taps| if (tap_layer) |layer| for (taps.layers[0..taps.count], 0..) |l, i| if (l == layer) {
             mask |= @as(u32, 1) << @intCast(i);
         };
-        if (combine) {
-            if (mask == 0) self.pipe("lfm2_combine_norm") else self.pipe("lfm2_combine_norm_tap");
+        if (combine != .none) {
+            switch (combine) {
+                .none => unreachable,
+                .twin => if (mask == 0) self.pipe("lfm2_combine_norm") else self.pipe("lfm2_combine_norm_tap"),
+                .sorted => {
+                    if (mask == 0) self.pipe("lfm2_combine_sorted_norm") else self.pipe("lfm2_combine_sorted_norm_tap");
+                    self.e.setBuffer(s.pos, 0, 8);
+                },
+            }
             self.e.setBuffer(s.experts, 0, 0);
             self.e.setBuffer(s.weights, 0, 1);
             self.e.setBuffer(s.h, 0, 2);
@@ -219,15 +228,15 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
     e.setBuffer(s.h, 0, 4);
     const units = c.hidden / @as(usize, if (embedding.bits == 6) 4 else 8 / embedding.bits);
     enc.threads(.{ units, total, 1 }, .{ 256, 1, 1 });
-    var combine = false; // the previous block's decode experts, combined by the next norm
+    var combine: Pending = .none;
     for (m.weights.blocks, 0..) |block, i| {
         enc.norm(s, block.operator_norm, i == 0, total, combine, if (i > 0) i - 1 else null);
-        combine = false;
+        combine = .none;
         switch (block.mixer) {
             .conv => |cv| conv(enc, s, cv, i, segments, total),
             .attention => |a| attention(enc, s, a, &m.config, segments, i, total),
         }
-        enc.norm(s, block.ffn_norm, false, total, false, null);
+        enc.norm(s, block.ffn_norm, false, total, .none, null);
         switch (block.ffn) {
             .dense => |d| {
                 enc.projectAll(&.{ d.gate, d.up }, .{ .buf = s.x }, &.{ .{ .buf = s.gate }, .{ .buf = s.up } }, total);
@@ -389,8 +398,8 @@ fn attentionSegs(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const 
     enc.groups(.{ c.query_heads, total, 1 }, .{ 32, 1, 1 });
 }
 
-/// True when the picks' combine is left to the next norm (decode rows).
-fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) bool {
+/// Picks, weights, positions and expert rows are not reused before the immediately following norm.
+fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) Pending {
     const e = enc.e;
     const slots = total * c.topk;
     enc.pipe("lfm2_route_logits");
@@ -413,7 +422,7 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) bool 
         const gate = matrix(x.gate.one);
         tile.encodeTwinGlu(e, t, gate, matrix(x.up.one), s.x, s.act, s.picks, groups, slots, c.topk) catch unreachable;
         tile.encodeTwinIndexed(e, t, matrix(x.down.one), s.act, s.experts, s.picks, groups, slots, 1) catch unreachable;
-        return true;
+        return .twin;
     }
     enc.pipe("lfm2_sort");
     e.setBuffer(s.picks, 0, 0);
@@ -448,11 +457,5 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) bool 
         tile.encodeGrouped(e, t, down, c.experts, s.act, s.sums, s.ident, s.experts, slots, sorted[0], sorted[1]) catch
             unreachable;
     }
-    enc.pipe("lfm2_combine_sorted");
-    e.setBuffer(s.experts, 0, 0);
-    e.setBuffer(s.weights, 0, 1);
-    e.setBuffer(s.r, 0, 2);
-    e.setBuffer(s.pos, 0, 3);
-    enc.threads(.{ c.hidden, total, 1 }, .{ 256, 1, 1 });
-    return false;
+    return .sorted;
 }

@@ -103,3 +103,113 @@ test "lfm2 dspark: fused normalization taps match the separate copy bit for bit,
         }
     };
 }
+
+test "lfm2 dspark: sorted combine preserves pick order, residual rounding, norm and masked taps" {
+    var rig = try base.Rig.init();
+    defer rig.deinit();
+    const bf16 = @import("dspark_quant.zig").toBf16;
+    for ([_]usize{ 1, 4, 8, 16, 33, 2048 }) |rows| {
+        const count = rows * c.hidden;
+        const slots = rows * c.topk;
+        const h0 = try rig.buffer(u16, count);
+        defer h0.deinit();
+        const h1 = try rig.buffer(u16, count);
+        defer h1.deinit();
+        const experts = try rig.buffer(u16, count * c.topk);
+        defer experts.deinit();
+        const residual = try rig.buffer(u16, count);
+        defer residual.deinit();
+        const router = try rig.buffer(u16, slots);
+        defer router.deinit();
+        const pos = try rig.buffer(u32, slots);
+        defer pos.deinit();
+        const weight = try rig.buffer(u16, c.hidden);
+        defer weight.deinit();
+        const x0 = try rig.buffer(u16, count);
+        defer x0.deinit();
+        const x1 = try rig.buffer(u16, count);
+        defer x1.deinit();
+        const taps = try rig.buffer(u16, count * 3);
+        defer taps.deinit();
+        const reference_taps = try rig.buffer(u16, count * 3);
+        defer reference_taps.deinit();
+        const table = try rig.buffer(u64, rows);
+        defer table.deinit();
+        for ([_]bool{ false, true }) |nonfinite| for ([_]?u32{ null, 0, 0b001, 0b101, 0b111 }) |mask| {
+            base.noise(40, h0.slice(u16, count), 2);
+            base.noise(41, experts.slice(u16, count * c.topk), 2);
+            base.noise(42, router.slice(u16, slots), 0.3);
+            base.noise(43, weight.slice(u16, c.hidden), 1);
+            // Five is coprime to every tested slot count; nonidentity, cross-row expert storage.
+            for (pos.slice(u32, slots), 0..) |*p, slot| p.* = @intCast((slot * 5 + slots / 2) % slots);
+            const ordered = [_]f32{ 67108864, 1, -67108864, 0.125 };
+            for (ordered, 0..) |v, k| {
+                experts.slice(u16, count * c.topk)[pos.slice(u32, slots)[k] * c.hidden] = bf16(v);
+                router.slice(u16, slots)[k] = bf16(1);
+            }
+            if (nonfinite) {
+                h0.slice(u16, count)[1] = 0x7fc0;
+                experts.slice(u16, count * c.topk)[2] = 0x7f80;
+                router.slice(u16, slots)[slots - 1] = 0xff80;
+                weight.slice(u16, c.hidden)[3] = 0x7fc0;
+            }
+            @memcpy(h1.slice(u16, count), h0.slice(u16, count));
+            @memset(taps.slice(u16, count * 3), 0x7fc0);
+            @memset(reference_taps.slice(u16, count * 3), 0x7fc0);
+            for (table.slice(u64, rows), 0..) |*p, r| p.* = if (dark(r) or mask == 0b111) 0 else taps.gpuAddress() + r * 3 * c.hidden * 2;
+            for ([_]bool{ false, true }) |fused| {
+                const cb = rig.queue.commandBuffer();
+                const e = cb.compute(.serial);
+                if (!fused) {
+                    e.setPipeline(rig.k.get("lfm2_combine_sorted"));
+                    e.setBuffer(experts, 0, 0);
+                    e.setBuffer(router, 0, 1);
+                    e.setBuffer(residual, 0, 2);
+                    e.setBuffer(pos, 0, 3);
+                    e.dispatchThreads(mtl.Size.of(c.hidden, rows, 1), mtl.Size.of(256, 1, 1));
+                    e.setPipeline(rig.k.get("lfm2_norm"));
+                    e.setBuffer(h0, 0, 0);
+                    e.setBuffer(residual, 0, 1);
+                    e.setBuffer(weight, 0, 2);
+                    e.setValue(c.eps, 3);
+                    e.setValue(@as(u32, 1), 4);
+                } else {
+                    e.setPipeline(if (mask == null) rig.k.get("lfm2_combine_sorted_norm") else rig.k.get("lfm2_combine_sorted_norm_tap"));
+                    e.setBuffer(experts, 0, 0);
+                    e.setBuffer(router, 0, 1);
+                    e.setBuffer(h1, 0, 2);
+                    e.setBuffer(weight, 0, 3);
+                    e.setValue(c.eps, 4);
+                    e.setBuffer(pos, 0, 8);
+                    if (mask) |bits| {
+                        e.useResource(taps, mtl.ResourceUsage.read | mtl.ResourceUsage.write);
+                        e.setBuffer(table, 0, 6);
+                        e.setValue(bits, 7);
+                    }
+                }
+                e.setBuffer(if (fused) x1 else x0, 0, 5);
+                e.dispatchGroups(mtl.Size.of(rows, 1, 1), mtl.Size.of(c.hidden / 4, 1, 1));
+                if (!fused) for (0..3) |col| {
+                    if ((mask orelse 0) >> @intCast(col) & 1 == 0) continue;
+                    e.setPipeline(rig.k.get("lfm2_tap"));
+                    e.setBuffer(h0, 0, 0);
+                    e.setBuffer(reference_taps, 0, 1);
+                    e.setValue([2]u32{ 3 * c.hidden, @intCast(col * c.hidden) }, 2);
+                    e.dispatchThreads(mtl.Size.of(c.hidden / 8, rows, 1), mtl.Size.of(256, 1, 1));
+                };
+                e.end();
+                cb.commit();
+                cb.wait();
+                defer cb.release();
+                if (cb.failure()) |_| return error.GpuFailed;
+            }
+            try std.testing.expectEqualSlices(u16, h0.slice(u16, count), h1.slice(u16, count));
+            try std.testing.expectEqualSlices(u16, x0.slice(u16, count), x1.slice(u16, count));
+            const want = reference_taps.slice(u16, count * 3);
+            for (0..rows) |r| if (dark(r) or mask == 0b111) {
+                @memset(want[r * 3 * c.hidden ..][0 .. 3 * c.hidden], 0x7fc0);
+            };
+            try std.testing.expectEqualSlices(u16, want, taps.slice(u16, count * 3));
+        };
+    }
+}
