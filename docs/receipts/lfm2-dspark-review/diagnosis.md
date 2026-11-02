@@ -1,9 +1,10 @@
 # Diagnosis: unproductive speculation and missed M5 dispatch opportunities
 
-**Two confirmed implementation problems:** requested proposal depth changed the drafter's bidirectional
-input, and target verification could not reach the M5 dense/head NAX route. The first correction passed
-actual M4 and M5 model checks on `e06ce30116c0a77017136ebacc4e8f15ce671def`; the dispatch correction
-remains private and unqualified. Neither result establishes an acceptance gain or the full MLX-LM gap.
+**A real model-input bug is corrected; M5 target acceleration has a separate arithmetic obstacle.**
+Requested proposal depth changed the drafter's bidirectional input. That correction and its maximum-context
+capacity fix passed actual M4/M5 checks. Simply enabling the existing target tensor route is unsafe:
+the private dispatch-only experiment failed 50 of 72 unchanged target forward/cache checks.
+Neither the corrected model input nor a component timing establishes the full MLX-LM gap.
 
 Working report. This is a causal diagnosis, not a claim of release or performance qualification.
 
@@ -37,7 +38,7 @@ Owned context cannot simply be skipped on zero-grant rounds: it is required by l
 
 The existing M5 serving traces show additional compute-encoder-active time in drafter arms, not a growing gap between encoders. That is evidence of added GPU-side work. It is **not** proof of full ALU occupancy, tensor-unit utilization or memory-bandwidth saturation; per-phase attribution remains missing.
 
-## 3. Target dense projections have a concrete M5 routing gap to investigate
+## 3. Target M5 routing crosses an arithmetic-compatibility boundary
 
 In [forward.zig](../../../zig/src/families/lfm2_moe/forward.zig):
 
@@ -48,9 +49,52 @@ In [forward.zig](../../../zig/src/families/lfm2_moe/forward.zig):
 
 The target admits at most 32 verification rows (`state.zig`), so the 33-row threshold makes this M5 NAX route unreachable for every admitted recorded verification call. `encodeTwin` can itself select an older SIMD-group MMA window kernel; bypassing NAX does **not** mean every such operation is pure scalar arithmetic.
 
-The drafter already uses a more selective policy: quantized vocabulary-head projections can use NAX from five rows, other wide projections from nine, and narrow projections retain the scalar route longer. That inconsistency is a specific candidate for correcting target dispatch. It does not prove that copying those thresholds to the target will be faster or numerically interchangeable. M4 fallback and the original numerical/token contracts must remain intact.
+The drafter uses NAX from five rows for its vocabulary head and nine for other wide products. Copying
+those thresholds into the target is **not a safe correction**: production source
+`174a74681920cbaefc3d3e65a9cd18c5e0f15a5a` passed the unchanged actual M5 target oracle **72/72**;
+private dense-only candidate `b99a794df` passed its build/family checks but only **22/72** target
+forward/cache checks. Expert and prompt routing were retained. The candidate is excluded from publication.
 
 The installed comparison is MLX-LM 0.32.2 with MLX 0.32.4. Version-matched [MLX dense dispatch](https://github.com/ml-explore/mlx/blob/v0.32.4/mlx/backend/metal/quantized.cpp#L89-L125) selects by shape and architecture, rather than a verification flag. Static inspection also found native target serialization of independent projections, eager state/logits commits, attention dispatch tied to prompt mode and a redundant CPU argmax in the one-token queue path. Their runtime contributions are not measured; rollback state cannot be deleted, and the redundant argmax is not on the greedy verification path.
+
+The first newly eligible seven-row window changes only the six-bit tied head. A real-input localization
+replayed its exact final-normalization BF16 rows and released head weights through one-row NAX,
+seven-row NAX and the established one-row route, with a separately unpacked FP64 reference:
+
+| Head computation on identical captured inputs | Differences from canonical BF16 outputs | Printed worst normalized FP64 error |
+|---|---:|---:|
+| Canonical one-row route | 0 / 896,000 | 1.151e-3 |
+| NAX, original epilogue, one/seven rows | 57 / 896,000 | 1.151e-3 |
+| NAX, canonical nested-FMA epilogue, one/seven rows | 4 / 896,000 | 1.151e-3 |
+
+Within each NAX variant, the two widths match byte-for-byte: this exposes a **cross-route arithmetic
+mismatch**, not a seven-row packing failure. The error is normalized by
+`sum_groups(abs(s * D) + abs(b * T))`; the printed summaries have only three significant figures.
+They do not make the BF16 outputs identical.
+
+A second private experiment changed only the group64 epilogue to the canonical nested FMA order.
+Its reduced mismatch count isolates accumulation order as a major cause, but not the entire cause.
+The remaining first difference is immediately across a BF16 rounding boundary: FP64
+`-2.976563190`, canonical `-2.984375`, NAX `-2.96875`. This neither establishes a target token change
+nor licenses waiving the original target oracle.
+
+The source has different group evaluation graphs
+([canonical twin](../../../zig/kernels/metal/core/tile_qmv.metal),
+[tensor product](../../../zig/kernels/metal/core/affine_mm.metal)):
+
+```cpp
+// Established decode group:
+acc = fma(b, sum, fma(s, dot, acc));
+// Current tensor group:
+acc += s * dot + b * sum;
+```
+
+The matrix primitives also differ. Six-bit codes have no four-bit `+128` offset, so that offset cannot
+explain this first head-only case. Passing ordinary FP64-error bounds is not permission to replace the
+target's canonical per-row arithmetic. MiniMax explicitly maintains the same target/drafter separation;
+Gemma's fixed tensor schedule is a useful design precedent, not a drop-in equivalent to LFM2 decode.
+The remaining discriminator is the group dot/sum primitive after epilogue alignment, not another lower
+dispatch threshold. The shared shader experiment is diagnostic only and is not published.
 
 ## 4. Fusion can make utilization worse
 
@@ -58,8 +102,11 @@ The drafter already encodes independent gate/up projections in a concurrent enco
 
 Two new fusion candidates passed actual M5 numerical suites and completed six alternating real-weight pairs each. Their current general policies are rejected:
 
-- The 8-bit fusion regresses all nine eligible low-row shapes in every pair, with paired median GPU additions of 10.5–65 microseconds. Its inactive higher-row controls do not show the same systematic loss.
-- The BF16 tensor fusion regresses the tested partial-tile shapes (8, 9, 12 and 24 physical rows) in every pair, adding 69.5–93.5 microseconds by paired median. Some full 32-row shapes improve by roughly 24–31 microseconds, but that does not justify the broad policy.
+| Private fusion policy | Measured eligible shapes | Paired median GPU change |
+|---|---|---:|
+| 8-bit low-row fusion | All nine shapes slower in all six pairs | +10.5 to +65 microseconds |
+| BF16 partial-tile fusion | Rows 8/9/12/24 slower in all six pairs | +69.5 to +93.5 microseconds |
+| BF16 full-tile cases | Some 32-row shapes improve; not a general-policy win | −24 to −31 microseconds |
 
 These are component timings, not a serving or MLX-LM comparison. They establish that reducing dispatch count made important paths slower. Register pressure, padded work and lost projection overlap remain possible mechanisms, not measured occupancy findings. Neither experiment is in the published fixes.
 
@@ -93,18 +140,24 @@ drafter-reference results, not permission to tolerate different final target tok
 
 ## Work order from here
 
-1. Publish the stage-preserving query/capacity corrections. Port CPU suites passed 341/366/365 tests for #1391/#1392/#1393 respectively, each with one platform skip; all retain zero new lean findings. Their own-head native checks and publication are separate from the cumulative M4/M5 receipts.
-2. Compare independent official/native intermediate captures, then correct the target M5 dispatch gap without changing M4 behavior or weakening numerical checks. The initial dispatch-only prototype remains private and unqualified.
-3. Attribute drafter cost to context projection, transformer, vocabulary head and Markov work; relate spending to incremental accepted tokens over copies.
-4. Retain only changes that remove identified waste. Resume full qualification after a causal fix, rather than using repeated full matrices as diagnosis.
-5. Continue publishing independently verified correctness fixes. Publication does not mean merge-ready.
+1. Compare independently captured official/native target features and drafter intermediates. The FP32
+   arithmetic reference alone cannot establish that every model input is the intended one.
+2. Develop a target tensor replacement compatible with the established one-row computation; preserve
+   M4 behavior and the original byte/token/cache checks. The simple threshold-copying experiment is rejected.
+3. Attribute drafter spending to context projection, transformer, vocabulary head and Markov work, and
+   isolate neural incremental acceptance from cheap copies. Per-phase critical-path and hardware occupancy
+   attribution remain unmeasured; encoder-active time is not an ALU-utilization counter.
+4. Retain only changes that remove identified waste. Resume full qualification after a causal fix,
+   rather than using repeated full matrices as diagnosis. Publication does not mean merge-ready.
 
 ## Source and publication provenance
 
 - Last complete serving evidence: `7eb317eda495891a5b6d1525e566d746bd249937`; all token checks passed, but 21 of 32 speed comparisons failed. This report does not relabel that evidence to newer heads.
 - Initial execution-path inspection: `8fb1c35c417ffc1011ad62220ad6b23a4141accb`. Fixed-query implementation and M4/M5 checks belong to `e06ce30116c0a77017136ebacc4e8f15ce671def`; subsequent documentation or comment-only changes do not inherit a different source label.
 - Maximum-context before/after: `a6164114c3e5cc57cbfa83fa7a072eb9d295732b` → `174a74681920cbaefc3d3e65a9cd18c5e0f15a5a`. The before M4 log SHA-256 is `27d50388cf2fe6fa8b7f16e39015758879acace88c55df8a6a08119357dc02c6`; the after M4 build/units log is `54418ea32f23fd47d695095bac21fac8bf406476ad495780667d2cee228f0bf8`, and the M5 build/units log is `6f6079c30e6f82c7f7f67d3a3a99017f9b0b0394533450d72d624b931c01a5ec`. Original numerical bounds and controls were not relaxed.
-- #1391 was fast-forward pushed to `08196a4b48badceef244a96353b1ad5932168de5`. Its PR description distinguishes production checks on parent `ed731bfa` from the formatting successor's own CPU checks and pending exact-head CI.
-- #1392 was fast-forward pushed to `554e83b3c502c8f5a87c5f7327db8d0212dec52f`. Production-code checks belong to parent `74438fcc`; the formatting successor's own CPU suite passed. Its PR description preserves that distinction.
-- #1393 was fast-forward pushed to `55f3095ed172cd59872df450ae63cd70cefe43e4` after its own complete build/check invocation and actual M4 native scenarios. The new query-contract correction is being ported to all three published stages; those old-head receipts do not validate the ports.
+- #1391: `caf9282b8c1f85d4a8dd7f66c09feaf89053d977`; #1392: `5d81437d0f16c9c52ed60f095e4c26a16c498592`; #1393: `5e7ae48da075f4e318c4d137aa8d3f53cd80f707`. All three were fast-forward pushed after their own 76/76 scoped build/check steps (251 passed, five platform skips), original attention/BF16 contracts and actual M4 BF16/8-bit native scenarios. Each mode matched 9/9 FP32 picks and passed prefix/split/lifecycle controls; the depth-only stage does not claim confidence coverage. Their code-parent CPU suites passed 341/366/365 respectively, each with one skip.
+- #1394 correctness/report publication: `5215a8b3588e9ad8992846111250e505081a9935`. Its own native/CPU build passed 60/60 steps, 391 consumers and one platform skip, plus actual CLI help. Production GPU receipts retain `174a7468`; that source also passed the unchanged M5 target oracle 72/72. All four retained 424 inherited lean findings and zero new.
+- Exact-head CI on those four publications was observed cancelled, not green: #1391 has one successful formatting check and ten cancellations; the other three have eleven cancellations each. Workflow concurrency is scoped by PR/ref, so the configuration does not explain cross-PR cancellation. Cause is unproven. No gate, workflow, test skip or permission retry was introduced.
+- Target arithmetic localization: private probe `751656d464635bd38127b39bfc1e660b034be033`, log SHA-256 `4969548bc69dc94b7e8812101b55f8c3d1ecb9e991d468837ebcd52c46724b76`; packet `/Users/kletorch/tf-lfm2-test/r18-head-probe-751656d46` on the M5. Input: the first seven tokens of the existing exact fixture, zero prior context, canonical target forward, its final-normalization BF16 rows; head 128000×2048, six-bit/group64. The original independent FP64 unpack/reference was reused. This is localization, not a replacement for the failed full oracle.
+- Epilogue-only localization: private `5b90d6232f3ef1b6c640b80419ad23dba185e8e5`, log SHA-256 `944eda8b134563196c9c3e66798a2254e8f2d1a5d7163e2e55d38664f5a6ad68`, binary SHA-256 `0187669099bb50aa72b3143cc598441681b724f398e21f01c3ad1384fc8c9a8a`; M5 packet `/Users/kletorch/tf-lfm2-test/r18-head-fma-5b90d6232`. Same captured inputs, every vocabulary output checked, no source-threshold or oracle change.
 - No new full serving matrix is being used as a substitute for the missing causal explanation.
