@@ -425,8 +425,7 @@ pub const Rule = struct {
         return r.mtp_step_ms * @as(f64, @floatFromInt(steps));
     }
 
-    /// `ms` excludes separately priced host draws and, only without actual timing, modeled extra head steps.
-    /// `head_ms` is this interval's nonoverlapping encode CPU + settled GPU work, or the fallback modeled head price.
+    /// ms is net of draws/model-only steps; head_ms is actual encoding + settled GPU, or modeled head work.
     pub fn observeOverhead(r: *Rule, streams: u32, rows: u64, ms: f64, sampled: bool, head_ms: f64) !void {
         const forward = r.shared_costs.get(@intCast(rows)) orelse return;
         const extra = if (ms - forward > 0.0) ms - forward else 0.0;

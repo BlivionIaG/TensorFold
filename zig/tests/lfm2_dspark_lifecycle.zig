@@ -5,6 +5,40 @@ const tf = @import("tensorfold");
 const q = tf.lfm2_moe;
 const c = q.config;
 
+pub const Cost = struct {
+    encode_cpu_ms: f64 = std.math.inf(f64),
+    gpu_ms: f64 = 0,
+
+    pub fn total(cost: Cost) f64 {
+        return cost.encode_cpu_ms + cost.gpu_ms;
+    }
+};
+
+/// Read the two receipts before the scalar callback consumes them; never infer CPU from wall minus GPU.
+pub fn takeCost(d: *q.dspark.Drafter) !Cost {
+    const cost = Cost{ .encode_cpu_ms = d.encode_cpu_ms, .gpu_ms = d.hold_spent_ms };
+    if (q.dspark_block.takeHoldMs(d) != cost.total() or q.dspark_block.takeHoldMs(d) != 0) return error.CostNotTakenOnce;
+    return cost;
+}
+
+/// Existing explicitly waited diagnostic pass: direct GPU receipt paired with that pass's precommit CPU span.
+pub fn signalledCost(d: *q.dspark.Drafter, blocks: []const q.dspark_block.Block) !Cost {
+    _ = q.dspark_block.takeHoldMs(d);
+    d.signalled += 1;
+    const cb = (try q.dspark_block.hold(d, blocks, .{ .event = d.event, .value = d.signalled })).?;
+    defer cb.release();
+    defer {
+        // This diagnostic owns the returned buffer, not Drafter.pending/settle.
+        d.pass_context_rows = 0;
+        d.pass_encode_cpu_ms = 0;
+        _ = q.dspark_block.takeHoldMs(d);
+    }
+    const encode_cpu_ms = d.pass_encode_cpu_ms;
+    cb.wait();
+    if (cb.failure() != null) return error.GpuFailed;
+    return .{ .encode_cpu_ms = encode_cpu_ms, .gpu_ms = (cb.gpuEnd() - cb.gpuStart()) * 1000 };
+}
+
 fn tapped(s: *tf.lanes.Stream, taps: mtl.Buffer, width: usize, start: usize, rows: usize) tf.lanes.drafter.Absorb {
     return .{
         .stream = s,

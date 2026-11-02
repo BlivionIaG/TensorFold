@@ -275,15 +275,13 @@ pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
     return base.tokens * live < plain + fixed + base.host_ms;
 }
 
-/// Discard already-accountable work outside this round, including startup; only work after clock.start belongs here.
-/// Pending GPU work is not drained until it settles inside a later interval.
+/// Discard accounted startup/out-of-round work before the clock starts; pending GPU remains pending.
 pub fn startRound(engine: anytype) void {
     if (engine.backend.draft_timing) |t| _ = t.take(t.ptr);
     engine.clock.start();
 }
 
-/// Consume encoding in its launch interval and deferred GPU work in its settle interval, each once.
-/// Without actual timing, retain the modeled head price for the current budgets.
+/// Takes encoding at launch and GPU time at settle once; absent actual timing keeps the modeled budget price.
 pub fn observedHeadMs(backend: anytype, rule: anytype, depths: []const i64) f64 {
     if (backend.draft_timing) |t| return t.take(t.ptr);
     return rule.headMs(depths);

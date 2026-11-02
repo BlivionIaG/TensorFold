@@ -112,19 +112,21 @@ running on the GPU is priced by its lane's last confidences, so the host does no
 without the head verifies by the core's depth rule, from each stream's measured acceptance by depth.
 
 A stream with a copy ahead verifies the copy and asks no hold, and a drafting stream prices its copy
-windows by its own copies. The lane core also weighs the hold pass itself: the drafter GPU-times clean
-holds of 1 to 16 blocks at every admissible depth. Prices interpolate neighboring measured depths,
+windows by its own copies. The lane core also weighs the hold pass itself: the drafter measures clean
+holds of 1 to 16 blocks at every admissible depth. Each quote selects the best of three same-attempt
+precommit CPU-encoding plus GPU totals after a warm pass. Neighboring measured depths interpolate,
 preserving the cost changes at kernel transitions.
 
-A separate 60-cell GPU calibration prices context projection: 1/2/4/8/16 streams at powers-of-two row
+A separate 60-cell calibration uses the same cost currency for context projection: 1/2/4/8/16 streams at powers-of-two row
 counts from 1 to 2,048. Temporary K/V-only lanes share one nonzero raw fixture and are freed before serving;
 this adds startup measurements, not a claim of lower startup latency or peak memory. A physical selected
 group pays context once, using its largest actual staged debt and the next measured covering regime.
 Mixed debts use a conservative uniform-row estimate, not a proven hardware bound; forced and copy-only
 companions owe no neural context fee. Missing or invalid coverage cannot fund a context-bearing hold.
-Settled whole-pass GPU time remains in round accounting. Only clean-price adaptation subtracts the
-estimated context quote; this residual is not a separately measured clean segment, and invalid residuals
-do not invent a clean observation.
+CPU spans use native monotonic elapsed time through command preparation, ending immediately before commit.
+They exclude GPU execution, waits and pick readback; they are elapsed spans, not thread-cycle measurements.
+Only clean-price adaptation subtracts the matching estimated context quote; this residual is not a separately
+measured clean segment, and invalid residuals do not invent a clean observation.
 Confidence still allocates verify rows unchanged, but a hold's expected gain is capped by that stream's actual
 head acceptance. If the full hold cannot pay, the controller can retain a shorter prefix rather than discard
 all its useful drafts. Its separate hold-value estimate starts each newly tried conditional from the observed
@@ -143,9 +145,10 @@ Context-aware recovery prices the actual selected trial group's debt once while 
 optimism over allowed deeper clean shapes. An expensive due peer cannot veto a funded cheaper prefix.
 Zero-context and opt-out backends retain their original recovery semantics.
 
-Observed fixed overhead excludes the completed hold's GPU time in the round that actually settles it, not
-the modeled price of a new unwaited hold. Work settled outside a round is discarded before its clock starts.
-Reading this accounting never submits GPU work or adds a wait; backends without it retain modeled pricing.
+Observed fixed overhead excludes encoding in its launch interval and GPU work in its settlement interval, each
+once. Pending CPU metadata remains only for later repricing, not a second charge at settlement. Accountable
+startup or out-of-round work is discarded before the clock starts. Actual timing does not also lose modeled
+extra-step work; absent callbacks retain modeled pricing. Reading these receipts never submits or waits.
 
 For stable, unmasked LFM2 verify routes, each successful window quotes its host draw time per verified
 row. The existing allocator charges pending, copied, forced and neural rows at their stream's quote,
@@ -195,9 +198,11 @@ contains only its row-address table: 16 KiB at 2048 rows, without a second 40 Mi
 The prompt's last row remains in the lane across unrelated forwards, avoiding a copied 20 KiB anchor per stream.
 A declined final snapshot leaves that anchor in place; a valid prefix snapshot still materializes its context.
 Generic diagnostic capture retains its raw scratch storage.
-Metadata-only absorb keeps every context update without creating an autorelease pool; encoding paths retain
-their pool through command completion and error cleanup. Shared scheduling avoids constructing an unused
-second set of stream descriptors. These host-work reductions do not establish throughput qualification.
+Tap destinations cache their live allocation's GPU base; snapshots retain bytes and state, not virtual addresses.
+Metadata-only absorb keeps every context update without creating an autorelease pool, and a zero-row rewind
+encodes no command buffer. Encoding paths retain their pool through command completion and error cleanup.
+A successful shared hold preserves its completed picks for surviving peers even if its timing receipt is unusable.
+Shared scheduling avoids constructing unused stream descriptors. These changes do not establish throughput qualification.
 
 Shared verification past the 16-row qualified window uses measured increments
 from the shared forward path through 32 rows, anchored at the 16-row window

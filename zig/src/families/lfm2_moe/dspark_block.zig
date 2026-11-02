@@ -9,6 +9,7 @@ const am = @import("../../core/affine_mm.zig");
 const round = @import("tree_round_gpu");
 const ds = @import("dspark.zig");
 const dw = @import("dspark_weights.zig");
+const timing = @import("dspark_time.zig");
 const Drafter = ds.Drafter;
 const Lane = ds.Lane;
 
@@ -240,39 +241,6 @@ const Enc = struct {
 
 /// Rows a bf16 call takes on the few-rows kernel in an absorb pass.
 const absorb_bf16_rows = 32;
-fn failed(msg: [*:0]const u8) anyerror {
-    std.log.err("lfm2 dspark: command buffer failed: {s}", .{msg});
-    return error.GpuFailed;
-}
-
-/// Native monotonic time, independent of the caller's Io implementation and without timer allocation.
-fn encodeNow() !i128 {
-    var ts: std.c.timespec = undefined;
-    if (std.c.clock_gettime(.MONOTONIC, &ts) != 0 or ts.sec < 0 or ts.nsec < 0 or ts.nsec >= std.time.ns_per_s) return error.DraftTimingUnavailable;
-    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
-}
-
-/// Ends a precommit span exactly once; it never includes commit, GPU execution, waits or pick readback.
-fn encoded(d: *Drafter, start_ns: i128) !f64 {
-    const end_ns = try encodeNow();
-    if (end_ns <= start_ns) return error.DraftTimingUnavailable;
-    const ms = @as(f64, @floatFromInt(end_ns - start_ns)) / std.time.ns_per_ms;
-    d.encode_cpu_ms += ms;
-    return ms;
-}
-
-/// Commits and waits; CPU is recorded before commit, successful GPU time after the wait, in disjoint spans.
-fn finish(d: *Drafter, cb: mtl.CommandBuffer, e: mtl.ComputeEncoder, start_ns: i128) !f64 {
-    e.end();
-    const encode_ms = try encoded(d, start_ns);
-    cb.commit();
-    cb.wait();
-    if (cb.failure()) |msg| return failed(msg);
-    const gpu_ms = cb.gpuSeconds() * 1000;
-    if (!(gpu_ms > 0) or !std.math.isFinite(gpu_ms)) return error.DraftTimingUnavailable;
-    d.hold_spent_ms += gpu_ms;
-    return encode_ms + gpu_ms;
-}
 
 /// One stream's tapped rows in an absorb pass: `rows` rows at `src`, the context from position `p0`.
 pub const Piece = struct { lane: *Lane, src: Ref, rows: usize, p0: u64 };
@@ -332,17 +300,17 @@ fn absorbHeld(x: Enc, pieces: []const Piece) !void {
 pub fn contextPass(d: *Drafter, pieces: []const Piece) !f64 {
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
-    const start_ns = try encodeNow();
+    const start_ns = try timing.encodeNow();
     const cb = d.target.queue.commandBuffer();
     const x = Enc{ .d = d, .e = cb.compute(.concurrent), .conc = true };
     var open = true;
     errdefer if (open) {
         x.e.end();
-        _ = encoded(d, start_ns) catch {};
+        _ = timing.encoded(d, start_ns) catch {};
     };
     try absorbHeld(x, pieces);
     open = false;
-    return finish(d, cb, x.e, start_ns);
+    return timing.finish(d, cb, x.e, start_ns);
 }
 
 /// An absorb encoder never outlives its callback; its timer lives with this local run, not on the drafter.
@@ -350,7 +318,7 @@ pub const Run = struct { cb: mtl.CommandBuffer, e: mtl.ComputeEncoder, start_ns:
 
 /// Starts after the caller's prior settle/waits, immediately before command-buffer and encoder creation.
 pub fn begin(d: *Drafter) !Run {
-    const start_ns = try encodeNow();
+    const start_ns = try timing.encodeNow();
     const cb = d.target.queue.commandBuffer();
     return .{ .cb = cb, .e = cb.compute(.serial), .start_ns = start_ns };
 }
@@ -358,12 +326,12 @@ pub fn begin(d: *Drafter) !Run {
 /// Closes an unsubmitted encoder on error, accounting only the CPU work actually performed.
 pub fn abort(d: *Drafter, run: Run) void {
     run.e.end();
-    _ = encoded(d, run.start_ns) catch {};
+    _ = timing.encoded(d, run.start_ns) catch {};
 }
 
 /// Closes the encoder and its CPU span before commit; takes both components with the holds' (takeHoldMs).
 pub fn end(d: *Drafter, run: Run) !void {
-    _ = try finish(d, run.cb, run.e, run.start_ns);
+    _ = try timing.finish(d, run.cb, run.e, run.start_ns);
 }
 
 /// Layer `layer`'s q, k, v and every block's attention (a lone block's last layer: `out` rows), on a concurrent `x`.
@@ -435,7 +403,7 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
     const n: u32 = depth;
     const rows = blocks.len * n;
     if (rows == 0 or rows > ds.pass_rows) return error.DraftTooManyStreams;
-    const start_ns = try encodeNow();
+    const start_ns = try timing.encodeNow();
     const ids = s.ids.slice(u32, ds.pass_rows);
     for (0..blocks.len) |i| {
         ids[i * n] = blocks[i].pending;
@@ -450,7 +418,7 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
     var open = true; // close the encoder if encoding fails before commit
     errdefer if (open) {
         x.e.end();
-        _ = encoded(d, start_ns) catch {};
+        _ = timing.encoded(d, start_ns) catch {};
     };
     // the blocks' staged context rows first, in the same command buffer
     var staged: [ds.pass_rows]Piece = undefined;
@@ -506,7 +474,7 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
         cb.signalEvent(sg.event, sg.value);
         const kept = cb.retain();
         errdefer kept.release();
-        const encode_ms = try encoded(d, start_ns);
+        const encode_ms = try timing.encoded(d, start_ns);
         cb.commit();
         d.pass_context_rows = context_rows;
         d.pass_encode_cpu_ms = encode_ms;
@@ -514,7 +482,7 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
         return kept;
     }
     open = false;
-    const ms = try finish(d, cb, e, start_ns);
+    const ms = try timing.finish(d, cb, e, start_ns);
     absorbed(blocks);
     d.priceHold(blocks.len, depth, context_rows, ms);
     const picks = s.picks.slice(Pick, d.config.block * ds.pass_rows);

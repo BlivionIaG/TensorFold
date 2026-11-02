@@ -8,6 +8,7 @@ const st = q.state;
 const ck = tf.checkpoint;
 const quant = q.dspark_quant;
 const controls = @import("lfm2_dspark_controls.zig");
+const lifecycle = @import("lfm2_dspark_lifecycle.zig");
 
 const hd = c.head_dim;
 const kw = c.kv_heads * hd;
@@ -110,40 +111,6 @@ fn compare(label: []const u8, gpu: []const u16, row: []const f32, bias: []const 
         worst = @max(worst, @abs(x - y));
     }
     std.debug.print("{s}: cosine {d:.5}, worst difference {d:.3}\n", .{ label, dot / @sqrt(gg * rr), worst });
-}
-
-const Cost = struct {
-    encode_cpu_ms: f64 = std.math.inf(f64),
-    gpu_ms: f64 = 0,
-
-    fn total(cost: Cost) f64 {
-        return cost.encode_cpu_ms + cost.gpu_ms;
-    }
-};
-
-/// Read the two receipts before the scalar callback consumes them; never infer CPU from wall minus GPU.
-fn takeCost(d: *q.dspark.Drafter) !Cost {
-    const cost = Cost{ .encode_cpu_ms = d.encode_cpu_ms, .gpu_ms = d.hold_spent_ms };
-    if (q.dspark_block.takeHoldMs(d) != cost.total() or q.dspark_block.takeHoldMs(d) != 0) return error.CostNotTakenOnce;
-    return cost;
-}
-
-/// Existing explicitly waited diagnostic pass: direct GPU receipt paired with that pass's precommit CPU span.
-fn signalledCost(d: *q.dspark.Drafter, blocks: []const q.dspark_block.Block) !Cost {
-    _ = q.dspark_block.takeHoldMs(d);
-    d.signalled += 1;
-    const cb = (try q.dspark_block.hold(d, blocks, .{ .event = d.event, .value = d.signalled })).?;
-    defer cb.release();
-    defer {
-        // This diagnostic owns the returned buffer, not Drafter.pending/settle.
-        d.pass_context_rows = 0;
-        d.pass_encode_cpu_ms = 0;
-        _ = q.dspark_block.takeHoldMs(d);
-    }
-    const encode_cpu_ms = d.pass_encode_cpu_ms;
-    cb.wait();
-    if (cb.failure() != null) return error.GpuFailed;
-    return .{ .encode_cpu_ms = encode_cpu_ms, .gpu_ms = (cb.gpuEnd() - cb.gpuStart()) * 1000 };
 }
 
 fn absorb(d: *q.dspark.Drafter, piece: q.dspark_block.Piece) !void {
@@ -261,7 +228,7 @@ fn deferred(gpa: std.mem.Allocator, d: *q.dspark.Drafter, taps: mtl.Buffer, ids:
     if (q.dspark_block.takeHoldMs(d) != encode_cpu_ms or d.pass_encode_cpu_ms != encode_cpu_ms) return error.PendingCpuNotTakenOnce;
     var got: [3]u32 = undefined;
     try dr.held(&.{&s}, &.{&got});
-    const settled = try takeCost(d);
+    const settled = try lifecycle.takeCost(d);
     if (settled.encode_cpu_ms != 0 or !(settled.gpu_ms > 0) or d.pass_encode_cpu_ms != 0 or d.pass_context_rows != 0) return error.SettledHoldRechargedCpu;
     std.debug.print("deferred hold of 1 stream, depth 3, debt {d}: CPU-encode {d:.3} ms taken at launch, GPU {d:.3} ms taken at settle, total {d:.3} ms; pending CPU retained only for EMA\n", .{ context_rows, encode_cpu_ms, settled.gpu_ms, encode_cpu_ms + settled.gpu_ms });
     if (!std.mem.eql(u32, &want, &got)) return error.DeferredDraftMismatch;
@@ -387,7 +354,7 @@ pub fn main(init: std.process.Init) !void {
         };
         std.debug.print("the owned stage: {d} rows staged in uneven absorbs, absorbed as one {d}-row piece like the direct absorbs' ({s} regime): keys, values and picks equal\n", .{ ctx, ctx, if (ctx <= 32) "<= 32-row" else "> 32-row" });
     }
-    try @import("lfm2_dspark_lifecycle.zig").run(gpa, d, taps.buf, ids, ctx);
+    try lifecycle.run(gpa, d, taps.buf, ids, ctx);
     // Absorb time is consumed once without repricing; a hold reprices only participating shapes.
     if (ctx > 0) {
         const grid = d.holds;
@@ -406,11 +373,11 @@ pub fn main(init: std.process.Init) !void {
         }
         _ = q.dspark_block.takeHoldMs(d);
         try absorb(d, .{ .lane = lane, .src = .{ .buf = taps.buf, .off = (ctx - 1) * width * 2 }, .rows = 1, .p0 = ctx - 1 });
-        const absorb_cost = try takeCost(d);
+        const absorb_cost = try lifecycle.takeCost(d);
         if (!(absorb_cost.encode_cpu_ms > 0) or !(absorb_cost.gpu_ms > 0)) return error.AbsorbTimeNotTaken;
         for (grid[0..grid_len], d.holds[0..grid_len]) |before, now| if (before.ms != now.ms) return error.AbsorbRepricedAHold;
         _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }}, null);
-        const hold_cost = try takeCost(d);
+        const hold_cost = try lifecycle.takeCost(d);
         if (!(hold_cost.encode_cpu_ms > 0) or !(hold_cost.gpu_ms > 0)) return error.HoldTimeNotTakenOnce;
         if (d.holds_len != grid_len) return error.GridResized;
         var moved = false;
@@ -437,13 +404,13 @@ pub fn main(init: std.process.Init) !void {
     const depths = [_]u32{ 1, 3, cfg.block };
     for (depths) |depth| {
         var best: f64 = std.math.floatMax(f64);
-        var cost_best: Cost = .{};
+        var cost_best: lifecycle.Cost = .{};
         for (0..5) |_| {
             _ = q.dspark_block.takeHoldMs(d);
             const t0 = std.Io.Clock.awake.now(init.io);
             _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = depth }}, null);
             best = @min(best, @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(init.io)).toNanoseconds())) / 1e6);
-            const cost = try takeCost(d);
+            const cost = try lifecycle.takeCost(d);
             if (cost.total() < cost_best.total()) cost_best = cost;
         }
         std.debug.print("clean hold of 1 stream at depth {d}: wall best {d:.3} ms; best paired cost CPU-encode {d:.3} ms + GPU {d:.3} ms = {d:.3} ms (5 attempts)\n", .{ depth, best, cost_best.encode_cpu_ms, cost_best.gpu_ms, cost_best.total() });
@@ -468,12 +435,12 @@ pub fn main(init: std.process.Init) !void {
         var blocks: [16]q.dspark_block.Block = undefined;
         for (blocks[0..streams], lanes_[0..streams]) |*b, l| b.* = .{ .lane = l, .pending = ids[ctx], .anchor = ctx, .depth = depth };
         var best: f64 = std.math.floatMax(f64);
-        var cost_best: Cost = .{};
+        var cost_best: lifecycle.Cost = .{};
         for (0..5) |_| {
             const t0 = std.Io.Clock.awake.now(init.io);
             _ = try q.dspark_block.hold(d, blocks[0..streams], null);
             best = @min(best, @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(init.io)).toNanoseconds())) / 1e6);
-            const cost = try signalledCost(d, blocks[0..streams]);
+            const cost = try lifecycle.signalledCost(d, blocks[0..streams]);
             if (cost.total() < cost_best.total()) cost_best = cost;
         }
         std.debug.print("clean hold of {d} streams at depth {d}: synchronous wall best {d:.3} ms; signalled best paired cost CPU-encode {d:.3} ms + GPU {d:.3} ms = {d:.3} ms (5 attempts each)\n", .{ streams, depth, best, cost_best.encode_cpu_ms, cost_best.gpu_ms, cost_best.total() });

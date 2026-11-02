@@ -526,9 +526,7 @@ test "without actual timing deep shared rounds retain modeled extra-step and hea
         var s = try sm.Stream.init(gpa, .{ .id = "modeled", .prompt = &dt.p1, .max_new = 96, .sampling = seeded(seed) });
         defer s.deinit(gpa);
         try engine.addStream(&s);
-        // The first hold launches here: 13.25 ms wall, no settled GPU yet. Modeled deductions clamp fixed to zero.
-        // Later: 10 forward + 2.5 fixed + 11 settled GPU + .75 encoding = 24.25 ms.
-        // Removing 1 extra-step ms and the 7 ms quoted hold leaves 6.25 ms; the EMA starts from 2.5.
+        // SYNTHETIC: no first-hold GPU receipt; later fixed = 24.25 wall - 10 forward - 1 extra - 7 hold = 6.25.
         for ([_]f64{ 2.0, 2.85, 3.53 }) |fixed_ms| {
             fix.outside(15);
             const before = fix.blocks;
