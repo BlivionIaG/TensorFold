@@ -303,13 +303,16 @@ pub fn main(init: std.process.Init) !void {
     const gpu = held[0..block];
     // Compare identical taps through staged and direct paths in the same numerical regime.
     if (ctx > 3 and ctx <= @min(q.dspark.absorb_rows, @min(q.dspark.stage_rows, lane.cap))) {
-        const key: *tf.lanes.Stream = @ptrFromInt(0x1000);
+        var stream = try tf.lanes.Stream.init(gpa, .{ .id = "owned-stage", .prompt = ids, .max_new = 32 });
+        defer stream.deinit(gpa);
+        const key = &stream;
         const own = try d.newLane(length + 32);
         d.lanes.put(gpa, key, own) catch |err| {
             d.dropLane(own);
             return err;
         };
         const staged = d.drafter();
+        defer staged.release(key);
         const sizes = [_]u32{ 5, 1, 9, 33, 2 };
         const row_bytes = width * 2;
         var pos: usize = 0;
