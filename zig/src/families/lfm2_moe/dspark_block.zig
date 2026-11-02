@@ -10,6 +10,7 @@ const round = @import("tree_round_gpu");
 const ds = @import("dspark.zig");
 const dw = @import("dspark_weights.zig");
 const timing = @import("dspark_time.zig");
+const glu = @import("dspark_glu.zig");
 const Drafter = ds.Drafter;
 const Lane = ds.Lane;
 
@@ -461,14 +462,18 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
         x.sync();
         x.norm(s.h, s.r, ly.post_norm, true, s.x, out);
         x.sync();
-        try x.projectAll(&.{ ly.gate, ly.up }, .{ .buf = s.x }, &.{ .{ .buf = s.gate }, .{ .buf = s.up } }, out);
-        x.sync();
-        x.pipe("lfm2_swiglu");
-        x.e.setBuffer(s.gate, 0, 0);
-        x.e.setBuffer(s.up, 0, 1);
-        x.e.setBuffer(s.act, 0, 2);
-        x.e.setValue(@as(u32, @intCast(out * d.config.intermediate)), 3);
-        x.e.dispatchThreads(mtl.Size.of(out * d.config.intermediate / 8, 1, 1), mtl.Size.of(256, 1, 1));
+        if (ly.gate == .bf16 and ly.up == .bf16) {
+            glu.encode(x.e, &d.target.kernels, ly.gate.bf16, ly.up.bf16, Ref{ .buf = s.x }, Ref{ .buf = s.act }, out);
+        } else {
+            try x.projectAll(&.{ ly.gate, ly.up }, .{ .buf = s.x }, &.{ .{ .buf = s.gate }, .{ .buf = s.up } }, out);
+            x.sync();
+            x.pipe("lfm2_swiglu");
+            x.e.setBuffer(s.gate, 0, 0);
+            x.e.setBuffer(s.up, 0, 1);
+            x.e.setBuffer(s.act, 0, 2);
+            x.e.setValue(@as(u32, @intCast(out * d.config.intermediate)), 3);
+            x.e.dispatchThreads(mtl.Size.of(out * d.config.intermediate / 8, 1, 1), mtl.Size.of(256, 1, 1));
+        }
         x.sync();
         try x.project(ly.down, .{ .buf = s.act }, .{ .buf = s.r }, out);
         x.sync();

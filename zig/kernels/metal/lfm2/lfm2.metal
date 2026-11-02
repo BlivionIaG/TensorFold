@@ -454,18 +454,20 @@ template [[host_name("lfm2_attn_block_merge")]] [[kernel]] decltype(lfm2_attn_me
   }
 }
 
+inline bfloat lfm2_swiglu_value(bfloat g, bfloat u) {
+  const float gf = g;
+  const bfloat s = static_cast<bfloat>(1.0f / (1.0f + metal::precise::exp(-gf)));
+  const bfloat silu = static_cast<bfloat>(gf * float(s));
+  return static_cast<bfloat>(float(silu) * float(u));
+}
+
 // act = silu(gate) * up, 8 a thread, bf16 at each step (mlx-lm's compiled swiglu, as the tiles' twin).
 [[kernel]] void lfm2_swiglu(const device bfloat* gate [[buffer(0)]], const device bfloat* up [[buffer(1)]],
                             device bfloat* act [[buffer(2)]], constant uint& count [[buffer(3)]], uint i [[thread_position_in_grid]]) {
   if (i * 8 >= count) return;
   const vec<bfloat, 8> g = ((const device vec<bfloat, 8>*)gate)[i], u = ((const device vec<bfloat, 8>*)up)[i];
   vec<bfloat, 8> out;
-  for (int j = 0; j < 8; ++j) {
-    const float gf = g[j];
-    const bfloat s = static_cast<bfloat>(1.0f / (1.0f + metal::precise::exp(-gf)));
-    const bfloat silu = static_cast<bfloat>(gf * float(s));
-    out[j] = static_cast<bfloat>(float(silu) * float(u[j]));
-  }
+  for (int j = 0; j < 8; ++j) out[j] = lfm2_swiglu_value(g[j], u[j]);
   ((device vec<bfloat, 8>*)act)[i] = out;
 }
 
