@@ -1,4 +1,4 @@
-# Diagnosis: unproductive speculation and missed M5 dispatch opportunities
+# DSpark diagnosis: model inputs, fixed GPU costs, and M5 dispatch limits
 
 **A real model-input bug is corrected; M5 target acceleration has a separate arithmetic obstacle.**
 Requested proposal depth changed the drafter's bidirectional input. That correction and its maximum-context
@@ -12,7 +12,7 @@ Working report. This is a causal diagnosis, not a claim of release or performanc
 
 We have been optimizing drafter kernels before establishing how much **additional useful progress** the neural drafter buys over the existing cheap speculation. Numerical correctness and faster component kernels do not establish that adding the drafter reduces work per emitted token.
 
-The current evidence proves a regression against TensorFold's own no-drafter arm. It does **not** establish the cause of a gap against MLX-LM: a matched MLX-LM execution breakdown has not been supplied by this investigation. Those are distinct questions.
+The last complete serving evidence proves a regression against TensorFold's own no-drafter arm on that frozen source, not on the newer correctness fixes. It does **not** establish the cause of a gap against MLX-LM: a matched MLX-LM execution breakdown has not been supplied by this investigation. Those are distinct questions.
 
 ## 1. The baseline already gets speculative tokens
 
@@ -36,7 +36,57 @@ In [dspark_block.zig](../../../zig/src/families/lfm2_moe/dspark_block.zig), `hol
 
 Owned context cannot simply be skipped on zero-grant rounds: it is required by later proposals. The opportunity is to eliminate genuinely redundant work or improve useful proposals, not corrupt context retention.
 
-The existing M5 serving traces show additional compute-encoder-active time in drafter arms, not a growing gap between encoders. That is evidence of added GPU-side work. It is **not** proof of full ALU occupancy, tensor-unit utilization or memory-bandwidth saturation; per-phase attribution remains missing.
+The existing M5 serving traces show additional compute-encoder-active time in drafter arms, not a growing gap between encoders. That is evidence of added GPU-side work. It is **not** proof of full ALU occupancy, tensor-unit utilization or memory-bandwidth saturation.
+
+### Actual critical-path localization
+
+A private actual-model probe now separates the hold's phases on the M5. This is the existing 64-token
+native fixture (63 prior context rows), with three real captured rows staged for absorption, one complete
+nine-row query block, and either one or nine retained proposals. Activations remain BF16 in both weight
+modes. Each cell below is the median of three warm captures after discarding the first:
+
+| GPU work (milliseconds) | BF16 weights, retain 1 | BF16 weights, retain 9 | 8-bit weights, retain 1 | 8-bit weights, retain 9 |
+|---|---:|---:|---:|---:|
+| Context absorption | 0.190 | 0.189 | 0.130 | 0.130 |
+| Five-layer transformer | 1.586 | 1.580 | 0.831 | 0.825 |
+| Vocabulary head | 0.314 | 0.311 | 0.313 | 0.314 |
+| Markov chain and confidence | 0.088 | 0.501 | 0.056 | 0.358 |
+| Embedding and final normalization | 0.009 | 0.009 | 0.009 | 0.009 |
+| Matching uninstrumented command buffer | 2.167 | 2.574 | 1.385 | 1.627 |
+
+**The transformer is the dominant measured phase.** Reducing the retained prefix does not remove its
+fixed cost or the full vocabulary-head projection; it mainly shortens the Markov chain. A scheduler
+cannot price a one-proposal hold as one ninth of the backbone. The fixed-query correction already
+updates the clean quote grid and physical-group funding rather than assuming linear cost per proposal.
+
+Changing the weight format nearly halves this fixture's transformer cost while the tied head remains
+similar. That establishes sensitivity to weight format and its selected kernels, not a proof of bandwidth
+saturation. Source inspection found that at nine physical rows, BF16 projections with at most 2,048
+outputs still use the row kernel; wide gate/up projections already admit NAX at eight.
+
+**Tested, not assumed:** a private follow-up changed only the narrow BF16 NAX threshold from 16 to
+nine. It retained 9/9 FP32-reference picks and all original native controls, but the warm captures
+regressed:
+
+| Retained proposals | Transformer GPU-time change | Matching uninstrumented hold GPU-time change |
+|---|---:|---:|
+| 1 | +53% | +40% |
+| 9 | +54% | +34% |
+
+The existing threshold is retained. More tensor dispatch is not automatically more throughput.
+The [BF16 dispatcher](../../../zig/src/families/lfm2_moe/dspark_bf16.zig) launches only 16 NAX
+threadgroups for a nine-row, 2,048-output product (four for 512 outputs). **[INFERENCE]** This small
+grid may limit parallelism; core occupancy was not measured. A smaller column tile or shape-fixed
+split-K is a candidate to investigate after isolating the individual expensive products. Simply
+lowering the threshold is rejected. These sequential fixture captures are not a new speed qualification.
+
+**Measurement limits:** the M5 exposes stage-boundary counters, not dispatch-boundary counters.
+The private probe preserves concurrent encoders and inserts fenced boundaries at existing phase
+dependencies. Two-point calibrated stage timestamps are used; stage rotation can perturb execution.
+Every profiled base-logit, requested-pick and confidence byte matched its paired uninstrumented hold.
+The instrumented command-buffer total timestamp was invalid/absolute-looking and is excluded;
+the last table row comes from separate uninstrumented buffers. Phase medians are not additive exact
+totals. This is one native fixture, not serving qualification, matched MLX-LM attribution, or occupancy.
 
 ## 3. Target M5 routing crosses an arithmetic-compatibility boundary
 
@@ -93,8 +143,10 @@ The matrix primitives also differ. Six-bit codes have no four-bit `+128` offset,
 explain this first head-only case. Passing ordinary FP64-error bounds is not permission to replace the
 target's canonical per-row arithmetic. MiniMax explicitly maintains the same target/drafter separation;
 Gemma's fixed tensor schedule is a useful design precedent, not a drop-in equivalent to LFM2 decode.
-The remaining discriminator is the group dot/sum primitive after epilogue alignment, not another lower
-dispatch threshold. The shared shader experiment is diagnostic only and is not published.
+An additional captured-input check found **all 224 GPU row sums bit-identical to canonical ordered
+FP32 FMA sums**, while the four final head differences remained after epilogue alignment. This excludes
+row-sum accumulation for this case; the remaining dot/matrix primitive is the next discriminator.
+The shared shader experiments remain diagnostic only and are not published.
 
 ## 4. Fusion can make utilization worse
 
@@ -144,9 +196,10 @@ drafter-reference results, not permission to tolerate different final target tok
    arithmetic reference alone cannot establish that every model input is the intended one.
 2. Develop a target tensor replacement compatible with the established one-row computation; preserve
    M4 behavior and the original byte/token/cache checks. The simple threshold-copying experiment is rejected.
-3. Attribute drafter spending to context projection, transformer, vocabulary head and Markov work, and
-   isolate neural incremental acceptance from cheap copies. Per-phase critical-path and hardware occupancy
-   attribution remain unmeasured; encoder-active time is not an ALU-utilization counter.
+3. Split the measured dominant transformer phase into its projection/attention/MLP work, then test
+   narrow-product tiling or shape-fixed split-K. Merely lowering the existing narrow BF16 threshold
+   already regressed. Separately isolate neural incremental acceptance from cheap copies. Hardware
+   occupancy and matched MLX-LM phase attribution remain unmeasured; stage timestamps establish neither.
 4. Retain only changes that remove identified waste. Resume full qualification after a causal fix,
    rather than using repeated full matrices as diagnosis. Publication does not mean merge-ready.
 
@@ -160,4 +213,7 @@ drafter-reference results, not permission to tolerate different final target tok
 - Exact-head CI on those four publications was observed cancelled, not green: #1391 has one successful formatting check and ten cancellations; the other three have eleven cancellations each. Workflow concurrency is scoped by PR/ref, so the configuration does not explain cross-PR cancellation. Cause is unproven. No gate, workflow, test skip or permission retry was introduced.
 - Target arithmetic localization: private probe `751656d464635bd38127b39bfc1e660b034be033`, log SHA-256 `4969548bc69dc94b7e8812101b55f8c3d1ecb9e991d468837ebcd52c46724b76`; packet `/Users/kletorch/tf-lfm2-test/r18-head-probe-751656d46` on the M5. Input: the first seven tokens of the existing exact fixture, zero prior context, canonical target forward, its final-normalization BF16 rows; head 128000×2048, six-bit/group64. The original independent FP64 unpack/reference was reused. This is localization, not a replacement for the failed full oracle.
 - Epilogue-only localization: private `5b90d6232f3ef1b6c640b80419ad23dba185e8e5`, log SHA-256 `944eda8b134563196c9c3e66798a2254e8f2d1a5d7163e2e55d38664f5a6ad68`, binary SHA-256 `0187669099bb50aa72b3143cc598441681b724f398e21f01c3ad1384fc8c9a8a`; M5 packet `/Users/kletorch/tf-lfm2-test/r18-head-fma-5b90d6232`. Same captured inputs, every vocabulary output checked, no source-threshold or oracle change.
+- Row-sum exclusion: private `e5718a4c53f18eeef72899b58c1128ff9bb40cf5`, log SHA-256 `241eed316cbe253e0fa221acfb9a5eea22e3d08cdec92da3a99102f75986c103`, M5 packet `/Users/kletorch/tf-lfm2-test/r18-head-sums-e5718a4c5`.
+- Actual phase attribution: private `d6ae603903e91aecd146386bf6214078e2b292d8`; M5 packet `/Users/kletorch/tf-lfm2-test/r18-phase-d6ae60390`; BF16 log SHA-256 `1188eab48ab4b1e71ec4f47a4046a4dec4d061d6cc08cf85488fcc72b5a7cdf3`, 8-bit log `1769ea2b6d1e702c0a184bbd32e9cfe6ed377c7ab6bf065bf337ed717581a09e`. Original native controls ran first and passed, including zero host allocations/resizes in the 20 steady rounds; BF16 matched 9/9 FP32 picks and 8-bit matched 8/9 with the previously stated bounds. An initial empty-context counter attempt (`4d3e1df7d`) returned `InvalidCounterSample` and supplies no phase timing; the published table uses only valid nonempty-stage captures.
+- Narrow BF16 tensor follow-up: private `0fdcedf12733466ba7aa28d45b225d4a3bacda2b`; M5 packet `/Users/kletorch/tf-lfm2-test/r18-narrow-0fdcedf12`; actual native log SHA-256 `6292b344fe16e7b2cde13834e0ad2601b3ec2697b21d85d75c9e190c99ae601f`. Same staged real-input fixture and phase sampler; FP32 picks 9/9, worst confidence difference 0.00129, all profiled outputs identical to their matched unprofiled runs. Rejected and not published.
 - No new full serving matrix is being used as a substitute for the missing causal explanation.
