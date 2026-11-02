@@ -81,18 +81,36 @@ const Encoder = struct {
     }
     /// y[rows] = x[rows] W^T: the prompt tiles (on x's group sums), or their twin at decode and window rows.
     fn projection(self: Encoder, w: row.Weights, x: Buffer, x_off: usize, y: Buffer, y_off: usize, rows: usize) void {
+        self.projectAll(&.{w}, .{ .buf = x, .off = x_off }, &.{.{ .buf = y, .off = y_off }}, rows);
+    }
+    /// Ordered products on one immutable BF16 input; only compatible, still-live sums are reused.
+    fn projectAll(self: Encoder, ws: []const row.Weights, x: Ref, outs: []const Ref, rows: usize) void {
         const t = &self.m.kernels.tiles;
-        if (self.nax(w.bits)) |p| {
-            const xr = Ref{ .buf = x, .off = x_off };
-            const sums = Ref{ .buf = self.s.sums };
-            am.rowSums(self.e, p, c.group, xr, sums, @intCast(rows), @intCast(w.k));
-            am.dense(self.e, p, xr, sums, affine(w), Ref{ .buf = y, .off = y_off }, @intCast(rows));
+        if (!self.prompt and self.m.kernels.twin) {
+            for (ws, outs) |w, out| tile.encodeTwin(self.e, t, matrix(w), x.buf, x.off, out.buf, out.off, rows) catch unreachable;
             return;
         }
-        if (self.prompt or !self.m.kernels.twin) {
-            tile.encodeSums(self.e, t, w.k, x, x_off, self.s.sums, rows);
-            tile.encode(self.e, t, matrix(w), x, x_off, self.s.sums, 0, y, y_off, rows) catch unreachable;
-        } else tile.encodeTwin(self.e, t, matrix(w), x, x_off, y, y_off, rows) catch unreachable;
+        const sums = Ref{ .buf = self.s.sums };
+        var previous: ?usize = null;
+        var tensor_sums = false;
+        for (ws, outs, 0..) |w, out, i| {
+            const p = self.nax(w.bits);
+            // Code width affects the product, not either sums kernel. Never cross their regimes.
+            const reuse = if (previous) |j|
+                ws[j].k == w.k and ws[j].group == w.group and ws[j].sum == w.sum and tensor_sums == (p != null)
+            else
+                false;
+            if (!reuse) {
+                if (p) |pipes| {
+                    am.rowSums(self.e, pipes, c.group, x, sums, @intCast(rows), @intCast(w.k));
+                } else tile.encodeSums(self.e, t, w.k, x.buf, x.off, self.s.sums, rows);
+                previous = i;
+                tensor_sums = p != null;
+            }
+            if (p) |pipes| {
+                am.dense(self.e, pipes, x, sums, affine(w), out, @intCast(rows));
+            } else tile.encode(self.e, t, matrix(w), x.buf, x.off, self.s.sums, 0, out.buf, out.off, rows) catch unreachable;
+        }
     }
     /// h += r unless first, then x = norm(h); `combine`: r is the decode experts' combine, taken here instead.
     fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize, combine: bool, tap_layer: ?usize) void {
@@ -212,8 +230,7 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
         enc.norm(s, block.ffn_norm, false, total, false, null);
         switch (block.ffn) {
             .dense => |d| {
-                enc.projection(d.gate, s.x, 0, s.gate, 0, total);
-                enc.projection(d.up, s.x, 0, s.up, 0, total);
+                enc.projectAll(&.{ d.gate, d.up }, .{ .buf = s.x }, &.{ .{ .buf = s.gate }, .{ .buf = s.up } }, total);
                 enc.swiglu(s, total * c.intermediate);
                 enc.projection(d.down, s.act, 0, s.r, 0, total);
             },
@@ -278,9 +295,7 @@ fn conv(enc: Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []co
 
 fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Config, segments: []const Segment, layer: usize, total: usize) void {
     const e = enc.e;
-    enc.projection(a.q, s.x, 0, s.queries, 0, total);
-    enc.projection(a.k, s.x, 0, s.k, 0, total);
-    enc.projection(a.v, s.x, 0, s.v, 0, total);
+    enc.projectAll(&.{ a.q, a.k, a.v }, .{ .buf = s.x }, &.{ .{ .buf = s.queries }, .{ .buf = s.k }, .{ .buf = s.v } }, total);
     if (enc.plan) |plan| {
         attentionSegs(enc, s, a, config, layer, total, plan);
         return enc.projection(a.out, s.y, 0, s.r, 0, total);
