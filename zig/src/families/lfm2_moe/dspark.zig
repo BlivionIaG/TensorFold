@@ -60,7 +60,7 @@ pub const Scratch = struct {
     y: mtl.Buffer,
     k: mtl.Buffer,
     v: mtl.Buffer,
-    queries: mtl.Buffer, // projected Q, then normalized and rotated in place; padded for attention tiles
+    queries: mtl.Buffer, // projected Q; normalized Q reuses the padded x after all projections finish
     pm: mtl.Buffer,
     pl: mtl.Buffer,
     po: mtl.Buffer,
@@ -150,16 +150,16 @@ pub const Drafter = struct {
         const wide = @max(pass_rows, absorb_rows);
         const i = d.config.intermediate;
         const partials = d.partRows() * st.subs * c.query_heads * st.chunks;
-        const sums = @max(absorb_rows * (d.config.tap_count * c.hidden / 64), r * (i / 64));
+        const sums = if (d.options.bits == 0) r * (c.hidden / 64) else @max(absorb_rows * (d.config.tap_count * c.hidden / 64), r * (i / 64));
         d.s = .{
             .ids = try d.buffer(r * 4),
             .h = try d.buffer(r * c.hidden * 2),
-            .x = try d.buffer(r * c.hidden * 2),
+            .x = try d.buffer((r + st.attn_rows) * c.hidden * 2),
             .r = try d.buffer(r * c.hidden * 2),
             .y = try d.buffer(r * c.hidden * 2),
             .k = try d.buffer(wide * kw * 2),
             .v = try d.buffer(wide * kw * 2),
-            .queries = try d.buffer((r + st.attn_rows) * c.hidden * 2),
+            .queries = try d.buffer(r * c.hidden * 2),
             .pm = try d.buffer(partials * 4),
             .pl = try d.buffer(partials * 4),
             .po = try d.buffer(partials * c.head_dim * 4),

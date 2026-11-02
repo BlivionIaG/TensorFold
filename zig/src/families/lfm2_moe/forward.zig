@@ -278,7 +278,7 @@ fn conv(enc: Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []co
 
 fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Config, segments: []const Segment, layer: usize, total: usize) void {
     const e = enc.e;
-    enc.projection(a.q, s.x, 0, s.q, 0, total);
+    enc.projection(a.q, s.x, 0, s.queries, 0, total);
     enc.projection(a.k, s.x, 0, s.k, 0, total);
     enc.projection(a.v, s.x, 0, s.v, 0, total);
     if (enc.plan) |plan| {
@@ -291,13 +291,13 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
         const len: u32 = @intCast(seg.cache.len);
         const cap: u32 = @intCast(seg.cache.capacity);
         enc.pipe("lfm2_qk");
-        e.setBuffer(s.q, base * c.hidden * 2, 0);
+        e.setBuffer(s.queries, base * c.hidden * 2, 0);
         e.setBuffer(s.k, base * c.kv_heads * c.head_dim * 2, 1);
         e.setBuffer(s.v, base * c.kv_heads * c.head_dim * 2, 2);
         enc.tensor(a.q_norm, 3);
         enc.tensor(a.k_norm, 4);
         e.setBytes(std.mem.asBytes(&QkArgs{ .len = len, .cap = cap, .eps = c.eps, .log2_theta = std.math.log2(config.theta) }), 5);
-        e.setBuffer(s.queries, base * c.hidden * 2, 6);
+        e.setBuffer(s.x, base * c.hidden * 2, 6);
         e.setBuffer(cache.keys, 0, 7);
         e.setBuffer(cache.values, 0, 8);
         enc.groups(.{ c.query_heads + c.kv_heads, seg.rows, 1 }, .{ 32, 1, 1 });
@@ -315,7 +315,7 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
             if (nax_attn) {
                 e.setPipeline(enc.m.kernels.attn_nax.?);
             } else if (wide) enc.pipe("lfm2_attn_mma_r2") else enc.pipe("lfm2_attn_mma");
-            e.setBuffer(s.queries, (base + at) * c.hidden * 2, 0);
+            e.setBuffer(s.x, (base + at) * c.hidden * 2, 0);
             e.setBuffer(cache.keys, 0, 1);
             e.setBuffer(cache.values, 0, 2);
             e.setBytes(std.mem.asBytes(&args), 3);
@@ -343,19 +343,19 @@ fn attentionSegs(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const 
     const e = enc.e;
     const table = layer * segs.table_bytes;
     enc.pipe("lfm2_qk_segs");
-    e.setBuffer(s.q, 0, 0);
+    e.setBuffer(s.queries, 0, 0);
     e.setBuffer(s.k, 0, 1);
     e.setBuffer(s.v, 0, 2);
     enc.tensor(a.q_norm, 3);
     enc.tensor(a.k_norm, 4);
     e.setBytes(std.mem.asBytes(&QkArgs{ .len = 0, .cap = 0, .eps = c.eps, .log2_theta = std.math.log2(config.theta) }), 5);
-    e.setBuffer(s.queries, 0, 6);
+    e.setBuffer(s.x, 0, 6);
     e.setBuffer(s.segs, table, 7);
     e.setBuffer(s.rowseg, 0, 8);
     enc.groups(.{ c.query_heads + c.kv_heads, total, 1 }, .{ 32, 1, 1 });
     const args = AttnArgs{ .len = 0, .cap = 0, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .subs = 0 };
     enc.pipe("lfm2_attn_segs");
-    e.setBuffer(s.queries, 0, 0);
+    e.setBuffer(s.x, 0, 0);
     e.setBuffer(s.segs, table, 1);
     e.setBuffer(s.tiles, 0, 2);
     e.setBytes(std.mem.asBytes(&args), 3);
@@ -404,9 +404,8 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) bool 
     e.setBuffer(s.picks, 0, 0);
     e.setValue(@as(u32, @intCast(slots)), 1);
     e.setBuffer(s.starts, 0, 2);
-    e.setBuffer(s.order, 0, 3);
-    e.setBuffer(s.pos, 0, 4);
-    e.setBuffer(s.tokens, 0, 5);
+    e.setBuffer(s.pos, 0, 3);
+    e.setBuffer(s.tokens, 0, 4);
     enc.groups(.{ 1, 1, 1 }, .{ c.experts * 16, 1, 1 });
     if (enc.nax(x.gate.one.bits)) |p| {
         // Sorted slot j reads token row tokens[j]; gate and up SwiGLU'd into act, then down over act's sorted rows.

@@ -131,7 +131,6 @@ pub const Scratch = struct {
     r: mtl.Buffer,
     bcx: mtl.Buffer,
     y: mtl.Buffer,
-    q: mtl.Buffer,
     k: mtl.Buffer,
     v: mtl.Buffer,
     queries: mtl.Buffer,
@@ -145,9 +144,8 @@ pub const Scratch = struct {
     picks: mtl.Buffer,
     weights: mtl.Buffer,
     experts: mtl.Buffer,
-    /// Prompt rows' picks by expert: starts, sorted -> slot, slot -> sorted, sorted -> token row, and the identity map.
+    /// Prompt rows' picks by expert: starts, slot -> sorted, sorted -> token row, and the identity map.
     starts: mtl.Buffer,
-    order: mtl.Buffer,
     pos: mtl.Buffer,
     tokens: mtl.Buffer,
     ident: mtl.Buffer,
@@ -178,8 +176,9 @@ pub const Scratch = struct {
         const slots = rows * c.topk;
         out.ids = try mem.alloc(rows * 4);
         out.bad = try mem.alloc(4);
-        inline for (.{ "h", "x", "r", "y", "q" }) |name| @field(out, name) = try mem.alloc(rows * c.hidden * 2);
-        out.queries = try mem.alloc((rows + attn_rows) * c.hidden * 2); // a prompt attention tile reads attn_rows from its first
+        inline for (.{ "h", "r", "y" }) |name| @field(out, name) = try mem.alloc(rows * c.hidden * 2);
+        out.x = try mem.alloc((rows + attn_rows) * c.hidden * 2); // normalized Q reuses x; prompt attention reads a padded tile
+        out.queries = try mem.alloc(rows * c.hidden * 2);
         out.bcx = try mem.alloc(rows * 3 * c.hidden * 2);
         out.k = try mem.alloc(rows * c.kv_heads * c.head_dim * 2);
         out.v = try mem.alloc(rows * c.kv_heads * c.head_dim * 2);
@@ -194,7 +193,6 @@ pub const Scratch = struct {
         out.weights = try mem.alloc(slots * 2);
         out.experts = try mem.alloc(slots * c.hidden * 2);
         out.starts = try mem.alloc((c.experts + 1) * 4);
-        out.order = try mem.alloc(slots * 4);
         out.pos = try mem.alloc(slots * 4);
         out.tokens = try mem.alloc(slots * 4);
         out.ident = try mem.alloc(slots * 4);

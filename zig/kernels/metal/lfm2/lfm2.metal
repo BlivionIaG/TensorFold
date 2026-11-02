@@ -469,10 +469,10 @@ template [[host_name("lfm2_attn_block_merge")]] [[kernel]] decltype(lfm2_attn_me
   ((device vec<bfloat, 8>*)act)[i] = out;
 }
 
-// Picks sorted by expert, in slot order within one: STARTS [E + 1], ORDER (sorted -> slot), POS (slot -> sorted).
+// Picks sorted by expert, in slot order within one: STARTS [E + 1], POS (slot -> sorted), ROWS (sorted -> token).
 constant constexpr uint SORT_CHUNKS = 16;  // thread (e, c) counts expert e's picks in chunk c, then places them
 [[kernel]] void lfm2_sort(const device uint* ids [[buffer(0)]], constant uint& slots [[buffer(1)]], device uint* starts [[buffer(2)]],
-                          device uint* order [[buffer(3)]], device uint* pos [[buffer(4)]], device uint* rows [[buffer(5)]],
+                          device uint* pos [[buffer(3)]], device uint* rows [[buffer(4)]],
                           uint t [[thread_position_in_threadgroup]]) {
   threadgroup uint counts[E * SORT_CHUNKS];
   threadgroup uint totals[E];
@@ -496,7 +496,6 @@ constant constexpr uint SORT_CHUNKS = 16;  // thread (e, c) counts expert e's pi
   for (uint i = 0; i < c; ++i) at += counts[e * SORT_CHUNKS + i];
   for (uint j = lo; j < hi; ++j)
     if (ids[j] == e) {
-      order[at] = j;
       rows[at] = j / TOPK;
       pos[j] = at;
       ++at;

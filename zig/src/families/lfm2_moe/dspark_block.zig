@@ -162,7 +162,7 @@ const Enc = struct {
         const used = (keys + st.chunk_keys - 1) / st.chunk_keys * st.subs;
         const at = part * part_row;
         x.pipe("lfm2_attn_block");
-        x.e.setBuffer(s.queries, row * c.hidden * 2, 0);
+        x.e.setBuffer(s.x, row * c.hidden * 2, 0);
         x.e.setBuffer(lane.mem, lane.kv(layer, false).off, 1);
         x.e.setBuffer(lane.mem, lane.kv(layer, true).off, 2);
         x.e.setBytes(std.mem.asBytes(&args), 3);
@@ -343,7 +343,7 @@ fn attendBlocks(x: Enc, layer: usize, blocks: []const Block, n: u32, rows: usize
     x.sync();
     for (blocks, 0..) |b, bi| {
         const at = bi * n;
-        x.qk(.{ .buf = s.queries, .off = at * c.hidden * 2 }, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, layer, b.lane, b.anchor, .{ .buf = s.queries, .off = at * c.hidden * 2 }, n);
+        x.qk(.{ .buf = s.queries, .off = at * c.hidden * 2 }, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, layer, b.lane, b.anchor, .{ .buf = s.x, .off = at * c.hidden * 2 }, n);
     }
     x.sync();
     const each = if (blocks.len == 1) out else n;
