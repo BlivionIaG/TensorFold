@@ -39,7 +39,6 @@ const names = [_][:0]const u8{
     "lfm2_bf16_rows",
     "lfm2_bf16_mma",
     "lfm2_bf16_glu_rows",
-    "lfm2_bf16_glu_mma",
     "lfm2_markov_pick",
     "lfm2_draft_ids",
     "lfm2_dspark_confidence",

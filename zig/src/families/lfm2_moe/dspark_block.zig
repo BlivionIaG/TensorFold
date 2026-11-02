@@ -462,7 +462,7 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
         x.sync();
         x.norm(s.h, s.r, ly.post_norm, true, s.x, out);
         x.sync();
-        if (ly.gate == .bf16 and ly.up == .bf16) {
+        if (out <= 16 and ly.gate == .bf16 and ly.up == .bf16) {
             glu.encode(x.e, &d.target.kernels, ly.gate.bf16, ly.up.bf16, Ref{ .buf = s.x }, Ref{ .buf = s.act }, out);
         } else {
             try x.projectAll(&.{ ly.gate, ly.up }, .{ .buf = s.x }, &.{ .{ .buf = s.gate }, .{ .buf = s.up } }, out);

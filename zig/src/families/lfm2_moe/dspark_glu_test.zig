@@ -60,9 +60,9 @@ fn fill(mode: Fill, x: []u16, gate: []u16, up: []u16, n: usize, k: usize) void {
 test "lfm2 dspark: fused BF16 gate/up gives exact SwiGLU bytes across 16 rows and preserves output guards" {
     var r = try rig_.Rig.init();
     defer r.deinit();
-    const n = 72; // a partial 64-column MMA tile, still a whole SwiGLU vector
-    const k = 512; // two scalar lane strides and sixteen MMA staging passes
-    const max_rows = 32;
+    const n = 72; // non-power-of-two output width
+    const k = 512; // two scalar lane strides
+    const max_rows = 16;
     const input = try r.buffer(u16, guard + max_rows * k + guard);
     defer input.deinit();
     const gate = try r.buffer(u16, n * k);
@@ -81,7 +81,7 @@ test "lfm2 dspark: fused BF16 gate/up gives exact SwiGLU bytes across 16 rows an
     for (std.enums.values(Fill)) |mode| {
         @memset(input.slice(u16, guard + max_rows * k + guard), sentinel);
         fill(mode, input.slice(u16, guard + max_rows * k)[guard..], gate.slice(u16, n * k), up.slice(u16, n * k), n, k);
-        for ([_]u32{ 1, 4, 8, 16, 17, 32 }) |rows| {
+        for ([_]u32{ 1, 4, 8, 16 }) |rows| {
             @memset(want.slice(u16, guard + max_rows * n + guard), sentinel);
             @memset(got.slice(u16, guard + max_rows * n + guard), sentinel);
             const cb = r.queue.commandBuffer();

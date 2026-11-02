@@ -1,7 +1,7 @@
 //! LFM2-MoE's shared-round and greedy-pick launches (lfm2.metal, lfm2_segments.metal), as the encoders launch them.
 const std = @import("std");
 const M = @import("limits.zig").MetalLaunch;
-// The drafter kernels carry M1 and M2 limits too, recorded from the offline compile; no run covers those chips.
+// Drafter launches carry source thread reservations or offline M1/M2 limits; neither claims a device run.
 pub const records = [_]M{
     .{ .name = "metal lfm2 norm tap lfm2_norm_tap", .threads = 512, .tg_memory = 144, .m1 = 1024, .m2 = 1024 },
     .{ .name = "metal lfm2 norm tap first lfm2_norm_tap", .threads = 512, .tg_memory = 144, .m1 = 1024, .m2 = 1024 },
@@ -18,6 +18,7 @@ pub const records = [_]M{
     .{ .name = "metal lfm2 markov scan bf16 lfm2_markov_scan_bf16", .threads = 256, .tg_memory = 1088, .m1 = 1024, .m2 = 1024 },
     .{ .name = "metal lfm2 bf16 rows lfm2_bf16_rows", .threads = 256, .tg_memory = 0, .m1 = 1024, .m2 = 1024 },
     .{ .name = "metal lfm2 bf16 tile lfm2_bf16_mma", .threads = 128, .tg_memory = 24576, .m1 = 832, .m2 = 832 },
+    .{ .name = "metal lfm2 bf16 glu rows lfm2_bf16_glu_rows", .threads = 256, .tg_memory = 0, .reserved = 256 },
     .{ .name = "metal lfm2 markov pick lfm2_markov_pick", .threads = 256, .tg_memory = 3072, .m1 = 1024, .m2 = 1024 },
     .{ .name = "metal lfm2 draft ids lfm2_draft_ids", .threads = 32, .tg_memory = 0, .m1 = 1024, .m2 = 1024 },
     .{ .name = "metal lfm2 block attention lfm2_attn_block", .threads = 128, .tg_memory = 18688, .reserved = 128 },

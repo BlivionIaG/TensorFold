@@ -111,6 +111,10 @@ each stream gets its own verify length, and the next hold drafts as deep as the 
 running on the GPU is priced by its lane's last confidences, so the host does not wait for it. A checkpoint
 without the head verifies by the core's depth rule, from each stream's measured acceptance by depth.
 
+The BF16 row path fuses gate/up projection and SwiGLU for at most 16 physical rows. Each projection
+retains its original accumulation order and rounds to BF16 before the canonical SwiGLU arithmetic;
+only the final activation is stored. Wider passes retain the separate projections and activation.
+
 A stream with a copy ahead verifies the copy and asks no hold, and a drafting stream prices its copy
 windows by its own copies. The lane core also weighs the hold pass itself: the drafter measures clean
 holds of 1 to 16 blocks at every admissible depth. Each quote selects the best of three same-attempt

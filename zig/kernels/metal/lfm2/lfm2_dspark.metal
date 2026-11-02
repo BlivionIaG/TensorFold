@@ -256,6 +256,7 @@ constant constexpr uint BF16_ROWS = 16;
 }
 
 // Gate/up share x and feed only SwiGLU. Each dot keeps lfm2_bf16_rows' FMA and simd_sum order.
+[[max_total_threads_per_threadgroup(256)]]
 [[kernel]] void lfm2_bf16_glu_rows(const device bfloat* x [[buffer(0)]], const device bfloat* w [[buffer(1)]],
                                  constant lfm2_bf16_args& p [[buffer(2)]], device bfloat* y [[buffer(3)]],
                                  const device bfloat* u [[buffer(4)]], uint2 tg [[threadgroup_position_in_grid]],
@@ -286,71 +287,6 @@ constant constexpr uint BF16_ROWS = 16;
     const float g = simd_sum(gate[r]), v = simd_sum(up[r]);
     if (lane == 0 && r < rows)
       y[size_t(r0 + r) * p.n + col] = lfm2_swiglu_value(static_cast<bfloat>(g), static_cast<bfloat>(v));
-  }
-}
-
-// Same 64x64 tiles and k/kk order as lfm2_bf16_mma. One 24,576-byte staging area, not one per projection.
-[[kernel]] void lfm2_bf16_glu_mma(const device bfloat* x [[buffer(0)]], const device bfloat* w [[buffer(1)]],
-                                constant lfm2_bf16_args& p [[buffer(2)]], device bfloat* y [[buffer(3)]],
-                                const device bfloat* u [[buffer(4)]], uint2 tg [[threadgroup_position_in_grid]],
-                                uint sg [[simdgroup_index_in_threadgroup]], uint t [[thread_index_in_threadgroup]]) {
-  threadgroup bfloat stage[2 * 64 * 32];
-  threadgroup float out[4][32 * 32];
-  threadgroup bfloat* xs = stage;
-  threadgroup bfloat* ws = stage + 64 * 32;
-  const uint c0 = tg.x * 64, r0 = tg.y * 64;
-  simdgroup_matrix<float, 8, 8> gate[4][4], up[4][4];
-  for (uint i = 0; i < 4; ++i)
-    for (uint j = 0; j < 4; ++j) {
-      gate[i][j] = simdgroup_matrix<float, 8, 8>(0.0f);
-      up[i][j] = simdgroup_matrix<float, 8, 8>(0.0f);
-    }
-  const uint sr = (sg / 2) * 32, sc = (sg % 2) * 32;
-  for (uint k0 = 0; k0 < p.k; k0 += 32) {
-    for (uint i = t; i < 64 * 4; i += 128) {
-      const uint r = i / 4, q = (i % 4) * 8;
-      const uint4 xv = r0 + r < p.rows ? *(const device uint4*)(x + size_t(r0 + r) * p.k + k0 + q) : uint4(0);
-      const uint4 wv = c0 + r < p.n ? *(const device uint4*)(w + size_t(c0 + r) * p.k + k0 + q) : uint4(0);
-      *(threadgroup uint4*)(xs + r * 32 + q) = xv;
-      *(threadgroup uint4*)(ws + r * 32 + q) = wv;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint kk = 0; kk < 32; kk += 8) {
-      simdgroup_matrix<bfloat, 8, 8> a[4], b[4];
-      for (uint i = 0; i < 4; ++i) simdgroup_load(a[i], xs + (sr + 8 * i) * 32 + kk, 32);
-      for (uint j = 0; j < 4; ++j) simdgroup_load(b[j], ws + (sc + 8 * j) * 32 + kk, 32, ulong2(0, 0), true);
-      for (uint i = 0; i < 4; ++i)
-        for (uint j = 0; j < 4; ++j) simdgroup_multiply_accumulate(gate[i][j], a[i], b[j], gate[i][j]);
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint i = t; i < 64 * 4; i += 128) {
-      const uint r = i / 4, q = (i % 4) * 8;
-      const uint4 uv = c0 + r < p.n ? *(const device uint4*)(u + size_t(c0 + r) * p.k + k0 + q) : uint4(0);
-      *(threadgroup uint4*)(ws + r * 32 + q) = uv;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint kk = 0; kk < 32; kk += 8) {
-      simdgroup_matrix<bfloat, 8, 8> a[4], b[4];
-      for (uint i = 0; i < 4; ++i) simdgroup_load(a[i], xs + (sr + 8 * i) * 32 + kk, 32);
-      for (uint j = 0; j < 4; ++j) simdgroup_load(b[j], ws + (sc + 8 * j) * 32 + kk, 32, ulong2(0, 0), true);
-      for (uint i = 0; i < 4; ++i)
-        for (uint j = 0; j < 4; ++j) simdgroup_multiply_accumulate(up[i][j], a[i], b[j], up[i][j]);
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-  }
-  for (uint i = 0; i < 4; ++i)
-    for (uint j = 0; j < 4; ++j) simdgroup_store(gate[i][j], out[sg] + 8 * i * 32 + 8 * j, 32);
-  simdgroup_barrier(mem_flags::mem_threadgroup);
-  // Operand staging is dead; reuse its 8,192 bytes for the rounded gate, without a global gate/up write.
-  for (uint i = t % 32; i < 32 * 32; i += 32) stage[sg * 32 * 32 + i] = static_cast<bfloat>(out[sg][i]);
-  simdgroup_barrier(mem_flags::mem_threadgroup);
-  for (uint i = 0; i < 4; ++i)
-    for (uint j = 0; j < 4; ++j) simdgroup_store(up[i][j], out[sg] + 8 * i * 32 + 8 * j, 32);
-  simdgroup_barrier(mem_flags::mem_threadgroup);
-  for (uint i = t % 32; i < 32 * 32; i += 32) {
-    const uint row = r0 + sr + i / 32, col = c0 + sc + i % 32;
-    if (row < p.rows && col < p.n)
-      y[size_t(row) * p.n + col] = lfm2_swiglu_value(stage[sg * 32 * 32 + i], static_cast<bfloat>(out[sg][i]));
   }
 }
 
