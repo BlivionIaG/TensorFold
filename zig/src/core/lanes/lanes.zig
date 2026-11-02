@@ -73,6 +73,7 @@ test {
     _ = @import("pricing_test.zig");
     _ = @import("host_pricing_test.zig");
     _ = @import("hold_prefix_test.zig");
+    _ = @import("hold_context_test.zig");
     _ = @import("pass_pricing_test.zig");
     _ = @import("depth_probe_test.zig");
     _ = @import("proposal_external_test.zig");

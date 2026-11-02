@@ -39,6 +39,7 @@ pub fn source(d: *ds.Drafter) backend.StageSource {
 fn bind(ptr: *anyopaque, s: *lanes.Stream, start: u64, rows: usize) anyerror!?backend.Stage {
     const d = cast(ptr);
     const l = d.lanes.get(s) orelse return null;
+    defer s.hold_context_rows = l.staged;
     if (start > l.end + l.staged) try d.resumeLane(s, l, start); // a prompt pass that resumed
     const p = plan(l.end, l.staged, start, rows, room(l)) orelse return null;
     if (p.rewind) {
@@ -47,7 +48,7 @@ fn bind(ptr: *anyopaque, s: *lanes.Stream, start: u64, rows: usize) anyerror!?ba
     } else if (p.flush) {
         l.staged = @intCast(start - l.end);
         try d.settle();
-        try d.flush(l);
+        try d.flush(s, l);
     } else l.staged = p.slot;
     const wait: ?fwd.Wait = if (d.pending != null) .{ .event = d.event, .value = d.signalled } else null;
     return .{ .place = .{ .buf = l.mem, .off = l.stage_at + @as(usize, p.slot) * d.tapBytes() }, .wait = wait };
@@ -90,6 +91,7 @@ pub fn absorb(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
     var rows: usize = 0;
     for (items) |it| {
         const l = d.lanes.get(it.stream).?;
+        defer it.stream.hold_context_rows = l.staged;
         const f = it.features;
         l.held_len = 0;
         l.slot = null;

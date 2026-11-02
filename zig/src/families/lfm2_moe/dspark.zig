@@ -25,6 +25,7 @@ pub const stage_rows = absorb_rows;
 pub const gather_rows = 128;
 /// The block counts timed at load, at every depth that fits one pass and the checkpoint's block.
 const hold_grid = [_]u32{ 1, 2, 4, 8, 16 };
+const context_row_levels = std.math.log2_int(usize, stage_rows) + 1;
 const kw = c.kv_heads * c.head_dim;
 
 /// `bits`: 0 runs the bf16 matrices as stored, 8 quantizes them at load.
@@ -85,11 +86,13 @@ pub const Drafter = struct {
     s: Scratch,
     owned: std.ArrayList(mtl.Buffer) = .empty,
     lanes: std.AutoHashMapUnmanaged(*Stream, *Lane) = .empty,
-    /// One stream's hold wall ms at full depth, and that over the block (the depth rule's cost a draft).
+    /// One stream's clean hold GPU ms at full depth, and that over the block (the depth rule's cost a draft).
     hold_ms: f64 = 0,
     step_ms: f64 = 0,
     holds: [2 * pass_rows]lanes.hold_price.HoldCost = undefined, // the power-of-two block counts sum to fewer than 2 * pass_rows depths
     holds_len: usize = 0,
+    contexts: [hold_grid.len * context_row_levels]lanes.hold_price.ContextCost = undefined,
+    contexts_len: usize = 0,
     hold_spent_ms: f64 = 0, // GPU ms of every buffer waited on or settled; drained at round boundaries, never waits to read it
     event: mtl.Event = undefined,
     signalled: u64 = 0,
@@ -97,6 +100,7 @@ pub const Drafter = struct {
     pass: [pass_rows]*Lane = undefined, // the signalled hold's lanes and depths, in its blocks' order
     depths: [pass_rows]u32 = undefined,
     pass_len: usize = 0,
+    pass_context_rows: u32 = 0, // largest actual staged debt, captured before the signalled hold clears it
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, target: *Model, dir: []const u8, options: Options) !*Drafter {
         const d = try gpa.create(Drafter);
@@ -206,6 +210,7 @@ pub const Drafter = struct {
         var f: dr.Facts = .{ .depth = d.config.block, .step_ms = d.step_ms, .prior = prior[0..d.config.block], .batched = true, .stream_bytes = d.laneBytes(d.options.capacity), .copy_first = true };
         f.chances = d.confident();
         f.hold_costs = d.holds[0..d.holds_len];
+        f.hold_context_costs = d.contexts[0..d.contexts_len];
         f.hold_rows = pass_rows;
         return f;
     }
@@ -258,7 +263,8 @@ pub const Drafter = struct {
     }
 
     /// The lane's staged rows absorbed now, in a command buffer of their own.
-    pub fn flush(d: *Drafter, l: *Lane) !void {
+    pub fn flush(d: *Drafter, s: *Stream, l: *Lane) !void {
+        defer s.hold_context_rows = l.staged;
         const pc = stagedPiece(l) orelse return;
         const pool = mtl.objc.Pool.push();
         defer pool.pop();
@@ -274,6 +280,7 @@ pub const Drafter = struct {
         const l = try d.newLane(@min(d.options.capacity, (want + 63) / 64 * 64));
         errdefer d.dropLane(l);
         try d.lanes.put(d.gpa, s, l);
+        s.hold_context_rows = 0;
     }
 
     /// A lane in one buffer of laneBytes(capacity).
@@ -294,6 +301,7 @@ pub const Drafter = struct {
         const d = cast(ptr);
         d.unpass() catch {};
         if (d.lanes.fetchRemove(s)) |e| d.dropLane(e.value);
+        s.hold_context_rows = 0;
     }
 
     fn heldFn(ptr: *anyopaque, streams: []const *Stream, out: []const []u32) anyerror!void {
@@ -317,7 +325,7 @@ pub const Drafter = struct {
         try d.settle();
         // A final anchor is not absorbed yet: declining must leave its stage slot intact.
         if (l.end + l.staged != snap.at) return;
-        try d.flush(l);
+        try d.flush(s, l);
         const bytes = try d.gpa.alloc(u8, @intCast(d.keptBytes(snap.at)));
         copyLane(d, l, snap.at, bytes, true);
         snap.draft = bytes;
@@ -331,6 +339,7 @@ pub const Drafter = struct {
         if (s.cached != start or snap.at != start or l.end != 0 or l.staged != 0 or start + d.config.block > l.cap) return error.DraftContextGap;
         copyLane(d, l, snap.at, bytes, false);
         l.end = start;
+        s.hold_context_rows = 0;
     }
 
     /// Rows [0, at) of every layer's keys and values and `bytes` (`out`: the lane's into bytes), kv head by kv head.
@@ -369,6 +378,9 @@ pub const Drafter = struct {
                 if (l.end + l.staged != anchor or anchor + d.config.block > l.cap) return error.DraftContextGap;
                 b.* = .{ .lane = l, .pending = it.pending, .anchor = anchor, .depth = it.depth };
             }
+            defer for (group, blocks[0..group.len]) |it, b| {
+                it.stream.hold_context_rows = b.lane.staged;
+            };
             if (group.len == items.len) { // one pass: signalled, not waited on
                 d.signalled += 1;
                 d.pending = try block.hold(d, blocks[0..group.len], .{ .event = d.event, .value = d.signalled });
@@ -389,6 +401,8 @@ pub const Drafter = struct {
     pub fn settle(d: *Drafter) !void {
         const cb = d.pending orelse return;
         d.pending = null;
+        const context_rows = d.pass_context_rows;
+        d.pass_context_rows = 0;
         defer cb.release();
         cb.wait();
         if (cb.failure()) |msg| {
@@ -397,17 +411,20 @@ pub const Drafter = struct {
         }
         const ms = cb.gpuSeconds() * 1000; // the whole buffer, its lanes' staged rows absorbed too
         d.hold_spent_ms += ms;
-        d.priceHold(d.pass_len, std.mem.max(u32, d.depths[0..d.pass_len]), ms);
+        d.priceHold(d.pass_len, std.mem.max(u32, d.depths[0..d.pass_len]), context_rows, ms);
         try block.readPicks(d, d.pass[0..d.pass_len], d.depths[0..d.pass_len]);
     }
 
-    /// Reprices neighboring grid shapes toward a completed physical pass's measured GPU time.
-    pub fn priceHold(d: *Drafter, streams: usize, depth: u32, ms: f64) void {
+    /// Reprices the clean grid with whole GPU ms minus the calibrated context estimate, not a measured clean segment.
+    pub fn priceHold(d: *Drafter, streams: usize, depth: u32, context_rows: u32, ms: f64) void {
         const timed = d.holds[0..d.holds_len];
-        if (timed.len == 0 or streams == 0 or !(ms > 0)) return;
+        if (timed.len == 0 or streams == 0 or !(ms > 0) or !std.math.isFinite(ms)) return;
+        const clean_ms = ms - lanes.hold_price.contextMs(d.contexts[0..d.contexts_len], streams, context_rows);
+        if (!(clean_ms > 0) or !std.math.isFinite(clean_ms)) return;
         const priced = lanes.hold_price.holdMs(timed, streams, depth);
-        if (!(priced > 0)) return;
-        const step = 1 + 0.1 * (ms / priced - 1);
+        if (!(priced > 0) or !std.math.isFinite(priced)) return;
+        const step = 1 + 0.1 * (clean_ms / priced - 1);
+        if (!std.math.isFinite(step)) return;
         var lo: u32 = 0;
         var hi: u32 = std.math.maxInt(u32);
         for (timed) |h| {
@@ -456,42 +473,74 @@ pub const Drafter = struct {
         return @as(f64, @floatFromInt(n)) / (1024.0 * 1024.0);
     }
 
-    /// Holds on empty contexts: the pipelines compiled, then holds timed by blocks and depth (best of three).
+    /// Temporary calibration lanes own only K/V; all context pieces borrow one raw-tap fixture.
+    fn warmLane(d: *Drafter) !*Lane {
+        const l = try d.gpa.create(Lane);
+        errdefer d.gpa.destroy(l);
+        const cap = stage_rows + d.config.block;
+        const bytes: usize = @intCast(d.keptBytes(cap));
+        l.* = .{ .mem = try d.target.device.buffer(bytes, shared), .cap = cap, .stage_at = bytes };
+        return l;
+    }
+
+    /// Empty-context holds and context-only passes on the target queue, GPU best-of-three after each shape's warm pass.
     fn warm(d: *Drafter) !void {
+        defer d.hold_spent_ms = 0; // every startup buffer, including a failed calibration, is no round's work
         var made: [hold_grid[hold_grid.len - 1]]*Lane = undefined;
         var n: usize = 0;
         defer for (made[0..n]) |l| d.dropLane(l);
-        while (n < made.len) : (n += 1) made[n] = try d.newLane(64);
-        const l = made[0];
-        var best: [2]f64 = @splat(std.math.floatMax(f64));
-        for (0..4) |i| for ([_]u32{ 1, d.config.block }, &best) |depth, *b| {
-            const t0 = std.Io.Clock.awake.now(d.io);
-            _ = try block.hold(d, &.{.{ .lane = l, .pending = 1, .anchor = 0, .depth = depth }}, null);
-            const ms = @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(d.io)).toNanoseconds())) / 1e6;
-            if (i > 0) b.* = @min(b.*, ms);
-        };
-        d.hold_ms = best[1];
-        d.step_ms = best[1] / @as(f64, @floatFromInt(d.config.block));
-        std.log.info("lfm2 dspark: a 1-draft hold takes {d:.2} ms, a {d}-draft hold {d:.2} ms", .{ best[0], d.config.block, best[1] });
-        std.log.info("lfm2 dspark: weights {d:.1} MiB, scratch {d:.1} MiB, a stream {d} KiB a position and up to {d} KiB staged", .{ mibOf(d.w.buffers()), mibOf(d.owned.items), d.keptBytes(1) / 1024, d.stageBytes(d.options.capacity + d.config.block) / 1024 });
+        while (n < made.len) : (n += 1) made[n] = try d.warmLane();
+        const fixture_bytes = stage_rows * d.tapBytes();
+        const fixture = try d.target.device.buffer(fixture_bytes, shared);
+        defer fixture.deinit();
+        // Deterministic bf16 magnitudes in [0.5, 1), alternating signs; every tap is finite and nonzero.
+        for (fixture.slice(u16, fixture_bytes / 2), 0..) |*v, i| {
+            v.* = 0x3f00 | @as(u16, @intCast(i & 127)) | @as(u16, @intCast((i & 128) << 8));
+        }
         var blocks: [hold_grid[hold_grid.len - 1]]block.Block = undefined;
         for (made, &blocks) |lane, *b| b.* = .{ .lane = lane, .pending = 1, .anchor = 0, .depth = 1 };
-        // Publish the entire grid at once, so the timing holds cannot reprice it.
+        // Publish only after both grids are complete, so calibration holds cannot reprice the clean grid.
         var timed: usize = 0;
         for (hold_grid) |streams| for (1..@min(d.config.block, pass_rows / streams) + 1) |depth| {
             for (blocks[0..streams]) |*b| b.depth = @intCast(depth);
-            var ms_best = std.math.floatMax(f64);
+            var ms_best = std.math.inf(f64);
             for (0..4) |i| {
-                const t0 = std.Io.Clock.awake.now(d.io);
+                _ = block.takeHoldMs(d);
                 _ = try block.hold(d, blocks[0..streams], null);
-                const ms = @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(d.io)).toNanoseconds())) / 1e6;
-                if (i > 0) ms_best = @min(ms_best, ms);
+                const ms = block.takeHoldMs(d);
+                if (i > 0) {
+                    if (!(ms > 0) or !std.math.isFinite(ms)) return error.DraftTimingUnavailable;
+                    ms_best = @min(ms_best, ms);
+                }
             }
             d.holds[timed] = .{ .streams = streams, .depth = @intCast(depth), .ms = ms_best };
             timed += 1;
         };
+        var pieces: [hold_grid[hold_grid.len - 1]]block.Piece = undefined;
+        for (made, &pieces) |lane, *pc| pc.* = .{ .lane = lane, .src = .{ .buf = fixture }, .rows = 1, .p0 = 0 };
+        var context_timed: usize = 0;
+        for (hold_grid) |streams| {
+            var rows: u32 = 1;
+            while (rows <= stage_rows) : (rows *= 2) {
+                for (pieces[0..streams]) |*pc| pc.rows = rows;
+                var ms_best = std.math.inf(f64);
+                for (0..4) |i| {
+                    const ms = try block.contextPass(d, pieces[0..streams]);
+                    if (i > 0) {
+                        if (!(ms > 0) or !std.math.isFinite(ms)) return error.DraftTimingUnavailable;
+                        ms_best = @min(ms_best, ms);
+                    }
+                }
+                d.contexts[context_timed] = .{ .streams = streams, .rows = rows, .ms = ms_best };
+                context_timed += 1;
+            }
+        }
         d.holds_len = timed;
-        d.hold_spent_ms = 0; // the load's timing holds are no round's work
+        d.contexts_len = context_timed;
+        d.hold_ms = d.holds[d.config.block - 1].ms; // the first grid count is one stream, depths 1..block
+        d.step_ms = d.hold_ms / @as(f64, @floatFromInt(d.config.block));
+        std.log.info("lfm2 dspark: a 1-draft clean hold takes {d:.2} GPU ms, a {d}-draft hold {d:.2} GPU ms; {d} context quotes", .{ d.holds[0].ms, d.config.block, d.hold_ms, d.contexts_len });
+        std.log.info("lfm2 dspark: weights {d:.1} MiB, scratch {d:.1} MiB, a stream {d} KiB a position and up to {d} KiB staged", .{ mibOf(d.w.buffers()), mibOf(d.owned.items), d.keptBytes(1) / 1024, d.stageBytes(d.options.capacity + d.config.block) / 1024 });
     }
 };
 

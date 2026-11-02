@@ -376,21 +376,38 @@ test "lfm2 dspark: a completed hold moves the timed passes at its block counts a
     const grid = [_]lanes.hold_price.HoldCost{ .{ .streams = 1, .depth = 1, .ms = 1 }, .{ .streams = 4, .depth = 1, .ms = 2 }, .{ .streams = 4, .depth = 4, .ms = 4 }, .{ .streams = 8, .depth = 1, .ms = 3 } };
     @memcpy(d.holds[0..grid.len], &grid);
     d.holds_len = grid.len;
-    d.priceHold(4, 1, 4); // priced 2 ms: the 4-block passes rise by a tenth of the doubling
+    d.contexts_len = 0;
+    d.priceHold(4, 1, 0, 4); // priced 2 ms: the 4-block passes rise by a tenth of the doubling
     try std.testing.expectApproxEqAbs(@as(f64, 2.2), d.holds[1].ms, 1e-12);
     try std.testing.expectApproxEqAbs(@as(f64, 4.4), d.holds[2].ms, 1e-12);
     try std.testing.expectEqual(@as(f64, 1), d.holds[0].ms);
     try std.testing.expectEqual(@as(f64, 3), d.holds[3].ms);
-    d.priceHold(6, 1, 0); // between 4 and 8 blocks, no GPU time: nothing learned
+    d.priceHold(6, 1, 0, 0); // between 4 and 8 blocks, no GPU time: nothing learned
     try std.testing.expectEqual(@as(f64, 2.2), d.holds[1].ms);
-    d.priceHold(6, 1, 2.6 * 2); // both neighbors move
+    d.priceHold(6, 1, 0, 2.6 * 2); // both neighbors move
     try std.testing.expect(d.holds[1].ms > 2.2 and d.holds[3].ms > 3 and d.holds[0].ms == 1);
     const before = d.holds[1].ms;
-    d.priceHold(0, 1, 5); // a pass of no blocks prices nothing
+    d.priceHold(0, 1, 0, 5); // a pass of no blocks prices nothing
     try std.testing.expectEqual(before, d.holds[1].ms);
     d.holds_len = 0; // no grid (the load's timing holds): nothing to move
-    d.priceHold(4, 1, 100);
+    d.priceHold(4, 1, 0, 100);
     try std.testing.expectEqual(before, d.holds[1].ms);
+}
+
+test "lfm2 dspark: hold repricing subtracts context and refuses nonpositive or nonfinite residuals" {
+    var d: ds.Drafter = undefined;
+    d.holds[0] = .{ .streams = 4, .depth = 1, .ms = 2 };
+    d.holds_len = 1;
+    d.contexts[0] = .{ .streams = 4, .rows = 8, .ms = 3 };
+    d.contexts_len = 1;
+    d.priceHold(4, 1, 5, 7); // seven whole GPU ms, three estimated context ms: the clean quote moves toward four
+    try std.testing.expectApproxEqAbs(@as(f64, 2.2), d.holds[0].ms, 1e-12);
+    for ([_]f64{ 3, 2, 0, -1, std.math.inf(f64), std.math.nan(f64) }) |ms| {
+        d.priceHold(4, 1, 5, ms);
+        try std.testing.expectEqual(@as(f64, 2.2), d.holds[0].ms);
+    }
+    d.priceHold(4, 1, 9, 7); // debt beyond measured coverage must not teach a fabricated clean time
+    try std.testing.expectEqual(@as(f64, 2.2), d.holds[0].ms);
 }
 
 /// A drafter with a device and a config but no weights: absorbs that only stage never reach the GPU.
@@ -433,7 +450,9 @@ test "lfm2 dspark: an absorb owns the rows it stages, prompt rows too, and a ref
     const l = try d.newLane(64); // 73 positions: at most 73 staged rows
     const stage = l.mem.contents() + l.stage_at;
     defer d.dropLane(l);
-    const key: *lanes.Stream = @ptrFromInt(0x1000);
+    var stream = try lanes.Stream.init(std.testing.allocator, .{ .id = "staged", .prompt = &.{1}, .max_new = 64 });
+    defer stream.deinit(std.testing.allocator);
+    const key = &stream;
     try d.lanes.put(d.gpa, key, l);
     const src = try device.buffer(80 * width, shared);
     defer src.deinit();
@@ -444,6 +463,7 @@ test "lfm2 dspark: an absorb owns the rows it stages, prompt rows too, and a ref
     try drafter.absorb(&.{tapped(key, src, width, 0, 10, 0, true)}); // the prompt's rows
     try drafter.absorb(&.{tapped(key, src, width, 10, 20, 10, false)}); // a round's verified rows
     try std.testing.expectEqual(@as(u32, 30), l.staged);
+    try std.testing.expectEqual(l.staged, stream.hold_context_rows);
     try std.testing.expectEqual(@as(u64, 0), l.end);
     @memset(src.contents()[0 .. 80 * width], 0xee); // the target's next forward overwrites its taps
     try std.testing.expectEqualSlices(u8, first[0 .. 30 * width], stage[0 .. 30 * width]);
@@ -452,12 +472,14 @@ test "lfm2 dspark: an absorb owns the rows it stages, prompt rows too, and a ref
     defer std.testing.allocator.free(second);
     try drafter.absorb(&.{tapped(key, src, width, 40, 4, 25, false)}); // a rewrite: rows from 25 are replaced
     try std.testing.expectEqual(@as(u32, 29), l.staged);
+    try std.testing.expectEqual(l.staged, stream.hold_context_rows);
     try std.testing.expectEqualSlices(u8, first[0 .. 25 * width], stage[0 .. 25 * width]);
     try std.testing.expectEqualSlices(u8, second[40 * width .. 44 * width], stage[25 * width .. 29 * width]);
     const stranger: *lanes.Stream = @ptrFromInt(0x2000);
     try std.testing.expectError(error.DraftStreamUnknown, drafter.absorb(&.{ tapped(key, src, width, 0, 2, 29, false), tapped(stranger, src, width, 0, 2, 0, false) }));
     try std.testing.expectError(error.DraftContextGap, drafter.absorb(&.{ tapped(key, src, width, 0, 2, 29, false), tapped(key, src, width, 0, 60, 29, false) }));
     try std.testing.expectEqual(@as(u32, 29), l.staged);
+    try std.testing.expectEqual(l.staged, stream.hold_context_rows);
     try std.testing.expectEqualSlices(u8, second[40 * width .. 44 * width], stage[25 * width .. 29 * width]);
     try std.testing.expectEqual(@as(u64, 0), l.end);
     try std.testing.expectEqual(@as(f64, 0), d.hold_spent_ms); // staging runs no GPU work
@@ -489,14 +511,56 @@ test "lfm2 dspark: packed lane accounting, alignment and a whole prompt chunk" {
     }
     const l = try d.newLane(4096);
     defer d.dropLane(l);
-    const key: *lanes.Stream = @ptrFromInt(0x1000);
+    var stream = try lanes.Stream.init(std.testing.allocator, .{ .id = "chunk", .prompt = &.{1}, .max_new = 4096 });
+    defer stream.deinit(std.testing.allocator);
+    const key = &stream;
     try d.lanes.put(d.gpa, key, l);
     const chunk = try device.buffer(ds.absorb_rows * width, shared);
     defer chunk.deinit();
     pattern(chunk, ds.absorb_rows, width, 7);
     try d.drafter().absorb(&.{tapped(key, chunk, width, 0, ds.absorb_rows, 0, true)});
     try std.testing.expectEqual(@as(u32, ds.absorb_rows), l.staged);
+    try std.testing.expectEqual(l.staged, stream.hold_context_rows);
     try std.testing.expectEqualSlices(u8, chunk.contents()[0 .. ds.absorb_rows * width], (l.mem.contents() + l.stage_at)[0 .. ds.absorb_rows * width]);
+}
+
+test "lfm2 dspark: capture replacement and stream release keep the live context debt" {
+    const device = mtl.Device.init() catch return error.SkipZigTest;
+    defer device.deinit();
+    var target: Model = undefined;
+    target.device = device;
+    var d = try bare(&target);
+    defer d.lanes.deinit(d.gpa);
+    var stream = try lanes.Stream.init(std.testing.allocator, .{ .id = "capture-debt", .prompt = &.{1}, .max_new = 64 });
+    defer stream.deinit(std.testing.allocator);
+    const drafter = d.drafter();
+    {
+        try drafter.open(&stream);
+        defer drafter.release(&stream);
+        try std.testing.expectEqual(@as(u32, 0), stream.hold_context_rows);
+        const l = d.lanes.get(&stream).?;
+        const width = d.tapBytes();
+        const src = try device.buffer(8 * width, shared);
+        defer src.deinit();
+        pattern(src, 8, width, 3);
+        try drafter.absorb(&.{tapped(&stream, src, width, 0, 8, 0, true)});
+        try std.testing.expectEqual(@as(u32, 8), stream.hold_context_rows);
+        const capture = d.stageSource();
+        const bound = (try capture.bind(capture.ptr, &stream, 5, 2)).?;
+        try std.testing.expectEqual(@as(u32, 5), stream.hold_context_rows);
+        try std.testing.expectEqual(l.stage_at + 5 * width, bound.place.off);
+        try std.testing.expect(bound.wait == null);
+        @memcpy((bound.place.buf.contents() + bound.place.off)[0 .. 2 * width], src.contents()[0 .. 2 * width]);
+        var owned = tapped(&stream, l.mem, width, 0, 2, 5, false);
+        owned.features.offset = bound.place.off;
+        try drafter.absorb(&.{owned});
+        try std.testing.expectEqual(@as(u32, 7), stream.hold_context_rows);
+        try std.testing.expect((try capture.bind(capture.ptr, &stream, 7, l.cap + 1)) == null);
+        try std.testing.expectEqual(@as(u32, 7), stream.hold_context_rows);
+    }
+    try std.testing.expectEqual(@as(u32, 0), stream.hold_context_rows);
+    try std.testing.expectEqual(@as(usize, 0), d.lanes.count());
+    try std.testing.expectEqual(@as(f64, 0), d.hold_spent_ms);
 }
 
 test "lfm2 dspark: failed lane creation and map insertion clean up" {

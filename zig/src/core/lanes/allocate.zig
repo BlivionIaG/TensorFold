@@ -23,6 +23,8 @@ pub const HeadCost = struct {
     batched: bool = false,
     free_first: bool = false,
     hold_costs: []const hold_price.HoldCost = &.{},
+    hold_context_costs: []const hold_price.ContextCost = &.{},
+    hold_context_rows: []const u32 = &.{},
     charged: []const bool = &.{},
     row_ms: []const f64 = &.{}, // each stream's host draw cost per verified row, independent of the neural mask
     hold_rows: u32 = 0,
@@ -31,6 +33,8 @@ pub const HeadCost = struct {
 /// Prices growing blocks in stream order; batched blocks pad to each physical pass's deepest, excluding free nodes.
 const GridPass = struct {
     costs: []const hold_price.HoldCost,
+    contexts: []const hold_price.ContextCost,
+    debts: []const u32,
     batched: bool,
     free: u32,
     rows: u32,
@@ -38,21 +42,24 @@ const GridPass = struct {
     charged: []const bool,
     blocks: usize = 0, // batched: streams with a node past the free one
     deepest: i64 = 0, // and the deepest of them past it
+    context_rows: u32 = 0,
     ms: f64 = 0.0, // an empty pass costs nothing
 
     /// A stream's count grew to `count`: the pass's new price.
-    fn grow(p: *GridPass, count: u32) f64 {
+    fn grow(p: *GridPass, index: usize, count: u32) f64 {
         const depth: i64 = count - p.free;
         if (depth <= 0) return p.ms;
         if (p.batched) {
             p.blocks += @intFromBool(depth == 1);
             p.deepest = @max(p.deepest, depth);
+            if (p.debts.len > 0) p.context_rows = @max(p.context_rows, p.debts[index]);
             p.ms = if (p.rows == 0 or @as(i64, @intCast(p.blocks)) * p.deepest <= p.rows)
-                hold_price.holdMs(p.costs, p.blocks, p.deepest)
+                hold_price.holdMs(p.costs, p.blocks, p.deepest) + hold_price.contextMs(p.contexts, p.blocks, p.context_rows)
             else
-                hold_price.countsMs(p.costs, p.rows, p.counts, p.charged, p.free);
+                hold_price.countsMs(p.costs, p.contexts, p.rows, p.counts, p.charged, p.free, p.debts);
         } else {
             p.ms += hold_price.holdMs(p.costs, 1, depth) - (if (depth > 1) hold_price.holdMs(p.costs, 1, depth - 1) else 0.0);
+            if (depth == 1 and p.debts.len > 0) p.ms += hold_price.contextMs(p.contexts, 1, p.debts[index]);
         }
         return p.ms;
     }
@@ -89,11 +96,19 @@ pub fn allocateDrafts(gpa: Allocator, fixed: []const u32, probs: []const []const
         }
         break :mixed false;
     };
+    const context_order = timed and head.hold_context_costs.len > 0 and head.hold_context_rows.len > 0 and context: {
+        for (probs, 0..) |p, s| {
+            if (p.len > @intFromBool(head.free_first) and head.hold_context_rows[s] > 0 and
+                (head.charged.len == 0 or head.charged[s])) break :context true;
+        }
+        break :context false;
+    };
+    const mixed = mixed_host or context_order;
     var best = rate(costs, timed, fixed_rows, @floatFromInt(fixed_rows), overhead_ms + fixed_host_ms);
     while (true) {
         const incumbent = best;
         // Unknown/nonfinite rates cannot price marginal utility (in particular, infinity * a free row).
-        const price_order = mixed_host and incumbent >= 0 and std.math.isFinite(incumbent);
+        const price_order = mixed and incumbent >= 0 and std.math.isFinite(incumbent);
         @memset(counts, 0);
         var rows = fixed_rows;
         var host_ms = fixed_host_ms;
@@ -101,17 +116,23 @@ pub fn allocateDrafts(gpa: Allocator, fixed: []const u32, probs: []const []const
         var drafts: u64 = 0;
         var deepest: u32 = 0;
         var firsts: u64 = 0;
-        var pass: GridPass = .{ .costs = head.hold_costs, .batched = head.batched, .free = @intFromBool(head.free_first), .rows = head.hold_rows, .counts = counts, .charged = head.charged };
+        var pass: GridPass = .{ .costs = head.hold_costs, .contexts = head.hold_context_costs, .debts = head.hold_context_rows, .batched = head.batched, .free = @intFromBool(head.free_first), .rows = head.hold_rows, .counts = counts, .charged = head.charged };
         var head_ms: f64 = 0.0; // the nodes counted so far: the head's price
         while (rows < max_rows) {
-            // Equal/absent host prices keep the probability prefix; ties always favor the lowest stream.
+            // Solo first-block context quotes order candidates; the complete physical group decides funding.
             var pick: ?usize = null;
             var pick_p: f64 = 0.0;
             var pick_score: f64 = 0.0;
             for (probs, 0..) |p, s| {
                 if (counts[s] >= p.len) continue;
                 const v = p[counts[s]];
-                const score = if (price_order) v - incumbent * head.row_ms[s] else v;
+                const score = if (price_order) ordered: {
+                    var ms = if (head.row_ms.len > 0) head.row_ms[s] else 0;
+                    if (context_order and counts[s] == @intFromBool(head.free_first) and
+                        (head.charged.len == 0 or head.charged[s]))
+                        ms += hold_price.contextMs(head.hold_context_costs, 1, head.hold_context_rows[s]);
+                    break :ordered if (std.math.isFinite(ms)) v - incumbent * ms else -std.math.inf(f64);
+                } else v;
                 if (pick == null or score > pick_score) {
                     pick = s;
                     pick_p = v;
@@ -127,7 +148,7 @@ pub fn allocateDrafts(gpa: Allocator, fixed: []const u32, probs: []const []const
                 firsts += @intFromBool(counts[s] == 1);
                 drafts += 1;
                 deepest = @max(deepest, counts[s]);
-                if (grid) head_ms = pass.grow(counts[s]);
+                if (grid) head_ms = pass.grow(s, counts[s]);
             }
             if (!grid) {
                 const steps: f64 = @floatFromInt(if (head.batched) deepest -| @intFromBool(head.free_first) else drafts - (if (head.free_first) firsts else 0));
@@ -140,7 +161,7 @@ pub fn allocateDrafts(gpa: Allocator, fixed: []const u32, probs: []const []const
             }
         }
         // Strict improvement over finite prefix orders terminates without claiming a global grid search.
-        if (!mixed_host or !(best > incumbent) or !std.math.isFinite(best)) break;
+        if (!mixed or !(best > incumbent) or !std.math.isFinite(best)) break;
     }
     return best_counts;
 }

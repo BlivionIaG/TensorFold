@@ -239,6 +239,7 @@ pub const Stream = struct {
     grant_short: bool = false, // the last grant verified fewer drafts than the stream held
     grant_gain: ?f64 = null, // the drafts its last grant expected to keep (the chances it was priced by)
     draft_chances: std.ArrayList(f64) = .empty, // last full head prices, retained through zero-row rounds
+    hold_context_rows: u32 = 0, // raw context still owed to the active drafter, maintained by that provider
     verify_row_ms: ?f64 = null, // backend's live host-draw ms per row (null: unsupported or not observed)
     verify_host_ms: f64 = 0, // completed host draws in this verify, consumed once by the round
     copy_width: ?u32 = null,

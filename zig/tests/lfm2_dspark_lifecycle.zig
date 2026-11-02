@@ -200,9 +200,9 @@ fn ownedPrefill(gpa: std.mem.Allocator, d: *q.dspark.Drafter, ids: []const u32) 
                 const rb = mtl.Buffer{ .id = @ptrFromInt(rf.buffer) };
                 if (!std.mem.eql(u8, anchor, (rb.contents() + rf.offset)[0..width])) return error.ResumedPrefillAnchorDiffers;
                 try wrap.backend().draft(&.{.{ .stream = &resumed, .first = .{ .handle = first }, .follow = &.{}, .rows = null, .start = n - 1, .position = n + 1, .depth = 0 }});
-                try d.flush(l);
+                try d.flush(&s, l);
                 const restored = d.lanes.get(&resumed).?;
-                try d.flush(restored);
+                try d.flush(&resumed, restored);
                 if (restored.end != n or !equalContext(l, restored, d.config.layers, n)) return error.OwnedPrefillResumeContextDiffers;
             }
         }

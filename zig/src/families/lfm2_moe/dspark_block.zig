@@ -293,6 +293,36 @@ fn absorbOn(encoder: Enc, pieces: []const Piece, gather: ?*usize) !void {
     }
 }
 
+/// A hold's exact piece partition and monotone gather cursor, also used by context-only load calibration.
+fn absorbHeld(x: Enc, pieces: []const Piece) !void {
+    var first: usize = 0;
+    var rows: usize = 0;
+    var gathered: usize = 0;
+    for (pieces, 0..) |pc, at| {
+        if (pc.rows > ds.absorb_rows) return error.DraftContextGap;
+        if (rows + pc.rows > ds.absorb_rows) {
+            try absorbOn(x, pieces[first..at], &gathered);
+            first = at;
+            rows = 0;
+        }
+        rows += pc.rows;
+    }
+    if (first < pieces.len) try absorbOn(x, pieces[first..], &gathered);
+}
+
+/// GPU time for only the held-pass context projection, on the same queue, encoder and barriers as a hold.
+pub fn contextPass(d: *Drafter, pieces: []const Piece) !f64 {
+    const pool = mtl.objc.Pool.push();
+    defer pool.pop();
+    const cb = d.target.queue.commandBuffer();
+    const x = Enc{ .d = d, .e = cb.compute(.concurrent), .conc = true };
+    var open = true;
+    errdefer if (open) x.e.end();
+    try absorbHeld(x, pieces);
+    open = false;
+    return finish(d, cb, x.e);
+}
+
 /// A command buffer for absorb passes, and its wait.
 pub fn begin(d: *Drafter) struct { cb: mtl.CommandBuffer, e: mtl.ComputeEncoder } {
     const cb = d.target.queue.commandBuffer();
@@ -363,7 +393,11 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
     defer pool.pop();
     const s = &d.s;
     var depth: u32 = 0;
-    for (blocks) |b| depth = @max(depth, b.depth);
+    var context_rows: u32 = 0;
+    for (blocks) |b| {
+        depth = @max(depth, b.depth);
+        context_rows = @max(context_rows, b.lane.staged);
+    }
     // a block of the deepest chain's rows, at most the 9 the drafter was trained on
     const n: u32 = depth;
     const rows = blocks.len * n;
@@ -384,19 +418,11 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
     // the blocks' staged context rows first, in the same command buffer
     var staged: [ds.pass_rows]Piece = undefined;
     var count: usize = 0;
-    var held: usize = 0;
-    var gathered: usize = 0; // rows of `gather` this hold's absorb calls took
     for (blocks) |b| if (ds.Drafter.stagedPiece(b.lane)) |pc| {
-        if (held + pc.rows > ds.absorb_rows) {
-            try absorbOn(x, staged[0..count], &gathered);
-            count = 0;
-            held = 0;
-        }
         staged[count] = pc;
         count += 1;
-        held += pc.rows;
     };
-    if (count > 0) try absorbOn(x, staged[0..count], &gathered);
+    try absorbHeld(x, staged[0..count]);
     const t = d.target;
     const emb = t.weights.embedding;
     x.e.setPipeline(t.kernels.embed(emb.bits));
@@ -443,13 +469,14 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
         cb.signalEvent(sg.event, sg.value);
         const kept = cb.retain();
         cb.commit();
+        d.pass_context_rows = context_rows;
         absorbed(blocks);
         return kept;
     }
     open = false;
     const ms = try finish(d, cb, e);
     absorbed(blocks);
-    d.priceHold(blocks.len, depth, ms); // this group's pass, its staged rows absorbed too, as completed
+    d.priceHold(blocks.len, depth, context_rows, ms);
     const picks = s.picks.slice(Pick, d.config.block * ds.pass_rows);
     for (blocks, 0..) |b, bi| {
         for (b.lane.held[0..b.depth], 0..) |*h, i| {

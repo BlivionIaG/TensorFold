@@ -25,6 +25,7 @@ pub const Facts = struct {
     slack: u32 = 0, // with chances: drafts a hold offers past the stream's last grant (0: the depth rule's own)
     copy_first: bool = false, // a hold costs a pass of its own: none is asked for a stream with a copy ahead
     hold_costs: []const @import("hold_price.zig").HoldCost = &.{}, // that pass's ms by blocks and depth (timed at load)
+    hold_context_costs: []const @import("hold_price.zig").ContextCost = &.{},
     hold_rows: u32 = 0, // rows one hold pass holds at most, a block as long as its pass's deepest: more run as passes in order (0: no bound)
 };
 

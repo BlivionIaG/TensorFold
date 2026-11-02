@@ -293,6 +293,20 @@ pub const Engine = struct {
         for (plans, 0..) |p, i| {
             if (e.cfg.family_mtp and p.stream.drafts) try heads.append(a, i);
         }
+        const requests: []be.DraftRequest = if (heads.items.len > 0 and
+            (e.cfg.draft_streams or e.backend.vtable.prepare_draft != null))
+            try a.alloc(be.DraftRequest, heads.items.len)
+        else
+            &.{};
+        for (requests, 0..) |*r, at| {
+            const i = heads.items[at];
+            const s = plans[i].stream;
+            r.* = .{ .stream = s, .follow = outcomes[i].follow, .rows = outcomes[i].path, .start = plans[i].position, .position = s.cache_len + 1, .depth = 0 };
+        }
+        if (requests.len > 0) if (e.backend.vtable.prepare_draft) |prepare| {
+            try prepare(e.backend.ptr, requests);
+            for (requests) |*r| r.prepared = true;
+        };
         const budgets = try a.alloc(i64, heads.items.len);
         const sampled = win.anySampled(plans);
         if (e.cfg.allocate_shared_drafts) {
@@ -306,13 +320,15 @@ pub const Engine = struct {
         for (ids, heads.items) |*id, i| id.* = str(plans[i].stream.id);
         try trail.event(e, &.{ f("ev", str("budgets")), f("streams", .{ .list = ids }), f("depths", .{ .i64s = budgets }) });
         if (heads.items.len > 0 and e.cfg.draft_streams) {
-            // every stream's head in one batch (the backend drafts a depth for all of them at once)
-            const requests = try a.alloc(be.DraftRequest, heads.items.len);
-            for (requests, heads.items, budgets) |*r, i, d| {
-                const s = plans[i].stream;
-                r.* = .{ .stream = s, .follow = outcomes[i].follow, .rows = outcomes[i].path, .start = plans[i].position, .position = s.cache_len + 1, .depth = @intCast(d) };
-            }
+            // Every head shares one hold, after all kept context has been staged and priced.
+            for (requests, budgets) |*r, d| r.depth = @intCast(d);
             try e.askDrafts(requests);
+        } else if (requests.len > 0) {
+            for (requests, budgets, 0..) |*r, d, i| {
+                var who = win.who(r.stream);
+                r.depth = @intCast(try e.rule.headDepth(&who, d, win.probe(e)));
+                try e.askDrafts(requests[i..][0..1]);
+            }
         } else {
             for (heads.items, budgets) |i, d| try e.draftLate(plans[i].stream, plans[i].position, outcomes[i].follow, outcomes[i].path, d);
         }
