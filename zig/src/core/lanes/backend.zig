@@ -72,7 +72,8 @@ pub const DraftRequest = struct {
 
 pub const Committed = struct { ptr: *anyopaque, call: *const fn (*anyopaque) void };
 pub const RoundObserver = struct { ptr: *anyopaque, done: *const fn (*anyopaque, []const []const u32) void };
-/// Already-settled draft GPU ms since the last take; reading this never submits or waits for GPU work.
+/// Measured, nonoverlapping drafter CPU encoding plus settled GPU ms since the last take.
+/// Consumes accountable work once; never allocates, submits, or waits for pending GPU work.
 pub const DraftTiming = struct { ptr: *anyopaque, take: *const fn (*anyopaque) f64 };
 
 pub const Backend = struct {

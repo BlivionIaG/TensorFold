@@ -2,10 +2,10 @@
 const std = @import("std");
 const Table = @import("table.zig").Table;
 
-/// A drafter's hold pass of `streams` blocks, each `depth` drafts deep, in ms (timed at load).
+/// A drafter's hold pass of `streams` blocks, each `depth` drafts deep, in nonoverlapping encode CPU + GPU ms.
 pub const HoldCost = struct { streams: u32, depth: u32, ms: f64 };
 
-/// GPU ms for context projection alone: one uniform batch, excluding the clean hold's backbone and Markov work.
+/// The same measured currency for context projection alone, excluding the clean hold's backbone and Markov work.
 pub const ContextCost = struct { streams: u32, rows: u32, ms: f64 };
 
 /// Round both dimensions up to measured coverage; mixed debts conservatively use their largest owed row count.
@@ -275,19 +275,21 @@ pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
     return base.tokens * live < plain + fixed + base.host_ms;
 }
 
-/// Ignore work settled outside this round; the clock measures only what follows its start.
+/// Discard already-accountable work outside this round, including startup; only work after clock.start belongs here.
+/// Pending GPU work is not drained until it settles inside a later interval.
 pub fn startRound(engine: anytype) void {
     if (engine.backend.draft_timing) |t| _ = t.take(t.ptr);
     engine.clock.start();
 }
 
-/// A deferred hold belongs to the round that settles it, not the round that just launches another hold.
+/// Consume encoding in its launch interval and deferred GPU work in its settle interval, each once.
+/// Without actual timing, retain the modeled head price for the current budgets.
 pub fn observedHeadMs(backend: anytype, rule: anytype, depths: []const i64) f64 {
     if (backend.draft_timing) |t| return t.take(t.ptr);
     return rule.headMs(depths);
 }
 
-/// Head-step work past each first draft, priced by budgets rather than charged again as fixed overhead.
+/// Modeled-only extra head steps: actual timing already includes them in observedHeadMs.
 pub fn extraStepMs(depths: []const i64, step_ms: f64, batched: bool) f64 {
     if (step_ms == 0) return 0;
     var steps: i64 = 0;

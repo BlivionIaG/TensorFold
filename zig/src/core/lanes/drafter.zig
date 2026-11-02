@@ -47,7 +47,7 @@ pub const Hold = struct { stream: *Stream, pending: u32, position: u64, depth: u
 pub const Drafter = struct {
     kind: []const u8 = "draft model", // descriptive only; the loader identifies the implementation it attached
     proposal_head: ?*const @import("proposal_head.zig").Service = null,
-    hold_timing: ?@import("backend.zig").DraftTiming = null, // its settled GPU ms since the last take, never a wait (null: the rule models it)
+    hold_timing: ?@import("backend.zig").DraftTiming = null, // nonoverlapping encode CPU + settled GPU ms, consumed once without waiting (null: modeled)
     ptr: *anyopaque,
     vtable: *const VTable,
 

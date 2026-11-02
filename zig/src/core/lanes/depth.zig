@@ -62,7 +62,7 @@ pub const Probe = struct {
     copy: *const fn (ptr: *anyopaque, who: *const Who) bool,
 };
 
-/// A shared round's time past its forward: `ms` without its head steps, `head` the steps' modeled time.
+/// A round's time past its forward: `ms` is fixed work, `head` its excluded actual or modeled drafter work.
 pub const Overhead = struct { streams: u32, ms: f64, head: f64 = 0.0 };
 
 const HoldOffer = @import("hold_offers.zig").Offer;
@@ -396,7 +396,7 @@ pub const Rule = struct {
         return o.ms + o.head;
     }
 
-    /// overheadMs without the head steps the measured rounds drafted.
+    /// overheadMs without the measured or modeled drafter work attributed to those rounds.
     pub fn fixedMs(r: *const Rule, streams: usize, sampled: bool) f64 {
         const o = r.nearest(streams, sampled) orelse return r.unmeasuredMs();
         return o.ms;
@@ -425,7 +425,8 @@ pub const Rule = struct {
         return r.mtp_step_ms * @as(f64, @floatFromInt(steps));
     }
 
-    /// `ms` excludes separately priced host draws and extra head steps; `head_ms` is this interval's settled hold work.
+    /// `ms` excludes separately priced host draws and, only without actual timing, modeled extra head steps.
+    /// `head_ms` is this interval's nonoverlapping encode CPU + settled GPU work, or the fallback modeled head price.
     pub fn observeOverhead(r: *Rule, streams: u32, rows: u64, ms: f64, sampled: bool, head_ms: f64) !void {
         const forward = r.shared_costs.get(@intCast(rows)) orelse return;
         const extra = if (ms - forward > 0.0) ms - forward else 0.0;

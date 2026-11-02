@@ -339,8 +339,11 @@ pub const Engine = struct {
         };
         try e.backend.keep(windows, paths);
         if (e.cfg.timed) {
-            // the drafts budgets priced past each stream's first are no part of the round's overhead
-            const extra = @import("hold_price.zig").extraStepMs(budgets, e.cfg.draft_step_ms, e.cfg.draft_step_ms != 0 and e.cfg.draft_streams and depth.pricedBatched());
+            // Actual timing includes every head step; only the modeled path removes budgeted extra steps here.
+            const extra = if (e.backend.draft_timing == null)
+                @import("hold_price.zig").extraStepMs(budgets, e.cfg.draft_step_ms, e.cfg.draft_step_ms != 0 and e.cfg.draft_streams and depth.pricedBatched())
+            else
+                0;
             const ms = e.clock.elapsedMs(.overhead) - extra;
             try trail.event(e, &.{ f("ev", str("overhead")), f("streams", int(plans.len)), f("rows", int(total)), f("ms", ev.bits(ms)) });
             try e.rule.observeOverhead(@intCast(plans.len), total, ms - takeVerifyHostMs(windows), sampled, @import("hold_price.zig").observedHeadMs(e.backend, &e.rule, budgets));
