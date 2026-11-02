@@ -529,11 +529,19 @@ pub const constrain = @import("grammar_window.zig").constrain;
 pub fn build(e: *Engine, p: Plan, early: bool) !be.Window {
     const a = e.arena.allocator();
     const rows = 1 + p.count();
-    const parents = try accept.rowParents(a, rows, p.parents);
-    const ds = try accept.depths(a, parents);
-    const positions = try a.alloc(u64, rows);
-    for (positions, ds) |*x, d| x.* = p.position + 1 + d;
-    return .{ .stream = p.stream, .pending = p.stream.pending.?, .held = p.held, .tokens = p.tokens, .parents = if (p.parents != null) parents else null, .positions = positions, .early = early, .masks = p.masks };
+    var parents: ?[]const i32 = null;
+    const positions = if (p.parents) |tree| blk: {
+        parents = try accept.rowParents(a, rows, tree);
+        const ds = try accept.depths(a, parents.?);
+        const out = try a.alloc(u64, rows);
+        for (out, ds) |*x, d| x.* = p.position + 1 + d;
+        break :blk out;
+    } else blk: {
+        const out = try a.alloc(u64, rows);
+        for (out, 0..) |*x, row| x.* = p.position + 1 + row;
+        break :blk out;
+    };
+    return .{ .stream = p.stream, .pending = p.stream.pending.?, .held = p.held, .tokens = p.tokens, .parents = parents, .positions = positions, .early = early, .masks = p.masks };
 }
 
 pub fn rowParents(e: *Engine, w: be.Window) ![]const i32 {
@@ -552,4 +560,8 @@ pub fn tokens(e: *Engine, w: be.Window, o: be.Verified) ![]u32 {
 
 test "declined and grafted probabilities need only their final round buffer" {
     try @import("windows_memory_test.zig").check(nodeChances, planChances);
+}
+
+test {
+    _ = @import("windows_build_test.zig");
 }
