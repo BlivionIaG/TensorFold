@@ -298,3 +298,21 @@ pub fn nonfinite(gpa: std.mem.Allocator, d: *q.dspark.Drafter) !void {
     }
     if (failures != 0) return error.MarkovNonfiniteControlFailed;
 }
+
+/// A shorter retained prefix cannot remove the future mask rows of a bidirectional query block.
+pub fn fixedBlockPrefix(gpa: std.mem.Allocator, d: *q.dspark.Drafter, lane: *q.dspark.Lane, pending: u32, anchor: u64) !void {
+    try d.settle();
+    _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = pending, .anchor = anchor, .depth = d.config.block }}, null);
+    const expected = try gpa.dupe(u8, d.s.logits.contents()[0 .. c.vocab * 2]);
+    defer gpa.free(expected);
+    const first = lane.held[0];
+    const has_confidence = lane.conf_len > 0;
+    const confidence: u32 = @bitCast(lane.conf[0]);
+    for ([_]u32{ 1, @min(3, d.config.block), d.config.block }) |depth| {
+        _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = pending, .anchor = anchor, .depth = depth }}, null);
+        if (!std.mem.eql(u8, expected, d.s.logits.contents()[0..expected.len])) return error.DraftPrefixDependsOnGrant;
+        if (lane.held[0] != first) return error.DraftFirstProposalDependsOnGrant;
+        if (has_confidence and (lane.conf_len == 0 or @as(u32, @bitCast(lane.conf[0])) != confidence)) return error.DraftConfidenceDependsOnGrant;
+    }
+    std.debug.print("fixed query block: {d} rows; retained prefixes 1/3/{d} preserve all first-row base-logit bytes, first proposal and confidence\n", .{ d.config.block, d.config.block });
+}

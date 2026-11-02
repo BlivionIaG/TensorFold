@@ -18,6 +18,7 @@ pub const Constants = struct {
     hold_costs: []const HoldCost = &.{}, // a drafter's own hold pass by blocks and depth: it prices every hold (lone, shared, granted)
     hold_context_costs: []const @import("hold_price.zig").ContextCost = &.{},
     hold_rows: u32 = 0, // rows one of those hold passes holds at most; a larger hold runs as passes in order (0: no bound)
+    hold_block_rows: u32 = 0, // minimum query rows per block, independent of the returned proposal depth
 };
 
 pub const HoldCost = @import("hold_price.zig").HoldCost;

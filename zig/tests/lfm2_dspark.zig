@@ -354,6 +354,7 @@ pub fn main(init: std.process.Init) !void {
         };
         std.debug.print("the owned stage: {d} rows staged in uneven absorbs, absorbed as one {d}-row piece like the direct absorbs' ({s} regime): keys, values and picks equal\n", .{ ctx, ctx, if (ctx <= 32) "<= 32-row" else "> 32-row" });
     }
+    try controls.fixedBlockPrefix(gpa, d, lane, ids[ctx], ctx);
     try lifecycle.run(gpa, d, taps.buf, ids, ctx);
     // Absorb time is consumed once without repricing; a hold reprices only participating shapes.
     if (ctx > 0) {
