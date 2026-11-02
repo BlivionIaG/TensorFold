@@ -116,6 +116,12 @@ fn env(s: Setup, name: []const u8) ?[]const u8 {
     return m.get(name);
 }
 
+const ProfileEnvironment = struct {
+    pub fn get(_: @This(), name: [:0]const u8) ?[]const u8 {
+        return platform.getenv(name);
+    }
+};
+
 /// Serves until a stop signal; the process exit status.
 pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
     stop_requested.store(false, .release);
@@ -244,13 +250,16 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
     const now = std.Io.Clock.awake.now(io).toNanoseconds();
     const loaded = if (s.started > 0) @as(f64, @floatFromInt(now - s.started)) / 1e9 else 0;
     var window_text: [24]u8 = undefined;
+    const profile_line = @import("profile_line.zig").format(a, args.profile, s.model_type, s.identity.backend, ProfileEnvironment{}) catch
+        "profile: stable; registered overrides: unavailable (out of memory)";
+    log.line("{s}", .{profile_line});
     log.line("serving {s} at http://{s}:{d}/v1 (sampling: {s}; drafts: {f}; context: {s}; loaded in {d:.1}s)", .{
         s.served,                                                  args.host,                                                                                   port,   shownSampling(a, s.sampling),
         @import("draft_line.zig").shown(args.no_drafts, srv.info), if (window > 0) std.fmt.bufPrint(&window_text, "{d}", .{window}) catch "?" else "unlimited", loaded,
     });
     const reserved = args.thinking_reserve > 0 and srv.info.answer_limit;
     if (args.thinking_reserve > 0 and !srv.info.answer_limit) log.line("--thinking-reserve is not applied: this engine cannot limit the answer apart from the reasoning", .{});
-    if (args.thinking and std.mem.indexOf(u8, s.text.templateSource(), "enable_thinking") != null)
+    if (args.thinking and srv.info.reasoning and std.mem.indexOf(u8, s.text.templateSource(), "enable_thinking") != null)
         log.line("thinking on (the chat template's default): replies reason in reasoning_content before the answer in content, and max_tokens {s}. --no-thinking turns it off; a request can send chat_template_kwargs {{\"enable_thinking\": false}}", .{if (reserved) "limits the answer, the reasoning taking up to --thinking-reserve tokens more" else "counts both"});
     if (s.recall) |r| recall_routes.line(r);
     if (srv.idle_manager != null) log.line("idle unload on: the engine closes after {d} s idle and the next request reloads it (a full model load)", .{args.idle_unload});

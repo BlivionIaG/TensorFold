@@ -60,6 +60,8 @@ fn poolChecks(b: *std.Build, target: std.Build.ResolvedTarget, test_step: *std.B
 }
 
 pub fn build(b: *std.Build) void {
+    // -Dgpu: one server for one GPU, nothing else (zig/build/product.zig)
+    if (@import("zig/build/product.zig").requested(b)) |gpu| return @import("zig/build/product.zig").build(b, gpu);
     @import("zig/build/qwen35_cache_host.zig").tests(b);
     @import("zig/build/residency_host.zig").steps(b);
     @import("zig/build/lane_halt_host.zig").steps(b);
@@ -86,6 +88,7 @@ pub fn build(b: *std.Build) void {
     _ = ids_files.addCopyFile(b.path("zig/src/families/nemotron/draft_ids.txt"), "draft_ids.txt");
     const draft_ids = b.createModule(.{ .root_source_file = ids_files.add("draft_ids.zig", "pub const text = @embedFile(\"draft_ids.txt\");\n") });
     const test_step = b.step("test", "Unit tests (macOS includes available Metal device checks)");
+    @import("zig/build/gguf_host.zig").steps(b, test_step);
     @import("zig/build/qwen4.zig").steps(b, test_step);
     @import("zig/build/fsr.zig").steps(b, test_step);
     @import("zig/build/kernel_symbols.zig").tests(b, test_step);
@@ -165,7 +168,7 @@ pub fn build(b: *std.Build) void {
         @import("zig/build/gemma4_host.zig").compileHost(b, gemma4_host_mods.metal, gemma4_host_mods.engine, gemma4_host_mods.lanes, gemma4_host_mods.sources);
         @import("zig/build/qwen27_host.zig").compileHost(b, gemma4_host_mods.metal, gemma4_host_mods.engine, gemma4_host_mods.lanes);
     }
-    @import("zig/build/qwen27_host.zig").tests(b);
+    @import("zig/build/qwen27_host.zig").tests(b, test_step);
     const xgrammar = grammar_build.option(b);
     dist_build.targets(b, draft_ids, build_options, release_version, xgrammar);
     @import("zig/build/release_paths_step.zig").tests(b, test_step);
@@ -221,9 +224,11 @@ pub fn build(b: *std.Build) void {
     // the CPU-only fake server and engine-less CLI (zig build server-cpu), behind zig/tests/server/build.sh
     @import("zig/build/server.zig").cpuArtefacts(b, b.graph.host, optimize, build_options);
     sys_build.wire(b);
+    @import("zig/build/checkpoint_config.zig").tests(b);
     @import("zig/build/checkpoint_config.zig").wire(b);
     @import("zig/build/save_guard.zig").wire(b);
     @import("zig/build/dev_tools.zig").wire(b, target);
+    @import("zig/build/profile.zig").wire(b, test_step);
 }
 
 /// The native Metal server build is owned by the shared Metal target module.

@@ -2,6 +2,7 @@
 const std = @import("std");
 const lanes = @import("lanes");
 const Allocator = std.mem.Allocator;
+pub const profile = @import("profile");
 pub const tfvideo = @import("tfvideo.zig");
 pub const DraftSources = @import("draft_sources.zig").Sources;
 /// The server's name for one request, unique while the process lives.
@@ -186,6 +187,8 @@ pub const Info = struct {
     loop_guard: bool = false,
     /// The engine enforces a token budget while the think block is open.
     thinking_budget: bool = true,
+    /// The model can emit a reasoning block; false: all reply text is answer content, whatever enable_thinking renders.
+    reasoning: bool = true,
     /// The engine stops the reply after the think block at Request.answer_max (every lane engine: Info.ofLanes).
     answer_limit: bool = false,
     structures: bool = false,
@@ -227,6 +230,8 @@ pub const Info = struct {
     slide_conversations: bool = false,
     /// Whether a request's caches fit beside the running streams' now (null: a free lane does); else it waits in order.
     admit: ?Admit = null,
+    /// A byte budget each request promises its caches from as it is admitted (null: none); never beside `admit`.
+    ledger: ?Ledger = null,
 
     /// What a lane engine's streams enforce themselves (core/lanes/stream.zig): loop guards and answer limits.
     pub fn ofLanes(i: Info) Info {
@@ -240,6 +245,13 @@ pub const Info = struct {
 pub const Admit = struct {
     ctx: *anyopaque,
     fits: *const fn (ctx: *anyopaque, prompt: u32, max_tokens: u32) bool,
+};
+
+/// The bytes the lane host may promise at once, and what one request's caches cost at most (core/kv_ledger.zig).
+pub const Ledger = struct {
+    ctx: *anyopaque,
+    total: u64,
+    cost: *const fn (ctx: *anyopaque, prompt: u32, max_tokens: u32) u64,
 };
 
 pub const PromptCacheCapacity = struct { budget_bytes: u64, minimum_state_bytes: u64 };

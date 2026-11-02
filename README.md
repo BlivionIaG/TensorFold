@@ -108,6 +108,13 @@ Download the Apple-silicon [beta 9 DMG](https://github.com/ashhart/TensorFold/re
 The desktop app launches the bundled `tensorfold-native` executable directly.
 Mobile clients in `app/mobile/` remain preview software.
 
+## TensorFold Starlight (enterprise)
+
+[TensorFold Starlight](starlight/README.md) gives an organisation one governed OpenAI- and Anthropic-compatible endpoint for a fleet of TensorFold engines on Macs, Linux GPU servers and Windows machines.
+It signs people in through the organisation's identity provider (OIDC or SAML, with SCIM provisioning), decides who may use which model and where it runs, places and supervises models on nodes, and accounts for every token.
+It runs fully offline, or brokers approved frontier providers under the same identity, policy and budgets; [the install guide](starlight/docs/install.md) covers Docker, Kubernetes and Linux services.
+Starlight is new: the gates that still need real GPU clusters or identity-provider tenants are listed in [its qualification notes](starlight/docs/qualification.md).
+
 ## Living Weights (experimental)
 
 Living Weights teaches a running model new facts in its own weights. Start a Nemotron 3.5 Lightning server with
@@ -271,6 +278,7 @@ The binary's `capabilities --json` response lists its supported flags and platfo
 | Flag | Meaning |
 | --- | --- |
 | `--host HOST`, `--port PORT` | Listen address and port, default `127.0.0.1:8080`. |
+| `--profile stable` | Explicitly preserve current defaults; [profiles](docs/profiles.md) describes the initial switch registry and startup report. |
 | `--name NAME` | Model ID advertised to clients. |
 | `--alias NAME` | Another accepted model ID; repeat for multiple aliases. |
 | `--api-key KEY` | Require a bearer key; repeat for multiple keys. |
@@ -370,6 +378,8 @@ zig build test test-golden -Dcpu=apple_m1
 ```
 
 Structured output and required tool calls need the release archive's `lib/` or `zig build grammar -Dxgrammar=DIR`; prepare DIR with `git clone --branch v0.2.8 --recurse-submodules https://github.com/mlc-ai/xgrammar` (use the native build's same `--prefix` for grammar).
+
+To build one stripped server for one GPU (`zig build -Dgpu=spark -Dnvcc=...`, about 69% smaller than the four-target server), see [Build a server for one GPU](RUNBOOK.md#build-a-server-for-one-gpu).
 
 On macOS, `test` also runs available Metal device checks. See [CONTRIBUTING.md](CONTRIBUTING.md) for the host-test subset.
 

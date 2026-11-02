@@ -2,6 +2,9 @@
 
 The base URL is `http://127.0.0.1:8080/v1` with the default server settings.
 
+Native `serve --profile stable` keeps the current defaults. [Profiles](profiles.md) documents its initial
+environment-switch registry, explicit override precedence, and startup reporting.
+
 ## Native chat template override
 
 `tensorfold serve MODEL --chat-template custom-chat.jinja` loads a UTF-8 Jinja template from that file
@@ -239,7 +242,9 @@ the flag is the reply's share, and the prompt owes its complement: it also offer
 prompt's chunks to families that declare chunk-independent prompt arithmetic. That offer is gated per family
 behind device token-hash qualification; every native family is gated out today, so no native server caps chunk
 rows yet. Absent the flag the engines keep their own cuts and `TENSORFOLD_PREFILL_SHARE` keeps its old meaning:
-the prompt's share of a fill step's wall time, time only, never smaller chunks. The CUDA, qwen27 Metal and
+the prompt's share of a fill step's wall time, time only, never smaller chunks. `TENSORFOLD_PREFILL_ORDER=srpt`
+lets running replies with less estimated work left than a filling long prompt take rounds first, the prompt keeping
+at least 10% of the time. With `--decode-share` it keeps that share when the prompt goes first and takes at most 10% when a reply does, and `--decode-share 0` still prefills each prompt whole. The CUDA, qwen27 Metal and
 hip_serve servers pass the flag to their lane host and take its time share; the DeepSeek, Spark-X on Metal, Qwen4
 and XPU servers do not parse or apply the flag. `--decode-share 0` prefills each prompt
 whole

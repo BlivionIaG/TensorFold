@@ -35,6 +35,16 @@ pub const Layout = struct {
     }
 };
 
+/// A family whose unpaged streams allocate a request's rows at open, never a whole window (the KV admission ledger).
+pub const PerRequest = struct {
+    /// fixed_bytes holds every per-request byte open allocates past token_bytes x rows; page_tokens 0 until it pages.
+    layout: Layout,
+    /// Rows past the reply: the widest drafted or verify pass the family runs (MTP and DFlash rows), not just decode.
+    lookahead: u32 = 0,
+    /// Buffers that grow with the stream cap but belong to no request, charged once at load.
+    scratch: u64 = 0,
+};
+
 /// Slots a plan sets aside for snapshots when the caller names no count.
 pub const most_snaps = 64;
 
@@ -355,6 +365,13 @@ pub const Pool = struct {
         for (0..n) |i| l.ids.appendAssumeCapacity(@intCast(start + i)); // held as `take` holds a page: `finish` frees them
         errdefer p.shrink(l, 0);
         if (table) |t| try t.write(t.ctx, l.ids.items, 0);
+    }
+
+    /// `l`'s table back to `n` pages, the rest to its promise (rows a rolled-back window held; no reader in flight).
+    pub fn trim(p: *Pool, l: *Lease, n: usize) void {
+        p.enter();
+        defer p.leave();
+        p.shrink(l, n);
     }
 
     /// Pages past `n` in `l`'s table go back to its promise, as they were before it took them.
