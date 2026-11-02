@@ -265,13 +265,13 @@ pub const Rule = struct {
     }
 
     fn nextDepth(r: *Rule, who: *const Who, budget: ?i64, probe: Probe, reserving: bool) !i64 {
-        const d: i64 = if (who.finished) 0 else if (budget) |b| b else if (r.granted_depth)
+        if (who.finished or who.forced) return 0;
+        const d: i64 = if (budget) |b| b else if (r.granted_depth)
             try r.grantDepth(who.*, reserving)
         else if (r.node_probabilities and !(who.sampled and r.confidence_floor != null))
             @min(@as(i64, r.most_drafts), @max(1, who.draft_room - 1))
         else
             try r.depth(who.*);
-        if (who.forced) return 0;
         if (d != 0 and probe.copy(probe.ptr, who)) return @intFromBool(!r.k.copy_first);
         return d;
     }
@@ -324,7 +324,7 @@ pub const Rule = struct {
         defer for (probs[0..made]) |p| r.gpa.free(p);
         for (whos, most, probs) |w, *m, *p| {
             m.* = if (w.finished or w.forced) 0 else @min(@as(i64, r.most_drafts), @max(1, w.draft_room - 1));
-            p.* = try alloc.chainProbabilities(r.gpa, if (w.finished) r.prior else try r.rates(w), @intCast(m.*));
+            p.* = try alloc.chainProbabilities(r.gpa, if (w.finished or w.forced) r.prior else try r.rates(w), @intCast(m.*));
             made += 1;
         }
         const work = try r.gpa.alloc(u32, whos.len * @as(usize, if (r.k.hold_context_costs.len > 0) 2 else 1));

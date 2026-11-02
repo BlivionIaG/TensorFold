@@ -93,6 +93,8 @@ and verified taps before the target overwrites them, projecting them only for a 
 Zero-grant rounds therefore retain contiguous context for later drafts; they do not disable drafting by stream count.
 Decode and verify norms write taps directly into the lane's stage, without a per-round host copy. A forward
 waits on a pending hold before replacing rows that hold still reads; only accepted rows become staged context.
+Each shared round stages its newly verified rows before pricing the next hold. The allocator keeps the
+confidence and grant inputs captured before staging; prepared requests neither reread nor absorb those rows twice.
 
 `tf-kernel-contract --only lfm2` checks these kernels. `tf-lfm2-dspark MODEL DRAFTER TOKENS [ROWS]` runs the drafter
 against an fp32 host reference of the released checkpoint (the same taps and the target's embedding and head),
@@ -110,9 +112,19 @@ running on the GPU is priced by its lane's last confidences, so the host does no
 without the head verifies by the core's depth rule, from each stream's measured acceptance by depth.
 
 A stream with a copy ahead verifies the copy and asks no hold, and a drafting stream prices its copy
-windows by its own copies. The lane core also weighs the hold pass itself: the drafter times holds of 1 to 16
-blocks at every admissible depth at load and corrects those prices toward each settled hold's GPU time.
-Prices interpolate neighboring measured depths, preserving the cost changes at kernel transitions.
+windows by its own copies. The lane core also weighs the hold pass itself: the drafter GPU-times clean
+holds of 1 to 16 blocks at every admissible depth. Prices interpolate neighboring measured depths,
+preserving the cost changes at kernel transitions.
+
+A separate 60-cell GPU calibration prices context projection: 1/2/4/8/16 streams at powers-of-two row
+counts from 1 to 2,048. Temporary K/V-only lanes share one nonzero raw fixture and are freed before serving;
+this adds startup measurements, not a claim of lower startup latency or peak memory. A physical selected
+group pays context once, using its largest actual staged debt and the next measured covering regime.
+Mixed debts use a conservative uniform-row estimate, not a proven hardware bound; forced and copy-only
+companions owe no neural context fee. Missing or invalid coverage cannot fund a context-bearing hold.
+Settled whole-pass GPU time remains in round accounting. Only clean-price adaptation subtracts the
+estimated context quote; this residual is not a separately measured clean segment, and invalid residuals
+do not invent a clean observation.
 Confidence still allocates verify rows unchanged, but a hold's expected gain is capped by that stream's actual
 head acceptance. If the full hold cannot pay, the controller can retain a shorter prefix rather than discard
 all its useful drafts. Its separate hold-value estimate starts each newly tried conditional from the observed
@@ -126,6 +138,10 @@ hold costs, including companion rows, before other holds are selected. An imposs
 probe cadence; cheaper live costs can fund the retained trial immediately. Actual profitable trials restore
 ordinary holds; copies do not train head acceptance. These rules do not establish throughput qualification:
 that still needs the complete same-head no-drafter/BF16/8-bit matrix, including sampled one-stream replies.
+
+Context-aware recovery prices the actual selected trial group's debt once while retaining the existing
+optimism over allowed deeper clean shapes. An expensive due peer cannot veto a funded cheaper prefix.
+Zero-context and opt-out backends retain their original recovery semantics.
 
 Observed fixed overhead excludes the completed hold's GPU time in the round that actually settles it, not
 the modeled price of a new unwaited hold. Work settled outside a round is discarded before its clock starts.

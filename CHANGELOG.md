@@ -4,6 +4,22 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- LFM2 DSpark holds gather adjacent small context pieces in preallocated scratch. Target normalization carries raw BF16 residuals in captured tap columns instead of storing them twice. Bounded, admission-priced lane storage retains verified taps until a hold, snapshot or overflow needs their projections, preserving context across zero-grant rounds and target-tap overwrites.
+
+- `tools/bench_lfm2_dspark.py` records the complete same-head no-drafter/BF16/8-bit qualification matrix, checks token equality across solo, draft-disabled and concurrent runs, and fails every cell below its plain baseline. Reduced runs are explicitly smoke evidence, not qualification.
+
+- LFM2 DSpark prices physical drafter passes from its measured stream-count/depth grid, including split passes in execution order; copy and forced rows still count toward verification. A new stream waits for its first priced grant, while owned prompt and verified taps preserve contiguous context through zero-grant rounds, snapshots and stage overflow. Settled GPU work is charged at its existing wait, without an extra synchronization.
+
+- LFM2 DSpark stages newly verified rows once before hold budgeting and prices the selected group's live context debt from a separate 60-cell GPU calibration. Clean-hold price updates subtract that estimated catch-up cost while round accounting retains the complete actual GPU time. Temporary K/V calibration lanes and their shared raw fixture are freed before serving. This does not establish throughput qualification.
+
+- DSpark confidence scheduling keeps a useful observed prefix when its full hold cannot pay. Recovery trials require a fresh positive reservation and funding in the full round's verify and physical hold costs, including companion rows; an impossible trial does not spend its probe cadence. Forced heads retain their unused recovery clocks. Verify allocation keeps the checkpoint confidences, and the absent-head fallback keeps its original prior. No stream-count cutoff is added; full no-slowdown qualification remains separate.
+
+- LFM2 DSpark's allocation-failure regression now derives the warm-up failure point from scratch preparation and disables in-place allocator growth, so scratch and warm-up cleanup are tested without reaching uninitialized model state. Serving behavior is unchanged.
+
+- LFM2 DSpark refuses isolated NaN and either infinity sign from the Markov scan on waited and asynchronous held paths. Empty scan groups retain their negative-infinity/invalid-token sentinel; finite arithmetic and lowest-token ties are unchanged.
+
+- DSpark recovery checks retain their shape-only exploration minimum when host-draw timing changes, applying the live draw quote at the funding boundary. Changed hold or forward prices still invalidate the cached shape; strict funding and recovery admission are unchanged.
+
 - GLM, GLM-DSA and Flash Next on Metal drop their checkpoint from the file cache once loaded, keeping the SSD expert and PLE files that serving still reads (#1868).
 
 - On Macs, the q27, Nemotron, LFM2 and Qwen3.5 loaders drop their checkpoint from the file cache once the weights are loaded, so unified memory doesn't hold them twice: on an M5 Ultra a loaded Qwen3.8-27B frees about 14 GiB and Nemotron 3.5 Lightning about 17 GiB, with the same replies (part of #1868).
@@ -96,21 +112,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - On GB10s, affine-4 (MLX 4-bit) decode and verify projections that read the same input run as one grouped launch, each output byte-equal to its separate launch under the kernel contract, for the dense targets, Nemotron, the DFlash2 drafter, Gemma 4 and Spark. Replies are unchanged. Nemotron 3.5 Lightning: 8 streams +13.3%, 2 streams +5.9%; Qwen3.8-27B with DFlash2: decode after a prompt +3.7% to +5.0%, 1 stream +4.5%, 4 streams +3.5% (#1783).
 
-- LFM2 DSpark holds gather adjacent small context pieces in preallocated scratch. Target normalization carries raw BF16 residuals in captured tap columns instead of storing them twice. Bounded, admission-priced lane storage retains verified taps until a hold, snapshot or overflow needs their projections, preserving context across zero-grant rounds and target-tap overwrites.
-
-- `tools/bench_lfm2_dspark.py` records the complete same-head no-drafter/BF16/8-bit qualification matrix, checks token equality across solo, draft-disabled and concurrent runs, and fails every cell below its plain baseline. Reduced runs are explicitly smoke evidence, not qualification.
-
 - Shared draft rounds price each stream's drafts before drafting, and a stream whose drafts would get no verify rows skips the drafter's proposal work, for Nemotron, Qwen's MTP, GLM, Gemma 4 (assistant and DFlash) and attached LFM2 drafters, on CUDA and Metal; each family keeps its head step's cost in the price. Replies are unchanged. Nemotron 3.5 Lightning with its MTP head: on an M5 Ultra, 16-stream chat +9.0% greedy and +4.7% sampled; on a GB10, 16 streams +2.1% and 8 streams +1.1% (#1779).
-
-- LFM2 DSpark prices physical drafter passes from its measured stream-count/depth grid, including split passes in execution order; copy and forced rows still count toward verification. A new stream waits for its first priced grant, while owned prompt and verified taps preserve contiguous context through zero-grant rounds, snapshots and stage overflow. Settled GPU work is charged at its existing wait, without an extra synchronization.
-
-- DSpark confidence scheduling keeps a useful observed prefix when its full hold cannot pay. Recovery trials require a fresh positive reservation and funding in the full round's verify and physical hold costs, including companion rows; an impossible trial does not spend its probe cadence. Verify allocation keeps the checkpoint confidences, and the absent-head fallback keeps its original prior. No stream-count cutoff is added; full no-slowdown qualification remains separate.
-
-- LFM2 DSpark's allocation-failure regression now derives the warm-up failure point from scratch preparation and disables in-place allocator growth, so scratch and warm-up cleanup are tested without reaching uninitialized model state. Serving behavior is unchanged.
-
-- LFM2 DSpark refuses isolated NaN and either infinity sign from the Markov scan on waited and asynchronous held paths. Empty scan groups retain their negative-infinity/invalid-token sentinel; finite arithmetic and lowest-token ties are unchanged.
-
-- DSpark recovery checks retain their shape-only exploration minimum when host-draw timing changes, applying the live draw quote at the funding boundary. Changed hold or forward prices still invalidate the cached shape; strict funding and recovery admission are unchanged.
 
 - MOSS-Image's image decoder (the checkpoint's FLUX.2 small VAE, in float32 as the pipeline runs it) runs on Metal inside the `moss_image` family, and `tf-moss-image` writes `picture.png` itself, so torch no longer decodes (#1687, #1504). Thanks to @BobClawblaw.
 

@@ -175,6 +175,10 @@ test "forced rounds retain a due plain-recovery trial until a draft can run" {
         try t.expectEqual(@as(?u64, 8), state.?.wait);
         try t.expectEqual(@as(u64, 19), state.?.rounds);
     }
+    try t.expectEqual(@as(i64, 0), try rule.headDepth(&whos[0], null, probe));
+    try t.expectEqual(@as(?u64, 7), state.?.plain);
+    try t.expectEqual(@as(?u64, 8), state.?.wait);
+    try t.expectEqual(@as(u64, 19), state.?.rounds);
     whos[0].forced = false;
     try rule.budgets(&whos, probe, false, &out);
     try t.expectEqual(@as(i64, 1), out[0]);
