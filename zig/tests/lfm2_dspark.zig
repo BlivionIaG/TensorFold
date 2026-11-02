@@ -274,6 +274,20 @@ fn deferred(gpa: std.mem.Allocator, d: *q.dspark.Drafter, taps: mtl.Buffer, ids:
         if (!std.mem.eql(u8, a, b)) return error.DeferredContextMismatch;
     };
     std.debug.print("deferred context: {d} zero-grant rows, {d} overwritten pending rows, {d} complete context rows and 3 later drafts match the independent replay\n", .{ skip, rewound, anchor });
+
+    // A metadata-only rewind has no rows to project and must preserve the surviving prefix.
+    const rewind = anchor - 1;
+    _ = q.dspark_block.takeHoldMs(d);
+    try dr.absorb(&.{.{ .stream = &s, .features = .{ .buffer = @intFromPtr(source.id), .rows = 0, .row_bytes = @intCast(width), .space = .device, .dtype = .bf16 }, .start = rewind, .follow = &.{}, .prompt = false, .propose = false }});
+    if (live.end != rewind or live.staged != 0 or s.hold_context_rows != 0) return error.EmptyRewindKeptContextTail;
+    if (d.encode_cpu_ms != 0 or d.hold_spent_ms != 0) return error.EmptyRewindEncodedWork;
+    reference.end = rewind;
+    _ = try q.dspark_block.hold(d, &.{.{ .lane = reference, .pending = ids[ctx], .anchor = rewind, .depth = 3 }}, null);
+    const rewind_want = reference.held[0..3].*;
+    try dr.hold(&.{.{ .stream = &s, .pending = ids[ctx], .position = rewind + 1, .depth = 3 }});
+    try dr.held(&.{&s}, &.{&got});
+    if (!std.mem.eql(u32, &rewind_want, &got)) return error.EmptyRewindDraftMismatch;
+    std.debug.print("zero-row rewind: context end {d}, no encode or GPU work; 3 later drafts match the retained-prefix replay\n", .{rewind});
 }
 
 pub fn main(init: std.process.Init) !void {
