@@ -52,9 +52,9 @@ fn positive(x: f64) bool {
     return x > 0 and std.math.isFinite(x);
 }
 
-/// Uniform retained prefixes of every legal cohort size, including physical full-query splits.
-/// A smaller prefix never buys a smaller query block. Missing or invalid quotes stay unknown, rather
-/// than flowing through hold_price's intentionally free empty-grid convention.
+/// Only calibrated retained-prefix shapes can fund admission, as in the existing lone depth rule.
+/// A smaller prefix never buys a smaller query block. Missing grids or an entirely unpriced candidate
+/// set remain unknown, rather than flowing through hold_price's intentionally free empty convention.
 pub fn quote(p: Prices, rates: []const f64) ?Quote {
     const target = p.target orelse return null;
     if (p.streams == 0 or p.streams > p.target_rows or p.block_rows == 0 or p.pass_rows < p.block_rows or p.context_chunk == 0) return null;
@@ -75,7 +75,7 @@ pub fn quote(p: Prices, rates: []const f64) ?Quote {
         const heads = @min(p.heads, room / n);
         for (1..heads + 1) |count| {
             const rows = p.streams + count * n;
-            const verify = target.get(@intCast(rows)) orelse return null;
+            const verify = target.get(@intCast(rows)) orelse continue;
             if (!positive(verify)) return null;
             // Overflow may have flushed individual streams before a hold. Charge those full chunks
             // individually; the remaining debt pays at least the grouped AND the individual quote.
@@ -113,6 +113,7 @@ pub fn quote(p: Prices, rates: []const f64) ?Quote {
             }
         }
     }
+    if (result.best == null and room > 0 and depth > 0 and p.heads > 0) return null;
     return result;
 }
 
@@ -170,3 +171,36 @@ pub const History = struct {
         return &h.modes[@intFromBool(sampled)];
     }
 };
+
+test "lfm2 dspark: admission sparse native target calibration does not turn unpriced depths into free enrollment" {
+    const gpa = std.testing.allocator;
+    // Native lone calibration measures these widths, not every retained-prefix length.
+    var cfg = try lanes.Config.init(gpa, .{ .exact_width = 16, .window_costs = &.{
+        .{ .width = 1, .ms = 10 },
+        .{ .width = 2, .ms = 40 },
+        .{ .width = 4, .ms = 80 },
+        .{ .width = 8, .ms = 160 },
+        .{ .width = 16, .ms = 320 },
+    } }, 16, 15);
+    defer cfg.deinit(gpa);
+    const holds = [_]hp.HoldCost{ .{ .streams = 1, .depth = 1, .ms = 1 }, .{ .streams = 1, .depth = 9, .ms = 1 } };
+    const contexts = [_]hp.ContextCost{.{ .streams = 1, .rows = 2048, .ms = 0.01 }};
+    const prices: Prices = .{
+        .target = &cfg.family_costs,
+        .holds = &holds,
+        .contexts = &contexts,
+        .streams = 1,
+        .heads = 1,
+        .target_rows = 16,
+        .pass_rows = 32,
+        .block_rows = 9,
+        .depth = 9,
+        .context_rows = 14,
+        .context_chunk = 2048,
+    };
+    var recent: Recent = .{};
+    try std.testing.expect(!recent.enroll(prices, &recent.rates));
+    try cfg.family_costs.put(gpa, 4, 12);
+    try std.testing.expect(recent.enroll(prices, &recent.rates));
+    try std.testing.expectEqual(@as(u32, 3), quote(prices, &recent.rates).?.best.?.depth);
+}

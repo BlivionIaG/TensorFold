@@ -151,6 +151,10 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - The Intel GPU host tests build again: `zig build test-slide-xpu-host` no longer stops with a missing kernel image (#1840). Thanks to @jschmied.
 - Flash Next on CUDA: `TF_FLASHNEXT_ATTN_LANES=1` (off by default) runs a shared decode round's attention in one launch a kernel, with each row's caches and position in a table uploaded once a round, instead of a launch per stream. Replies are the same tokens; the kernels are bit-equal to the per-stream launches (`tf-cuda-test flashnext-attn-lanes`) (#1739). Thanks to @optimisme.
 
+- LFM2 DSpark prices request-level neural-context enrollment before prefill. Target-only requests keep cheap copies and canonical no-tap forwards; enrolled requests retain zero-grant context and recovery. Sparse lone target calibration considers only priced prefixes instead of silently enrolling on the first unmeasured width. Recent head-only rates seed fresh request state, with bounded cold/recovery admissions and no stream-count cutoff. This is not a throughput-qualification claim.
+
+- Lane reservations retain the next window's copy decision, including silence and source evidence, until verification consumes it. Planning no longer advances suffix-lookup backoff twice, and shared borrowed proposals survive another stream's lookup.
+
 - LFM2 DSpark retains the configured bidirectional query block when the scheduler asks for a shorter proposal prefix. Physical packing, clean calibration, context funding and the FP32 reference use the same fixed query width; larger logical cohorts still run as bounded passes. This corrects grant-dependent model inputs, not a claim of higher acceptance or throughput.
 
 - LFM2 DSpark attention reserves a tail chunk for full query masks at maximum context, without changing the target's context window or attention capacity. A real-GPU regression catches partials overwriting the next scratch row and checks that the extra keys contribute to the merged result.

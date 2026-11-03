@@ -93,7 +93,18 @@ Priced shared rounds use the existing lane allocator and the measured block-coun
 incur hold cost; copies and forced rows still occupy verify capacity. The native 32-row hold limit can split a
 cohort into several passes, priced in execution order rather than as one impossible padded batch.
 
-A new stream waits for its first funded hold while retaining its prompt context. Each lane owns incoming prompt
+Before prompt processing, native serving prices whether to retain a neural context for the request.
+It compares complete physical holds and conservative prompt/context debt against bare target rows,
+using recent head-only acceptance for this model and weight mode, separately for greedy and sampled draws.
+Only calibrated lone target widths are candidates; an unmeasured prefix does not invalidate other priced shapes.
+A target-only request retains cheap copies but owns no drafter lane or taps. Its route stays fixed until release.
+Tracked requests receive only an initial conditional-rate seed; grants, confidence, probe clocks and context are fresh.
+Cold and recovery admissions are bounded experiments, backing off across 64 to 1,024 skipped requests when
+perfect acceptance could still pay. Missing whole calibration preserves the tracked diagnostic route.
+Other providers retain their legacy feature-prefill lifecycle unless they offer the enrollment capability.
+
+
+A tracked stream waits for its first funded hold while retaining its prompt context. Each lane owns incoming prompt
 and verified taps before the target overwrites them, projecting them only for a hold, snapshot or stage overflow.
 Zero-grant rounds therefore retain contiguous context for later drafts; they do not disable drafting by stream count.
 Decode and verify norms write taps directly into the lane's stage, without a per-round host copy. A forward
@@ -128,6 +139,8 @@ holds at every legal physical block count and requested proposal depth. Every bl
 checkpoint's configured nine bidirectional query rows, including unused masks; a smaller grant retains
 only its proposal prefix, not a shorter attention problem. Larger logical cohorts run as bounded
 32-row passes, without a stream-count cutoff. Both clean and context funding use those physical groups.
+A reserved copy decision, including silence and source evidence, belongs to the next logical window.
+Planning consumes it without advancing suffix-lookup backoff a second time; changed history or lifecycle invalidates it.
 Each quote selects the best of three same-attempt precommit CPU-encoding plus GPU totals after a warm
 pass. Neighboring measured depths interpolate, preserving the cost changes at kernel transitions.
 
@@ -144,9 +157,9 @@ measured clean segment, and invalid residuals do not invent a clean observation.
 Confidence still allocates verify rows unchanged, but a hold's expected gain is capped by that stream's actual
 head acceptance. If the full hold cannot pay, the controller can retain a shorter prefix rather than discard
 all its useful drafts. Its separate hold-value estimate starts each newly tried conditional from the observed
-outcome; later trials use the existing depth learning rate. The reservation fallback keeps its original
-prior-initialized rates, and untested conditionals do not discount the confidence gain. One-stream and shared
-rounds use the same fresh reservations and physical-pass pricing, without disabling drafts at any stream count.
+outcome; later trials use the existing depth learning rate. The reservation fallback starts from its request's
+independent initial rates, and untested conditionals do not discount the confidence gain. One-stream and shared
+rounds use the same fresh reservations and physical-pass pricing, without a fixed stream-count cutoff.
 
 A hold suppressed by this acceptance cap retains its context and uses the existing periodic probe backoff to
 try again. A probe requires a positive fresh reservation and funding in the full round's verify and physical

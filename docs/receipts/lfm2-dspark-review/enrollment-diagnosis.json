@@ -1,0 +1,822 @@
+{
+  "label": "CAUSAL_AND_CORRECTNESS_EVIDENCE_NOT_FULL_PERFORMANCE_QUALIFICATION",
+  "complete_published_qualification": {
+    "source_revision": "750bca95c457dc2119505568dff593e151cbeed7",
+    "report": "https://github.com/BlivionIaG/TensorFold/blob/0cece53cc7be9fa67c9c792945ae3b2f17fbc6bf/docs/receipts/lfm2-dspark-review/750bca95c/README.md",
+    "strict_speed_cells_below_plain": {
+      "m4_pro": 18,
+      "m5_ultra": 24
+    },
+    "maintainer_gate": "Every cell at least plain; no tolerance."
+  },
+  "private_cost_attribution": {
+    "source_base": "0b2e9336e2b77dad06652048a25f283e16100974",
+    "binary_sha256": "46afcd324f28282c92eb579f4f9932e3b6e4182e5c98fff01631802d5fb22c25",
+    "label": "PRIVATE_DIAGNOSTIC_NOT_QUALIFICATION",
+    "valid_records": [
+      {
+        "case": {
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 1
+        },
+        "arm": "plain",
+        "aggregate_tps": 164.98945771443488,
+        "activity": {
+          "rounds": 272,
+          "drafted": 310,
+          "accepted": 239
+        },
+        "private_counters": {
+          "step": {
+            "calls": 287,
+            "wall_ms": 3218.888625
+          },
+          "plan": {
+            "calls": 287,
+            "wall_ms": 0.620875
+          },
+          "allocation": {
+            "calls": 0,
+            "wall_ms": 0.0
+          },
+          "reservation": {
+            "calls": 0,
+            "wall_ms": 0.0
+          },
+          "copy": {
+            "calls": 287,
+            "wall_ms": 0.431875
+          },
+          "hold_quote": {
+            "calls": 0,
+            "wall_ms": null
+          },
+          "context_quote": {
+            "calls": 0,
+            "wall_ms": null
+          }
+        },
+        "private_holds": null,
+        "returncode": 0,
+        "log_sha256": "704d65db8665893ea334a9b82602b555a1b7e58107088c891f53414afe40b528"
+      },
+      {
+        "case": {
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 1
+        },
+        "arm": "bf16",
+        "aggregate_tps": 159.78490223263304,
+        "activity": {
+          "rounds": 269,
+          "drafted": 315,
+          "accepted": 242
+        },
+        "private_counters": {
+          "step": {
+            "calls": 283,
+            "wall_ms": 3346.8395
+          },
+          "plan": {
+            "calls": 283,
+            "wall_ms": 0.17825
+          },
+          "allocation": {
+            "calls": 283,
+            "wall_ms": 27.091458
+          },
+          "reservation": {
+            "calls": 283,
+            "wall_ms": 1.55425
+          },
+          "copy": {
+            "calls": 564,
+            "wall_ms": 0.4325
+          },
+          "hold_quote": {
+            "calls": 803,
+            "wall_ms": null
+          },
+          "context_quote": {
+            "calls": 536,
+            "wall_ms": null
+          }
+        },
+        "private_holds": {
+          "passes": 8,
+          "blocks": 8,
+          "retained": 12,
+          "staged_rows": 518,
+          "encode_gpu_ms": 84.3005
+        },
+        "returncode": 0,
+        "log_sha256": "2ca4b728402f03d96f983e448ea9d3e9f3ac05eb1e9d83939385a8c993da90e2"
+      },
+      {
+        "case": {
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 1
+        },
+        "arm": "bits8",
+        "aggregate_tps": 156.0498440181501,
+        "activity": {
+          "rounds": 261,
+          "drafted": 348,
+          "accepted": 250
+        },
+        "private_counters": {
+          "step": {
+            "calls": 276,
+            "wall_ms": 3410.239375
+          },
+          "plan": {
+            "calls": 276,
+            "wall_ms": 0.135292
+          },
+          "allocation": {
+            "calls": 276,
+            "wall_ms": 20.743542
+          },
+          "reservation": {
+            "calls": 276,
+            "wall_ms": 1.160042
+          },
+          "copy": {
+            "calls": 550,
+            "wall_ms": 0.395458
+          },
+          "hold_quote": {
+            "calls": 348,
+            "wall_ms": null
+          },
+          "context_quote": {
+            "calls": 282,
+            "wall_ms": null
+          }
+        },
+        "private_holds": {
+          "passes": 16,
+          "blocks": 16,
+          "retained": 41,
+          "staged_rows": 356,
+          "encode_gpu_ms": 100.117999
+        },
+        "returncode": 0,
+        "log_sha256": "37d2fbe98ffb2f365686361878c6299f2d48680122466360d3a03968a6acefe9"
+      },
+      {
+        "case": {
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 8
+        },
+        "arm": "plain",
+        "aggregate_tps": 208.53347716044658,
+        "activity": {
+          "rounds": 3746,
+          "drafted": 502,
+          "accepted": 342
+        },
+        "private_counters": {
+          "step": {
+            "calls": 526,
+            "wall_ms": 19364.36925
+          },
+          "plan": {
+            "calls": 3866,
+            "wall_ms": 2.898708
+          },
+          "allocation": {
+            "calls": 525,
+            "wall_ms": 0.479458
+          },
+          "reservation": {
+            "calls": 0,
+            "wall_ms": 0.0
+          },
+          "copy": {
+            "calls": 3866,
+            "wall_ms": 2.572208
+          },
+          "hold_quote": {
+            "calls": 0,
+            "wall_ms": null
+          },
+          "context_quote": {
+            "calls": 0,
+            "wall_ms": null
+          }
+        },
+        "private_holds": null,
+        "returncode": 0,
+        "log_sha256": "fdd6b563c4bfe490a8a58454fac533e65e299873eccdf2724fa129cb1b916c23"
+      },
+      {
+        "case": {
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 8
+        },
+        "arm": "bf16",
+        "aggregate_tps": 206.50823265077494,
+        "activity": {
+          "rounds": 3759,
+          "drafted": 430,
+          "accepted": 329
+        },
+        "private_counters": {
+          "step": {
+            "calls": 526,
+            "wall_ms": 19551.437625
+          },
+          "plan": {
+            "calls": 3879,
+            "wall_ms": 0.585833
+          },
+          "allocation": {
+            "calls": 526,
+            "wall_ms": 0.533958
+          },
+          "reservation": {
+            "calls": 526,
+            "wall_ms": 8.997958
+          },
+          "copy": {
+            "calls": 7742,
+            "wall_ms": 3.06875
+          },
+          "hold_quote": {
+            "calls": 15959,
+            "wall_ms": null
+          },
+          "context_quote": {
+            "calls": 15550,
+            "wall_ms": null
+          }
+        },
+        "private_holds": {
+          "passes": 0,
+          "blocks": 0,
+          "retained": 0,
+          "staged_rows": 0,
+          "encode_gpu_ms": 0.0
+        },
+        "returncode": 0,
+        "log_sha256": "60c4a25753322881a902235ee738358d6669970dbb9af77e2d77868cceac4d69"
+      }
+    ],
+    "excluded": "codeT1,width8,8-bit arm: actual native memory-pressure warning and critical; no performance conclusion",
+    "time_definition": "Monotonic elapsed host spans, not CPU thread cycles. Spans can overlap GPU waits; quote counters have no measured duration."
+  },
+  "copy_reservation_regression": {
+    "before_base": "0b2e9336e2b77dad06652048a25f283e16100974",
+    "before_command": [
+      "/Users/kletorch/.local/zig-0.17.0/zig",
+      "test",
+      "zig/src/core/lanes/lanes.zig",
+      "--test-filter",
+      "copy reservation: a silent suffix lookup"
+    ],
+    "before_returncode": 1,
+    "before_output": "1/14 lanes.test_0...OK\n2/14 lanes.test_1...OK\n3/14 engine_test.test_0...OK\n4/14 drafted_test.test_0...OK\n5/14 copy_reservation_before_test.test.copy reservation: a silent suffix lookup leaves the funded head for the actual verify...expected 3, found 4\nFAIL (TestExpectedEqual)\n/Users/kletorch/.local/zig-0.17.0/lib/std/testing.zig:93:17: 0x100350eaf in expectEqualInner__func_1085 (test)\n                return error.TestExpectedEqual;\n                ^\n/Users/kletorch/.local/zig-0.17.0/lib/std/testing.zig:57:5: 0x1003527ff in expectEqual (test)\n    return expectEqualInner(T, expected, actual);\n    ^\n/private/tmp/tf-dspark-copy-before-r21/zig/src/core/lanes/copy_reservation_before_test.zig:65:5: 0x1003528af in test.copy reservation: a silent suffix lookup leaves the funded head for the actual verify (test)\n    try t.expectEqual(@as(u32, 3), result.rows);\n    ^\n6/14 recall.test_0...OK\n7/14 recall_store.test_0...OK\n8/14 sampling.test_0...OK\n9/14 plan_lanes.test_0...OK\n10/14 cost_rule.test_0...OK\n11/14 stream.test_0...OK\n12/14 windows.test_0...OK\n13/14 grammar.test_0...OK\n14/14 recall_record.test_0...OK\n13 passed; 0 skipped; 1 failed.\nerror: the following test command failed with exit code 1:\n.zig-cache/o/ebd26e1464c62f3273070bf2013bbfae/test --seed=0x63927998\n",
+    "after_command": [
+      "/Users/kletorch/.local/zig-0.17.0/zig",
+      "test",
+      "zig/src/core/lanes/lanes.zig",
+      "--test-filter",
+      "copy reservation:"
+    ],
+    "after_returncode": 0,
+    "after_output": "1/19 lanes.test_0...OK\n2/19 lanes.test_1...OK\n3/19 engine_test.test_0...OK\n4/19 drafted_test.test_0...OK\n5/19 recall.test_0...OK\n6/19 recall_store.test_0...OK\n7/19 sampling.test_0...OK\n8/19 plan_lanes.test_0...OK\n9/19 cost_rule.test_0...OK\n10/19 stream.test_0...OK\n11/19 windows.test_0...OK\n12/19 grammar.test_0...OK\n13/19 copy_reservation_test.test.copy reservation: a silent suffix lookup leaves the funded head for the actual verify...OK\n14/19 copy_reservation_test.test.copy reservation: an empty decision is consumed once and unreserved asks retain backoff semantics...OK\n15/19 copy_reservation_test.test.copy reservation: shared borrowed tokens and match evidence survive another stream's query...OK\n16/19 copy_reservation_test.test.copy reservation: forced windows and changed history or lifecycle discard the old decision...OK\n17/19 copy_reservation_test.test.copy reservation: owned storage is reused after consuming a window...OK\n18/19 copy_reservation_test.test.copy reservation: Recall keeps its source beside another stream's lookup...OK\n19/19 recall_record.test_0...OK\nAll 19 tests passed.\n"
+  },
+  "initial_enrollment_implementation": {
+    "source_revision": "10091fa267b914933fca8b36cb9ed98fefd94c99",
+    "m4_native_scope": {
+      "scope": "PriceEnrollmentAndReservedCopyM4OriginalGuards;NoServingQualification",
+      "source_revision": "10091fa267b914933fca8b36cb9ed98fefd94c99",
+      "base_revision": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+      "binary_sha256": "6aaf24e4d2d0f5df1d020b4d39f038553145e30073501eb1513709e2e2a8f8de",
+      "cases": [
+        {
+          "bits": 0,
+          "requested_prefix": 9,
+          "reference_equal": 9,
+          "reference_count": 9,
+          "different_pick_max_margin": 0.0,
+          "confidence_max_difference": 0.00085,
+          "prefix_bytes_and_first_pick_invariant": true,
+          "confidence_prefix_invariant": true,
+          "logical_cohorts_8_and_16": true,
+          "log_sha256": "e6cd195119b0129e46dfaa0d8dcb55ce56dcaac948a15197b61a78f830821e8e"
+        },
+        {
+          "bits": 8,
+          "requested_prefix": 9,
+          "reference_equal": 9,
+          "reference_count": 9,
+          "different_pick_max_margin": 0.0,
+          "confidence_max_difference": 0.00152,
+          "prefix_bytes_and_first_pick_invariant": true,
+          "confidence_prefix_invariant": true,
+          "logical_cohorts_8_and_16": true,
+          "log_sha256": "36d80df024bf09a85e6e1c4360e7eb26770d3a7f7781423fd0600816308a51d1"
+        }
+      ],
+      "records": [
+        {
+          "command": [
+            "/Users/kletorch/.local/zig-0.17.0/zig",
+            "build",
+            "native",
+            "test-lfm2",
+            "test-lfm2-dspark",
+            "test-native",
+            "test-qwen27-shared-allocation-host",
+            "test-draft-metal-host",
+            "test-drafter-skip-metal-host",
+            "tf-kernel-contract",
+            "tf-lfm2-dspark",
+            "-Dcpu=apple_m1",
+            "-Dversion=1.2.0",
+            "-j1",
+            "--summary",
+            "all"
+          ],
+          "returncode": 0,
+          "seconds": 314.7053624172695,
+          "log_sha256": "6334be0c33e467121c7c776f3ec3f9f4cf6a3623f670a4c139ce63c884da8685"
+        },
+        {
+          "command": [
+            "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-kernel-contract",
+            "--only",
+            "metal lfm2 block attention"
+          ],
+          "returncode": 0,
+          "seconds": 10.8355533326976,
+          "log_sha256": "a3fb7289e361609b2546c86af302904bcbb98e4e3e2e0ad87c072de22a36d850"
+        },
+        {
+          "command": [
+            "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-kernel-contract",
+            "--only",
+            "metal lfm2 bf16"
+          ],
+          "returncode": 0,
+          "seconds": 66.66115029109642,
+          "log_sha256": "79bf6a4f302fea4345ac40edeedcb9a44f6f2651db81dcfcb4a9e789397926ac"
+        },
+        {
+          "command": [
+            "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-kernel-contract",
+            "--only",
+            "metal lfm2 norm tap"
+          ],
+          "returncode": 0,
+          "seconds": 0.9786705421283841,
+          "log_sha256": "ce0134ce73f5ae23cd41a74a30fa1d3957bf589c07a7a8e1e9f0648b3ffe7d57"
+        },
+        {
+          "command": [
+            "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-lfm2-dspark",
+            "/tmp/tf-dspark-models-r15/target",
+            "/tmp/tf-dspark-models-r15/drafter",
+            "64",
+            "9",
+            "0"
+          ],
+          "returncode": 0,
+          "seconds": 21.516760875005275,
+          "log_sha256": "e6cd195119b0129e46dfaa0d8dcb55ce56dcaac948a15197b61a78f830821e8e"
+        },
+        {
+          "command": [
+            "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-lfm2-dspark",
+            "/tmp/tf-dspark-models-r15/target",
+            "/tmp/tf-dspark-models-r15/drafter",
+            "64",
+            "9",
+            "8"
+          ],
+          "returncode": 0,
+          "seconds": 21.981048083864152,
+          "log_sha256": "36d80df024bf09a85e6e1c4360e7eb26770d3a7f7781423fd0600816308a51d1"
+        }
+      ],
+      "binding": {
+        "driver_sha256": {
+          "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+          "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+          "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+          "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+          "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+          "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+          "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+        },
+        "frozen_driver": "/private/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+        "shared_lock": "/tmp/tensorfold-model.lock",
+        "shared_lock_inode_observed": 68270044,
+        "model_sha256": {
+          "target": {
+            "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+            "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+            "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+            "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+            "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+            "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+            "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+            "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+            "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+          },
+          "drafter": {
+            "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+            "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+          }
+        },
+        "remote_target": "/tmp/tf-dspark-models-r15/target",
+        "remote_drafter": "/tmp/tf-dspark-models-r15/drafter",
+        "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+        "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55"
+      }
+    },
+    "m4_production_serving_smoke": {
+      "binding": {
+        "label": "ACTUAL_SERVING_SMOKE_NOT_QUALIFICATION",
+        "source_revision": "10091fa267b914933fca8b36cb9ed98fefd94c99",
+        "binary_sha256": "5a9477f06c6a0e2605d65348f82d7e6b9d1992eb7dd6f5a3a04ff2bb08dfa61f",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "cases": [
+          {
+            "prompt": "code",
+            "temperature": 0.0,
+            "streams": 1
+          },
+          {
+            "prompt": "code",
+            "temperature": 1.0,
+            "streams": 8
+          }
+        ]
+      },
+      "records": [
+        {
+          "case": {
+            "prompt": "code",
+            "temperature": 0.0,
+            "streams": 1
+          },
+          "arm": "plain",
+          "aggregate_tps": 161.71343452141727,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          },
+          "returncode": 0,
+          "log_sha256": "323a02c5ef14ae45a013e6a2d4b078d4991c6b38488716cc879f7bfd1950dc15"
+        },
+        {
+          "case": {
+            "prompt": "code",
+            "temperature": 0.0,
+            "streams": 1
+          },
+          "arm": "bf16",
+          "aggregate_tps": 154.55611811252757,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          },
+          "returncode": 0,
+          "log_sha256": "78341bd69340e8d161ff5c0ea4363c7d6291ecc8dd52bb8ce9dd9ca7ec911efe"
+        },
+        {
+          "case": {
+            "prompt": "code",
+            "temperature": 0.0,
+            "streams": 1
+          },
+          "arm": "bits8",
+          "aggregate_tps": 166.29477008911672,
+          "activity": {
+            "rounds": 269,
+            "drafted": 315,
+            "accepted": 242
+          },
+          "returncode": 0,
+          "log_sha256": "e938851077803680f0eab7dc086dd29b7b93ab03a49d4e9d28677ac14e1efdbf"
+        },
+        {
+          "case": {
+            "prompt": "code",
+            "temperature": 1.0,
+            "streams": 8
+          },
+          "arm": "plain",
+          "aggregate_tps": 236.39703223502804,
+          "activity": {
+            "rounds": 3739,
+            "drafted": 532,
+            "accepted": 349
+          },
+          "returncode": 0,
+          "log_sha256": "df4abeb53babbe097f9f0ba4907ae0317a4cec291f729a84a6ac01de452d021d"
+        },
+        {
+          "case": {
+            "prompt": "code",
+            "temperature": 1.0,
+            "streams": 8
+          },
+          "arm": "bf16",
+          "aggregate_tps": 230.58465055687066,
+          "activity": {
+            "rounds": 3739,
+            "drafted": 534,
+            "accepted": 349
+          },
+          "returncode": 0,
+          "log_sha256": "47dc908f9c8ec7dfda85958bf580005eb162e45f16dfae1b8710fd614f8f0c31"
+        },
+        {
+          "case": {
+            "prompt": "code",
+            "temperature": 1.0,
+            "streams": 8
+          },
+          "arm": "bits8",
+          "aggregate_tps": 238.40341327357964,
+          "activity": {
+            "rounds": 3749,
+            "drafted": 473,
+            "accepted": 339
+          },
+          "returncode": 0,
+          "log_sha256": "ed0acb7696950bbf66997152c792e721e90f259e4c96d55775c90be40edc134a"
+        }
+      ]
+    },
+    "m5_native_scope": {
+      "scope": "PriceEnrollmentAndReservedCopyM5OriginalGuards;NoServingQualification",
+      "source_revision": "10091fa267b914933fca8b36cb9ed98fefd94c99",
+      "base_revision": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+      "binary_sha256": "855e0581d137e4b2805e585f884ad34915a412932fdc46f6ff42ed33100b51c0",
+      "cases": [
+        {
+          "bits": 0,
+          "requested_prefix": 9,
+          "reference_equal": 9,
+          "reference_count": 9,
+          "different_pick_max_margin": 0.0,
+          "confidence_max_difference": 0.0008,
+          "prefix_bytes_and_first_pick_invariant": true,
+          "confidence_prefix_invariant": true,
+          "logical_cohorts_8_and_16": true,
+          "log_sha256": "f83743542e41a534af123f1b8f6175c4d9634324a763e30816c9c9241b1f97fb"
+        },
+        {
+          "bits": 8,
+          "requested_prefix": 9,
+          "reference_equal": 8,
+          "reference_count": 9,
+          "different_pick_max_margin": 0.075,
+          "confidence_max_difference": 0.00225,
+          "prefix_bytes_and_first_pick_invariant": true,
+          "confidence_prefix_invariant": true,
+          "logical_cohorts_8_and_16": true,
+          "log_sha256": "d57fe80d13314cbca1d3ae96a63df142842765b1cd6337005da2cc0ae183478d"
+        }
+      ],
+      "records": [
+        {
+          "command": [
+            "/Users/kletorch/tf-lfm2-test/r16-source-unit-9348e8306/zig-0.17.0/zig",
+            "build",
+            "native",
+            "test-lfm2",
+            "test-lfm2-dspark",
+            "test-native",
+            "test-qwen27-shared-allocation-host",
+            "test-draft-metal-host",
+            "test-drafter-skip-metal-host",
+            "tf-kernel-contract",
+            "tf-lfm2-dspark",
+            "-Dcpu=apple_m1",
+            "-Dversion=1.2.0",
+            "-j1",
+            "--summary",
+            "all"
+          ],
+          "returncode": 0,
+          "seconds": 146.55693912506104,
+          "log_sha256": "50782370231abb713a1dce4869448df6edd8d983feb185c9e2f96ed11a317ac5"
+        },
+        {
+          "command": [
+            "/Users/kletorch/tf-lfm2-test/r22-enrollment-10091fa26/source/zig-out/bin/tf-kernel-contract",
+            "--only",
+            "metal lfm2 block attention"
+          ],
+          "returncode": 0,
+          "seconds": 10.645932499784976,
+          "log_sha256": "40e9fbc31bb372ad647e6c2227c96ac242bdf83bbd6aa6d7ffe2fffeccf96bc4"
+        },
+        {
+          "command": [
+            "/Users/kletorch/tf-lfm2-test/r22-enrollment-10091fa26/source/zig-out/bin/tf-kernel-contract",
+            "--only",
+            "metal lfm2 bf16"
+          ],
+          "returncode": 0,
+          "seconds": 99.22481195861474,
+          "log_sha256": "e821dce32a0adf9ae1929908030815daf6473c77ca55c2c118ba6d498e6f8254"
+        },
+        {
+          "command": [
+            "/Users/kletorch/tf-lfm2-test/r22-enrollment-10091fa26/source/zig-out/bin/tf-kernel-contract",
+            "--only",
+            "metal lfm2 norm tap"
+          ],
+          "returncode": 0,
+          "seconds": 0.5109889591112733,
+          "log_sha256": "6e3bc804c9ec379fc16cf7deb4a0967de9ffc9c3c53b97ec3ff2dc70d564023f"
+        },
+        {
+          "command": [
+            "/Users/kletorch/tf-lfm2-test/r22-enrollment-10091fa26/source/zig-out/bin/tf-lfm2-dspark",
+            "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+            "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+            "64",
+            "9",
+            "0"
+          ],
+          "returncode": 0,
+          "seconds": 6.23842491582036,
+          "log_sha256": "f83743542e41a534af123f1b8f6175c4d9634324a763e30816c9c9241b1f97fb"
+        },
+        {
+          "command": [
+            "/Users/kletorch/tf-lfm2-test/r22-enrollment-10091fa26/source/zig-out/bin/tf-lfm2-dspark",
+            "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+            "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+            "64",
+            "9",
+            "8"
+          ],
+          "returncode": 0,
+          "seconds": 6.121161208022386,
+          "log_sha256": "d57fe80d13314cbca1d3ae96a63df142842765b1cd6337005da2cc0ae183478d"
+        }
+      ],
+      "binding": {
+        "driver_sha256": {
+          "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+          "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+          "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+          "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+          "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+          "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+          "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+        },
+        "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+        "shared_lock": "/tmp/tensorfold-model.lock",
+        "shared_lock_inode_observed": 3719605,
+        "model_sha256": {
+          "target": {
+            "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+            "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+            "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+            "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+            "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+            "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+            "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+            "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+            "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+          },
+          "drafter": {
+            "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+            "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+          }
+        },
+        "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+        "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+        "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+        "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+        "source_archive_sha256": "645d7e01ca2b5fd2793d15814dbed079b2625eb21e10bdb957f572fc53f6fb1c"
+      }
+    },
+    "m5_stateful_functional": {
+      "0": {
+        "source_revision": "10091fa267b914933fca8b36cb9ed98fefd94c99",
+        "resume_equal": true,
+        "sampled_widths": [
+          1,
+          4,
+          8,
+          16
+        ],
+        "stress": [
+          {
+            "slots": 6,
+            "seconds": 60,
+            "completed": 456,
+            "cancelled": 250,
+            "wrong": 0,
+            "errors": []
+          },
+          {
+            "slots": 16,
+            "seconds": 90,
+            "completed": 941,
+            "cancelled": 508,
+            "wrong": 0,
+            "errors": []
+          }
+        ]
+      },
+      "8": {
+        "source_revision": "10091fa267b914933fca8b36cb9ed98fefd94c99",
+        "resume_equal": true,
+        "sampled_widths": [
+          1,
+          4,
+          8,
+          16
+        ],
+        "stress": [
+          {
+            "slots": 6,
+            "seconds": 60,
+            "completed": 458,
+            "cancelled": 250,
+            "wrong": 0,
+            "errors": []
+          },
+          {
+            "slots": 16,
+            "seconds": 90,
+            "completed": 930,
+            "cancelled": 503,
+            "wrong": 0,
+            "errors": []
+          }
+        ]
+      }
+    },
+    "scope_note": "The later sparse-native-calibration correction is proved separately below; these results remain bound to10091fa26, not relabelled as the later source."
+  },
+  "sparse_native_calibration_regression": {
+    "base_source": "10091fa267b914933fca8b36cb9ed98fefd94c99",
+    "command": [
+      "/Users/kletorch/.local/zig-0.17.0/zig",
+      "test",
+      "-lc",
+      "--dep",
+      "lanes",
+      "-Mroot=zig/src/families/lfm2_moe/dspark_admission.zig",
+      "-Mlanes=zig/src/core/lanes/lanes.zig",
+      "--test-filter",
+      "lfm2 dspark: admission sparse"
+    ],
+    "before": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "1/1 dspark_admission.test.lfm2 dspark: admission sparse native target calibration does not turn unpriced depths into free enrollment...FAIL (TestUnexpectedResult)\n/Users/kletorch/.local/zig-0.17.0/lib/std/testing.zig:584:14: 0x102dc0dc7 in expect (root)\n    if (!ok) return error.TestUnexpectedResult;\n             ^\n/private/tmp/tf-dspark-consolidated-r19/zig/src/families/lfm2_moe/dspark_admission.zig:201:5: 0x102dc10ef in test.lfm2 dspark: admission sparse native target calibration does not turn unpriced depths into free enrollment (root)\n    try std.testing.expect(!recent.enroll(prices, &recent.rates));\n    ^\n0 passed; 0 skipped; 1 failed.\nerror: the following test command failed with exit code 1:\n.zig-cache/o/ccf49b225be82cf2ee5e4c7dda8ea0ed/root --seed=0xa3845e90\n"
+    },
+    "after": {
+      "returncode": 0,
+      "stdout": "",
+      "stderr": "1/1 dspark_admission.test.lfm2 dspark: admission sparse native target calibration does not turn unpriced depths into free enrollment...OK\nAll 1 tests passed.\n"
+    },
+    "cause": "Native lone family_costs is deliberately sparse. An unsupported retained-prefix row previously returned unknown for the entire admission quote, so the diagnostic fallback enrolled every lone request. Skip unsupported candidates, as the existing depth rule does; retain unknown only if no candidate has a valid complete price."
+  },
+  "decision": "Request-stable neural-context enrollment is separate from cheap copies. Retain context/recovery only for enrolled requests. Reuse the existing sparse lone target table semantics: unpriced candidate widths cannot invalidate other complete prices. No new kernel, target dtype, stream cutoff, benchmark change, or speed waiver.",
+  "legacy_capability_regression": {
+    "base_source": "10091fa267b914933fca8b36cb9ed98fefd94c99",
+    "command": [
+      "/Users/kletorch/.local/zig-0.17.0/zig",
+      "test",
+      "zig/src/core/lanes/lanes.zig",
+      "-lc",
+      "--test-filter",
+      "head enrollment: legacy providers"
+    ],
+    "before": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "1/14 lanes.test_0...OK\n2/14 lanes.test_1...OK\n3/14 engine_test.test_0...OK\n4/14 drafted_test.test_0...OK\n5/14 recall.test_0...OK\n6/14 recall_store.test_0...OK\n7/14 sampling.test_0...OK\n8/14 plan_lanes.test_0...OK\n9/14 cost_rule.test_0...OK\n10/14 stream.test_0...OK\n11/14 windows.test_0...OK\n12/14 grammar.test_0...OK\n13/14 head_enrollment_test.test.head enrollment: legacy providers retain feature-prefill capabilities when a request disables drafts...FAIL (FeatureStreamRequired)\n/private/tmp/tf-dspark-consolidated-r19/zig/src/core/lanes/head_enrollment_test.zig:552:13: 0x10079f317 in prefill (test)\n            return error.FeatureStreamRequired;\n            ^\n/private/tmp/tf-dspark-consolidated-r19/zig/src/core/lanes/backend.zig:174:9: 0x1006cf14f in prefill (test)\n        return b.vtable.prefill(b.ptr, s);\n        ^\n/private/tmp/tf-dspark-consolidated-r19/zig/src/core/lanes/drafted.zig:202:9: 0x1007a151b in prefill (test)\n        try x.target.prefill(s);\n        ^\n/private/tmp/tf-dspark-consolidated-r19/zig/src/core/lanes/backend.zig:174:9: 0x1006cf14f in prefill (test)\n        return b.vtable.prefill(b.ptr, s);\n        ^\n/private/tmp/tf-dspark-consolidated-r19/zig/src/core/lanes/open.zig:31:9: 0x1006d7b9f in addNoted (test)\n        return err;\n        ^\n/private/tmp/tf-dspark-consolidated-r19/zig/src/core/lanes/open.zig:22:5: 0x1006d7cbf in addCommitted (test)\n    return addNoted(e, s, hook, null);\n    ^\n/private/tmp/tf-dspark-consolidated-r19/zig/src/core/lanes/open.zig:18:5: 0x1006d7d1b in add (test)\n    return addCommitted(e, s, null);\n    ^\n/private/tmp/tf-dspark-consolidated-r19/zig/src/core/lanes/head_enrollment_test.zig:579:9: 0x100707aef in test.head enrollment: legacy providers retain feature-prefill capabilities when a request disables drafts (test)\n        try engine.addStream(&s);\n        ^\n14/14 recall_record.test_0...OK\n13 passed; 0 skipped; 1 failed.\nerror: the following test command failed with exit code 1:\n.zig-cache/o/7ec3a466ceae50824cc503097d2eded4/test --seed=0xe1ca93a8\n"
+    },
+    "after": {
+      "returncode": 0,
+      "stdout": "",
+      "stderr": "1/14 lanes.test_0...OK\n2/14 lanes.test_1...OK\n3/14 engine_test.test_0...OK\n4/14 drafted_test.test_0...OK\n5/14 recall.test_0...OK\n6/14 recall_store.test_0...OK\n7/14 sampling.test_0...OK\n8/14 plan_lanes.test_0...OK\n9/14 cost_rule.test_0...OK\n10/14 stream.test_0...OK\n11/14 windows.test_0...OK\n12/14 grammar.test_0...OK\n13/14 head_enrollment_test.test.head enrollment: legacy providers retain feature-prefill capabilities when a request disables drafts...OK\n14/14 recall_record.test_0...OK\nAll 14 tests passed.\n"
+    },
+    "cause": "Request-level context stand-aside is opt-in through Drafter.VTable.enroll. Without it, preserve legacy feature-prefill and cost-receipt lifecycle even for requests disabling proposal tokens; do not change Gemma/Minimax/CUDA providers implicitly."
+  }
+}

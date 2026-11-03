@@ -171,7 +171,7 @@ test "lfm2 dspark: admission missing and invalid prices preserve tracked diagnos
     prices.contexts = &.{};
     try std.testing.expect(admission.quote(prices, &recent.rates) == null);
     try std.testing.expect(recent.enroll(prices, &recent.rates));
-    for ([_]?f64{ null, 0, -1, std.math.inf(f64), std.math.nan(f64) }) |bad| {
+    for ([_]f64{ 0, -1, std.math.inf(f64), std.math.nan(f64) }) |bad| {
         slots[2] = bad;
         try std.testing.expect(admission.quote(good, &recent.rates) == null);
         try std.testing.expect(recent.enroll(good, &recent.rates));

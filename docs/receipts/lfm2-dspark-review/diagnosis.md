@@ -6,7 +6,54 @@ capacity fix passed actual M4/M5 checks. Simply enabling the existing target ten
 the private dispatch-only experiment failed 50 of 72 unchanged target forward/cache checks.
 Neither the corrected model input nor a component timing establishes the full MLX-LM gap.
 
-Working report. This is a causal diagnosis, not a claim of release or performance qualification.
+Historical causal findings below retain their original source bindings. This is not a release or performance-qualification claim.
+
+## Request-enrollment and copy-backoff findings
+
+The [complete `750bca95c` qualification](https://github.com/BlivionIaG/TensorFold/blob/0cece53cc7be9fa67c9c792945ae3b2f17fbc6bf/docs/receipts/lfm2-dspark-review/750bca95c/README.md)
+is exact on both devices but fails the maintainer's unchanged every-cell-at-least-plain gate.
+Losses below 1% are still losses under that gate. Later component or smoke results do not replace this snapshot.
+The following evidence and commands are recorded in [enrollment-diagnosis.json](enrollment-diagnosis.json).
+
+- **Zero holds was not a bare-target route.** A private M4 probe based on `0b2e9336e` observed no neural
+  holds for sampled code at eight streams, while the loaded wrapper still performed reservation and
+  captured-context work. Reservation took 8.998 ms out of 19,551.438 ms of step wall time, about 0.046%.
+  These are elapsed host spans, potentially including GPU waits, not CPU thread cycles. The quote counter
+  has no duration measurement. Optimizing quote lookups alone cannot explain the percent-scale loss in this probe.
+  Five diagnostic arms completed; the sixth hit real memory pressure and was excluded, without an override.
+- **Copy lookup changed the decision after funding.** Asking the suffix proposer once for a reservation
+  and again before any commit advanced its silence/backoff twice. The consumer regression reproduced four
+  verify rows where the funded head required three. Reservations now own their decision, including empty
+  results and borrowed source metadata, until consumed or invalidated by a real state change.
+- **Neural context now has an explicit request-level route.** Enrollment prices full nine-query physical
+  blocks, legal retained prefixes and conservative context debt against target rows. A declined request
+  keeps cheap copies without a neural lane or taps. An enrolled zero-funded request retains its context
+  and existing in-request recovery. Recent head-only rates are model/precision-local and greedy/sample-separated;
+  they seed only fresh conditional rates, never another request's grants, confidence or probe state.
+- **Native lone calibration is sparse.** The initial enrollment implementation treated one unsupported
+  retained-prefix width as an unknown whole calibration and fell back to tracking the request. A regression
+  through the real `Config.init` reproduced this unwanted enrollment. Like the existing depth rule, admission
+  now skips unpriced candidates while retaining other complete prices; an entirely unpriced candidate set
+  remains unknown. A separate before/after consumer regression preserves legacy feature-prefill capabilities:
+  context stand-aside is opt-in, not an implicit change to Gemma, Minimax or CUDA providers.
+
+At implementation snapshot `10091fa26`, the original M4 numerical/resource guards passed, followed by
+27 measured 512-token HTTP requests across plain, BF16-weight and 8-bit-weight arms, all exact with clean exits.
+The same source passed the original M5 cache-resume/fresh comparison and sampled equality at 1/4/8/16 streams,
+plus the original cancellation workloads:
+
+| Drafter weights | Concurrent streams | Stress duration (s) | Completed | Cancelled | Wrong replies | Errors |
+|---|---:|---:|---:|---:|---:|---:|
+| BF16 | 6 | 60 | 456 | 250 | 0 | 0 |
+| BF16 | 16 | 90 | 941 | 508 | 0 | 0 |
+| 8-bit | 6 | 60 | 458 | 250 | 0 | 0 |
+| 8-bit | 16 | 90 | 930 | 503 | 0 | 0 |
+
+These results remain bound to that snapshot, before the sparse-calibration and legacy-capability corrections.
+They prove exercised behavior, not zero regression on the final source. The native FP32 comparison also remains
+a reported numerical diagnostic, not proof that every 8-bit pick equals FP32. Current full performance receipts
+are linked from #1394; neither these counts nor the private probe establish the MLX-LM gap or GPU occupancy.
+
 
 ## What is actually wrong
 

@@ -1,5 +1,13 @@
 # DSpark review receipts
 
+**Sole landing PR: [#1394](https://github.com/ashhart/TensorFold/pull/1394).** #1391–#1393 are closed as
+superseded, with their history retained. The [complete two-device `750bca95c` snapshot](https://github.com/BlivionIaG/TensorFold/blob/0cece53cc7be9fa67c9c792945ae3b2f17fbc6bf/docs/receipts/lfm2-dspark-review/750bca95c/README.md)
+contains every original performance cell and its failing zero-tolerance verdict; it is not a result for later fixes.
+[Request-enrollment diagnosis](diagnosis.md#request-enrollment-and-copy-backoff-findings) and its
+[source-bound data](enrollment-diagnosis.json) cover the subsequent causal work and correctness checks.
+The component receipts below remain historical, each with its original source and device scope.
+
+
 ## Shared-reservation performance candidate `62bd342d3`
 
 Requested main `cb036e00f` and the separately verified PR 1381 composition (`8fcaca5f5`) are integrated.

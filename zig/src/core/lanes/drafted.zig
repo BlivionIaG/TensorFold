@@ -174,10 +174,14 @@ pub const Drafted = struct {
     fn enroll(x: *Drafted, s: *Stream) !void {
         if (x.lanes.contains(s)) return;
         try x.lanes.ensureUnusedCapacity(x.gpa, 1);
-        s.head_context = s.drafts and x.drafter.enroll(s, .{ .streams = x.lanes.count() + 1, .heads = x.heads + 1 });
-        if (!s.head_context.?) s.head_prior = &.{};
+        // Only providers offering enrollment may skip context; legacy feature-prefill stays intact.
+        s.head_context = if (x.drafter.vtable.enroll != null)
+            s.drafts and x.drafter.enroll(s, .{ .streams = x.lanes.count() + 1, .heads = x.heads + 1 })
+        else
+            null;
+        if (s.head_context == false) s.head_prior = &.{};
         x.lanes.putAssumeCapacity(s, .{});
-        x.heads += @intFromBool(s.head_context.?);
+        x.heads += @intFromBool(s.head_context != false);
     }
 
     fn observeHead(ptr: *anyopaque, s: *Stream, proposed: u32, accepted: u32) void {
@@ -194,13 +198,13 @@ pub const Drafted = struct {
         const x = self(ptr);
         try x.enroll(s);
         errdefer x.dropStream(s);
-        if (s.headDrafts()) if (x.target.vtable.prefill_features) |streamed| { // chunk by chunk: no whole prompt's taps held
+        if (s.head_context != false) if (x.target.vtable.prefill_features) |streamed| { // chunk by chunk: no whole prompt's taps held
             try x.drafter.open(s);
             x.lanes.getPtr(s).?.opened = true;
             return streamed(x.target.ptr, s, x.drafter.taps(), .{ .ptr = x, .take = take });
         };
         try x.target.prefill(s);
-        if (!s.headDrafts()) return;
+        if (s.head_context == false) return;
         try x.drafter.open(s);
         x.lanes.getPtr(s).?.opened = true;
         const ids = s.prompt();
@@ -217,7 +221,7 @@ pub const Drafted = struct {
         const step = x.target.vtable.prefill_step.?;
         try x.enroll(s);
         errdefer x.dropStream(s);
-        if (!s.headDrafts()) return step(x.target.ptr, s, max_rows);
+        if (s.head_context == false) return step(x.target.ptr, s, max_rows);
         const done = try step(x.target.ptr, s, max_rows);
         if (!x.lanes.getPtr(s).?.opened) { // the target's lane is open now: the drafter can find its rows
             try x.drafter.open(s);
@@ -408,7 +412,7 @@ pub const Drafted = struct {
 
     fn dropStream(x: *Drafted, s: *Stream) void {
         if (x.lanes.fetchRemove(s)) |entry| {
-            x.heads -= @intFromBool(s.head_context == true);
+            x.heads -= @intFromBool(s.head_context != false);
             if (entry.value.opened) x.drafter.release(s);
             s.head_context = null;
             s.head_prior = &.{};
