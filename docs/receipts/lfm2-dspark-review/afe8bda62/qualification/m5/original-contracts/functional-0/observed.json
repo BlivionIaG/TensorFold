@@ -1,0 +1,12 @@
+{
+  "label": "ORIGINAL_CACHE_CANCEL_SAMPLE_FUNCTIONAL_ONLY",
+  "source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "bits": 0,
+  "activation_dtype": "BF16",
+  "native_binary_sha256": "21a7ddd36deae47cbc484ecb2018f010907fb4be16803cacab2318aa91f31c22",
+  "removed_environment": [
+    "TENSORFOLD_BENCHMARK_TOKEN"
+  ],
+  "complete": true,
+  "elapsed_s": 193.00480454228818
+}

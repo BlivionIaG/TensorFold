@@ -1,0 +1,149 @@
+{
+  "scope": "ServingCalibrationM5OriginalGuards;NoServingQualification",
+  "source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "base_revision": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+  "binary_sha256": "4c7d33800be8ae57693ab0b498bdaec815b6d95a78b2d68d050bcbd7e68b25e6",
+  "cases": [
+    {
+      "bits": 0,
+      "requested_prefix": 9,
+      "reference_equal": 9,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.0,
+      "confidence_max_difference": 0.0008,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "bfbe2ec399c76d0b0d33ca8d43bb6ec899a3f7980f5abf142f87b32f45178f6f"
+    },
+    {
+      "bits": 8,
+      "requested_prefix": 9,
+      "reference_equal": 8,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.075,
+      "confidence_max_difference": 0.00225,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "4abde4aa6d64912a09bc920c146353821a03696bdbdbdd8bc3501b8b1bf42a0a"
+    }
+  ],
+  "records": [
+    {
+      "command": [
+        "/Users/kletorch/tf-lfm2-test/r16-source-unit-9348e8306/zig-0.17.0/zig",
+        "build",
+        "native",
+        "test-lfm2",
+        "test-lfm2-dspark",
+        "test-native",
+        "test-qwen27-shared-allocation-host",
+        "test-draft-metal-host",
+        "test-drafter-skip-metal-host",
+        "tf-kernel-contract",
+        "tf-lfm2-dspark",
+        "-Dcpu=apple_m1",
+        "-Dversion=1.2.0",
+        "-j1",
+        "--summary",
+        "all"
+      ],
+      "returncode": 0,
+      "seconds": 254.16070062480867,
+      "log_sha256": "f9c9bfdea096eaa457e9037c13a84f469a1e7c550550cceae8c24fdb92fd199d"
+    },
+    {
+      "command": [
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/source/zig-out/bin/tf-kernel-contract",
+        "--only",
+        "metal lfm2 block attention"
+      ],
+      "returncode": 0,
+      "seconds": 10.45609225006774,
+      "log_sha256": "26e82fdb709db34703664c36f7900cefed837b62dee3de82b12f2ea1c2c6a400"
+    },
+    {
+      "command": [
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/source/zig-out/bin/tf-kernel-contract",
+        "--only",
+        "metal lfm2 bf16"
+      ],
+      "returncode": 0,
+      "seconds": 99.215792958159,
+      "log_sha256": "d252fbe4be2f5e5cda7f8ebcee4803e66f0c29c0c1f985d854be9f6e006100cc"
+    },
+    {
+      "command": [
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/source/zig-out/bin/tf-kernel-contract",
+        "--only",
+        "metal lfm2 norm tap"
+      ],
+      "returncode": 0,
+      "seconds": 0.5107799167744815,
+      "log_sha256": "9fee51234b2a2963ac960a602f7953cc067511520a29af8a4b941eb732c8942d"
+    },
+    {
+      "command": [
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/source/zig-out/bin/tf-lfm2-dspark",
+        "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+        "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+        "64",
+        "9",
+        "0"
+      ],
+      "returncode": 0,
+      "seconds": 6.308398416731507,
+      "log_sha256": "bfbe2ec399c76d0b0d33ca8d43bb6ec899a3f7980f5abf142f87b32f45178f6f"
+    },
+    {
+      "command": [
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/source/zig-out/bin/tf-lfm2-dspark",
+        "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+        "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+        "64",
+        "9",
+        "8"
+      ],
+      "returncode": 0,
+      "seconds": 6.154799290932715,
+      "log_sha256": "4abde4aa6d64912a09bc920c146353821a03696bdbdbdd8bc3501b8b1bf42a0a"
+    }
+  ],
+  "binding": {
+    "driver_sha256": {
+      "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+      "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+      "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+      "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+      "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+      "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+      "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+    },
+    "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+    "shared_lock": "/tmp/tensorfold-model.lock",
+    "shared_lock_inode_observed": 3719605,
+    "model_sha256": {
+      "target": {
+        "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+        "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+        "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+        "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+        "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+        "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+        "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+        "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+        "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+      },
+      "drafter": {
+        "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+        "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+      }
+    },
+    "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+    "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+    "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+    "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+    "source_archive_sha256": "e76f35347e9d57d27b04e7aa8665cb326bccf4b817e7f93767bd9f980427fb0e"
+  }
+}

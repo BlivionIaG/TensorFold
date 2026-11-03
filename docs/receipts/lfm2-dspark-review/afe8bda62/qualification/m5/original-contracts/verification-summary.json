@@ -1,0 +1,61 @@
+{
+  "source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "records": [
+    {
+      "label": "original-guards",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/guards/run-guards.py"
+      ],
+      "returncode": 0,
+      "elapsed_s": 381.5919764591381,
+      "log_sha256": "9621a10841cdc489903062870e29f332e2415c2f9d550df33e99aac37cf38230"
+    },
+    {
+      "label": "functional-0",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/guards/run-functional.py",
+        "--root",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/source",
+        "--binding",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/guards/binding.json",
+        "--output",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/guards/functional-0",
+        "--bits",
+        "0"
+      ],
+      "returncode": 0,
+      "elapsed_s": 193.0997508331202,
+      "log_sha256": "8512945b9b7d36b1f33984c57ca8645d21d85164fb6e6713df762491eb1f0525"
+    },
+    {
+      "label": "functional-8",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/guards/run-functional.py",
+        "--root",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/source",
+        "--binding",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/guards/binding.json",
+        "--output",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/guards/functional-8",
+        "--bits",
+        "8"
+      ],
+      "returncode": 0,
+      "elapsed_s": 191.66136079095304,
+      "log_sha256": "0ded491cd14a89e26be7edd4a18d07552e477650520d136d9fc7d5135d918975"
+    },
+    {
+      "label": "full-matrix",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r32-final-afe8bda62/full/run.py"
+      ],
+      "returncode": 3,
+      "elapsed_s": 2015.8746495000087,
+      "log_sha256": "b7d20d9eb0fc45f36ba03a7941c8c5d6471b98a2702450d57ca960af1eaf1984"
+    }
+  ]
+}

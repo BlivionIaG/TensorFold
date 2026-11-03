@@ -1,5 +1,14 @@
 # DSpark review receipts
 
+## Current pushed source `afe8bda62`: complete M5 qualification, M4 pending
+
+[All 32 M5 comparisons, complete raw evidence and frozen-verdict replay](afe8bda62/qualification/README.md).
+M5 completes 144/144 cells and 306/306 oracles exactly, nine clean exits. Strict performance fails
+12/32 comparisons, worst -0.2686253027662344%; all32 meet the owner's less-than-1% regression
+criterion, which does not waive the maintainer's zero-tolerance gate. No rerun or pooling.
+The same-head M4 workflow is still running at this packet's first publication. Historical two-device
+CF results below retain their original source; they are not a combined AFE qualification.
+
 ## Retained calibration correction: runtime `79837c4e2`, published `afe8bda62`
 
 [Corrected-source report, original raw contracts and exact allocator replay](79837c4e2/serving-calibration/README.md).
