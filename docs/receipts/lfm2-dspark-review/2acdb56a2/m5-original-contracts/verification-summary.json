@@ -1,0 +1,51 @@
+{
+  "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+  "records": [
+    {
+      "label": "original-guards",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r29-cohort-2acdb56a2/guards/run-guards.py"
+      ],
+      "returncode": 0,
+      "elapsed_s": 372.3591876672581,
+      "log_sha256": "a9c92e37ae1ff91c9d1ea7a622fb7d0cc7083c39df83f17649716151ae7bdec6"
+    },
+    {
+      "label": "functional-0",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r29-cohort-2acdb56a2/guards/run-functional.py",
+        "--root",
+        "/Users/kletorch/tf-lfm2-test/r29-cohort-2acdb56a2/source",
+        "--binding",
+        "/Users/kletorch/tf-lfm2-test/r29-cohort-2acdb56a2/guards/binding.json",
+        "--output",
+        "/Users/kletorch/tf-lfm2-test/r29-cohort-2acdb56a2/guards/functional-0",
+        "--bits",
+        "0"
+      ],
+      "returncode": 0,
+      "elapsed_s": 193.46864054212347,
+      "log_sha256": "e244cf6e765f98d6dfa4362d4e4d49cad3432394413b56e95538d133cb17fb1a"
+    },
+    {
+      "label": "functional-8",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r29-cohort-2acdb56a2/guards/run-functional.py",
+        "--root",
+        "/Users/kletorch/tf-lfm2-test/r29-cohort-2acdb56a2/source",
+        "--binding",
+        "/Users/kletorch/tf-lfm2-test/r29-cohort-2acdb56a2/guards/binding.json",
+        "--output",
+        "/Users/kletorch/tf-lfm2-test/r29-cohort-2acdb56a2/guards/functional-8",
+        "--bits",
+        "8"
+      ],
+      "returncode": 0,
+      "elapsed_s": 191.76585025014356,
+      "log_sha256": "e04cc1c8fd4d855043940ca0bcd7a7e672c97b78cec56aa5bf89660a3f3ec511"
+    }
+  ]
+}

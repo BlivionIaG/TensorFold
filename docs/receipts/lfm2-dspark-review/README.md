@@ -1,6 +1,16 @@
 # DSpark review receipts
 
-## Shared-reservation performance candidate `62bd342d3`
+## Latest pushed source `2acdb56a2`: M5 original correctness contracts
+
+[Exact-source M5 report and 17-file raw packet](2acdb56a2/m5-original-contracts/README.md):
+82/82 steps, 767/771 tests passed with four skips; original cache, sampled and cancellation
+workflows pass in both weight modes. Activations remain BF16; FP32-reference picks are BF16
+9/9 and 8-bit 8/9, not relabelled as universal equality. All four functional servers exit 0 cleanly.
+This evidence-only publication does not change production head or establish performance readiness.
+The [complete CF matrices](cf2376236/qualification/README.md) still fail 12/32 M4 and 16/32 M5
+comparisons. Their original source labels and zero-tolerance verdicts remain unchanged.
+
+## Historical shared-reservation performance candidate `62bd342d3`
 
 Requested main `cb036e00f` and the separately verified PR 1381 composition (`8fcaca5f5`) are integrated.
 This candidate carries residuals directly in immutable captured tap columns and retains bounded owned
