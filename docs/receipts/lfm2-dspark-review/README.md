@@ -1,5 +1,15 @@
 # DSpark review receipts
 
+## Diagnosis at `2acdb56a2`: copy pricing and actual GPU operator work
+
+[Causal report, exact allocator replay and calibrated GPU classes](2acdb56a2/copy-gpu-attribution/README.md).
+Identical four-stream copy offers select three drafts per stream under plain startup prices and six
+under BF16 prices; swapping only the curve reproduces the decision in the real allocator, with no neural
+contexts active. Both devices' operator captures identify expert projections as the largest wide-batch
+GPU work. All 138 original counter-off/on phases per device retain identical generated tokens.
+The profiler is intrusive, invalid command-buffer stopwatch values are excluded, and this is not a
+performance qualification, occupancy measurement or MLX comparison. The complete CF failures remain.
+
 ## Latest pushed source `2acdb56a2`: M5 original correctness contracts
 
 [Exact-source M5 report and 17-file raw packet](2acdb56a2/m5-original-contracts/README.md):

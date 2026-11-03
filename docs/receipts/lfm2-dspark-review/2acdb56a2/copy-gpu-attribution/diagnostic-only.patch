@@ -1,0 +1,1189 @@
+diff --git a/zig/src/core/gpu_profile.zig b/zig/src/core/gpu_profile.zig
+index af1e020e3..cefc888e3 100644
+--- a/zig/src/core/gpu_profile.zig
++++ b/zig/src/core/gpu_profile.zig
+@@ -1,7 +1,7 @@
+ //! Diagnostic class timings split command buffers, wait for each span and keep ordinary encoders when disabled.
+ const std = @import("std");
+ const mtl = @import("metal");
+-pub const Class = enum { dense, norm, xsum, embedding, copy, activation, gdn_prepare, gdn_scan, gdn_gate, state_publish, attention_prepare, attention, drafter };
++pub const Class = enum { dense, norm, xsum, embedding, copy, activation, gdn_prepare, gdn_scan, gdn_gate, state_publish, attention_prepare, attention, drafter, attention_projection, convolution_projection, convolution, dense_ffn, expert_route, expert_gate_up, expert_down, expert_combine_norm, final_norm, final_combine_norm, vocab_head, argmax };
+ pub const Shape = struct { n: usize = 0, k: usize = 0, sk: usize = 0, bits: u8 = 0, calls: u64 = 0, gpu_seconds: f64 = 0 };
+ /// The rounds between reports that TF_Q27_PROFILE=1 asks for.
+ pub const default_every: u64 = 64;
+diff --git a/zig/src/core/lanes/depth.zig b/zig/src/core/lanes/depth.zig
+index 93414d849..26db88caa 100644
+--- a/zig/src/core/lanes/depth.zig
++++ b/zig/src/core/lanes/depth.zig
+@@ -1,5 +1,6 @@
+ //! Draft depth by expected tokens a millisecond (Python family_depth.py DraftDepth and FamilyRounds._head_depth).
+ const std = @import("std");
++const diagnostic = @import("dspark_probe_private.zig");
+ const Allocator = std.mem.Allocator;
+ const Table = @import("table.zig").Table;
+ const alloc = @import("allocate.zig");
+@@ -413,6 +414,11 @@ pub const Rule = struct {
+         return if (r.k.hold_costs.len > 0) 0.0 else 8.0;
+     }
+ 
++    /// PRIVATE diagnostic: expose exactly the observation selected by the existing rule.
++    pub fn privateOverhead(r: *const Rule, streams: usize, sampled: bool) ?Overhead {
++        return r.nearest(streams, sampled);
++    }
++
+     fn nearest(r: *const Rule, streams: usize, sampled: bool) ?Overhead {
+         const list = if (sampled) r.overhead.items else r.greedy_overhead.items;
+         if (list.len == 0) return null;
+@@ -433,11 +439,15 @@ pub const Rule = struct {
+ 
+     /// ms is net of draws/model-only steps; head_ms is actual encoding + settled GPU, or modeled head work.
+     pub fn observeOverhead(r: *Rule, streams: u32, rows: u64, ms: f64, sampled: bool, head_ms: f64) !void {
+-        const forward = r.shared_costs.get(@intCast(rows)) orelse return;
++        const forward = r.shared_costs.get(@intCast(rows)) orelse {
++            diagnostic.observedCopyOverhead(streams, rows, ms, sampled, head_ms, null, null, null);
++            return;
++        };
+         const extra = if (ms - forward > 0.0) ms - forward else 0.0;
+         const fixed = if (extra - head_ms > 0.0) extra - head_ms else 0.0;
+         try r.addOverhead(&r.overhead, streams, fixed, extra - fixed);
+         if (!sampled) try r.addOverhead(&r.greedy_overhead, streams, fixed, extra - fixed);
++        diagnostic.observedCopyOverhead(streams, rows, ms, sampled, head_ms, forward, extra, fixed);
+     }
+ 
+     fn addOverhead(r: *Rule, list: *std.ArrayList(Overhead), streams: u32, fixed: f64, head: f64) !void {
+diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
+index 28ab1c698..40f07499d 100644
+--- a/zig/src/core/lanes/engine.zig
++++ b/zig/src/core/lanes/engine.zig
+@@ -1,5 +1,6 @@
+ //! The lane round loop (Python FamilyRounds and SharedRounds): every decision and cost update in Python's order.
+ const std = @import("std");
++const diagnostic = @import("dspark_probe_private.zig");
+ const Allocator = std.mem.Allocator;
+ const Config = @import("config.zig").Config;
+ const depth = @import("depth.zig");
+@@ -56,6 +57,7 @@ pub const Engine = struct {
+     unread: std.ArrayList(Unread) = .empty, // queued draws the log reads at the step's end
+ 
+     pub fn init(gpa: Allocator, cfg: *const Config, backend: be.Backend, clock: be.Clock) Engine {
++        diagnostic.reset();
+         return .{
+             .gpa = gpa,
+             .cfg = cfg,
+@@ -82,6 +84,7 @@ pub const Engine = struct {
+     }
+ 
+     pub fn deinit(e: *Engine) void {
++        diagnostic.report();
+         e.grammar_workers.deinit(e.gpa);
+         e.live.deinit(e.gpa);
+         e.unread.deinit(e.gpa);
+@@ -117,6 +120,12 @@ pub const Engine = struct {
+ 
+     /// One round for every live stream (Python `_family_step`).
+     pub fn step(e: *Engine) !void {
++        const diagnostic_start = diagnostic.now();
++        const diagnostic_active = e.activeCount() != 0;
++        defer {
++            diagnostic.span(.step, diagnostic_start);
++            if (diagnostic_active and e.activeCount() == 0) diagnostic.snapshot();
++        }
+         _ = e.arena.reset(.retain_capacity);
+         const a = e.arena.allocator();
+         try trail.event(e, &.{ f("ev", str("step")), f("index", int(e.steps)) });
+diff --git a/zig/src/core/lanes/hold_price.zig b/zig/src/core/lanes/hold_price.zig
+index 91d97e203..ecc9b999d 100644
+--- a/zig/src/core/lanes/hold_price.zig
++++ b/zig/src/core/lanes/hold_price.zig
+@@ -10,6 +10,7 @@ pub const ContextCost = struct { streams: u32, rows: u32, ms: f64 };
+ 
+ /// Round both dimensions up to measured coverage; mixed debts conservatively use their largest owed row count.
+ pub fn contextMs(costs: []const ContextCost, streams: usize, max_rows: u32) f64 {
++    @import("dspark_probe_private.zig").count(.context_quote);
+     if (streams == 0 or max_rows == 0 or costs.len == 0) return 0;
+     var widest: u32 = 0;
+     var above: ?u32 = null;
+@@ -33,6 +34,7 @@ pub fn contextMs(costs: []const ContextCost, streams: usize, max_rows: u32) f64
+ 
+ /// A hold pass's ms: linear in depth at each timed stream count, then in streams (past the widest, by its slope).
+ pub fn holdMs(costs: []const HoldCost, streams: usize, depth: i64) f64 {
++    @import("dspark_probe_private.zig").count(.hold_quote);
+     var below: ?u32 = null;
+     var above: ?u32 = null;
+     for (costs) |c| {
+diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
+index 1a5bfb5f3..b09dfc7e4 100644
+--- a/zig/src/core/lanes/lanes.zig
++++ b/zig/src/core/lanes/lanes.zig
+@@ -1,5 +1,6 @@
+ //! The lane engine's host core (Python lane_engine.py); backends run forwards and draws behind `backend.Backend`.
+ const std = @import("std");
++pub const dspark_probe_private = @import("dspark_probe_private.zig");
+ 
+ pub const proposal_score = @import("proposal_score.zig");
+ pub const proposal_head = @import("proposal_head.zig");
+diff --git a/zig/src/core/lanes/proposer.zig b/zig/src/core/lanes/proposer.zig
+index 127dbe450..82c51eca6 100644
+--- a/zig/src/core/lanes/proposer.zig
++++ b/zig/src/core/lanes/proposer.zig
+@@ -157,6 +157,8 @@ pub const SuffixLookup = struct {
+ 
+     /// Match history followed by a drafted tail; only history supplies candidates and copied tokens.
+     pub fn proposeAfter(s: *SuffixLookup, history: []const u32, tail: []const u32, max_draft: i64) ![]const u32 {
++        const diagnostic_start = @import("dspark_probe_private.zig").now();
++        defer @import("dspark_probe_private.zig").span(.copy, diagnostic_start);
+         const n = s.params.ngram;
+         s.out.clearRetainingCapacity();
+         s.last_match = 0;
+diff --git a/zig/src/core/lanes/shared_drafts.zig b/zig/src/core/lanes/shared_drafts.zig
+index bec374265..e881e709a 100644
+--- a/zig/src/core/lanes/shared_drafts.zig
++++ b/zig/src/core/lanes/shared_drafts.zig
+@@ -1,5 +1,6 @@
+ //! Price next-round head rows before proposing; keep that window's owned copy decision and the last full node prices.
+ const std = @import("std");
++const diagnostic = @import("dspark_probe_private.zig");
+ const win = @import("windows.zig");
+ const alloc = @import("allocate.zig");
+ const verify_cost = @import("verify_cost.zig");
+@@ -7,6 +8,8 @@ const Engine = @import("engine.zig").Engine;
+ const depth = @import("depth.zig");
+ 
+ pub fn budgets(e: *Engine, plans: []const win.Plan, heads: []const usize, out: []i64) !void {
++    const diagnostic_start = diagnostic.now();
++    defer diagnostic.span(.reservation, diagnostic_start);
+     const a = e.arena.allocator();
+     const fixed = try a.alloc(u32, plans.len);
+     const probs = try a.alloc([]const f64, plans.len);
+diff --git a/zig/src/core/lanes/windows.zig b/zig/src/core/lanes/windows.zig
+index 6c24984e2..499dff272 100644
+--- a/zig/src/core/lanes/windows.zig
++++ b/zig/src/core/lanes/windows.zig
+@@ -1,5 +1,6 @@
+ //! A round's windows (Python `_plan_window`, `_copy_proposal`, `_allocate`): forced, copied or drafted rows.
+ const std = @import("std");
++const diagnostic = @import("dspark_probe_private.zig");
+ const accept = @import("accept.zig");
+ const cut = @import("window_cut.zig");
+ const lone_costs = @import("lone_costs.zig");
+@@ -61,9 +62,12 @@ pub const Copy = struct {
+ 
+ /// Forced tokens first, then a copied continuation, then the head's drafts (Python `_plan_window`).
+ pub fn plan(e: *Engine, s: *Stream, copied: ?Copy) !Plan {
++    const diagnostic_start = diagnostic.now();
++    defer diagnostic.span(.plan, diagnostic_start);
+     const a = e.arena.allocator();
+     var p: Plan = .{ .stream = s, .position = s.cache_len, .kind = .none };
+     defer s.reserved_copy = null; // even an empty decision belongs to exactly this logical window
++    defer diagnostic.plannedCopy(e, p);
+     if (e.backend.proposals() and s.proposal_depth == 0) s.dropHeld(e.gpa);
+     const queued = s.next;
+     s.next = null;
+@@ -300,6 +304,8 @@ pub fn anySampled(plans: []const Plan) bool {
+ 
+ /// Trim draft prefixes by landing probability to the shared width with the most expected tokens a ms.
+ pub fn allocate(e: *Engine, plans: []Plan) !void {
++    const diagnostic_start = diagnostic.now();
++    defer diagnostic.span(.allocation, diagnostic_start);
+     if (e.trim) |t| return trimmed(e, plans, t);
+     const a = e.arena.allocator();
+     const explicit = e.cfg.draft_confidence != null;
+@@ -342,13 +348,15 @@ pub fn allocate(e: *Engine, plans: []Plan) !void {
+     const own = if (live) try lone_costs.prices(e, plans[0]) else untimed;
+     const costs = if (explicit) &untimed else if (live) &own else &e.cfg.shared_costs;
+     const overhead = if (explicit or live) 0 else e.rule.overheadMs(plans.len, anySampled(plans));
+-    const counts = try alloc.allocateDrafts(a, fixed, probs, costs, overhead, @max(plans.len, e.cfg.batch_rows), .{ .row_ms = try verify_cost.snapshot(a, plans, !explicit and !live) });
++    const row_ms = try verify_cost.snapshot(a, plans, !explicit and !live);
++    const counts = try alloc.allocateDrafts(a, fixed, probs, costs, overhead, @max(plans.len, e.cfg.batch_rows), .{ .row_ms = row_ms });
+     const trial = if (live) lone_costs.probe(e, plans[0]) else null;
+     if (trial) |count| {
+         counts[0] = count;
+         plans[0].cost_probe_rows = count + 1;
+         plans[0].stream.cost_probe_trial = lone_costs.trial(plans[0].stream, probs[0], count + 1);
+     }
++    diagnostic.allocatedCopies(e, plans, fixed, probs, costs, overhead, row_ms, counts, explicit, live, anySampled(plans));
+     if (live) {
+         var expected: f64 = 1;
+         for (probs[0][0..counts[0]]) |chance| expected += chance;
+diff --git a/zig/src/families/lfm2_moe/backend.zig b/zig/src/families/lfm2_moe/backend.zig
+index 465b553ed..2c9004963 100644
+--- a/zig/src/families/lfm2_moe/backend.zig
++++ b/zig/src/families/lfm2_moe/backend.zig
+@@ -432,6 +432,8 @@ pub fn value(word: u16) f64 {
+ 
+ /// The GPU has checked every logit; its flag is authoritative even when a mask hides the bad token.
+ inline fn drawRow(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.Sampling, position: u64, mask: []const u32, picked: [2]u32) !u32 {
++    const diagnostic_start = lanes.dspark_probe_private.now();
++    defer lanes.dspark_probe_private.span(.draw, diagnostic_start);
+     if (picked[1] != 0) return error.NonfiniteLfmLogits;
+     if (mask.len > 0) return draw(gpa, logits, settings, position, mask);
+     const sampling = settings orelse return picked[0];
+@@ -442,6 +444,8 @@ inline fn drawRow(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.
+ 
+ /// The unchanged top-k candidates for the shared fp64 keyed sampler; a `mask` keeps its allowed ones (-inf's draw).
+ pub fn draw(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.Sampling, position: u64, mask: []const u32) !u32 {
++    const diagnostic_start = lanes.dspark_probe_private.now();
++    defer lanes.dspark_probe_private.span(.draw, diagnostic_start);
+     if (settings) |s| if (try topk.draw(logits, s, position, mask)) |token| return token;
+     var best: ?usize = null;
+     var allowed: usize = 0;
+diff --git a/zig/src/families/lfm2_moe/dspark.zig b/zig/src/families/lfm2_moe/dspark.zig
+index 7b1fdca5c..8e4ecb6d5 100644
+--- a/zig/src/families/lfm2_moe/dspark.zig
++++ b/zig/src/families/lfm2_moe/dspark.zig
+@@ -108,6 +108,13 @@ pub const Drafter = struct {
+     pass_len: usize = 0,
+     pass_context_rows: u32 = 0, // largest actual staged debt, captured before the signalled hold clears it
+     pass_encode_cpu_ms: f64 = 0, // pending pass's CPU for EMA only; already charged to encode_cpu_ms at commit
++    diagnostic: struct {
++        passes: u64 = 0,
++        blocks: u64 = 0,
++        retained: u64 = 0,
++        staged_rows: u64 = 0,
++        encode_gpu_ms: f64 = 0,
++    } = .{},
+ 
+     pub fn init(gpa: std.mem.Allocator, io: std.Io, target: *Model, dir: []const u8, options: Options) !*Drafter {
+         const d = try gpa.create(Drafter);
+@@ -119,6 +126,7 @@ pub const Drafter = struct {
+         d.w = try dw.load(gpa, target.device, io, dir, &d.config, options.bits);
+         errdefer d.w.deinit(gpa);
+         try d.prepare();
++        d.diagnostic = .{};
+         return d;
+     }
+ 
+@@ -133,6 +141,7 @@ pub const Drafter = struct {
+ 
+     pub fn deinit(d: *Drafter) void {
+         d.settle() catch {};
++        @import("lanes").dspark_probe_private.print("DSPARK_PRIVATE_HOLDS passes={d} blocks={d} retained={d} staged_rows={d} encode_gpu_ms={d:.6}\n", .{ d.diagnostic.passes, d.diagnostic.blocks, d.diagnostic.retained, d.diagnostic.staged_rows, d.diagnostic.encode_gpu_ms });
+         d.event.deinit();
+         var it = d.lanes.valueIterator();
+         while (it.next()) |l| d.dropLane(l.*);
+@@ -225,7 +234,7 @@ pub const Drafter = struct {
+             const other = d.head_history.recent(sampled(peer));
+             for (&rates, other.rates) |*rate, p| rate.* = @min(rate.*, p);
+         }
+-        const tracked = recent.enroll(.{
++        const prices: admission.Prices = .{
+             .target = if (cohort.streams == 1) d.target_single else d.target_shared,
+             .holds = d.holds[0..d.holds_len],
+             .contexts = d.contexts[0..d.contexts_len],
+@@ -237,8 +246,15 @@ pub const Drafter = struct {
+             .depth = depth,
+             .context_rows = debt,
+             .context_chunk = stage_rows,
+-        }, rates[0..depth]);
++        };
++        const tracked = recent.enroll(prices, rates[0..depth]);
+         s.head_prior = if (tracked) recent.rates[0..d.config.block] else &.{};
++        @import("lanes").dspark_probe_private.print("DSPARK_PRIVATE_ENROLL bits={d} max_new={d} streams={d} heads={d} hint={d} tracked={} observed={} remaining={d} rate0={d:.6}\n", .{ d.options.bits, s.max_new, cohort.streams, cohort.heads, s.prefill_cohort, tracked, recent.observed, recent.remaining, recent.rates[0] });
++        if (admission.quote(prices, rates[0..depth])) |priced| {
++            if (priced.best) |best| {
++                @import("lanes").dspark_probe_private.print("DSPARK_PRIVATE_PRICE known=true best=true pays={} context_rows={d} priced_heads={d} plain_ms={d:.6} quoted_ms={d:.6} quoted_tokens={d:.6} best_heads={d} best_depth={d}\n", .{ priced.pays(), debt, prices.heads, priced.plain_ms, best.ms, best.tokens, best.heads, best.depth });
++            } else @import("lanes").dspark_probe_private.print("DSPARK_PRIVATE_PRICE known=true best=false pays=false context_rows={d} priced_heads={d} plain_ms={d:.6}\n", .{ debt, prices.heads, priced.plain_ms });
++        } else @import("lanes").dspark_probe_private.print("DSPARK_PRIVATE_PRICE known=false context_rows={d} priced_heads={d}\n", .{ debt, prices.heads });
+         return tracked;
+     }
+ 
+@@ -479,6 +495,11 @@ pub const Drafter = struct {
+ 
+     /// Reprices the clean grid with CPU-encode + GPU ms minus the matching calibrated context estimate.
+     pub fn priceHold(d: *Drafter, streams: usize, depth: u32, context_rows: u32, ms: f64) void {
++        d.diagnostic.passes += 1;
++        d.diagnostic.blocks += streams;
++        d.diagnostic.retained += streams * depth;
++        d.diagnostic.staged_rows += context_rows;
++        d.diagnostic.encode_gpu_ms += ms;
+         const timed = d.holds[0..d.holds_len];
+         if (timed.len == 0 or streams == 0 or !(ms > 0) or !std.math.isFinite(ms)) return;
+         const clean_ms = ms - lanes.hold_price.contextMs(d.contexts[0..d.contexts_len], streams, context_rows);
+diff --git a/zig/src/families/lfm2_moe/forward.zig b/zig/src/families/lfm2_moe/forward.zig
+index c24e24eff..5d62eb07f 100644
+--- a/zig/src/families/lfm2_moe/forward.zig
++++ b/zig/src/families/lfm2_moe/forward.zig
+@@ -1,5 +1,6 @@
+ //! One command buffer a call: segment-local conv state and causal attention, every row's arithmetic its own.
+ const std = @import("std");
++const diagnostic = @import("lanes").dspark_probe_private;
+ const mtl = @import("metal");
+ const Model = @import("model.zig").Model;
+ const st = @import("state.zig");
+@@ -9,6 +10,7 @@ const row = @import("../../core/row_projection.zig");
+ const tile = @import("../../core/tile_qmm.zig");
+ const am = @import("../../core/affine_mm.zig");
+ const segs = @import("segments.zig");
++const target_counters = @import("../../core/lfm2_target_counters_private.zig");
+ const Buffer = mtl.Buffer;
+ /// Where a segment's tapped rows go: the scratch's taps, nowhere, or a stage.
+ pub const Tap = union(enum) { scratch, none, stage: Place };
+@@ -52,6 +54,7 @@ const Encoder = struct {
+     e: mtl.ComputeEncoder,
+     m: *Model,
+     s: *st.Scratch,
++    segments: []const Segment,
+     /// Prompt calls and windows of tile_rows or more take the tiles; fewer decode rows the twin (the same bits).
+     prompt: bool,
+     /// A recorded window: every row's conv state is kept for a later keep.
+@@ -60,6 +63,10 @@ const Encoder = struct {
+     plan: ?segs.Plan = null,
+     capture: bool = false, // all-uncaptured forwards take the canonical no-tap norm pipelines
+ 
++    fn class(self: *Encoder, kind: target_counters.Class) !void {
++        try self.m.target_probe.next(&self.e, kind);
++    }
++
+     fn pipe(self: Encoder, comptime key: []const u8) void {
+         self.e.setPipeline(self.m.kernels.get(key));
+     }
+@@ -147,6 +154,14 @@ const Encoder = struct {
+         }
+         if (mask != 0) {
+             const taps = s.taps.?;
++            if (self.m.target_probe.rotated()) for (self.segments) |seg| {
++                const buffer = switch (seg.tap) {
++                    .scratch => taps.buf,
++                    .none => continue,
++                    .stage => |place| place.buf,
++                };
++                self.e.useResource(buffer, mtl.ResourceUsage.read | mtl.ResourceUsage.write);
++            };
+             self.e.setBuffer(taps.buf, taps.table_at, 6);
+             self.e.setValue(mask, 7);
+         }
+@@ -188,6 +203,7 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
+ 
+ /// `run` with held drafts copied into the rows' ids on the GPU first (after `wait`): their host ids are ignored.
+ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, held: []const Held, wait: ?Wait) !void {
++    const diagnostic_start = diagnostic.now();
+     if (tokens.len == 0 or tokens.len > s.rows or (record and tokens.len > st.batch_rows)) return error.LfmRowsExceeded;
+     var total: usize = 0;
+     var capture = false;
+@@ -211,10 +227,23 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
+     const cb = m.queue.commandBuffer();
+     if (wait) |w| cb.waitForEvent(w.event, w.value);
+     const prompt = (!record and head == .last) or total >= tile_rows;
+-    const e = cb.compute(.serial);
+-    const plan = if (segs.batched(record, segments.len)) segs.prepare(e, s, segments) else null;
+-    if (capture) tapTable(e, s, segments);
+-    const enc = Encoder{ .e = e, .m = m, .s = s, .prompt = prompt, .record = record, .plan = plan, .capture = capture };
++    const initial_e = cb.compute(.serial);
++    const plan = if (segs.batched(record, segments.len)) segs.prepare(initial_e, s, segments) else null;
++    if (capture) tapTable(initial_e, s, segments);
++    var enc = Encoder{ .e = initial_e, .m = m, .s = s, .segments = segments, .prompt = prompt, .record = record, .plan = plan, .capture = capture };
++    const e = &enc.e;
++    var completed = false;
++    errdefer m.target_probe.abort(e, completed, error.TargetForwardAborted);
++    try m.target_probe.begin(cb, .{
++        .rows = total,
++        .segments = segments.len,
++        .recorded = record,
++        .unrecorded_head_last = !record and head == .last,
++        .tiled = prompt,
++        .head_rows = if (head == .all) total else 1,
++        .captured = capture,
++    });
++    if (held.len > 0) try enc.class(.copy);
+     if (held.len > 0) @memset(s.bad.contents()[0..4], 0);
+     for (held) |h| {
+         enc.pipe("lfm2_draft_ids");
+@@ -224,6 +253,7 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
+         e.setBuffer(s.bad, 0, 3);
+         enc.threads(.{ h.count, 1, 1 }, .{ 32, 1, 1 });
+     }
++    try enc.class(.embedding);
+     const embedding = m.weights.embedding;
+     e.setPipeline(m.kernels.embed(embedding.bits));
+     e.setBuffer(s.ids, 0, 0);
+@@ -233,40 +263,51 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
+     enc.threads(.{ units, total, 1 }, .{ 256, 1, 1 });
+     var combine: Pending = .none;
+     for (m.weights.blocks, 0..) |block, i| {
++        try enc.class(if (combine == .none) .norm else .expert_combine_norm);
+         enc.norm(s, block.operator_norm, i == 0, total, combine, if (i > 0) i - 1 else null);
+         combine = .none;
+         switch (block.mixer) {
+-            .conv => |cv| conv(enc, s, cv, i, segments, total),
+-            .attention => |a| attention(enc, s, a, &m.config, segments, i, total),
++            .conv => |cv| try conv(&enc, s, cv, i, segments, total),
++            .attention => |a| try attention(&enc, s, a, &m.config, segments, i, total),
+         }
++        try enc.class(.norm);
+         enc.norm(s, block.ffn_norm, false, total, .none, null);
+         switch (block.ffn) {
+             .dense => |d| {
++                try enc.class(.dense_ffn);
+                 enc.projectAll(&.{ d.gate, d.up }, .{ .buf = s.x }, &.{ .{ .buf = s.gate }, .{ .buf = s.up } }, total);
+                 enc.swiglu(s, total * c.intermediate);
+                 enc.projection(d.down, s.act, 0, s.r, 0, total);
+             },
+-            .moe => |x| combine = moe(enc, s, x, m.config.scale, total),
++            .moe => |x| combine = try moe(&enc, s, x, m.config.scale, total),
+         }
+     }
++    try enc.class(if (combine == .none) .final_norm else .final_combine_norm);
+     enc.norm(s, m.weights.norm, false, total, combine, c.layers - 1);
++    try enc.class(.vocab_head);
+     if (head == .all) {
+         enc.projection(embedding, s.x, 0, s.logits, 0, total);
++        try enc.class(.argmax);
+         enc.pipe("lfm2_argmax");
+         e.setBuffer(s.logits, 0, 0);
+         e.setValue(@as(u32, c.vocab), 1);
+         e.setBuffer(s.best, 0, 2);
+         enc.groups(.{ total, 1, 1 }, .{ 1024, 1, 1 });
+     } else enc.projection(embedding, s.x, (total - 1) * c.hidden * 2, s.logits, 0, 1);
+-    e.end();
++    try m.target_probe.finish(e);
++    const diagnostic_encode_ticks = diagnostic.now() - diagnostic_start;
+     cb.commit();
+     cb.wait();
+-    gpu_seconds += cb.gpuSeconds();
++    completed = true;
++    const diagnostic_gpu_seconds = cb.gpuSeconds();
++    gpu_seconds += diagnostic_gpu_seconds;
++    diagnostic.target(diagnostic_encode_ticks, diagnostic_gpu_seconds, capture and s.taps != null, record, total);
+     if (cb.failure()) |msg| {
+         std.debug.print("LFM2 forward: {s}\n", .{msg});
+         return error.GpuFailed;
+     }
+     if (held.len > 0 and std.mem.readInt(u32, s.bad.contents()[0..4], .little) != 0) return error.DraftNonfinite;
++    try m.target_probe.report(diagnostic_gpu_seconds);
+     var base: usize = 0;
+     for (segments) |seg| {
+         const logit_row = if (head == .all) base + seg.rows - 1 else 0;
+@@ -276,10 +317,15 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
+     }
+ }
+ 
+-fn conv(enc: Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []const Segment, total: usize) void {
+-    const e = enc.e;
++fn conv(enc: *Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []const Segment, total: usize) !void {
++    const e = &enc.e;
++    try enc.class(.convolution_projection);
+     enc.projection(cv.in, s.x, 0, s.bcx, 0, total);
++    try enc.class(.convolution);
+     if (enc.plan != null) {
++        if (enc.m.target_probe.rotated()) for (segments) |seg| {
++            e.useResource(seg.cache.blocks[layer].conv, mtl.ResourceUsage.read | mtl.ResourceUsage.write);
++        };
+         enc.pipe("lfm2_conv_segs");
+         e.setBuffer(s.bcx, 0, 0);
+         e.setBuffer(s.segs, layer * segs.table_bytes, 1);
+@@ -288,6 +334,7 @@ fn conv(enc: Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []co
+         e.setBuffer(s.snapshots[layer].?, 0, 4);
+         e.setBuffer(s.rowseg, 0, 5);
+         enc.threads(.{ c.hidden, total, 1 }, .{ 256, 1, 1 });
++        try enc.class(.convolution_projection);
+         return enc.projection(cv.out, s.y, 0, s.r, 0, total);
+     }
+     var base: usize = 0;
+@@ -302,14 +349,23 @@ fn conv(enc: Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []co
+         enc.threads(.{ c.hidden, seg.rows, 1 }, .{ 256, 1, 1 });
+         base += seg.rows;
+     }
++    try enc.class(.convolution_projection);
+     enc.projection(cv.out, s.y, 0, s.r, 0, total);
+ }
+ 
+-fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Config, segments: []const Segment, layer: usize, total: usize) void {
+-    const e = enc.e;
++fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Config, segments: []const Segment, layer: usize, total: usize) !void {
++    const e = &enc.e;
++    try enc.class(.attention_projection);
+     enc.projectAll(&.{ a.q, a.k, a.v }, .{ .buf = s.x }, &.{ .{ .buf = s.queries }, .{ .buf = s.k }, .{ .buf = s.v } }, total);
++    try enc.class(.attention);
+     if (enc.plan) |plan| {
+-        attentionSegs(enc, s, a, config, layer, total, plan);
++        if (enc.m.target_probe.rotated()) for (segments) |seg| {
++            const cache = seg.cache.blocks[layer].attention;
++            e.useResource(cache.keys, mtl.ResourceUsage.read | mtl.ResourceUsage.write);
++            e.useResource(cache.values, mtl.ResourceUsage.read | mtl.ResourceUsage.write);
++        };
++        attentionSegs(enc.*, s, a, config, layer, total, plan);
++        try enc.class(.attention_projection);
+         return enc.projection(a.out, s.y, 0, s.r, 0, total);
+     }
+     var base: usize = 0;
+@@ -362,6 +418,7 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
+         }
+         base += seg.rows;
+     }
++    try enc.class(.attention_projection);
+     enc.projection(a.out, s.y, 0, s.r, 0, total);
+ }
+ 
+@@ -402,8 +459,9 @@ fn attentionSegs(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const
+ }
+ 
+ /// Picks, weights, positions and expert rows are not reused before the immediately following norm.
+-fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) Pending {
+-    const e = enc.e;
++fn moe(enc: *Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) !Pending {
++    const e = &enc.e;
++    try enc.class(.expert_route);
+     const slots = total * c.topk;
+     enc.pipe("lfm2_route_logits");
+     e.setBuffer(s.x, 0, 0);
+@@ -421,10 +479,12 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) Pendi
+     if (!enc.prompt and enc.m.kernels.twin) {
+         // Wide windows read each picked expert once for its rows (a row's own picks are distinct experts).
+         const groups: ?Buffer = if (total >= tile.group_rows) s.groups else null;
+-        if (groups != null) tile.encodeTwinGroup(e, t, s.picks, slots, s.groups) catch unreachable;
++        if (groups != null) tile.encodeTwinGroup(e.*, t, s.picks, slots, s.groups) catch unreachable;
++        try enc.class(.expert_gate_up);
+         const gate = matrix(x.gate.one);
+-        tile.encodeTwinGlu(e, t, gate, matrix(x.up.one), s.x, s.act, s.picks, groups, slots, c.topk) catch unreachable;
+-        tile.encodeTwinIndexed(e, t, matrix(x.down.one), s.act, s.experts, s.picks, groups, slots, 1) catch unreachable;
++        tile.encodeTwinGlu(e.*, t, gate, matrix(x.up.one), s.x, s.act, s.picks, groups, slots, c.topk) catch unreachable;
++        try enc.class(.expert_down);
++        tile.encodeTwinIndexed(e.*, t, matrix(x.down.one), s.act, s.experts, s.picks, groups, slots, 1) catch unreachable;
+         return .twin;
+     }
+     enc.pipe("lfm2_sort");
+@@ -435,29 +495,33 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) Pendi
+     e.setBuffer(s.tokens, 0, 4);
+     enc.groups(.{ 1, 1, 1 }, .{ c.experts * 16, 1, 1 });
+     if (enc.nax(x.gate.one.bits)) |p| {
++        try enc.class(.expert_gate_up);
+         // Sorted slot j reads token row tokens[j]; gate and up SwiGLU'd into act, then down over act's sorted rows.
+         const sums = Ref{ .buf = s.sums };
+         const starts = Ref{ .buf = s.starts };
+         const act = Ref{ .buf = s.act };
+-        am.rowSums(e, p, c.group, Ref{ .buf = s.x }, sums, @intCast(total), c.hidden);
++        am.rowSums(e.*, p, c.group, Ref{ .buf = s.x }, sums, @intCast(total), c.hidden);
+         const gate = affine(x.gate.one);
+         const up = affine(x.up.one);
+         const tokens = Ref{ .buf = s.tokens };
+-        am.gatherGlu(e, p, Ref{ .buf = s.x }, sums, gate, up, starts, tokens, act, @intCast(slots), c.experts, 1, 0);
+-        am.rowSums(e, p, c.group, act, sums, @intCast(slots), c.moe_intermediate);
+-        am.gather(e, p, act, sums, affine(x.down.one), starts, Ref{ .buf = s.experts }, @intCast(slots), c.experts);
++        am.gatherGlu(e.*, p, Ref{ .buf = s.x }, sums, gate, up, starts, tokens, act, @intCast(slots), c.experts, 1, 0);
++        try enc.class(.expert_down);
++        am.rowSums(e.*, p, c.group, act, sums, @intCast(slots), c.moe_intermediate);
++        am.gather(e.*, p, act, sums, affine(x.down.one), starts, Ref{ .buf = s.experts }, @intCast(slots), c.experts);
+     } else {
+-        tile.encodeWork(e, &enc.m.kernels.tiles, s.starts, c.experts, s.work);
+-        tile.encodeSums(e, t, c.hidden, s.x, 0, s.sums, total);
++        tile.encodeWork(e.*, &enc.m.kernels.tiles, s.starts, c.experts, s.work);
++        try enc.class(.expert_gate_up);
++        tile.encodeSums(e.*, t, c.hidden, s.x, 0, s.sums, total);
+         const gate = matrix(x.gate.one);
+         const up = matrix(x.up.one);
+         const sorted = .{ s.starts, s.work };
+         const map = s.tokens;
+-        tile.encodeGroupedGlu(e, t, gate, up, c.experts, s.x, s.sums, map, s.act, slots, sorted[0], sorted[1]) catch
++        tile.encodeGroupedGlu(e.*, t, gate, up, c.experts, s.x, s.sums, map, s.act, slots, sorted[0], sorted[1]) catch
+             unreachable;
+-        tile.encodeSums(e, t, c.moe_intermediate, s.act, 0, s.sums, slots);
++        try enc.class(.expert_down);
++        tile.encodeSums(e.*, t, c.moe_intermediate, s.act, 0, s.sums, slots);
+         const down = matrix(x.down.one);
+-        tile.encodeGrouped(e, t, down, c.experts, s.act, s.sums, s.ident, s.experts, slots, sorted[0], sorted[1]) catch
++        tile.encodeGrouped(e.*, t, down, c.experts, s.act, s.sums, s.ident, s.experts, slots, sorted[0], sorted[1]) catch
+             unreachable;
+     }
+     return .sorted;
+diff --git a/zig/src/families/lfm2_moe/model.zig b/zig/src/families/lfm2_moe/model.zig
+index 78e4ef362..0515c90c0 100644
+--- a/zig/src/families/lfm2_moe/model.zig
++++ b/zig/src/families/lfm2_moe/model.zig
+@@ -8,6 +8,7 @@ const weights = @import("weights.zig");
+ const kernels = @import("kernels.zig");
+ const forward = @import("forward.zig");
+ const tile = @import("../../core/tile_qmm.zig");
++const target_counters = @import("../../core/lfm2_target_counters_private.zig");
+ 
+ pub const Model = struct {
+     gpa: std.mem.Allocator,
+@@ -17,6 +18,7 @@ pub const Model = struct {
+     checkpoint: ckpt.Checkpoint,
+     weights: weights.Weights,
+     kernels: kernels.Kernels,
++    target_probe: target_counters.Probe,
+     /// The checkpoint's buffers held resident on the queue (none before macOS 15).
+     resident: ?mtl.ResidencySet = null,
+ 
+@@ -43,6 +45,10 @@ pub const Model = struct {
+         m.kernels = try kernels.load(m.device);
+         errdefer m.kernels.deinit();
+         m.kernels.twin = try twins(m);
++        @import("lanes").dspark_probe_private.print("DSPARK_PRIVATE_TWIN enabled={}\n", .{m.kernels.twin});
++        // At most eight non-nested classes per layer, plus held ids, embedding, final norm/head/argmax.
++        m.target_probe = try target_counters.Probe.init(gpa, m.device, cfg.layers * 8 + 8);
++        errdefer m.target_probe.deinit();
+         m.resident = null;
+         if (hold_weights) {
+             if (m.device.residencySet(m.checkpoint.shards.items.len)) |set| {
+@@ -94,6 +100,7 @@ pub const Model = struct {
+ 
+     pub fn deinit(m: *Model) void {
+         m.dropResident();
++        m.target_probe.deinit();
+         m.kernels.deinit();
+         m.checkpoint.deinit();
+         m.queue.deinit();
+diff --git a/zig/src/core/lanes/dspark_probe_private.zig b/zig/src/core/lanes/dspark_probe_private.zig
+new file mode 100644
+index 000000000..1d26dedb7
+--- /dev/null
++++ b/zig/src/core/lanes/dspark_probe_private.zig
+@@ -0,0 +1,435 @@
++//! Private diagnostic only: no production policy, allocation, synchronization or arithmetic changes.
++const std = @import("std");
++extern "c" fn mach_absolute_time() u64;
++const Timebase = extern struct { numer: u32, denom: u32 };
++extern "c" fn mach_timebase_info(info: *Timebase) c_int;
++extern "c" fn write(fd: c_int, bytes: [*]const u8, len: usize) isize;
++
++/// One bounded write: server logging must not splice its fields into a diagnostic record.
++pub fn print(comptime fmt: []const u8, args: anytype) void {
++    var buffer: [4096]u8 = undefined;
++    buffer[0] = '\n';
++    const text = std.fmt.bufPrint(buffer[1..], fmt, args) catch unreachable;
++    const bytes = buffer[0 .. text.len + 1];
++    const sent = write(2, bytes.ptr, bytes.len);
++    std.debug.assert(sent >= 0 and @as(usize, @intCast(sent)) == bytes.len);
++}
++
++
++pub const Kind = enum { step, plan, allocation, reservation, copy, draw, hold_quote, context_quote };
++const names = [_][]const u8{ "step", "plan", "allocation", "reservation", "copy", "draw", "hold_quote", "context_quote" };
++var calls: [names.len]u64 = @splat(0);
++var ticks: [names.len]u64 = @splat(0);
++const Target = struct { calls: u64 = 0, rows: u64 = 0, captured: u64 = 0, encode_ticks: u64 = 0, gpu_ms: f64 = 0, timed_gpu_calls: u64 = 0, rows_by_count: [33]u64 = @splat(0) };
++var targets: [2]Target = .{ .{}, .{} };
++const RowTarget = struct { calls: u64 = 0, captured: u64 = 0, encode_ticks: u64 = 0, gpu_ms: f64 = 0, timed_gpu_calls: u64 = 0 };
++var row_targets: [2][33]RowTarget = .{ @splat(.{}), @splat(.{}) };
++var snapshot_count: u64 = 0;
++
++// The target-class probe uses this to exclude native startup calibration.
++pub var engine_initialized: bool = false;
++var copy_trace_enabled = false;
++
++pub fn reset() void {
++    engine_initialized = true;
++    const copy_flag = std.c.getenv("LFM2_PRIVATE_COPY_TRACE");
++    copy_trace_enabled = if (copy_flag) |value| value[0] == '1' else false;
++    resetCopies();
++    calls = @splat(0);
++    ticks = @splat(0);
++    targets = .{ .{}, .{} };
++    row_targets = .{ @splat(.{}), @splat(.{}) };
++    snapshot_count = 0;
++}
++
++pub fn now() u64 {
++    return mach_absolute_time();
++}
++
++pub fn span(kind: Kind, start: u64) void {
++    const i = @intFromEnum(kind);
++    calls[i] += 1;
++    ticks[i] += now() - start;
++}
++
++pub fn count(kind: Kind) void {
++    calls[@intFromEnum(kind)] += 1;
++}
++
++pub fn target(encode_ticks: u64, seconds: f64, captured: bool, record: bool, rows: usize) void {
++    const value = &targets[@intFromBool(record)];
++    value.calls += 1;
++    value.rows += rows;
++    value.rows_by_count[@min(rows, 32)] += 1;
++    value.captured += @intFromBool(captured);
++    value.encode_ticks += encode_ticks;
++    const shaped = if (rows <= 32) &row_targets[@intFromBool(record)][rows] else null;
++    if (shaped) |v| {
++        v.calls += 1;
++        v.captured += @intFromBool(captured);
++        v.encode_ticks += encode_ticks;
++    }
++    if (seconds > 0 and std.math.isFinite(seconds)) {
++        value.gpu_ms += seconds * 1000;
++        value.timed_gpu_calls += 1;
++        if (shaped) |v| {
++            v.gpu_ms += seconds * 1000;
++            v.timed_gpu_calls += 1;
++        }
++    }
++}
++
++pub fn snapshot() void {
++    snapshot_count += 1;
++    print("DSPARK_PRIVATE_SNAPSHOT index={d}\n", .{snapshot_count});
++    report();
++}
++
++pub fn report() void {
++    reportCopies();
++    var base: Timebase = .{ .numer = 0, .denom = 0 };
++    if (mach_timebase_info(&base) != 0 or base.denom == 0) return;
++    const to_ms = @as(f64, @floatFromInt(base.numer)) / @as(f64, @floatFromInt(base.denom)) / 1e6;
++    for (names, calls, ticks, 0..) |name, n, taken, i| {
++        if (i >= @intFromEnum(Kind.hold_quote)) {
++            print("DSPARK_PRIVATE_COUNTER kind={s} calls={d}\n", .{ name, n });
++        } else {
++            print("DSPARK_PRIVATE_COUNTER kind={s} calls={d} wall_ms={d:.6}\n", .{ name, n, @as(f64, @floatFromInt(taken)) * to_ms });
++        }
++    }
++    for (targets, [_][]const u8{ "prefill", "decode" }, 0..) |value, phase, index| {
++        print("DSPARK_PRIVATE_TARGET phase={s} calls={d} rows={d} captured_calls={d} encode_cpu_ms={d:.6} gpu_ms={d:.6} timed_gpu_calls={d}\n", .{ phase, value.calls, value.rows, value.captured, @as(f64, @floatFromInt(value.encode_ticks)) * to_ms, value.gpu_ms, value.timed_gpu_calls });
++        var shaped_calls: u64 = 0;
++        for (row_targets[index], 0..) |shape, rows| {
++            if (shape.calls == 0) continue;
++            shaped_calls += shape.calls;
++            print("DSPARK_PRIVATE_TARGET_SHAPE phase={s} rows={d} calls={d} captured_calls={d} encode_cpu_ms={d:.6} gpu_ms={d:.6} timed_gpu_calls={d}\n", .{ phase, rows, shape.calls, shape.captured, @as(f64, @floatFromInt(shape.encode_ticks)) * to_ms, shape.gpu_ms, shape.timed_gpu_calls });
++        }
++        print("DSPARK_PRIVATE_TARGET_SHAPE_LIMIT phase={s} calls_above32={d}\n", .{ phase, value.calls - shaped_calls });
++        print("DSPARK_PRIVATE_ROW_COUNTS phase={s} bins={any}\n", .{ phase, value.rows_by_count });
++    }
++}
++
++// Private, single engine-thread buffers. No allocator, formatting, I/O, clock read,
++// GPU work or synchronization is added by these recorders. All output is at idle.
++// Overflow is explicit; null prices remain null, never an invented zero price.
++const max_plans = 8192;
++const max_rounds = 4096;
++const max_requests = 256;
++const max_depth = 32;
++const max_width = 64;
++const Request = struct {
++    ptr: usize,
++    id_hash: u64,
++    id: [96]u8,
++    id_len: usize,
++    prompt_hash: u64,
++    prompt_len: usize,
++    max_new: u32,
++};
++const Planned = struct {
++    request: ?usize,
++    round: u64,
++    position: u64,
++    context_len: usize,
++    pending: ?u32,
++    kind: []const u8,
++    offered: usize,
++    held: u32,
++    tokens: [max_depth]u32,
++    token_count: usize,
++    suffix: [8]u32,
++    suffix_count: usize,
++    last_match: ?i64,
++    last_end: ?usize,
++    trusted: bool,
++    recalled: bool,
++    reserved: bool,
++    head_context: ?bool,
++    cohort: usize,
++    head_drafts: bool,
++    proposal_depth: ?u32,
++    hold_context_rows: u32,
++    copy_width: ?u32,
++    draft_room: i64,
++    drafted: u64,
++    accepted: u64,
++    alone: bool,
++};
++const Allocation = struct {
++    first_decision: usize,
++    decisions: usize,
++    streams: usize,
++    max_rows: usize,
++    explicit: bool,
++    live: bool,
++    sampled: bool,
++    overhead: u64,
++    nearest_streams: ?u32,
++    fixed: ?u64,
++    head: ?u64,
++    timed: bool,
++    cost_slots: usize,
++    costs: [max_width + 1]?u64,
++    probe_rows: ?u32,
++};
++const Decision = struct {
++    plan: ?usize,
++    request: ?usize,
++    round: u64,
++    fixed: u32,
++    offered: usize,
++    allocated: u32,
++    chances_len: usize,
++    chances: [max_depth]u64,
++    row_quote: ?u64,
++    row_applied: ?u64,
++    grammar: bool,
++    finished: bool,
++    paused: bool,
++};
++const OverheadSample = struct {
++    after_allocation: ?usize,
++    streams: u32,
++    rows: u64,
++    sampled: bool,
++    net_ms: u64,
++    head_ms: u64,
++    forward_ms: ?u64,
++    extra_ms: ?u64,
++    fixed_ms: ?u64,
++};
++const Startup = struct {
++    shared_slots: usize,
++    family_slots: usize,
++    shared: [max_width + 1]?u64,
++    family: [max_width + 1]?u64,
++    hold_entries: usize,
++    context_entries: usize,
++    batch_rows: u32,
++    first_copy: u32,
++    max_copy: u32,
++    enter_match: i64,
++    copy_rate: u64,
++    own_copy_rates: bool,
++    matched_copy_rates: bool,
++    timed: bool,
++};
++var requests: [max_requests]Request = undefined;
++var planned: [max_plans]Planned = undefined;
++var allocations: [max_rounds]Allocation = undefined;
++var decisions: [max_plans]Decision = undefined;
++var overhead_samples: [max_rounds]OverheadSample = undefined;
++var startup: ?Startup = null;
++var startup_reported = false;
++var request_count: usize = 0;
++var planned_count: usize = 0;
++var allocation_count: usize = 0;
++var decision_count: usize = 0;
++var overhead_count: usize = 0;
++var dropped: [5]u64 = @splat(0);
++var copy_phase: u64 = 1;
++
++fn resetCopies() void {
++    startup = null;
++    startup_reported = false;
++    clearCopies();
++    copy_phase = 1;
++}
++
++fn clearCopies() void {
++    request_count = 0;
++    planned_count = 0;
++    allocation_count = 0;
++    decision_count = 0;
++    overhead_count = 0;
++    dropped = @splat(0);
++}
++
++fn bits(value: f64) u64 {
++    return @bitCast(value);
++}
++
++fn optionalBits(value: ?f64) ?u64 {
++    return if (value) |v| bits(v) else null;
++}
++
++fn prices(table: anytype) [max_width + 1]?u64 {
++    var out: [max_width + 1]?u64 = undefined;
++    for (&out, 0..) |*value, width| value.* = optionalBits(table.get(@intCast(width)));
++    return out;
++}
++
++fn request(s: anytype) ?usize {
++    const id_hash = std.hash.Wyhash.hash(0, s.id);
++    for (requests[0..request_count], 0..) |r, i| {
++        if (r.ptr == @intFromPtr(s) and r.id_hash == id_hash) return i;
++    }
++    if (request_count == requests.len) {
++        dropped[0] += 1;
++        return null;
++    }
++    const index = request_count;
++    request_count += 1;
++    const r = &requests[index];
++    r.* = .{
++        .ptr = @intFromPtr(s),
++        .id_hash = id_hash,
++        .id = undefined,
++        .id_len = s.id.len,
++        .prompt_hash = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(s.context.items[0..@min(s.prompt_len, s.context.items.len)])),
++        .prompt_len = s.prompt_len,
++        .max_new = s.max_new,
++    };
++    const n = @min(s.id.len, r.id.len);
++    @memcpy(r.id[0..n], s.id[0..n]);
++    return index;
++}
++
++pub fn plannedCopy(e: anytype, p: anytype) void {
++    if (!copy_trace_enabled) return;
++    if (startup == null) {
++        const c = e.cfg;
++        startup = .{
++            .shared_slots = c.shared_costs.slots.len, .family_slots = c.family_costs.slots.len,
++            .shared = prices(c.shared_costs), .family = prices(c.family_costs),
++            .hold_entries = c.k.hold_costs.len, .context_entries = c.k.hold_context_costs.len,
++            .batch_rows = c.batch_rows, .first_copy = c.first_copy, .max_copy = c.max_copy,
++            .enter_match = c.enter_match, .copy_rate = bits(c.copy_rate),
++            .own_copy_rates = c.own_copy_rates, .matched_copy_rates = c.matched_copy_rates, .timed = c.timed,
++        };
++    }
++    if (planned_count == planned.len) {
++        dropped[1] += 1;
++        return;
++    }
++    const s = p.stream;
++    const r = &planned[planned_count];
++    planned_count += 1;
++    r.* = .{
++        .request = request(s), .round = s.rounds, .position = p.position,
++        .context_len = s.context.items.len, .pending = s.pending, .kind = @tagName(p.kind),
++        .offered = p.count(), .held = p.held, .tokens = undefined,
++        .token_count = @min(p.tokens.len, max_depth), .suffix = undefined,
++        .suffix_count = @min(s.context.items.len, 8),
++        .last_match = if (s.proposer) |pr| pr.lastMatch() else null,
++        .last_end = if (s.proposer) |pr| pr.lastEnd() else null,
++        .trusted = p.copy_trusted, .recalled = p.recalled, .reserved = s.reserved_copy != null,
++        .head_context = s.head_context, .cohort = s.prefill_cohort, .head_drafts = s.headDrafts(),
++        .proposal_depth = s.proposal_depth, .hold_context_rows = s.hold_context_rows,
++        .copy_width = s.copy_width, .draft_room = s.draftRoom(), .drafted = s.drafted,
++        .accepted = s.accepted, .alone = e.alone,
++    };
++    @memcpy(r.tokens[0..r.token_count], p.tokens[0..r.token_count]);
++    @memcpy(r.suffix[0..r.suffix_count], s.context.items[s.context.items.len - r.suffix_count ..]);
++}
++
++pub fn allocatedCopies(e: anytype, plans: anytype, fixed: []const u32, probs: []const []const f64, costs: anytype, overhead: f64, row_ms: []const f64, counts_: []const u32, explicit: bool, live: bool, sampled: bool) void {
++    if (!copy_trace_enabled) return;
++    if (allocation_count == allocations.len) {
++        dropped[2] += 1;
++        return;
++    }
++    const nearest = e.rule.privateOverhead(plans.len, sampled);
++    const record = &allocations[allocation_count];
++    allocation_count += 1;
++    record.* = .{
++        .first_decision = decision_count, .decisions = 0, .streams = plans.len,
++        .max_rows = @max(plans.len, e.cfg.batch_rows), .explicit = explicit, .live = live,
++        .sampled = sampled, .overhead = bits(overhead),
++        .nearest_streams = if (nearest) |n| n.streams else null,
++        .fixed = if (nearest) |n| bits(n.ms) else null, .head = if (nearest) |n| bits(n.head) else null,
++        .timed = !costs.empty(), .cost_slots = costs.slots.len,
++        // Shared startup prices are immutable; don't recopy or redump them each round.
++        .costs = if (live and !explicit) prices(costs.*) else undefined,
++        .probe_rows = if (plans.len == 1) plans[0].cost_probe_rows else null,
++    };
++    for (plans, fixed, probs, counts_, 0..) |p, f_, chances, count_, i| {
++        if (decision_count == decisions.len) {
++            dropped[3] += 1;
++            continue;
++        }
++        const req = request(p.stream);
++        var plan_index: ?usize = null;
++        var j = planned_count;
++        while (j > planned_count -| plans.len) {
++            j -= 1;
++            if (req != null and planned[j].request == req and planned[j].round == p.stream.rounds) {
++                plan_index = j;
++                break;
++            }
++        }
++        const d = &decisions[decision_count];
++        decision_count += 1;
++        record.decisions += 1;
++        d.* = .{
++            .plan = plan_index, .request = req, .round = p.stream.rounds,
++            .fixed = f_, .offered = p.count(), .allocated = count_,
++            .chances_len = chances.len, .chances = undefined,
++            .row_quote = optionalBits(p.stream.verify_row_ms),
++            .row_applied = if (row_ms.len > 0) bits(row_ms[i]) else null,
++            .grammar = p.stream.grammar != null, .finished = p.stream.finished, .paused = p.stream.paused,
++        };
++        for (d.chances[0..@min(chances.len, max_depth)], chances[0..@min(chances.len, max_depth)]) |*out, value| out.* = bits(value);
++    }
++}
++
++// Called only after the existing clock observation. These are the exact inputs to
++// observeOverhead (already net of quoted host draws / modeled extra head steps).
++pub fn observedCopyOverhead(streams: u32, rows: u64, ms: f64, sampled: bool, head_ms: f64, forward: ?f64, extra: ?f64, fixed: ?f64) void {
++    if (!copy_trace_enabled) return;
++    if (overhead_count == overhead_samples.len) {
++        dropped[4] += 1;
++        return;
++    }
++    overhead_samples[overhead_count] = .{
++        .after_allocation = if (allocation_count > 0) allocation_count - 1 else null,
++        .streams = streams, .rows = rows, .sampled = sampled,
++        .net_ms = bits(ms), .head_ms = bits(head_ms), .forward_ms = optionalBits(forward),
++        .extra_ms = optionalBits(extra), .fixed_ms = optionalBits(fixed),
++    };
++    overhead_count += 1;
++}
++
++fn reportCopies() void {
++    if (!startup_reported) if (startup) |s| {
++        print("DSPARK_PRIVATE_COPY_STARTUP version=1 float_encoding=f64_bits_u64 max_width={d} shared_slots={d} family_slots={d} hold_entries={d} context_entries={d} batch_rows={d} first_copy={d} max_copy={d} enter_match={d} copy_rate_bits={d} own_copy_rates={} matched_copy_rates={} timed={}\n", .{ max_width, s.shared_slots, s.family_slots, s.hold_entries, s.context_entries, s.batch_rows, s.first_copy, s.max_copy, s.enter_match, s.copy_rate, s.own_copy_rates, s.matched_copy_rates, s.timed });
++        for (s.shared, s.family, 0..) |shared, family, width| {
++            print("DSPARK_PRIVATE_COPY_STARTUP_PRICE width={d} shared_ms_bits={any} family_ms_bits={any}\n", .{ width, shared, family });
++        }
++        startup_reported = true;
++    };
++    if (planned_count == 0 and allocation_count == 0 and overhead_count == 0) return;
++    print("DSPARK_PRIVATE_COPY_PHASE phase={d} snapshot={d} requests={d} plans={d} allocations={d} decisions={d} overheads={d} dropped_request_plan_allocation_decision_overhead={any} max_depth={d} max_width={d} storage_bytes={d}\n", .{ copy_phase, snapshot_count, request_count, planned_count, allocation_count, decision_count, overhead_count, dropped, max_depth, max_width, @sizeOf(@TypeOf(requests)) + @sizeOf(@TypeOf(planned)) + @sizeOf(@TypeOf(allocations)) + @sizeOf(@TypeOf(decisions)) + @sizeOf(@TypeOf(overhead_samples)) });
++    for (requests[0..request_count], 0..) |r, i| {
++        var id: [192]u8 = undefined;
++        const alphabet = "0123456789abcdef";
++        const n = @min(r.id_len, r.id.len);
++        for (r.id[0..n], 0..) |byte, j| {
++            id[j * 2] = alphabet[byte >> 4];
++            id[j * 2 + 1] = alphabet[byte & 15];
++        }
++        print("DSPARK_PRIVATE_COPY_REQUEST phase={d} request={d} id_hex={s} id_len={d} id_hash={x} prompt_hash={x} prompt_len={d} max_new={d}\n", .{ copy_phase, i, id[0 .. n * 2], r.id_len, r.id_hash, r.prompt_hash, r.prompt_len, r.max_new });
++    }
++    for (planned[0..planned_count], 0..) |p, i| {
++        print("DSPARK_PRIVATE_COPY_PLAN phase={d} plan={d} request={any} round={d} position={d} context_len={d} pending={any} kind={s} offered={d} held={d} tokens={any} suffix={any} last_match={any} last_end={any} trusted={} recalled={} reserved={} head_context={any} cohort={d} head_drafts={} proposal_depth={any} hold_context_rows={d} copy_width={any} draft_room={d} drafted={d} accepted={d} alone={}\n", .{ copy_phase, i, p.request, p.round, p.position, p.context_len, p.pending, p.kind, p.offered, p.held, p.tokens[0..p.token_count], p.suffix[0..p.suffix_count], p.last_match, p.last_end, p.trusted, p.recalled, p.reserved, p.head_context, p.cohort, p.head_drafts, p.proposal_depth, p.hold_context_rows, p.copy_width, p.draft_room, p.drafted, p.accepted, p.alone });
++    }
++    for (allocations[0..allocation_count], 0..) |a, i| {
++        print("DSPARK_PRIVATE_COPY_ALLOCATION phase={d} allocation={d} streams={d} max_rows={d} explicit={} live={} sampled={} overhead_ms_bits={d} nearest_streams={any} fixed_ms_bits={any} head_ms_bits={any} timed={} cost_source={s} cost_slots={d} probe_rows={any}\n", .{ copy_phase, i, a.streams, a.max_rows, a.explicit, a.live, a.sampled, a.overhead, a.nearest_streams, a.fixed, a.head, a.timed, if (a.explicit) "untimed" else if (a.live) "live" else "shared", a.cost_slots, a.probe_rows });
++        if (a.live and !a.explicit) {
++            // Small chunks stay below the single-write bound even at u64 max.
++            var width: usize = 0;
++            while (width < a.costs.len) : (width += 8) {
++                print("DSPARK_PRIVATE_COPY_PRICES phase={d} allocation={d} first_width={d} ms_bits={any}\n", .{ copy_phase, i, width, a.costs[width..@min(width + 8, a.costs.len)] });
++            }
++        }
++        for (decisions[a.first_decision .. a.first_decision + a.decisions], 0..) |d, order| {
++            print("DSPARK_PRIVATE_COPY_DECISION phase={d} allocation={d} order={d} plan={any} request={any} round={d} fixed={d} offered={d} allocated={d} chances_len={d} chances_bits={any} row_quote_ms_bits={any} row_applied_ms_bits={any} grammar={} finished={} paused={}\n", .{ copy_phase, i, order, d.plan, d.request, d.round, d.fixed, d.offered, d.allocated, d.chances_len, d.chances[0..@min(d.chances_len, max_depth)], d.row_quote, d.row_applied, d.grammar, d.finished, d.paused });
++        }
++    }
++    for (overhead_samples[0..overhead_count], 0..) |o, i| {
++        print("DSPARK_PRIVATE_COPY_OVERHEAD phase={d} observation={d} after_allocation={any} streams={d} rows={d} sampled={} net_ms_bits={d} head_ms_bits={d} forward_ms_bits={any} extra_ms_bits={any} fixed_ms_bits={any}\n", .{ copy_phase, i, o.after_allocation, o.streams, o.rows, o.sampled, o.net_ms, o.head_ms, o.forward_ms, o.extra_ms, o.fixed_ms });
++    }
++    clearCopies();
++    copy_phase += 1;
++}
+diff --git a/zig/src/core/lfm2_target_counters_private.zig b/zig/src/core/lfm2_target_counters_private.zig
+new file mode 100644
+index 000000000..50948a6a9
+--- /dev/null
++++ b/zig/src/core/lfm2_target_counters_private.zig
+@@ -0,0 +1,116 @@
++//! Private same-command-buffer target attribution; never a performance qualification.
++const std = @import("std");
++const mtl = @import("metal");
++const gpu = @import("gpu_counters.zig");
++const diagnostic = @import("lanes").dspark_probe_private;
++pub const Class = gpu.Class;
++
++pub const Call = struct {
++    rows: usize,
++    segments: usize,
++    recorded: bool,
++    unrecorded_head_last: bool,
++    tiled: bool,
++    head_rows: usize,
++    captured: bool,
++};
++
++pub const Probe = struct {
++    recorder: gpu.Recorder,
++    active: bool = false,
++    span_open: bool = false,
++    encoding_closed: bool = true,
++    call: u64 = 0,
++    context: Call = undefined,
++
++    /// The frozen driver preserves this non-TF_ name. Unset/0 keeps the original encoder and no counter storage.
++    pub fn init(allocator: std.mem.Allocator, device: mtl.Device, max_spans: usize) !Probe {
++        const value = std.mem.span(std.c.getenv("LFM2_PRIVATE_TARGET_COUNTERS") orelse "0");
++        const requested = std.mem.eql(u8, value, "1");
++        if (!requested and !std.mem.eql(u8, value, "0")) {
++            diagnostic.print("LFM2_PRIVATE_TARGET_GPU_INIT invalid=true error=InvalidPrivateTargetCounters\n", .{});
++            return error.InvalidPrivateTargetCounters;
++        }
++        // One fresh native server per diagnostic arm: a prior Engine.init cannot identify a new model's calibration.
++        if (requested and diagnostic.engine_initialized) {
++            diagnostic.print("LFM2_PRIVATE_TARGET_GPU_INIT invalid=true error=TargetCountersRequireFreshProcess\n", .{});
++            return error.TargetCountersRequireFreshProcess;
++        }
++        const recorder = gpu.Recorder.init(allocator, device, .{ .enabled = requested, .max_spans = max_spans }) catch |err| {
++            diagnostic.print("LFM2_PRIVATE_TARGET_GPU_INIT mode={s} invalid=true error={s}\n", .{ @tagName(mtl.counters.query(device).mode()), @errorName(err) });
++            return err;
++        };
++        if (requested) diagnostic.print("LFM2_PRIVATE_TARGET_GPU_INIT enabled=true mode={s} max_spans={d} calibration=excluded activation=LFM2_PRIVATE_TARGET_COUNTERS\n", .{ @tagName(recorder.capability().mode()), max_spans });
++        return .{ .recorder = recorder };
++    }
++
++    pub fn begin(self: *Probe, cb: mtl.CommandBuffer, context: Call) !void {
++        self.encoding_closed = false;
++        self.span_open = false;
++        self.active = self.recorder.enabled() and diagnostic.engine_initialized;
++        if (!self.active) return;
++        self.context = context;
++        self.call += 1;
++        try self.recorder.beginCommand(cb);
++    }
++
++    /// Every boundary precedes complete pipeline/buffer rebinding by the caller.
++    pub fn next(self: *Probe, encoder: *mtl.ComputeEncoder, kind: Class) !void {
++        if (!self.active) return;
++        if (self.span_open) try self.recorder.endSpan(encoder);
++        self.span_open = false;
++        try self.recorder.beginSpan(encoder, kind);
++        self.span_open = true;
++    }
++
++    pub fn rotated(self: *const Probe) bool {
++        return self.active and self.recorder.capability().mode() == .stage;
++    }
++
++    pub fn finish(self: *Probe, encoder: *mtl.ComputeEncoder) !void {
++        if (self.active) {
++            if (self.span_open) try self.recorder.endSpan(encoder);
++            self.span_open = false;
++            try self.recorder.finishEncoding(encoder);
++        } else encoder.end();
++        self.encoding_closed = true;
++    }
++
++    /// Called only on an unsubmitted command, or after the forward's existing final wait.
++    pub fn abort(self: *Probe, encoder: *mtl.ComputeEncoder, completed: bool, err: anyerror) void {
++        if (self.active) {
++            const ctx = self.context;
++            diagnostic.print("LFM2_PRIVATE_TARGET_GPU call={d} rows={d} segments={d} recorded={} unrecorded_head_last={} phase=serving mode={s} invalid=true error={s}\n", .{ self.call, ctx.rows, ctx.segments, ctx.recorded, ctx.unrecorded_head_last, @tagName(self.recorder.capability().mode()), @errorName(err) });
++            if (completed) {
++                self.recorder.discardAfterCompletion() catch unreachable;
++            } else self.recorder.cancelEncoding(encoder) catch unreachable;
++        } else if (!self.encoding_closed) encoder.end();
++        self.active = false;
++        self.encoding_closed = true;
++        self.span_open = false;
++    }
++
++    /// Resolution/calibration happens after the caller's original wait. No per-span waits or GPU submits.
++    pub fn report(self: *Probe, command_seconds: f64) !void {
++        if (!self.active) return;
++        const spans = try self.recorder.readAfterCompletion();
++        const calibration = self.recorder.calibration orelse return error.MissingClockCalibration;
++        var total: f64 = 0;
++        var buffer: [2048]u8 = undefined;
++        var used: usize = 0;
++        for (std.enums.values(Class), self.recorder.aggregates()) |kind, aggregate| {
++            if (aggregate.calls == 0) continue;
++            total += aggregate.gpu_seconds;
++            const text = try std.fmt.bufPrint(buffer[used..], " {s}={d}:{d:.6}", .{ @tagName(kind), aggregate.calls, aggregate.gpu_seconds * 1e3 });
++            used += text.len;
++        }
++        if (total <= 0 or !std.math.isFinite(total)) return error.InvalidCounterSample;
++        const ctx = self.context;
++        diagnostic.print("LFM2_PRIVATE_TARGET_GPU call={d} rows={d} segments={d} recorded={} unrecorded_head_last={} tiled={} head_rows={d} captured={} phase=serving mode={s} invalid=false spans={d} command_gpu_ms={d:.6} counter_gpu_ms={d:.6} cpu_delta_ns={d} gpu_delta_ticks={d} ns_per_tick={d:.9} class_units=spans:gpu_ms{s}\n", .{ self.call, ctx.rows, ctx.segments, ctx.recorded, ctx.unrecorded_head_last, ctx.tiled, ctx.head_rows, ctx.captured, @tagName(self.recorder.capability().mode()), spans.len, command_seconds * 1e3, total * 1e3, calibration.after.cpu - calibration.before.cpu, calibration.after.gpu - calibration.before.gpu, (try calibration.secondsPerTick()) * 1e9, buffer[0..used] });
++        self.active = false;
++    }
++
++    pub fn deinit(self: *Probe) void {
++        self.recorder.deinit() catch unreachable;
++    }
++};

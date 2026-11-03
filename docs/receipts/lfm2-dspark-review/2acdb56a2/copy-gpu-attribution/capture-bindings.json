@@ -1,0 +1,1015 @@
+{
+  "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+  "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+  "diagnostic_qualification": false,
+  "captures": [
+    {
+      "device": "m4",
+      "kind": "counter_off_copy_on",
+      "arm": "plain",
+      "returncode": 0,
+      "log_sha256": "13e770a950f9ffd160ff126693d80490af95c716a945f88dfb7ebed8729e7262",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "7b945ee00a8634c9034f1ef3ad1f8f3e31c46300386507e13a8541356640b8b5",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/private/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 68270044,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/tmp/tf-dspark-models-r15/target",
+          "remote_drafter": "/tmp/tf-dspark-models-r15/drafter",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+            "os_build": "25F80",
+            "machine": "arm64",
+            "hw_model": "Mac16,7",
+            "cpu": "Apple M4 Pro",
+            "memory_bytes": "51539607552",
+            "python": "3.14.7"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "1",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "0"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m4",
+      "kind": "counter_off_copy_on",
+      "arm": "bf16",
+      "returncode": 0,
+      "log_sha256": "f62d6748cbf20c96f233c37b4763436c113b3a2fa069c443b3e450c4cbd582bb",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "7b945ee00a8634c9034f1ef3ad1f8f3e31c46300386507e13a8541356640b8b5",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/private/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 68270044,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/tmp/tf-dspark-models-r15/target",
+          "remote_drafter": "/tmp/tf-dspark-models-r15/drafter",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+            "os_build": "25F80",
+            "machine": "arm64",
+            "hw_model": "Mac16,7",
+            "cpu": "Apple M4 Pro",
+            "memory_bytes": "51539607552",
+            "python": "3.14.7"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "1",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "0"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m4",
+      "kind": "counter_off_copy_on",
+      "arm": "bits8",
+      "returncode": 0,
+      "log_sha256": "d3f1d03d0281ab055f11dc818ac75a14b72dec92df4f1f28c784a8e72099fc68",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "7b945ee00a8634c9034f1ef3ad1f8f3e31c46300386507e13a8541356640b8b5",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/private/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 68270044,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/tmp/tf-dspark-models-r15/target",
+          "remote_drafter": "/tmp/tf-dspark-models-r15/drafter",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+            "os_build": "25F80",
+            "machine": "arm64",
+            "hw_model": "Mac16,7",
+            "cpu": "Apple M4 Pro",
+            "memory_bytes": "51539607552",
+            "python": "3.14.7"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "1",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "0"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m4",
+      "kind": "counter_on_copy_off",
+      "arm": "plain",
+      "returncode": 0,
+      "log_sha256": "96f0d4bfe702e3ac43fe291d6abeb7c62059cae825dc5c98e76575f1abf612c0",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "7b945ee00a8634c9034f1ef3ad1f8f3e31c46300386507e13a8541356640b8b5",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/private/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 68270044,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/tmp/tf-dspark-models-r15/target",
+          "remote_drafter": "/tmp/tf-dspark-models-r15/drafter",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+            "os_build": "25F80",
+            "machine": "arm64",
+            "hw_model": "Mac16,7",
+            "cpu": "Apple M4 Pro",
+            "memory_bytes": "51539607552",
+            "python": "3.14.7"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "0",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "1"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m4",
+      "kind": "counter_on_copy_off",
+      "arm": "bf16",
+      "returncode": 0,
+      "log_sha256": "059b79b687be339660fec26f321aabd5dae4772443b6a22860fa26194d80278d",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "7b945ee00a8634c9034f1ef3ad1f8f3e31c46300386507e13a8541356640b8b5",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/private/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 68270044,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/tmp/tf-dspark-models-r15/target",
+          "remote_drafter": "/tmp/tf-dspark-models-r15/drafter",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+            "os_build": "25F80",
+            "machine": "arm64",
+            "hw_model": "Mac16,7",
+            "cpu": "Apple M4 Pro",
+            "memory_bytes": "51539607552",
+            "python": "3.14.7"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "0",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "1"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m4",
+      "kind": "counter_on_copy_off",
+      "arm": "bits8",
+      "returncode": 0,
+      "log_sha256": "84b5bc90899b0e1b98678279dc77d52fc953a5161a50fb379ee7134ff8171fa4",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "7b945ee00a8634c9034f1ef3ad1f8f3e31c46300386507e13a8541356640b8b5",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/private/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 68270044,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/tmp/tf-dspark-models-r15/target",
+          "remote_drafter": "/tmp/tf-dspark-models-r15/drafter",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+            "os_build": "25F80",
+            "machine": "arm64",
+            "hw_model": "Mac16,7",
+            "cpu": "Apple M4 Pro",
+            "memory_bytes": "51539607552",
+            "python": "3.14.7"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "0",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "1"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m5",
+      "kind": "counter_off_copy_on",
+      "arm": "plain",
+      "returncode": 0,
+      "log_sha256": "ea34a089633c16726ca82af4d818dab21e74d7ab5ecb4f94e505a56b1368b256",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "a703ae3f617697678abb942c95523b938577f2d29e75563d40678be7372a29b2",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 3719605,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+          "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+            "os_build": "26A428",
+            "machine": "arm64",
+            "hw_model": "Mac17,15",
+            "cpu": "Apple M5 Ultra",
+            "memory_bytes": "274877906944",
+            "python": "3.13.15"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "1",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "0"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m5",
+      "kind": "counter_off_copy_on",
+      "arm": "bf16",
+      "returncode": 0,
+      "log_sha256": "79b8227440dd214df4963bff3934599a9376d0b00b708517f4b338c4ca6dcc6b",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "a703ae3f617697678abb942c95523b938577f2d29e75563d40678be7372a29b2",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 3719605,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+          "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+            "os_build": "26A428",
+            "machine": "arm64",
+            "hw_model": "Mac17,15",
+            "cpu": "Apple M5 Ultra",
+            "memory_bytes": "274877906944",
+            "python": "3.13.15"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "1",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "0"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m5",
+      "kind": "counter_off_copy_on",
+      "arm": "bits8",
+      "returncode": 0,
+      "log_sha256": "c15f9bd02d85fda79143ad323f99f636f9a852de9181a5595248848330722776",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "a703ae3f617697678abb942c95523b938577f2d29e75563d40678be7372a29b2",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 3719605,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+          "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+            "os_build": "26A428",
+            "machine": "arm64",
+            "hw_model": "Mac17,15",
+            "cpu": "Apple M5 Ultra",
+            "memory_bytes": "274877906944",
+            "python": "3.13.15"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "1",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "0"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m5",
+      "kind": "counter_on_copy_off",
+      "arm": "plain",
+      "returncode": 0,
+      "log_sha256": "82a3c9e16f32ff5010d36b0b11625e5d8ed25c461baf63bcb9c3388458b2c804",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "a703ae3f617697678abb942c95523b938577f2d29e75563d40678be7372a29b2",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 3719605,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+          "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+            "os_build": "26A428",
+            "machine": "arm64",
+            "hw_model": "Mac17,15",
+            "cpu": "Apple M5 Ultra",
+            "memory_bytes": "274877906944",
+            "python": "3.13.15"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "0",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "1"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m5",
+      "kind": "counter_on_copy_off",
+      "arm": "bf16",
+      "returncode": 0,
+      "log_sha256": "5c4568d3e6893ac82531d1df9c5b9983d43c96840b75b3937be8c7973ef25853",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "a703ae3f617697678abb942c95523b938577f2d29e75563d40678be7372a29b2",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 3719605,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+          "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+            "os_build": "26A428",
+            "machine": "arm64",
+            "hw_model": "Mac17,15",
+            "cpu": "Apple M5 Ultra",
+            "memory_bytes": "274877906944",
+            "python": "3.13.15"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "0",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "1"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    },
+    {
+      "device": "m5",
+      "kind": "counter_on_copy_off",
+      "arm": "bits8",
+      "returncode": 0,
+      "log_sha256": "35999e9a9071365c8168799573ec2693340847dbbdfc00235c8cf8cb219ee0cf",
+      "binding": {
+        "label": "PRIVATE_TARGET_CLASS_AND_COPY_PRICES_NOT_QUALIFICATION",
+        "base_source": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "production_source_under_diagnosis": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "base_vs_production": "Exact pushed production head plus separately bound private instrumentation only.",
+        "binary_sha256": "a703ae3f617697678abb942c95523b938577f2d29e75563d40678be7372a29b2",
+        "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "controller_sha256": "72a37d8b6f100f745855dfe65901bc25e522305ea96b1e1108fe9914445627cf",
+        "context": 4096,
+        "parallel": 16,
+        "tokens": 512,
+        "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+        "source_binding": {
+          "driver_sha256": {
+            "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+            "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+            "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+            "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+            "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+            "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+            "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+          },
+          "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+          "shared_lock": "/tmp/tensorfold-model.lock",
+          "shared_lock_inode_observed": 3719605,
+          "model_sha256": {
+            "target": {
+              "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+              "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+              "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+              "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+              "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+              "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+              "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+              "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+              "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+            },
+            "drafter": {
+              "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+              "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+            }
+          },
+          "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+          "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+          "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+          "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+          "device_environment": {
+            "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+            "os_build": "26A428",
+            "machine": "arm64",
+            "hw_model": "Mac17,15",
+            "cpu": "Apple M5 Ultra",
+            "memory_bytes": "274877906944",
+            "python": "3.13.15"
+          },
+          "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+          "source_archive_sha256": "50d6f5c91a62197fe53f6e026c394d85c75e861adda45c64683aca46a5ae2f81",
+          "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+          "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b",
+          "retained_runtime_patch_scope": "CF to pushed2acdb; not an additional patch to2acdb",
+          "private_diagnostic_limits": {
+            "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+            "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+            "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+            "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+            "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+            "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+          }
+        },
+        "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+        "qualification_throughput": false,
+        "diagnostic_environment": {
+          "LFM2_PRIVATE_COPY_TRACE": "0",
+          "LFM2_PRIVATE_TARGET_COUNTERS": "1"
+        },
+        "runtime_patch_sha256": "202028862c29e40752305bedd6fe4d3fd5bfbdd3c4110633216399e4436bee3b"
+      }
+    }
+  ]
+}

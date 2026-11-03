@@ -1,0 +1,45 @@
+{
+  "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+  "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+  "observed_physical_allocation": 31,
+  "position": 45,
+  "same_offers_and_probabilities": true,
+  "all_four_neural_contexts_declined": true,
+  "measured_head_component_ms": 0,
+  "fallback_was_used": false,
+  "actual_allocator_source": "zig/src/core/lanes/allocate.zig",
+  "replay_script_sha256": "f91b5e5a164913bb5514947bdcf080ebff33844e65231f96c98caa7428afeb9b",
+  "observed_replay_variants": {
+    "plain-observed": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "bf16-observed": [
+      6,
+      6,
+      6,
+      6
+    ],
+    "plain-curve-bf16-overhead": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "bf16-curve-zero-overhead": [
+      6,
+      6,
+      6,
+      6
+    ],
+    "bits8-curve-bf16-overhead": [
+      3,
+      3,
+      3,
+      3
+    ]
+  },
+  "conclusion": "The captured startup target-cost curve alone causes this copy allocation divergence; measured0.24972280811416847ms fixed overhead and unmeasured fallback do not. This is not a performance pass or proof of the older M5 all-declined case."
+}

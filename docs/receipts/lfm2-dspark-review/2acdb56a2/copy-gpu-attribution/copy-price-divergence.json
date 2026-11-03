@@ -1,0 +1,1014 @@
+{
+  "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+  "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+  "phase": 7,
+  "snapshot": 7,
+  "allocation": 31,
+  "target_position": 45,
+  "all_four_contexts_declined": true,
+  "head_residual_ms": 0,
+  "unmeasured_fallback_used": false,
+  "chance_bits_identical": true,
+  "offered_tokens_identical": true,
+  "plain_allocated": [
+    3,
+    3,
+    3,
+    3
+  ],
+  "bf16_allocated": [
+    6,
+    6,
+    6,
+    6
+  ],
+  "bf16_fixed_overhead_ms": 0.24972280811416847,
+  "startup_prices": {
+    "plain": {
+      "0": {
+        "width": 0,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "1": {
+        "width": 1,
+        "shared_ms_bits": 4621020291605066678,
+        "family_ms_bits": 4621020291605066678
+      },
+      "2": {
+        "width": 2,
+        "shared_ms_bits": 4622351105294954660,
+        "family_ms_bits": 4622351105294954660
+      },
+      "3": {
+        "width": 3,
+        "shared_ms_bits": 4624318615382162145,
+        "family_ms_bits": 4624318615382162145
+      },
+      "4": {
+        "width": 4,
+        "shared_ms_bits": 4625306592550416548,
+        "family_ms_bits": 4625306592550416548
+      },
+      "5": {
+        "width": 5,
+        "shared_ms_bits": 4626529038374270927,
+        "family_ms_bits": 4626529038374270927
+      },
+      "6": {
+        "width": 6,
+        "shared_ms_bits": 4627177556720612278,
+        "family_ms_bits": 4627177556720612278
+      },
+      "7": {
+        "width": 7,
+        "shared_ms_bits": 4628110364793431392,
+        "family_ms_bits": 4628110364793431392
+      },
+      "8": {
+        "width": 8,
+        "shared_ms_bits": 4628507807460546839,
+        "family_ms_bits": 4628507807460546839
+      },
+      "9": {
+        "width": 9,
+        "shared_ms_bits": 4629569249597722722,
+        "family_ms_bits": 4629569249597722722
+      },
+      "10": {
+        "width": 10,
+        "shared_ms_bits": 4629972321764372382,
+        "family_ms_bits": 4629972321764372382
+      },
+      "11": {
+        "width": 11,
+        "shared_ms_bits": 4630337676284142813,
+        "family_ms_bits": 4630337676284142813
+      },
+      "12": {
+        "width": 12,
+        "shared_ms_bits": 4630587344588485165,
+        "family_ms_bits": 4630587344588485165
+      },
+      "13": {
+        "width": 13,
+        "shared_ms_bits": 4631064726148986432,
+        "family_ms_bits": 4631064726148986432
+      },
+      "14": {
+        "width": 14,
+        "shared_ms_bits": 4631352393575184728,
+        "family_ms_bits": 4631352393575184728
+      },
+      "15": {
+        "width": 15,
+        "shared_ms_bits": 4631728725619046875,
+        "family_ms_bits": 4631728725619046875
+      },
+      "16": {
+        "width": 16,
+        "shared_ms_bits": 4631441761880290361,
+        "family_ms_bits": 4631441761880290361
+      },
+      "17": {
+        "width": 17,
+        "shared_ms_bits": 4632138271710160881,
+        "family_ms_bits": null
+      },
+      "18": {
+        "width": 18,
+        "shared_ms_bits": 4632482093394212945,
+        "family_ms_bits": null
+      },
+      "19": {
+        "width": 19,
+        "shared_ms_bits": 4632825211390823237,
+        "family_ms_bits": null
+      },
+      "20": {
+        "width": 20,
+        "shared_ms_bits": 4633078538869862825,
+        "family_ms_bits": null
+      },
+      "21": {
+        "width": 21,
+        "shared_ms_bits": 4633490196023302161,
+        "family_ms_bits": null
+      },
+      "22": {
+        "width": 22,
+        "shared_ms_bits": 4633667806733606585,
+        "family_ms_bits": null
+      },
+      "23": {
+        "width": 23,
+        "shared_ms_bits": 4634062293913466569,
+        "family_ms_bits": null
+      },
+      "24": {
+        "width": 24,
+        "shared_ms_bits": 4634317450979854778,
+        "family_ms_bits": null
+      },
+      "25": {
+        "width": 25,
+        "shared_ms_bits": 4634432785351561970,
+        "family_ms_bits": null
+      },
+      "26": {
+        "width": 26,
+        "shared_ms_bits": 4634571763621312856,
+        "family_ms_bits": null
+      },
+      "27": {
+        "width": 27,
+        "shared_ms_bits": 4634786951241008152,
+        "family_ms_bits": null
+      },
+      "28": {
+        "width": 28,
+        "shared_ms_bits": 4634903341143878008,
+        "family_ms_bits": null
+      },
+      "29": {
+        "width": 29,
+        "shared_ms_bits": 4635044360107210048,
+        "family_ms_bits": null
+      },
+      "30": {
+        "width": 30,
+        "shared_ms_bits": 4635162016647475102,
+        "family_ms_bits": null
+      },
+      "31": {
+        "width": 31,
+        "shared_ms_bits": 4635355108481498612,
+        "family_ms_bits": null
+      },
+      "32": {
+        "width": 32,
+        "shared_ms_bits": 4635466291097299320,
+        "family_ms_bits": null
+      },
+      "33": {
+        "width": 33,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "34": {
+        "width": 34,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "35": {
+        "width": 35,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "36": {
+        "width": 36,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "37": {
+        "width": 37,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "38": {
+        "width": 38,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "39": {
+        "width": 39,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "40": {
+        "width": 40,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "41": {
+        "width": 41,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "42": {
+        "width": 42,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "43": {
+        "width": 43,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "44": {
+        "width": 44,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "45": {
+        "width": 45,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "46": {
+        "width": 46,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "47": {
+        "width": 47,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "48": {
+        "width": 48,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "49": {
+        "width": 49,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "50": {
+        "width": 50,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "51": {
+        "width": 51,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "52": {
+        "width": 52,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "53": {
+        "width": 53,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "54": {
+        "width": 54,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "55": {
+        "width": 55,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "56": {
+        "width": 56,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "57": {
+        "width": 57,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "58": {
+        "width": 58,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "59": {
+        "width": 59,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "60": {
+        "width": 60,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "61": {
+        "width": 61,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "62": {
+        "width": 62,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "63": {
+        "width": 63,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "64": {
+        "width": 64,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      }
+    },
+    "bf16": {
+      "0": {
+        "width": 0,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "1": {
+        "width": 1,
+        "shared_ms_bits": 4620638048586693607,
+        "family_ms_bits": 4620638048586693607
+      },
+      "2": {
+        "width": 2,
+        "shared_ms_bits": 4622132680713027191,
+        "family_ms_bits": 4622132680713027191
+      },
+      "3": {
+        "width": 3,
+        "shared_ms_bits": 4624060221353541763,
+        "family_ms_bits": 4624060221353541763
+      },
+      "4": {
+        "width": 4,
+        "shared_ms_bits": 4625270000803444163,
+        "family_ms_bits": 4625270000803444163
+      },
+      "5": {
+        "width": 5,
+        "shared_ms_bits": 4626352835038850056,
+        "family_ms_bits": 4626352835038850056
+      },
+      "6": {
+        "width": 6,
+        "shared_ms_bits": 4627068625904625254,
+        "family_ms_bits": 4627068625904625254
+      },
+      "7": {
+        "width": 7,
+        "shared_ms_bits": 4628063076997344002,
+        "family_ms_bits": 4628063076997344002
+      },
+      "8": {
+        "width": 8,
+        "shared_ms_bits": 4628342581649217683,
+        "family_ms_bits": 4628342581649217683
+      },
+      "9": {
+        "width": 9,
+        "shared_ms_bits": 4629539413250191393,
+        "family_ms_bits": 4629539413250191393
+      },
+      "10": {
+        "width": 10,
+        "shared_ms_bits": 4629901108595264586,
+        "family_ms_bits": 4629901108595264586
+      },
+      "11": {
+        "width": 11,
+        "shared_ms_bits": 4630303336336984113,
+        "family_ms_bits": 4630303336336984113
+      },
+      "12": {
+        "width": 12,
+        "shared_ms_bits": 4630677698056009286,
+        "family_ms_bits": 4630677698056009286
+      },
+      "13": {
+        "width": 13,
+        "shared_ms_bits": 4631177879089624121,
+        "family_ms_bits": 4631177879089624121
+      },
+      "14": {
+        "width": 14,
+        "shared_ms_bits": 4631562936857764299,
+        "family_ms_bits": 4631562936857764299
+      },
+      "15": {
+        "width": 15,
+        "shared_ms_bits": 4632011748708129440,
+        "family_ms_bits": 4632011748708129440
+      },
+      "16": {
+        "width": 16,
+        "shared_ms_bits": 4631747021492533068,
+        "family_ms_bits": 4631747021492533068
+      },
+      "17": {
+        "width": 17,
+        "shared_ms_bits": 4632792560293524800,
+        "family_ms_bits": null
+      },
+      "18": {
+        "width": 18,
+        "shared_ms_bits": 4633018866174800168,
+        "family_ms_bits": null
+      },
+      "19": {
+        "width": 19,
+        "shared_ms_bits": 4633191128860547088,
+        "family_ms_bits": null
+      },
+      "20": {
+        "width": 20,
+        "shared_ms_bits": 4633358043521736508,
+        "family_ms_bits": null
+      },
+      "21": {
+        "width": 21,
+        "shared_ms_bits": 4633481751774000842,
+        "family_ms_bits": null
+      },
+      "22": {
+        "width": 22,
+        "shared_ms_bits": 4633676813932861326,
+        "family_ms_bits": null
+      },
+      "23": {
+        "width": 23,
+        "shared_ms_bits": 4633961385134315798,
+        "family_ms_bits": null
+      },
+      "24": {
+        "width": 24,
+        "shared_ms_bits": 4634182202253545304,
+        "family_ms_bits": null
+      },
+      "25": {
+        "width": 25,
+        "shared_ms_bits": 4634312032586553098,
+        "family_ms_bits": null
+      },
+      "26": {
+        "width": 26,
+        "shared_ms_bits": 4634405130435100148,
+        "family_ms_bits": null
+      },
+      "27": {
+        "width": 27,
+        "shared_ms_bits": 4634556915816291369,
+        "family_ms_bits": null
+      },
+      "28": {
+        "width": 28,
+        "shared_ms_bits": 4634678161162509484,
+        "family_ms_bits": null
+      },
+      "29": {
+        "width": 29,
+        "shared_ms_bits": 4634842049967699264,
+        "family_ms_bits": null
+      },
+      "30": {
+        "width": 30,
+        "shared_ms_bits": 4635003194391866114,
+        "family_ms_bits": null
+      },
+      "31": {
+        "width": 31,
+        "shared_ms_bits": 4635173697859008594,
+        "family_ms_bits": null
+      },
+      "32": {
+        "width": 32,
+        "shared_ms_bits": 4635266795707555644,
+        "family_ms_bits": null
+      },
+      "33": {
+        "width": 33,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "34": {
+        "width": 34,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "35": {
+        "width": 35,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "36": {
+        "width": 36,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "37": {
+        "width": 37,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "38": {
+        "width": 38,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "39": {
+        "width": 39,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "40": {
+        "width": 40,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "41": {
+        "width": 41,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "42": {
+        "width": 42,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "43": {
+        "width": 43,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "44": {
+        "width": 44,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "45": {
+        "width": 45,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "46": {
+        "width": 46,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "47": {
+        "width": 47,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "48": {
+        "width": 48,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "49": {
+        "width": 49,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "50": {
+        "width": 50,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "51": {
+        "width": 51,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "52": {
+        "width": 52,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "53": {
+        "width": 53,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "54": {
+        "width": 54,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "55": {
+        "width": 55,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "56": {
+        "width": 56,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "57": {
+        "width": 57,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "58": {
+        "width": 58,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "59": {
+        "width": 59,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "60": {
+        "width": 60,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "61": {
+        "width": 61,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "62": {
+        "width": 62,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "63": {
+        "width": 63,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "64": {
+        "width": 64,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      }
+    },
+    "bits8": {
+      "0": {
+        "width": 0,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "1": {
+        "width": 1,
+        "shared_ms_bits": 4620718550430032855,
+        "family_ms_bits": 4620718550430032855
+      },
+      "2": {
+        "width": 2,
+        "shared_ms_bits": 4622083141117126115,
+        "family_ms_bits": 4622083141117126115
+      },
+      "3": {
+        "width": 3,
+        "shared_ms_bits": 4623937498263695917,
+        "family_ms_bits": 4623937498263695917
+      },
+      "4": {
+        "width": 4,
+        "shared_ms_bits": 4625313629424834314,
+        "family_ms_bits": 4625313629424834314
+      },
+      "5": {
+        "width": 5,
+        "shared_ms_bits": 4626199149701566038,
+        "family_ms_bits": 4626199149701566038
+      },
+      "6": {
+        "width": 6,
+        "shared_ms_bits": 4626977709487147713,
+        "family_ms_bits": 4626977709487147713
+      },
+      "7": {
+        "width": 7,
+        "shared_ms_bits": 4628208881035280122,
+        "family_ms_bits": 4628208881035280122
+      },
+      "8": {
+        "width": 8,
+        "shared_ms_bits": 4628466430638970372,
+        "family_ms_bits": 4628466430638970372
+      },
+      "9": {
+        "width": 9,
+        "shared_ms_bits": 4629573471722373382,
+        "family_ms_bits": 4629573471722373382
+      },
+      "10": {
+        "width": 10,
+        "shared_ms_bits": 4629913774969216565,
+        "family_ms_bits": 4629913774969216565
+      },
+      "11": {
+        "width": 11,
+        "shared_ms_bits": 4630273077776987718,
+        "family_ms_bits": 4630273077776987718
+      },
+      "12": {
+        "width": 12,
+        "shared_ms_bits": 4630609158899180241,
+        "family_ms_bits": 4630609158899180241
+      },
+      "13": {
+        "width": 13,
+        "shared_ms_bits": 4631010401478481281,
+        "family_ms_bits": 4631010401478481281
+      },
+      "14": {
+        "width": 14,
+        "shared_ms_bits": 4631275550906542719,
+        "family_ms_bits": 4631275550906542719
+      },
+      "15": {
+        "width": 15,
+        "shared_ms_bits": 4631679889710587576,
+        "family_ms_bits": 4631679889710587576
+      },
+      "16": {
+        "width": 16,
+        "shared_ms_bits": 4631388140897226981,
+        "family_ms_bits": 4631388140897226981
+      },
+      "17": {
+        "width": 17,
+        "shared_ms_bits": 4632142916047276604,
+        "family_ms_bits": null
+      },
+      "18": {
+        "width": 18,
+        "shared_ms_bits": 4632489411743607424,
+        "family_ms_bits": null
+      },
+      "19": {
+        "width": 19,
+        "shared_ms_bits": 4632800863805337764,
+        "family_ms_bits": null
+      },
+      "20": {
+        "width": 20,
+        "shared_ms_bits": 4633051658009586958,
+        "family_ms_bits": null
+      },
+      "21": {
+        "width": 21,
+        "shared_ms_bits": 4633438404627587400,
+        "family_ms_bits": null
+      },
+      "22": {
+        "width": 22,
+        "shared_ms_bits": 4633807277584566714,
+        "family_ms_bits": null
+      },
+      "23": {
+        "width": 23,
+        "shared_ms_bits": 4634590622444752470,
+        "family_ms_bits": null
+      },
+      "24": {
+        "width": 24,
+        "shared_ms_bits": 4634987924374379560,
+        "family_ms_bits": null
+      },
+      "25": {
+        "width": 25,
+        "shared_ms_bits": 4635240618534721552,
+        "family_ms_bits": null
+      },
+      "26": {
+        "width": 26,
+        "shared_ms_bits": 4635385015197774118,
+        "family_ms_bits": null
+      },
+      "27": {
+        "width": 27,
+        "shared_ms_bits": 4635499082932086110,
+        "family_ms_bits": null
+      },
+      "28": {
+        "width": 28,
+        "shared_ms_bits": 4635515619586967864,
+        "family_ms_bits": null
+      },
+      "29": {
+        "width": 29,
+        "shared_ms_bits": 4635674089998855962,
+        "family_ms_bits": null
+      },
+      "30": {
+        "width": 30,
+        "shared_ms_bits": 4635848604484416570,
+        "family_ms_bits": null
+      },
+      "31": {
+        "width": 31,
+        "shared_ms_bits": 4636127968398801896,
+        "family_ms_bits": null
+      },
+      "32": {
+        "width": 32,
+        "shared_ms_bits": 4636457716334018428,
+        "family_ms_bits": null
+      },
+      "33": {
+        "width": 33,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "34": {
+        "width": 34,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "35": {
+        "width": 35,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "36": {
+        "width": 36,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "37": {
+        "width": 37,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "38": {
+        "width": 38,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "39": {
+        "width": 39,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "40": {
+        "width": 40,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "41": {
+        "width": 41,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "42": {
+        "width": 42,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "43": {
+        "width": 43,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "44": {
+        "width": 44,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "45": {
+        "width": 45,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "46": {
+        "width": 46,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "47": {
+        "width": 47,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "48": {
+        "width": 48,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "49": {
+        "width": 49,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "50": {
+        "width": 50,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "51": {
+        "width": 51,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "52": {
+        "width": 52,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "53": {
+        "width": 53,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "54": {
+        "width": 54,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "55": {
+        "width": 55,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "56": {
+        "width": 56,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "57": {
+        "width": 57,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "58": {
+        "width": 58,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "59": {
+        "width": 59,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "60": {
+        "width": 60,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "61": {
+        "width": 61,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "62": {
+        "width": 62,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "63": {
+        "width": 63,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      },
+      "64": {
+        "width": 64,
+        "shared_ms_bits": null,
+        "family_ms_bits": null
+      }
+    }
+  },
+  "limits": [
+    "This capture is private fixed-history diagnosis, not performance qualification.",
+    "Per-operator counter capture still running.",
+    "M5 new copy capture firstw4request enrolled because later arrivals were not yet queued; it is not the older all-declined M5 case."
+  ]
+}
