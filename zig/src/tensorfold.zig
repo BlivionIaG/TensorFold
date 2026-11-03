@@ -1,6 +1,7 @@
 //! The native engine: model loading, families and the lane core, over our Metal runtime.
 const std = @import("std");
 
+pub const benchmark_group = @import("core/benchmark_group.zig");
 pub const safetensors = @import("core/safetensors.zig");
 pub const gguf = @import("core/gguf.zig");
 pub const Checkpoint = checkpoint_host.Checkpoint;
@@ -102,6 +103,7 @@ test {
     _ = @import("families/lfm2_moe/dspark_bf16_test.zig");
     _ = @import("families/lfm2_moe/dspark_tap_test.zig");
     _ = @import("families/lfm2_moe/dspark_stage.zig");
+    _ = @import("families/deepseek_v41/metal/glue.zig"); // the launch wrappers' shape refusals, reached by no other test root
 }
 
 pub const lane_projection = @import("core/lane_projection.zig");
@@ -111,6 +113,8 @@ pub const recurrent_forks = @import("core/recurrent_forks.zig");
 pub const shared_kv = @import("core/shared_kv.zig");
 
 pub const kv_pool = @import("core/kv_pool.zig");
+
+pub const rope_freq = @import("core/rope_freq.zig");
 
 pub const shared_attention = @import("core/shared_attention.zig");
 

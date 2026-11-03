@@ -70,6 +70,11 @@ pub fn place() !Place {
     return p;
 }
 
+pub fn benchmark(p: *anyopaque) struct { ranks: ?u32, group: ?[]const u8 } {
+    const own: *Owned = @ptrCast(@alignCast(p));
+    return .{ .ranks = if (own.group) |g| @intCast(g.world) else 1, .group = own.benchmark_group };
+}
+
 /// MiniMax-M3.1-Flash on CUDA is served only as it was run: on GB10 (sm_121), at two TP ranks.
 pub fn admit(sm: u32, world: usize) error{ MiniMaxM3RequiresSm121, MiniMaxM3RequiresTwoRanks }!void {
     if (sm != 121) return error.MiniMaxM3RequiresSm121;
@@ -122,6 +127,7 @@ const Owned = struct {
     gpa: std.mem.Allocator,
     lib: ?cuda.nccl.Library = null,
     comm: cuda.nccl.Comm = null,
+    benchmark_group: ?[]const u8 = null,
     group: ?cuda.tp_group.Group = null, // lib and comm (owned above) with RoCE writes for two ranks' small gathers
     e: *engine.Engine,
     link: ?follow.Link = null,
@@ -142,6 +148,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
 }
 
 fn openRank(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: []const u8, o: Options, p: Place) !Loaded {
+    const priority_copies = try cuda.priority_copies.read("TF_MINIMAX_COPIES", o.drafts);
     const own = try gpa.create(Owned);
     errdefer gpa.destroy(own);
     own.* = .{ .gpa = gpa, .e = undefined, .lanes = undefined, .place = p };
@@ -204,6 +211,8 @@ fn openRank(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
         };
         try cuda.tp_watch.ready(io, own.e.checkpoint_digest);
     }
+    own.benchmark_group = if (own.group) |*g| try core.benchmark_group.cuda(gpa, io, ctx, g, own.e.stream) else null;
+    errdefer if (own.benchmark_group) |b| gpa.free(b);
     if (p.rank != 0) {
         follow.follow(own.e, &own.link.?) catch |err| {
             std.log.err("rank {d}: following rank 0 stopped ({s})", .{ p.rank, @errorName(err) });
@@ -217,6 +226,7 @@ fn openRank(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     }
     if (own.link) |*l| l.asleep = cuda.tp_watch.open();
     own.lanes = .{ .x = .{ .e = own.e, .link = if (own.link) |*l| l else null } };
+    own.lanes.priority_copies = priority_copies;
     return .{
         .backend = own.lanes.backend(),
         .facts = own.lanes.facts(),
@@ -287,6 +297,7 @@ fn release(own: *Owned) void {
         _ = lib.api.ncclCommDestroy(own.comm);
         lib.close();
     }
+    if (own.benchmark_group) |b| own.gpa.free(b);
     own.gpa.destroy(own);
 }
 

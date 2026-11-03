@@ -31,36 +31,8 @@ pub const Stop = struct {
     check: *const fn (ctx: *anyopaque, emitted: []const u32) bool,
 };
 
-/// tool_choice "required" or a named function: outside a think block the answer opens a call to an offered tool.
-pub const CallGate = struct {
-    /// The token that opens a call, the template text before the name, and the mark that ends the name.
-    opener: u32,
-    lead: []const u8 = "",
-    tail: []const u8 = "",
-    /// Offered names (empty: any); the gate completes a name its prefix starts.
-    names: []const []const u8 = &.{},
-    think_open: ?u32 = null,
-    think_end: ?u32 = null,
-};
-
-/// response_format and the guided_* fields: every token keeps the reply inside this grammar.
-pub const Structure = struct {
-    kind: enum { json, json_schema, regex, choice, grammar, structural_tag },
-    /// The schema (JSON text), regex, choices (a JSON array), EBNF or structural tag; empty for any JSON object.
-    text: []const u8 = "",
-    /// With thinking on, the grammar starts after this token.
-    after: ?u32 = null,
-    /// The server's compiler, which has compiled `text` once already (the engine's compile is then a cache hit).
-    compiler: ?*grammar.Compiler = null,
-    /// That compile, which the engine reads instead of compiling again; the server frees it after `finished`.
-    compiled: ?grammar.Compiled = null,
-    /// grammar_budget: mask tokens after which the reply could no longer complete within its token limits.
-    budget: bool = false,
-
-    pub fn free(st: Structure) void {
-        if (st.compiled) |g| g.free();
-    }
-};
+pub const CallGate = @import("engine_request_controls.zig").CallGate;
+pub const Structure = @import("engine_request_controls.zig").Structure;
 
 pub const grammar = lanes.grammar;
 
@@ -171,8 +143,14 @@ pub const Sink = struct {
     event: *const fn (ctx: *anyopaque, id: Id, event: *const Event) void,
 };
 
+pub const Benchmark = @import("benchmark_info.zig").Snapshot;
+
 /// What the engine serves, fixed once it has loaded.
 pub const Info = struct {
+    /// The loaded world; multi-rank engines override the local engine's one before publication.
+    benchmark_ranks: ?u32 = 1,
+    /// Frozen public startup inventory, owned by the engine; never invokes an HTTP-thread collective.
+    benchmark_group: ?[]const u8 = null,
     name: []const u8 = "lanes",
     text_generation: bool = true,
     embeddings: ?lanes.embedding.Info = null,
@@ -577,17 +555,5 @@ pub const originals = @import("originals.zig");
 pub const save_guard = @import("save_guard");
 
 test {
-    _ = @import("lane_embedding_test.zig");
-    _ = speech_guard;
-    _ = @import("lane_host.zig");
-    _ = load_ledger;
-    _ = @import("lane_host_test.zig");
-    _ = @import("lane_root_copy_test.zig");
-    _ = @import("lane_rounds_test.zig");
-    _ = @import("lane_halt_test.zig");
-    _ = @import("prompt_cache.zig");
-    _ = @import("prompt_radix.zig");
-    _ = @import("prompt_imprint.zig");
-    _ = @import("keepalive.zig");
-    _ = @import("originals_test.zig");
+    _ = @import("engine_api_test.zig");
 }

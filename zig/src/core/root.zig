@@ -1,5 +1,6 @@
 //! Backend-neutral engine parts: checkpoint files, the CUDA draft-depth rule, the copy index, the tokenizer.
 
+pub const benchmark_group = @import("benchmark_group.zig");
 pub const weight_only = @import("weight_only.zig");
 pub const profile = @import("profile");
 pub const safetensors = @import("safetensors.zig");
@@ -65,6 +66,7 @@ pub const kv_pool = @import("kv_pool.zig");
 pub const kv_prompts = @import("kv_prompts.zig");
 
 test {
+    _ = benchmark_group;
     _ = profile;
     _ = checkpoint_weights;
     _ = safetensors;

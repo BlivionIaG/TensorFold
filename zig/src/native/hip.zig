@@ -7,12 +7,14 @@ const lanes = @import("lanes");
 const qwen35 = @import("qwen3_5");
 const flashnext = @import("flashnext");
 const nemotron = @import("nemotron");
+const serve = @import("hip_serve");
+const glm_ocr = @import("glm_ocr");
 const Allocator = std.mem.Allocator;
 const admission = hip.admission;
 const modelContext = admission.modelContext;
 
 /// The HIP families: namespaces with `model_type`, `formats`, `default_context`, `prefill_step`, `open` and `follow`.
-const registry = .{ qwen35.native, qwen35.native_moe, flashnext.native, nemotron.native };
+const registry = .{ qwen35.native, qwen35.native_moe, flashnext.native, nemotron.native, glm_ocr.native };
 
 pub const backends: []const []const u8 = &.{"hip"};
 /// No per-thread alternate signal stack: its thread-local leaves RCCL's and HIP's threads too little stack to start.
@@ -72,7 +74,7 @@ const Ready = struct {
     /// The policy's line, for the server's info.
     policy_line: []const u8,
 
-    const Options = qwen35.native_engine.Options;
+    const Options = serve.Options;
 
     fn deinit(r: Ready, gpa: Allocator) void {
         gpa.free(r.policy_line);
@@ -130,6 +132,7 @@ fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open
             .world = o.tp,
             .cache_gib = o.prompt_cache_gib,
             .cache_over_cap = o.prompt_cache_over_cap,
+            .vision = o.vision,
         },
         .policy_line = policy_line,
     };
@@ -202,6 +205,8 @@ fn reasoning(comptime F: type) bool {
 
 /// The family's refusal of --slide or --mtp-confidence, when it names one.
 fn flagRefused(comptime F: type, o: api.Open) ?[]const u8 {
+    if (o.tp != 1 and @hasDecl(F, "tp_refusal")) return F.tp_refusal;
+    if (o.mtp_drafts) |n| if (n > 0 and @hasDecl(F, "mtp_refusal")) return F.mtp_refusal;
     if (o.rope_yarn != null) return "--rope-yarn: the native HIP engine has no YaRN rope; serve without --rope-yarn, or on CUDA";
     if (o.slide and @hasDecl(F, "slide_refusal")) return F.slide_refusal;
     if (o.mtp_confidence != null and @hasDecl(F, "confidence_refusal")) return F.confidence_refusal;
@@ -236,6 +241,26 @@ const Host = struct {
 fn readMemory(_: ?*anyopaque, reset_peak: bool) ?api.Memory {
     const u = hip.usage(reset_peak);
     return .{ .active = u.device, .cache = 0, .peak = u.peak };
+}
+
+fn visionOffer(loaded: anytype) ?api.Vision {
+    return if (@hasField(@TypeOf(loaded), "vision")) loaded.vision else null;
+}
+
+test "HIP optional family offers: image metadata comes from the loaded owner" {
+    try std.testing.expect(visionOffer(.{}) == null);
+    try std.testing.expect(visionOffer(.{ .vision = @as(?api.Vision, null) }) == null);
+    const Stub = struct {
+        fn prepare(_: *anyopaque, _: Allocator, _: []const u8, _: u32) !api.PreparedImage {
+            return error.Unused;
+        }
+    };
+    var owner: u8 = 0;
+    const v: api.Vision = .{ .ctx = &owner, .prepare = Stub.prepare, .image_token = 9, .image_tokens = 6144, .max_images = 2 };
+    const offered = visionOffer(.{ .vision = @as(?api.Vision, v) }).?;
+    try std.testing.expectEqual(v.ctx, offered.ctx);
+    try std.testing.expectEqual(v.image_token, offered.image_token);
+    try std.testing.expectEqual(v.image_tokens, offered.image_tokens);
 }
 
 /// The engine for `o.dir`, or null with `problem` when no HIP family reads it; under tensor parallelism, rank 0.
@@ -285,8 +310,13 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
     h.clock = .{ .io = io };
     h.core = lanes.Engine.init(gpa, &h.cfg, loaded.backend, h.clock.clock());
     errdefer h.core.deinit();
-    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = @intCast(loaded.streams), .context_window = @intCast(r.options.window), .prefill_step = F.prefill_step, .decode_share = o.decode_share, .policy = h.policy_line, .startup = loaded.startup, .structures = true, .reasoning = reasoning(F) });
+    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .benchmark_ranks = if (r.dev.group) |g| @intCast(g.world) else 1, .lanes = @intCast(loaded.streams), .context_window = @intCast(r.options.window), .prefill_step = F.prefill_step, .decode_share = o.decode_share, .policy = h.policy_line, .startup = loaded.startup, .structures = true, .vision = visionOffer(loaded), .reasoning = reasoning(F) });
     h.host.memory = .{ .read = readMemory };
+    if (@hasField(@TypeOf(loaded), "cache")) {
+        h.host.cache = loaded.cache;
+        h.host.info_.prompt_cache = loaded.cache != null;
+        h.host.info_.prompt_cache_capacity = loaded.cache_capacity;
+    }
     try h.host.start();
     served = true;
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };
@@ -335,6 +365,15 @@ test "every registered family is listed for capabilities" {
     try std.testing.expectEqualStrings("qwen3_5_moe", families[1].model_type);
     try std.testing.expectEqualStrings("qwen4_exp", families[2].model_type);
     try std.testing.expectEqualStrings("nemotron_h", families[3].model_type);
+    try std.testing.expectEqualStrings("glm_ocr", families[4].model_type);
+}
+
+test "GLM-OCR native flags: MTP and tensor ranks refuse before readiness; copy drafts remain" {
+    const F = glm_ocr.native;
+    try std.testing.expect(!reasoning(F)); // GLM-OCR replies carry no reasoning block
+    try std.testing.expectEqualStrings(F.mtp_refusal, flagRefused(F, .{ .dir = "missing", .model_type = F.model_type, .mtp_drafts = 1 }).?);
+    try std.testing.expectEqualStrings(F.tp_refusal, flagRefused(F, .{ .dir = "missing", .model_type = F.model_type, .tp = 2 }).?);
+    try std.testing.expect(flagRefused(F, .{ .dir = "missing", .model_type = F.model_type, .mtp_drafts = 0 }) == null);
 }
 
 test "Nemotron refuses --slide and --mtp-confidence on HIP before it loads, and keeps a cap" {
