@@ -70,10 +70,10 @@ pub const Metal = struct {
         return out;
     }
 
-    /// Measure prices after the caller enrolls the serving working set.
-    pub fn measure(self: *Metal) !void {
+    /// Price before preparing tap destinations, after committing the admitted working set.
+    pub fn measure(self: *Metal, flush: ?mtl.keepalive.Target.Flush) !void {
         if (self.width == 1) return;
-        self.timed = try self.time();
+        self.timed = try self.time(flush);
     }
 
     pub fn deinit(self: *Metal) void {
@@ -95,10 +95,11 @@ pub const Metal = struct {
     }
 
     /// Each window width's forward ms on a 256-token history (the fastest of three, after the GPU's clocks ramp up).
-    fn time(self: *Metal) !usize {
+    fn time(self: *Metal, flush: ?mtl.keepalive.Target.Flush) !usize {
         var cache = try st.Cache.init(self.gpa, self.model.device, &self.model.config.attention, 512);
         defer cache.deinit();
         cache.memory.setResident(self.residency);
+        if (flush) |f| f.run(f.ctx);
         var ids: [256]u32 = undefined;
         for (&ids, 0..) |*id, i| id.* = @intCast((i * 7919 + 13) % c.vocab);
         try fwd.run(self.model, &self.scratch, &.{.{ .cache = &cache, .rows = 256 }}, &ids, false, .last);
@@ -126,6 +127,7 @@ pub const Metal = struct {
         var other = try st.Cache.init(self.gpa, self.model.device, &self.model.config.attention, 512);
         defer other.deinit();
         other.memory.setResident(self.residency);
+        if (flush) |f| f.run(f.ctx);
         try fwd.run(self.model, &self.scratch, &.{.{ .cache = &other, .rows = 256 }}, &ids, false, .last);
         var shared_base: f64 = 0;
         for (st.window_rows..st.batch_rows + 1) |rows| {
