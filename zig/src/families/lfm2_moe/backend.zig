@@ -67,8 +67,13 @@ pub const Metal = struct {
             else => return err,
         };
         out.width = st.window_rows;
-        out.timed = try out.time();
         return out;
+    }
+
+    /// Measure prices after the caller enrolls the serving working set.
+    pub fn measure(self: *Metal) !void {
+        if (self.width == 1) return;
+        self.timed = try self.time();
     }
 
     pub fn deinit(self: *Metal) void {
@@ -93,6 +98,7 @@ pub const Metal = struct {
     fn time(self: *Metal) !usize {
         var cache = try st.Cache.init(self.gpa, self.model.device, &self.model.config.attention, 512);
         defer cache.deinit();
+        cache.memory.setResident(self.residency);
         var ids: [256]u32 = undefined;
         for (&ids, 0..) |*id, i| id.* = @intCast((i * 7919 + 13) % c.vocab);
         try fwd.run(self.model, &self.scratch, &.{.{ .cache = &cache, .rows = 256 }}, &ids, false, .last);
@@ -119,6 +125,7 @@ pub const Metal = struct {
         // Two qualified windows measure shared-row increments against the same shared shape at 16 rows.
         var other = try st.Cache.init(self.gpa, self.model.device, &self.model.config.attention, 512);
         defer other.deinit();
+        other.memory.setResident(self.residency);
         try fwd.run(self.model, &self.scratch, &.{.{ .cache = &other, .rows = 256 }}, &ids, false, .last);
         var shared_base: f64 = 0;
         for (st.window_rows..st.batch_rows + 1) |rows| {

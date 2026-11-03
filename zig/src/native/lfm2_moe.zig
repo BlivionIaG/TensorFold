@@ -122,6 +122,14 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
         h.wrap.?.held_on_target = true;
     }
     errdefer if (h.wrap) |*w| w.deinit();
+    try mtl.resident.streams.hold(h, io, "lfm2 moe");
+    errdefer mtl.resident.streams.drop(h);
+    if (h.draft) |d| if (h.resident) |*r| {
+        const held = try d.buffers(gpa);
+        defer gpa.free(held);
+        r.add(held);
+    };
+    try h.metal.measure();
     const facts = if (h.wrap) |*w| w.facts(h.metal.facts()) else h.metal.facts();
     h.config = try lanes.Config.init(gpa, facts, q.state.window_rows, q.state.window_rows - 1);
     errdefer h.config.deinit(gpa);
@@ -155,13 +163,6 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
         h.host.info_.prompt_cache = true;
     }
     errdefer if (h.cache) |*store| store.deinit();
-    try mtl.resident.streams.hold(h, io, "lfm2 moe");
-    errdefer mtl.resident.streams.drop(h);
-    if (h.draft) |d| if (h.resident) |*r| {
-        const held = try d.buffers(gpa);
-        defer gpa.free(held);
-        r.add(held);
-    };
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
     try h.host.start();
     if (h.draft) |d| {
