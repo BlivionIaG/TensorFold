@@ -20,7 +20,7 @@ it ships as its own build:
 
 That formula installs `tensorfold-glp` from
 [BlivionIaG/TensorFold](https://github.com/BlivionIaG/TensorFold)'s release
-`v1.1.8-glp.1`, which is upstream `main` plus this branch. The plain
+`v1.2.1-glp.1`, which is upstream 1.2.1 plus this branch. The plain
 `tensorfold` formula installs upstream's engine, which has no `--glp` and
 serves the model without steering.
 
