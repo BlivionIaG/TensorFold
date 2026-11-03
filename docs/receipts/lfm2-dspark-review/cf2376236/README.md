@@ -1,6 +1,13 @@
 # DSpark request enrollment and copy ownership — source `cf2376236`
 
-**Prequalification snapshot. Not review-ready; no full current-source performance pass is claimed.** Both complete device matrices are running. Original native/GPU checks and correctly source-bound M5 functional serving workflows pass. The maintainer requires every cell >= same-head plain, with no tolerance. All historical failures remain preserved.
+**Both full device matrices are complete; both strict speed gates failed. Not review-ready.** Original native/GPU checks and correctly source-bound M5 functional serving workflows pass. The maintainer requires every cell >= same-head plain, with no tolerance. All historical failures remain preserved.
+
+| Device | Complete cells / token oracles | Strict speed losses | Worst delta |
+| --- | --- | ---: | ---: |
+| M4 Pro | 144/144 / 306/306; zero exactness or scenario failures | 12/32 | -5.322375682894121% |
+| M5 Ultra | 144/144 / 306/306; zero exactness or scenario failures | 16/32 | -1.4341478593879908% |
+
+**[All 64 current-source comparisons, unchanged verdicts and raw receipts](qualification/README.md).** Both original controllers exited 3; all nine servers per device exited 0 without forced kills. Complete and exact is not speed-qualified.
 
 This is an **evidence-only branch**, not the qualified code branch. The pushed production source is [`cf23762368785b470b3bf7485026e2ea4837ce82`](https://github.com/BlivionIaG/TensorFold/commit/cf23762368785b470b3bf7485026e2ea4837ce82), with pinned main `6a5048697e0770a464a4093ff6373f6a73f998b6` integrated by normal merge `0b2e9336e2b77dad06652048a25f283e16100974`. Documentation commits here must never be substituted for the production source revision.
 
@@ -17,7 +24,7 @@ There is one admission registry, bounded provider/precision-local conditional hi
 
 ## Actual remaining bottleneck: target GPU work, not reservation churn
 
-The diagnostic below uses source `5bed4bd92c7c257f963046b945d83fc931dcbf29` with a private instrumentation patch, before the later test-only deletion. Its binary is `4ece120959114a1fddc1006fe9e0823daf78d5473d2962c437a6c1dd241c8799`. Instrumentation changes no math, scheduling policy, kernels or synchronization; it reuses existing completed command-buffer timing and records host elapsed spans. It is not a production throughput qualification.
+The **M4 Pro** diagnostic below uses source `5bed4bd92c7c257f963046b945d83fc931dcbf29` with a private instrumentation patch, before the later test-only deletion. Its binary is `4ece120959114a1fddc1006fe9e0823daf78d5473d2962c437a6c1dd241c8799`. Instrumentation changes no math, scheduling policy, kernels or synchronization; it reuses existing completed command-buffer timing and records host elapsed spans. It is not a production throughput qualification. No equivalent M5 GPU-time breakdown was measured.
 
 For code,T=1,width8, shares of active decode-step wall time were:
 
@@ -83,7 +90,7 @@ The final native comparison is reporting-only. Exit0 is never used to assert nin
 
 These are functional stress outcomes, not pooled performance qualification. `serving-functionals.json` preserves the full results, source-labelled proofs and actual shutdown records.
 
-Full qualification remains the original plain/BF16/8-bit, code/chat,T=0/1,widths1/4/8/16,512-token,three-balanced-rotation workflow on both devices. No selected winning subset, pooled score, or <1% waiver replaces all32 comparisons per device.
+Full qualification completed using the original plain/BF16/8-bit, code/chat, T=0/1, widths 1/4/8/16, 512-token, three-balanced-rotation workflow on both devices. The [complete packets](qualification/README.md) preserve both failures, every comparison, source/binary/model/driver bindings, all original publishable records and unchanged verdict replay. All 31 publication-manifest entries were independently SHA256-checked. No selected winning subset, pooled score, or <1% waiver replaces all 32 comparisons per device.
 
 ## GitHub blocker, separate from performance
 
@@ -98,6 +105,7 @@ Current PR metadata says CONFLICTING/DIRTY and has no current-head CI rollup, wh
 - `github-readiness.json`: contradictory ancestry/mergeability evidence and rejected guarded sync request.
 - `source-label-correction.json`: metadata-only correction provenance; raw records are not rewritten.
 - `serving-functionals.json`: actual current-source cache/sample/cancellation results and clean shutdowns in both weight modes.
+- [Current-source full qualification](qualification/README.md): all 64 comparisons, both complete failed speed verdicts, raw records, frozen driver, source-bound controllers and assembly proof.
 - [Complete historical750bca95c report](https://github.com/BlivionIaG/TensorFold/blob/0cece53cc7be9fa67c9c792945ae3b2f17fbc6bf/docs/receipts/lfm2-dspark-review/750bca95c/README.md): all64 original comparisons and raw receipts. Both original speed verdicts failed. They are not renamed as current-source results.
 
 No current MLX comparison was run in this diagnostic. These findings identify TensorFold's own paid work and dominant waits; they do not invent an MLX speedup, achieved-bandwidth measurement, or GPU-occupancy claim.

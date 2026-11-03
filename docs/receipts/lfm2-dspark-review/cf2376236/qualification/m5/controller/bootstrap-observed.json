@@ -1,0 +1,21 @@
+{
+  "label": "CANDIDATE_NATIVE_BUILD_NOT_PERFORMANCE_QUALIFICATION",
+  "source_revision": "cf23762368785b470b3bf7485026e2ea4837ce82",
+  "source_archive_sha256": "5c43f984522404e10242ca25f4afc998f8bf6c4a9e505ed7a15ffbb78e564253",
+  "command": [
+    "/Users/kletorch/tf-lfm2-test/r16-source-unit-9348e8306/zig-0.17.0/zig",
+    "build",
+    "native",
+    "-Dcpu=apple_m1",
+    "-Dversion=1.2.0",
+    "-j1",
+    "--summary",
+    "all"
+  ],
+  "returncode": 0,
+  "elapsed_s": 100.55556304100901,
+  "build_log_sha256": "1ca7b069e026676c8c3d062d61be5c0cfb92c5defe9321a52f16111baa4f1f29",
+  "binary_sha256": "7a1210390424df60a2610454499f53018fa99bd466cd5a24757ecd7680a541ab",
+  "help_returncode": 0,
+  "help_log_sha256": "3a340964aecfd899eae0c30048f2a47c1d946f58c76dd6dc9c6c9266e234ca45"
+}

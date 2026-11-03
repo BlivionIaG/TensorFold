@@ -317,7 +317,9 @@
     "executed_tests_skipped": 4
   },
   "source_archive_sha256": "5c43f984522404e10242ca25f4afc998f8bf6c4a9e505ed7a15ffbb78e564253",
-  "full_performance_qualification_status": "IN_PROGRESS_NOT_A_PASS",
+  "full_performance_qualification_status": "COMPLETE_BOTH_STRICT_SPEED_GATES_FAILED",
+  "full_performance_qualification_report": "qualification/README.md",
+  "full_performance_strict_losses": { "M4_Pro": 12, "M5_Ultra": 16 },
   "ci_status": "NO_CURRENT_HEAD_ROLLUP_REPORTED",
   "review_ready": false
 }

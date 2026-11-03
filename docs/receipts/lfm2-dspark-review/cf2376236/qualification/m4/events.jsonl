@@ -1,0 +1,162 @@
+{"event": "ready", "at": "2026-11-03T11:30:46Z", "label": "r0-plain", "arm": "plain", "seconds": 8.6, "flags": [], "dspark_mode": null, "binary_sha256": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac", "dspark_weights_mib": null}
+{"event": "cell", "at": "2026-11-03T11:30:57Z", "rep": 0, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 1, "aggregate_tps": 164.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:31:05Z", "rep": 0, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 4, "aggregate_tps": 283.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:31:19Z", "rep": 0, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 8, "aggregate_tps": 313.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:31:45Z", "rep": 0, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 16, "aggregate_tps": 349.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:34:11Z", "rep": 0, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 1, "aggregate_tps": 111.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:34:23Z", "rep": 0, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 4, "aggregate_tps": 197.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:34:41Z", "rep": 0, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 8, "aggregate_tps": 236.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:35:11Z", "rep": 0, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 16, "aggregate_tps": 290.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:35:25Z", "rep": 0, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 1, "aggregate_tps": 115.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:35:35Z", "rep": 0, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 4, "aggregate_tps": 239.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:35:52Z", "rep": 0, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 8, "aggregate_tps": 269.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:36:19Z", "rep": 0, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 16, "aggregate_tps": 330.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:38:50Z", "rep": 0, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 1, "aggregate_tps": 120.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:39:00Z", "rep": 0, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 4, "aggregate_tps": 216.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:39:18Z", "rep": 0, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 8, "aggregate_tps": 259.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:39:46Z", "rep": 0, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 16, "aggregate_tps": 315.7, "ok": true, "failures": 0}
+{"event": "shutdown", "at": "2026-11-03T11:39:46Z", "label": "r0-plain", "forced_kill": false, "seconds": 0.3, "returncode": 0}
+{"event": "ready", "at": "2026-11-03T11:40:04Z", "label": "r0-bf16", "arm": "bf16", "seconds": 17.8, "flags": ["--drafter", "{drafter}"], "dspark_mode": "bf16", "binary_sha256": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac", "dspark_weights_mib": 625.1}
+{"event": "cell", "at": "2026-11-03T11:40:15Z", "rep": 0, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 1, "aggregate_tps": 169.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:40:23Z", "rep": 0, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 4, "aggregate_tps": 292.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:40:37Z", "rep": 0, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 8, "aggregate_tps": 322.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:41:01Z", "rep": 0, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 16, "aggregate_tps": 359.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:43:23Z", "rep": 0, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 1, "aggregate_tps": 115.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:43:34Z", "rep": 0, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 4, "aggregate_tps": 205.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:43:51Z", "rep": 0, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 8, "aggregate_tps": 247.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:44:20Z", "rep": 0, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 16, "aggregate_tps": 303.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:44:33Z", "rep": 0, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 1, "aggregate_tps": 126.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:44:42Z", "rep": 0, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 4, "aggregate_tps": 254.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:44:58Z", "rep": 0, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 8, "aggregate_tps": 289.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:45:24Z", "rep": 0, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 16, "aggregate_tps": 346.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:47:47Z", "rep": 0, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 1, "aggregate_tps": 126.4, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:47:57Z", "rep": 0, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 4, "aggregate_tps": 219.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:48:14Z", "rep": 0, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 8, "aggregate_tps": 261.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:48:42Z", "rep": 0, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 16, "aggregate_tps": 317.3, "ok": true, "failures": 0}
+{"event": "shutdown", "at": "2026-11-03T11:48:43Z", "label": "r0-bf16", "forced_kill": false, "seconds": 0.6, "returncode": 0}
+{"event": "ready", "at": "2026-11-03T11:48:59Z", "label": "r0-bits8", "arm": "bits8", "seconds": 15.7, "flags": ["--drafter", "{drafter}", "--drafter-bits", "8"], "dspark_mode": "bits8", "binary_sha256": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac", "dspark_weights_mib": 361.4}
+{"event": "cell", "at": "2026-11-03T11:49:09Z", "rep": 0, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 1, "aggregate_tps": 177.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:49:17Z", "rep": 0, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 4, "aggregate_tps": 292.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:49:31Z", "rep": 0, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 8, "aggregate_tps": 326.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:49:55Z", "rep": 0, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 16, "aggregate_tps": 359.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:52:10Z", "rep": 0, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 1, "aggregate_tps": 120.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:52:20Z", "rep": 0, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 4, "aggregate_tps": 209.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:52:38Z", "rep": 0, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 8, "aggregate_tps": 249.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:53:07Z", "rep": 0, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 16, "aggregate_tps": 303.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:53:20Z", "rep": 0, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 1, "aggregate_tps": 126.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:53:29Z", "rep": 0, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 4, "aggregate_tps": 254.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:53:44Z", "rep": 0, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 8, "aggregate_tps": 289.4, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:54:10Z", "rep": 0, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 16, "aggregate_tps": 346.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:56:29Z", "rep": 0, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 1, "aggregate_tps": 125.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:56:39Z", "rep": 0, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 4, "aggregate_tps": 222.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:56:56Z", "rep": 0, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 8, "aggregate_tps": 262.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:57:24Z", "rep": 0, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 16, "aggregate_tps": 317.0, "ok": true, "failures": 0}
+{"event": "shutdown", "at": "2026-11-03T11:57:25Z", "label": "r0-bits8", "forced_kill": false, "seconds": 0.4, "returncode": 0}
+{"event": "ready", "at": "2026-11-03T11:57:42Z", "label": "r1-bf16", "arm": "bf16", "seconds": 17.8, "flags": ["--drafter", "{drafter}"], "dspark_mode": "bf16", "binary_sha256": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac", "dspark_weights_mib": 625.1}
+{"event": "cell", "at": "2026-11-03T11:57:53Z", "rep": 1, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 1, "aggregate_tps": 177.4, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:58:00Z", "rep": 1, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 4, "aggregate_tps": 297.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:58:14Z", "rep": 1, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 8, "aggregate_tps": 325.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T11:58:39Z", "rep": 1, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 16, "aggregate_tps": 361.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:00:54Z", "rep": 1, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 1, "aggregate_tps": 122.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:01:04Z", "rep": 1, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 4, "aggregate_tps": 209.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:01:22Z", "rep": 1, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 8, "aggregate_tps": 248.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:01:51Z", "rep": 1, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 16, "aggregate_tps": 305.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:02:04Z", "rep": 1, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 1, "aggregate_tps": 124.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:02:12Z", "rep": 1, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 4, "aggregate_tps": 253.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:02:28Z", "rep": 1, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 8, "aggregate_tps": 289.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:02:54Z", "rep": 1, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 16, "aggregate_tps": 346.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:05:12Z", "rep": 1, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 1, "aggregate_tps": 124.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:05:23Z", "rep": 1, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 4, "aggregate_tps": 220.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:05:39Z", "rep": 1, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 8, "aggregate_tps": 262.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:06:08Z", "rep": 1, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 16, "aggregate_tps": 318.1, "ok": true, "failures": 0}
+{"event": "shutdown", "at": "2026-11-03T12:06:08Z", "label": "r1-bf16", "forced_kill": false, "seconds": 0.4, "returncode": 0}
+{"event": "ready", "at": "2026-11-03T12:06:24Z", "label": "r1-bits8", "arm": "bits8", "seconds": 15.8, "flags": ["--drafter", "{drafter}", "--drafter-bits", "8"], "dspark_mode": "bits8", "binary_sha256": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac", "dspark_weights_mib": 361.4}
+{"event": "cell", "at": "2026-11-03T12:06:34Z", "rep": 1, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 1, "aggregate_tps": 178.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:06:42Z", "rep": 1, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 4, "aggregate_tps": 298.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:06:56Z", "rep": 1, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 8, "aggregate_tps": 325.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:07:20Z", "rep": 1, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 16, "aggregate_tps": 360.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:09:35Z", "rep": 1, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 1, "aggregate_tps": 121.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:09:45Z", "rep": 1, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 4, "aggregate_tps": 208.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:10:03Z", "rep": 1, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 8, "aggregate_tps": 248.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:10:32Z", "rep": 1, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 16, "aggregate_tps": 304.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:10:45Z", "rep": 1, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 1, "aggregate_tps": 127.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:10:54Z", "rep": 1, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 4, "aggregate_tps": 254.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:11:09Z", "rep": 1, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 8, "aggregate_tps": 289.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:11:35Z", "rep": 1, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 16, "aggregate_tps": 346.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:14:00Z", "rep": 1, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 1, "aggregate_tps": 118.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:14:10Z", "rep": 1, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 4, "aggregate_tps": 216.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:14:28Z", "rep": 1, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 8, "aggregate_tps": 256.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:14:56Z", "rep": 1, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 16, "aggregate_tps": 317.6, "ok": true, "failures": 0}
+{"event": "shutdown", "at": "2026-11-03T12:14:56Z", "label": "r1-bits8", "forced_kill": false, "seconds": 0.4, "returncode": 0}
+{"event": "ready", "at": "2026-11-03T12:15:06Z", "label": "r1-plain", "arm": "plain", "seconds": 9.7, "flags": [], "dspark_mode": null, "binary_sha256": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac", "dspark_weights_mib": null}
+{"event": "cell", "at": "2026-11-03T12:15:17Z", "rep": 1, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 1, "aggregate_tps": 176.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:15:24Z", "rep": 1, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 4, "aggregate_tps": 297.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:15:38Z", "rep": 1, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 8, "aggregate_tps": 325.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:16:03Z", "rep": 1, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 16, "aggregate_tps": 360.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:18:19Z", "rep": 1, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 1, "aggregate_tps": 122.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:18:29Z", "rep": 1, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 4, "aggregate_tps": 209.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:18:52Z", "rep": 1, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 8, "aggregate_tps": 187.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:19:21Z", "rep": 1, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 16, "aggregate_tps": 301.4, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:19:34Z", "rep": 1, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 1, "aggregate_tps": 124.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:19:43Z", "rep": 1, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 4, "aggregate_tps": 253.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:19:59Z", "rep": 1, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 8, "aggregate_tps": 289.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:20:25Z", "rep": 1, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 16, "aggregate_tps": 346.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:22:47Z", "rep": 1, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 1, "aggregate_tps": 123.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:22:57Z", "rep": 1, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 4, "aggregate_tps": 219.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:23:14Z", "rep": 1, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 8, "aggregate_tps": 261.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:23:43Z", "rep": 1, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 16, "aggregate_tps": 313.1, "ok": true, "failures": 0}
+{"event": "shutdown", "at": "2026-11-03T12:23:43Z", "label": "r1-plain", "forced_kill": false, "seconds": 0.4, "returncode": 0}
+{"event": "ready", "at": "2026-11-03T12:24:00Z", "label": "r2-bits8", "arm": "bits8", "seconds": 16.2, "flags": ["--drafter", "{drafter}", "--drafter-bits", "8"], "dspark_mode": "bits8", "binary_sha256": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac", "dspark_weights_mib": 361.4}
+{"event": "cell", "at": "2026-11-03T12:24:10Z", "rep": 2, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 1, "aggregate_tps": 174.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:24:18Z", "rep": 2, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 4, "aggregate_tps": 297.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:24:32Z", "rep": 2, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 8, "aggregate_tps": 324.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:24:56Z", "rep": 2, "arm": "bits8", "prompt": "code", "temperature": 0.0, "streams": 16, "aggregate_tps": 360.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:27:11Z", "rep": 2, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 1, "aggregate_tps": 122.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:27:22Z", "rep": 2, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 4, "aggregate_tps": 208.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:27:39Z", "rep": 2, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 8, "aggregate_tps": 248.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:28:08Z", "rep": 2, "arm": "bits8", "prompt": "code", "temperature": 1.0, "streams": 16, "aggregate_tps": 303.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:28:21Z", "rep": 2, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 1, "aggregate_tps": 127.0, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:28:30Z", "rep": 2, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 4, "aggregate_tps": 254.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:28:45Z", "rep": 2, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 8, "aggregate_tps": 289.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:29:11Z", "rep": 2, "arm": "bits8", "prompt": "chat", "temperature": 0.0, "streams": 16, "aggregate_tps": 347.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:31:31Z", "rep": 2, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 1, "aggregate_tps": 121.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:31:41Z", "rep": 2, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 4, "aggregate_tps": 215.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:31:58Z", "rep": 2, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 8, "aggregate_tps": 261.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:32:26Z", "rep": 2, "arm": "bits8", "prompt": "chat", "temperature": 1.0, "streams": 16, "aggregate_tps": 317.4, "ok": true, "failures": 0}
+{"event": "shutdown", "at": "2026-11-03T12:32:27Z", "label": "r2-bits8", "forced_kill": false, "seconds": 0.7, "returncode": 0}
+{"event": "ready", "at": "2026-11-03T12:32:37Z", "label": "r2-plain", "arm": "plain", "seconds": 9.7, "flags": [], "dspark_mode": null, "binary_sha256": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac", "dspark_weights_mib": null}
+{"event": "cell", "at": "2026-11-03T12:32:47Z", "rep": 2, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 1, "aggregate_tps": 177.1, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:32:55Z", "rep": 2, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 4, "aggregate_tps": 297.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:33:08Z", "rep": 2, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 8, "aggregate_tps": 325.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:33:33Z", "rep": 2, "arm": "plain", "prompt": "code", "temperature": 0.0, "streams": 16, "aggregate_tps": 360.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:35:48Z", "rep": 2, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 1, "aggregate_tps": 122.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:35:59Z", "rep": 2, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 4, "aggregate_tps": 207.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:36:16Z", "rep": 2, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 8, "aggregate_tps": 248.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:36:45Z", "rep": 2, "arm": "plain", "prompt": "code", "temperature": 1.0, "streams": 16, "aggregate_tps": 303.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:36:58Z", "rep": 2, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 1, "aggregate_tps": 126.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:37:07Z", "rep": 2, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 4, "aggregate_tps": 254.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:37:23Z", "rep": 2, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 8, "aggregate_tps": 289.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:37:49Z", "rep": 2, "arm": "plain", "prompt": "chat", "temperature": 0.0, "streams": 16, "aggregate_tps": 344.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:40:15Z", "rep": 2, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 1, "aggregate_tps": 118.4, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:40:25Z", "rep": 2, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 4, "aggregate_tps": 216.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:40:42Z", "rep": 2, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 8, "aggregate_tps": 259.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:41:11Z", "rep": 2, "arm": "plain", "prompt": "chat", "temperature": 1.0, "streams": 16, "aggregate_tps": 315.3, "ok": true, "failures": 0}
+{"event": "shutdown", "at": "2026-11-03T12:41:12Z", "label": "r2-plain", "forced_kill": false, "seconds": 0.7, "returncode": 0}
+{"event": "ready", "at": "2026-11-03T12:41:29Z", "label": "r2-bf16", "arm": "bf16", "seconds": 17.8, "flags": ["--drafter", "{drafter}"], "dspark_mode": "bf16", "binary_sha256": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac", "dspark_weights_mib": 625.1}
+{"event": "cell", "at": "2026-11-03T12:41:40Z", "rep": 2, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 1, "aggregate_tps": 169.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:41:48Z", "rep": 2, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 4, "aggregate_tps": 292.3, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:42:02Z", "rep": 2, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 8, "aggregate_tps": 322.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:42:27Z", "rep": 2, "arm": "bf16", "prompt": "code", "temperature": 0.0, "streams": 16, "aggregate_tps": 358.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:44:49Z", "rep": 2, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 1, "aggregate_tps": 115.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:44:59Z", "rep": 2, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 4, "aggregate_tps": 205.8, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:45:17Z", "rep": 2, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 8, "aggregate_tps": 246.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:45:46Z", "rep": 2, "arm": "bf16", "prompt": "code", "temperature": 1.0, "streams": 16, "aggregate_tps": 302.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:46:00Z", "rep": 2, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 1, "aggregate_tps": 119.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:46:09Z", "rep": 2, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 4, "aggregate_tps": 247.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:46:25Z", "rep": 2, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 8, "aggregate_tps": 285.7, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:46:51Z", "rep": 2, "arm": "bf16", "prompt": "chat", "temperature": 0.0, "streams": 16, "aggregate_tps": 344.5, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:49:17Z", "rep": 2, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 1, "aggregate_tps": 117.9, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:49:27Z", "rep": 2, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 4, "aggregate_tps": 216.2, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:49:44Z", "rep": 2, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 8, "aggregate_tps": 259.6, "ok": true, "failures": 0}
+{"event": "cell", "at": "2026-11-03T12:50:12Z", "rep": 2, "arm": "bf16", "prompt": "chat", "temperature": 1.0, "streams": 16, "aggregate_tps": 315.4, "ok": true, "failures": 0}
+{"event": "shutdown", "at": "2026-11-03T12:50:13Z", "label": "r2-bf16", "forced_kill": false, "seconds": 0.4, "returncode": 0}

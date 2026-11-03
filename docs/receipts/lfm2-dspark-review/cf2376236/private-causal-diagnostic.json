@@ -291,5 +291,7 @@
     "quoted_prices": "Quote counters are counts, not directly timed quote CPU cost."
   },
   "qualifies_throughput": false,
-  "raw_source_file": "private-observed.json"
+  "raw_source_file": "private-observed.json",
+  "device": "M4 Pro",
+  "M5_gpu_attribution_measured": false
 }

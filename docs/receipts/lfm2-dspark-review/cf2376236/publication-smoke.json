@@ -16,7 +16,8 @@
     "forced": 0
   },
   "credential_format_scan": "No matches in complete publication namespace",
-  "full_performance_qualification": "Both original full matrices running; no completed current-source performance verdict yet",
+  "full_performance_qualification": "Both original full matrices complete; both controllers exited 3, with 12/32 M4 and 16/32 M5 strict speed losses",
+  "qualification_manifest": { "path": "qualification/SHA256SUMS", "independently_sha256_verified_entries": 31, "all_matched": true },
   "ci": "Current-head rollup absent; contradictory mergeability reported and maintainer refresh requested",
   "review_requested": false,
   "pr_merged": false
