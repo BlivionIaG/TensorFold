@@ -1,0 +1,471 @@
+{
+  "source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "device": "M4 Pro",
+  "raw_script_verdict": "fail",
+  "negative_median_point_estimates": 16,
+  "observed_point_estimates_at_least_one_percent_below_plain": 12,
+  "worst_observed_median": {
+    "prompt": "chat",
+    "temperature": 1.0,
+    "streams": 8,
+    "arm": "bits8",
+    "plain_median_tps": 245.0022109895844,
+    "median_tps": 236.992975954694,
+    "delta_pct": -3.269046023111555
+  },
+  "sign_changes_across_rotations": 15,
+  "negative_observations": [
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bits8",
+      "median_difference_percent": -0.4081317167038301,
+      "paired_differences_percent": [
+        -4.029222399432031,
+        -0.4081317167038301,
+        -14.813639277893763
+      ],
+      "paired_all_negative": true,
+      "plain_three_run_range_percent": 4.541191804384859
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bits8",
+      "median_difference_percent": -0.2696429432983427,
+      "paired_differences_percent": [
+        -2.8916318931382134,
+        2.7473677635305283,
+        -15.714862544941631
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 9.018372098240924
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bits8",
+      "median_difference_percent": -2.2648547621476944,
+      "paired_differences_percent": [
+        -2.825418137208646,
+        0.7572933616525557,
+        3.723140494917221
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 14.995229311686199
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bf16",
+      "median_difference_percent": -0.13725531192663176,
+      "paired_differences_percent": [
+        -3.0525290985712106,
+        2.9531587543613513,
+        10.845797642256173
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 22.16484055205894
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bits8",
+      "median_difference_percent": -0.7362022141348956,
+      "paired_differences_percent": [
+        -3.6339910597330993,
+        3.0099273653727554,
+        8.28660571512112
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 22.16484055205894
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bf16",
+      "median_difference_percent": -1.9293759558397072,
+      "paired_differences_percent": [
+        -4.716563903326043,
+        2.944608648766933,
+        2.6928944712522718
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 24.76878807998366
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bits8",
+      "median_difference_percent": -1.0084926622180967,
+      "paired_differences_percent": [
+        -3.821852308335283,
+        2.9707931447847002,
+        1.3217769557446912
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 24.76878807998366
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bf16",
+      "median_difference_percent": -2.6547646155399063,
+      "paired_differences_percent": [
+        -4.970622955860337,
+        2.3934644188499776,
+        -3.7544776114775136
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 28.592984786961996
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bits8",
+      "median_difference_percent": -1.6426757750066079,
+      "paired_differences_percent": [
+        -3.9826118667777077,
+        2.394569552236492,
+        3.025325273692947
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 28.592984786961996
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bits8",
+      "median_difference_percent": -1.2667842818715136,
+      "paired_differences_percent": [
+        -2.8043200361417275,
+        1.508571826821803,
+        11.637271054083499
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 16.039789753933675
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bits8",
+      "median_difference_percent": -1.5499327120938267,
+      "paired_differences_percent": [
+        -2.922375484543327,
+        1.338158266323508,
+        6.093606466059431
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 15.850081493390533
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bf16",
+      "median_difference_percent": -3.1328294666011614,
+      "paired_differences_percent": [
+        -4.567163414867192,
+        1.3247792026198857,
+        8.638869536887306
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 17.34248830701979
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bits8",
+      "median_difference_percent": -1.5786755475449277,
+      "paired_differences_percent": [
+        -3.036022201918287,
+        1.3338165497642995,
+        6.656246354306927
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 17.34248830701979
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bf16",
+      "median_difference_percent": -2.9319256053916942,
+      "paired_differences_percent": [
+        -4.213565341871572,
+        1.4595405684498797,
+        20.718471824071184
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 26.061587384202014
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bits8",
+      "median_difference_percent": -1.6824431677632035,
+      "paired_differences_percent": [
+        -2.9805804638380895,
+        1.2729073451935191,
+        14.506958893605294
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 26.061587384202014
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bits8",
+      "median_difference_percent": -3.269046023111555,
+      "paired_differences_percent": [
+        0.06836335623059409,
+        -3.269046023111555,
+        0.32893670026858945
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 12.409159362361377
+    }
+  ],
+  "plain_baseline_spreads": [
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_samples": {
+        "0": 169.7625750886906,
+        "1": 162.6448363395005,
+        "2": 162.3882147874749
+      },
+      "range_percent": 4.541191804384859
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_samples": {
+        "0": 293.82745988989006,
+        "1": 280.42216180854814,
+        "2": 279.4274193790614
+      },
+      "range_percent": 5.153409977742407
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_samples": {
+        "0": 322.8152076215604,
+        "1": 313.0961901879005,
+        "2": 300.87148403050116
+      },
+      "range_percent": 7.293387627534242
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_samples": {
+        "0": 359.4728672787565,
+        "1": 350.0220449455298,
+        "2": 329.7360438980145
+      },
+      "range_percent": 9.018372098240924
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_samples": {
+        "0": 115.45395639065548,
+        "1": 114.79176614884449,
+        "2": 100.39890966061378
+      },
+      "range_percent": 14.995229311686199
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_samples": {
+        "0": 205.70084528822167,
+        "1": 199.695860305759,
+        "2": 168.37974359780296
+      },
+      "range_percent": 22.16484055205894
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_samples": {
+        "0": 247.25178042022216,
+        "1": 240.22483234990634,
+        "2": 198.16797471954297
+      },
+      "range_percent": 24.76878807998366
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_samples": {
+        "0": 302.9343509370716,
+        "1": 295.72749545599515,
+        "2": 235.57610972242244
+      },
+      "range_percent": 28.592984786961996
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_samples": {
+        "0": 119.39971267425481,
+        "1": 117.54034522682598,
+        "2": 102.89549207857578
+      },
+      "range_percent": 16.039789753933675
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_samples": {
+        "0": 248.12383661792623,
+        "1": 244.66486725792717,
+        "2": 214.17666126724492
+      },
+      "range_percent": 15.850081493390533
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_samples": {
+        "0": 285.99307383539906,
+        "1": 281.7583101635353,
+        "2": 243.7250802855951
+      },
+      "range_percent": 17.34248830701979
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_samples": {
+        "0": 344.9925176706275,
+        "1": 340.4374039301671,
+        "2": 273.66981872057704
+      },
+      "range_percent": 26.061587384202014
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_samples": {
+        "0": 118.32128378409996,
+        "1": 109.29388148658279,
+        "2": 109.20511304938908
+      },
+      "range_percent": 8.347750833413814
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_samples": {
+        "0": 216.47448783195927,
+        "1": 202.00537108846342,
+        "2": 190.03893799039295
+      },
+      "range_percent": 13.910596492021398
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_samples": {
+        "0": 259.5625300970613,
+        "1": 245.0022109895844,
+        "2": 230.90870136332694
+      },
+      "range_percent": 12.409159362361377
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_samples": {
+        "0": 315.8222454508078,
+        "1": 290.2191230352173,
+        "2": 238.79541731375127
+      },
+      "range_percent": 32.25640969309376
+    }
+  ],
+  "largest_plain_spread": {
+    "prompt": "chat",
+    "temperature": 1.0,
+    "streams": 16,
+    "plain_samples": {
+      "0": 315.8222454508078,
+      "1": 290.2191230352173,
+      "2": 238.79541731375127
+    },
+    "range_percent": 32.25640969309376
+  },
+  "activity_for_largest_plain_spread": [
+    {
+      "rep": 0,
+      "arm": "plain",
+      "aggregate_tps": 315.8222454508078,
+      "activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      }
+    },
+    {
+      "rep": 1,
+      "arm": "plain",
+      "aggregate_tps": 290.2191230352173,
+      "activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      }
+    },
+    {
+      "rep": 2,
+      "arm": "plain",
+      "aggregate_tps": 238.79541731375127,
+      "activity": {
+        "rounds": 8175,
+        "drafted": 8,
+        "accepted": 1
+      }
+    }
+  ],
+  "performance_interpretation": "INCONCLUSIVE for1percent non-regression;32.256percent observed plain baseline range is incompatible with resolving tiny timing effects from this three-rotation dataset. Not16 confirmed code regressions.",
+  "limits": [
+    "Observed spread is descriptive, not an independently estimated measurement error bound.",
+    "No A/A control or retrospective clocks for this full matrix; cause of nonstationarity is unproven.",
+    "Preserve every raw sample and literal verdict; no rerun for luck, pooling or source change."
+  ],
+  "next": "One separate clock/environment diagnostic with complete q8 and original-history coverage, not new performance qualification."
+}

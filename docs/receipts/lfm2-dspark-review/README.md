@@ -1,13 +1,15 @@
 # DSpark review receipts
 
-## Current pushed source `afe8bda62`: complete M5 qualification, M4 pending
+## Current pushed source `afe8bda62`: both complete, M4 timing inconclusive
 
-[All 32 M5 comparisons, complete raw evidence and frozen-verdict replay](afe8bda62/qualification/README.md).
-M5 completes 144/144 cells and 306/306 oracles exactly, nine clean exits. Strict performance fails
-12/32 comparisons, worst -0.2686253027662344%; all32 meet the owner's less-than-1% regression
-criterion, which does not waive the maintainer's zero-tolerance gate. No rerun or pooling.
-The same-head M4 workflow is still running at this packet's first publication. Historical two-device
-CF results below retain their original source; they are not a combined AFE qualification.
+[Both complete matrices, all64 comparisons, raw evidence and frozen-verdict replay](afe8bda62/qualification/README.md).
+Each device completes144/144 cells and306/306 oracles exactly, with nine clean exits.
+M4's unchanged plain baseline spans32.256410% across three rotations and15/16 negative flags
+change sign: its performance result cannot reliably resolve the owner's1% margin.
+M5's worst observed loss is0.268625%; all32 observed medians fit that budget, without a proven
+uncertainty bound. Raw zero-tolerance script failures remain visible; negative timing flags are
+not statistically confirmed regression counts. No qualification rerun, pooling or combined formal
+clearance. Historical CF results below retain their original source.
 
 ## Retained calibration correction: runtime `79837c4e2`, published `afe8bda62`
 

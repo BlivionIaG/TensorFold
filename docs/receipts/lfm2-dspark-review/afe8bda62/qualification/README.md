@@ -1,21 +1,32 @@
 # Complete qualification — source `afe8bda62562519b4fd84ee9a956392a21f26a60`
 
-## M5 Ultra complete; M4 same-head result not included yet
+## Both devices complete; M4 timing inconclusive
 
-**Literal maintainer-script verdict: FAIL; not a statistical finding of 12 regressions.** 12/32 observed median comparisons are below same-head plain (BF16 seven, 8-bit five), worst **-0.268625302766234%** in BF16 sampled-chat/one-stream. All 32 observed medians meet the task owner's less-than-1% regression budget. The original maintainer script applies zero tolerance; its raw verdict is retained separately. No rerun, pooling or reduced scope.
+The unchanged maintainer script fails both datasets. Negative point estimates are not counts of statistically confirmed regressions. Correctness retains its strict zero-failure requirement; the owner's 1% performance budget, measurement uncertainty and literal zero-tolerance verdict remain separate.
 
-M5 completed **144/144 launch cells and306/306 token oracles**, with zero exactness/scenario failures and all nine servers exiting0 without forced kills. Three balanced rotations; plain/BF16/8-bit; code/chat; temperatures0/1; widths1/4/8/16;512-token replies; parallel16; context4096; prompt cache0. Plain cheap-copy speculation stays enabled. Activations remain BF16 in both head-weight modes.
+| Device | Exact cells / oracles | Clean nonforced exits | Negative median flags | Worst observed delta | Largest plain three-run range | Owner less-than-1% interpretation |
+|---|---:|---:|---:|---:|---:|---|
+| M4 Pro | 144/144 / 306/306 | 9 | 16/32 | -3.269046% | 32.256410% | Inconclusive: strongly nonstationary timing |
+| M5 Ultra | 144/144 / 306/306 | 9 | 12/32 | -0.268625% | 1.388918% | All 32 observed medians inside budget; uncertainty not established |
 
-This is the actual final pushed source, not relabelled implementation-source798 or historicalCF data. M4's separate same-head workflow is still running at this packet's first publication; no combined two-device clearance is claimed here.
+Both devices finish the original matrix on the actual final pushed source: three balanced rotations; plain/BF16/8-bit; code/chat; temperatures0/1; widths1/4/8/16;512-token replies; parallel16; context4096; prompt cache0. Plain cheap-copy speculation stays enabled. Activations remain BF16 in both head-weight modes. No rerun, pooling, reduced scope or relabelled historical results.
+
+The plain range is `(maximum/minimum-1)*100` within the three unchanged-baseline samples, not a confidence interval or measurement-error floor. There is no A/A control. No combined formal performance clearance is claimed.
 
 ## Source and unchanged contracts
 
 - Source: `afe8bda62562519b4fd84ee9a956392a21f26a60`; pinned base `6a5048697e0770a464a4093ff6373f6a73f998b6`.
+- M4 native binary: `c03ab9600d36c32dd1d80b7d94bf9dae15d7256fa8f41df7f23b488c19b43a2c` in every arm.
 - M5 native binary: `21a7ddd36deae47cbc484ecb2018f010907fb4be16803cacab2318aa91f31c22` in every arm.
 - Source archive: `e76f35347e9d57d27b04e7aa8665cb326bccf4b817e7f93767bd9f980427fb0e`.
 - Target revision: `667408d494bde191c2cb9dd4f4549827816b9275`; drafter: `e052e5b1dd103c38cdd4f8ddc068d7dea4586f55`.
 - All seven [frozen driver files](frozen-driver/) retain their original hashes. The unchanged verdict's `summarize(metadata, cells, events)` reproduces the saved summary **byte-for-byte**, including exit3 and every loss.
-- Own-head original 82-step kernel/native/reference scope and both complete cache/fresh-cache/sample/cancellation workflows finish before qualification, on this source/archive/binary. Their original files are retained under [M5 original contracts](m5/original-contracts/observed.json).
+- M5 own-head original82-step kernel/native/reference scope and both complete cache/fresh-cache/sample/cancellation workflows finish before qualification; see [M5 original contracts](m5/original-contracts/observed.json). M4 completes its own-head82-step scope and full matrix; see [M4 original contracts](m4/original-contracts/observed.json). M4's complete cache/sample/cancellation proof remains explicitly bound to runtime798, whose only subsequent production changes are documentation; it is not relabelled as a fresh AFE functional run.
+
+## All 32 M4 comparisons and timing diagnosis
+
+[Complete M4 table, raw evidence and per-rotation baseline work](m4/README.md).
+Fifteen of sixteen negative flags change sign across paired rotations. Unchanged plain sampled-chat/16-stream throughput falls from315.822245 to290.219123 to238.795417 TPS with nearly identical logical work. This dataset cannot reliably resolve the owner's1% margin; neither sixteen confirmed code regressions nor equivalence is established. The cause of the elapsed-time drift is not yet proven.
 
 ## All 32 M5 comparisons
 
@@ -46,7 +57,7 @@ Metric: median of three aggregate decode TPS samples. Delta is `(arm median / sa
 
 To replay the exact verdict without serving a model, put `frozen-driver` on `PYTHONPATH`, load `m5/metadata.json`, each JSON line of `m5/cells.jsonl` and `m5/events.jsonl`, call `bench_lfm2_dspark_verdict.summarize`, and serialize with `json.dumps(result, indent=1)+'\n'`. The [replay identity record](verdict-replay-check.json) binds the original and recomputed bytes. [SHA256 manifest](SHA256.json) covers every published file.
 
-## Measurement variability is separate from a literal timing flag
+## M5 measurement variability is separate from a literal timing flag
 
 The [existing paired observations](measurement-variation.json) show that six of the twelve negative
 median comparisons change sign across the three rotations; six are negative in all three pairings.
@@ -68,4 +79,4 @@ control evidence.
 
 The retained calibration fix removes the captured M4 cheap-copy work divergence; its [causal report and original proof](../../79837c4e2/serving-calibration/README.md) remain bound to runtime798 and its documentation-only AFE descendant. That diagnosis is not substituted for this complete matrix. Historical CF M5 had16/32 negative median comparisons and worst−1.4341478593879908%; this run has12 and worst−0.2686253027662344%, without pooling the two datasets or treating either count as a statistical regression count.
 
-This packet does not attribute the remaining small differences to timing noise, wrapper overhead or GPU clocks without causal evidence. The separately observed same-work M4 q8 sampled-solo GPU difference remains unexplained. GitHub also still reports DIRTY/no checks at the pushed head; no re-review or merge readiness is claimed.
+This packet does not attribute the M4 nonstationarity or remaining M5 differences to timing noise, wrapper overhead or GPU clocks without causal evidence. The separately observed same-work M4 q8 sampled-solo GPU difference remains unexplained. GitHub also still reports DIRTY/no checks at the pushed head; no re-review or merge readiness is claimed.

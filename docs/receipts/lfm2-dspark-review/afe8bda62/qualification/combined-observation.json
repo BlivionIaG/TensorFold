@@ -1,0 +1,43 @@
+{
+  "source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "unchanged_matrix": true,
+  "devices": {
+    "m4": {
+      "cells": [
+        144,
+        144
+      ],
+      "oracles": [
+        306,
+        306
+      ],
+      "exactness_failures": 0,
+      "scenario_failures": 0,
+      "clean_nonforced_exits": 9,
+      "literal_negative_point_estimates": 16,
+      "literal_script_verdict": "fail",
+      "owner_one_percent_interpretation": "INCONCLUSIVE due observed timing nonstationarity",
+      "largest_plain_three_run_range_percent": 32.25640969309376,
+      "negative_flags_sign_changing": 15
+    },
+    "m5": {
+      "cells": [
+        144,
+        144
+      ],
+      "oracles": [
+        306,
+        306
+      ],
+      "exactness_failures": 0,
+      "scenario_failures": 0,
+      "clean_nonforced_exits": 9,
+      "literal_negative_point_estimates": 12,
+      "literal_script_verdict": "fail",
+      "owner_one_percent_interpretation": "All32 observed medians inside budget; uncertainty not established",
+      "largest_plain_three_run_range_percent": 1.3889176756646027,
+      "negative_flags_sign_changing": 6
+    }
+  },
+  "limits": "No combined formal performance pass. Raw strict verdicts preserved; negative point estimates are not counts of statistically confirmed regressions. No A/A control, no reliable three-rotation error floor, no qualification reruns."
+}

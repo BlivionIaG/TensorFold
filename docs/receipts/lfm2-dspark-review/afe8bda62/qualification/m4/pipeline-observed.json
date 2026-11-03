@@ -1,0 +1,17 @@
+{
+  "source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "records": [
+    {
+      "label": "original-guards",
+      "returncode": 0,
+      "elapsed_s": 105.27839020779356,
+      "controller_log_sha256": "a7b21a6577ef62bc9c2d78115c6015847f4ea77d34143a7e46feeab3e6bba7a4"
+    },
+    {
+      "label": "full-matrix",
+      "returncode": 3,
+      "elapsed_s": 5118.104487082921,
+      "controller_log_sha256": "ee32ad843eb5d1ffb2b5932c8e906c646d5f3345b3519875426ce6010c959c89"
+    }
+  ]
+}

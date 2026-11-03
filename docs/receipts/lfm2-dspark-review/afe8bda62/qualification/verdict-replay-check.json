@@ -1,11 +1,25 @@
 {
   "source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
-  "device": "M5 Ultra",
-  "frozen_verdict_module_sha256": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
-  "original_summary_sha256": "3aacb10049718275a5abeb92f714f86444b50a77ecf6089081271122610b2a32",
-  "replayed_summary_sha256": "3aacb10049718275a5abeb92f714f86444b50a77ecf6089081271122610b2a32",
-  "byte_equal": true,
   "model_rerun": false,
-  "strict_verdict_unchanged": "fail",
-  "exit_code": 3
+  "frozen_verdict_sha256": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+  "devices": {
+    "m4": {
+      "original_summary_sha256": "acdc05c61af571d4bd54bea48a4e0bf62964f58fa524413f09ab6f98b7743e5b",
+      "replayed_summary_sha256": "acdc05c61af571d4bd54bea48a4e0bf62964f58fa524413f09ab6f98b7743e5b",
+      "byte_equal": true,
+      "raw_verdict": "fail",
+      "exit_code": 3
+    },
+    "m5": {
+      "source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+      "device": "M5 Ultra",
+      "frozen_verdict_module_sha256": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+      "original_summary_sha256": "3aacb10049718275a5abeb92f714f86444b50a77ecf6089081271122610b2a32",
+      "replayed_summary_sha256": "3aacb10049718275a5abeb92f714f86444b50a77ecf6089081271122610b2a32",
+      "byte_equal": true,
+      "model_rerun": false,
+      "strict_verdict_unchanged": "fail",
+      "exit_code": 3
+    }
+  }
 }
