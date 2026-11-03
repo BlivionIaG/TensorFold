@@ -357,4 +357,3 @@ Neither GPU occupancy, bandwidth saturation nor a matched MLX-LM comparison is e
 Correcting the measurement context and passing native correctness do not establish the zero-regression
 gate. The complete CF matrices above remain the last full qualification until a newer same-head
 matrix is completed. No tolerance, resource override or re-review is implied.
-
