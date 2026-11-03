@@ -1,4 +1,4 @@
-//! Model.own_copy_rates: a shared round's copy windows priced by each stream's own copies, else by copy_rate.
+//! Copy windows and grafted rows follow source-specific and trusted-match landing histories.
 const std = @import("std");
 const Config = @import("config.zig").Config;
 const Cost = @import("config.zig").Cost;
@@ -107,4 +107,45 @@ test "a strong match can be allocated after weaker matches failed" {
     plan = .{.{ .stream = &s, .position = 0, .kind = .copy, .tokens = &copied }};
     try win.allocate(&e, &plan);
     try std.testing.expectEqual(@as(usize, 0), plan[0].count());
+}
+
+pub fn checkRows(comptime planChances: anytype, comptime short_rate: f64) !void {
+    const a = std.testing.allocator;
+    var cfg = try Config.init(a, .{ .exact_width = 64, .drafts = 15, .batch_rows = 128 }, 64, 15);
+    defer cfg.deinit(a);
+    var target: fake.Fake = .{ .gpa = a };
+    defer target.deinit();
+    var clock: fake.FixedClock = .{};
+    var e = Engine.init(a, &cfg, target.backend(), clock.clock());
+    defer e.deinit();
+    var s = try Stream.init(a, .{ .id = "copy", .prompt = &.{ 1, 2 }, .max_new = 64 });
+    defer s.deinit(a);
+    // two drafts, then a copy of two rows from the second draft (row parents -1, 0, 1, 2)
+    const parents = [_]i32{ -1, 0, 1, 2 };
+    const ids = [_]u32{ 5, 6, 7, 8 };
+    const p: win.Plan = .{ .stream = &s, .position = 2, .kind = .head, .tokens = &ids, .parents = &parents, .branch_from = 3, .context_copy = true };
+    const drafts = try win.nodeChances(&e, &s, 2);
+    const out = try planChances(&e, p, 4);
+    const rate = win.copyRate(&e, &s, true);
+    try std.testing.expectApproxEqAbs(cfg.copy_rate, rate, 1e-12);
+    try std.testing.expectApproxEqAbs(drafts[1], out[1], 1e-12);
+    try std.testing.expectApproxEqAbs(rate * drafts[1], out[2], 1e-12);
+    try std.testing.expectApproxEqAbs(rate * rate * drafts[1], out[3], 1e-12);
+    // copies that land whole raise the rate toward 1; copies that break lower it below the prior
+    for (0..30) |_| win.observeCopy(&e, &s, true, 12, 12);
+    try std.testing.expect(win.copyRate(&e, &s, true) > 0.99);
+    for (0..80) |_| win.observeCopy(&e, &s, true, 1, 12); // one row landed, then a miss: toward 1 / (1 + 1)
+    try std.testing.expect(win.copyRate(&e, &s, true) < 0.55);
+    // an untrusted copy starts from short_rate; trusted copies teach both histories, untrusted ones only their own
+    var fresh = try Stream.init(a, .{ .id = "short", .prompt = &.{ 1, 2 }, .max_new = 64 });
+    defer fresh.deinit(a);
+    const short: win.Plan = .{ .stream = &fresh, .position = 2, .kind = .head, .tokens = &ids, .parents = &parents, .branch_from = 3, .context_copy = true, .copy_trusted = false };
+    try std.testing.expectApproxEqAbs(short_rate * drafts[1], (try planChances(&e, short, 4))[2], 1e-12);
+    for (0..3) |_| win.observeCopy(&e, &fresh, true, 12, 12);
+    try std.testing.expect(win.copyRate(&e, &fresh, false) > 0.6);
+    for (0..60) |_| win.observeCopy(&e, &fresh, false, 0, 12);
+    try std.testing.expect(win.copyRate(&e, &fresh, false) < 0.1 and win.copyRate(&e, &fresh, true) > 0.95);
+    // a window without a copy keeps the head's own chances
+    const plain: win.Plan = .{ .stream = &s, .position = 2, .kind = .head, .tokens = ids[0..2] };
+    try std.testing.expectEqualSlices(f64, try win.nodeChances(&e, &s, 2), try planChances(&e, plain, 2));
 }

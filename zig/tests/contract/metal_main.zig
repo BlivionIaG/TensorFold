@@ -36,11 +36,9 @@ const lfm2_streams = @import("metal_lfm2_streams.zig");
 const lfm2_controls = @import("metal_lfm2_controls.zig");
 const lfm2_tap = @import("metal_lfm2_tap.zig");
 const lfm2_norm_tap = @import("metal_lfm2_norm_tap.zig");
-const lfm2_dspark = @import("metal_lfm2_dspark.zig");
+const lfm2_drafting = @import("metal_lfm2_drafting.zig");
 const lfm2_bf16 = @import("metal_lfm2_bf16.zig");
-const lfm2_attn = @import("metal_lfm2_attn.zig");
 const lfm2_conf = @import("metal_lfm2_confidence.zig");
-const lfm2_kv = @import("metal_lfm2_kv.zig");
 const g = contract.gates;
 const usage = "usage: tf-kernel-contract [--only TEXT] [--no-gates] [--no-limits] [--offline DIR] [--seed N] [--repro] [--rotary-long] [--rotary-accuracy FILE]";
 
@@ -237,85 +235,9 @@ pub fn main(init: std.process.Init) !u8 {
         try tap_list.append(a, p);
         try kernels.append(a, p.kernel());
     }
-    var drafter_list: std.ArrayList(*lfm2_dspark.Probe) = .empty;
-    var block_list: std.ArrayList(*lfm2_attn.Probe) = .empty;
-    var bf16_list: std.ArrayList(*lfm2_bf16.Probe) = .empty;
-    var kv_list: std.ArrayList(*lfm2_kv.Probe) = .empty;
-    defer {
-        for (drafter_list.items) |p| {
-            p.deinit();
-            a.destroy(p);
-        }
-        for (block_list.items) |p| {
-            p.deinit();
-            a.destroy(p);
-        }
-        for (bf16_list.items) |p| {
-            p.deinit();
-            a.destroy(p);
-        }
-        for (kv_list.items) |p| {
-            p.deinit();
-            a.destroy(p);
-        }
-        drafter_list.deinit(a);
-        block_list.deinit(a);
-        bf16_list.deinit(a);
-        kv_list.deinit(a);
-    }
-    for (std.enums.values(lfm2_controls.Mutation)) |m| {
-        const drafter_which: ?lfm2_dspark.Which = switch (m) {
-            .markov_nonfinite_dropped, .markov_first_prev => .markov_step,
-            .markov_bf16_nonfinite_dropped, .markov_bf16_first_prev => .markov_step_bf16,
-            .markov_pick_inf_dropped, .markov_pick_empty_flagged => .markov_pick,
-            .draft_ids_unzeroed => .draft_ids,
-            else => null,
-        };
-        if (m == .none or drafter_which != null) {
-            for (std.enums.values(lfm2_dspark.Which)) |w| {
-                if (m != .none and w != drafter_which.?) continue;
-                if (!wanted(o, if (m == .none) lfm2_dspark.spec(w).name else m.name())) continue;
-                const p = try a.create(lfm2_dspark.Probe);
-                errdefer a.destroy(p);
-                p.* = try lfm2_dspark.Probe.init(a, device, queue, w, m);
-                try drafter_list.append(a, p);
-                try kernels.append(a, p.kernel());
-            }
-        }
-        const bf16_which: ?lfm2_bf16.Which = switch (m) {
-            .bf16_rows_short_k, .bf16_rows_last_row => .rows,
-            .bf16_tile_untransposed, .bf16_tile_last_column => .tile,
-            else => null,
-        };
-        if (m == .none or bf16_which != null) {
-            for (std.enums.values(lfm2_bf16.Which)) |w| {
-                if (w == .tensor and !tensor) continue;
-                if (m != .none and w != bf16_which.?) continue;
-                if (!wanted(o, if (m == .none) lfm2_bf16.spec(w).name else m.name())) continue;
-                const p = try a.create(lfm2_bf16.Probe);
-                errdefer a.destroy(p);
-                p.* = try lfm2_bf16.Probe.init(a, device, queue, w, m);
-                try bf16_list.append(a, p);
-                try kernels.append(a, p.kernel());
-            }
-        }
-        if (m == .none or m == .block_attention_causal) {
-            if (!wanted(o, if (m == .none) lfm2_attn.name else m.name())) continue;
-            const p = try a.create(lfm2_attn.Probe);
-            errdefer a.destroy(p);
-            p.* = try lfm2_attn.Probe.init(a, device, queue, m);
-            try block_list.append(a, p);
-            try kernels.append(a, p.kernel());
-        }
-    }
-    for ([_]lfm2_controls.Mutation{ .none, .context_kv_first_row, .context_kv_theta }) |m| {
-        if (!wanted(o, if (m == .none) lfm2_kv.name else m.name())) continue;
-        const p = try a.create(lfm2_kv.Probe);
-        errdefer a.destroy(p);
-        p.* = try lfm2_kv.Probe.init(a, device, queue, m);
-        try kv_list.append(a, p);
-        try kernels.append(a, p.kernel());
-    }
+    var drafting: lfm2_drafting.Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer drafting.deinit();
+    try drafting.collect(o.only, tensor);
     var conf_list: std.ArrayList(*lfm2_conf.Probe) = .empty;
     defer {
         for (conf_list.items) |p| {

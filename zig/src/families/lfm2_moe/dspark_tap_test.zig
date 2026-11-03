@@ -2,7 +2,7 @@
 const std = @import("std");
 const mtl = @import("metal");
 const c = @import("config.zig");
-const base = @import("dspark_test.zig");
+const base = @import("dspark_hold_test.zig");
 
 /// Rows with no destination: their region keeps its guard values.
 fn dark(row: usize) bool {

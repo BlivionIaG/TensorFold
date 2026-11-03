@@ -527,58 +527,11 @@ test "after a failed wider-lanes check every forward is one stream's one row, so
 }
 
 test "candidate selection preserves full-vocabulary keyed draws and tie order" {
-    const gpa = std.testing.allocator;
-    const words = try gpa.alloc(u16, c.vocab);
-    defer gpa.free(words);
-    const values = try gpa.alloc(f64, c.vocab);
-    defer gpa.free(values);
-    const ids = try gpa.alloc(u64, c.vocab);
-    defer gpa.free(ids);
-    for (words, values, ids, 0..) |*w, *v, *id, i| {
-        const x: f32 = @as(f32, @floatFromInt((i * 37) % 257)) / 8.0 - 16.0;
-        w.* = @intCast(@as(u32, @bitCast(x)) >> 16);
-        v.* = value(w.*);
-        id.* = i;
-    }
-    for ([_]u32{ 0, 1, 20, 128, 257, c.vocab }) |k| {
-        for ([_]u64{ 0, 128, 65536 }) |position| {
-            const s: lanes.Sampling = .{ .seed = 1234, .top_k = k, .temperature = 0.7, .top_p = 0.95, .min_p = 0.1 };
-            const want = try lanes.sampling.choose(gpa, values, ids, position, s);
-            try std.testing.expectEqual(want, try drawRow(gpa, words, s, position, &.{}, .{ 0, 0 }));
-        }
-    }
-    try std.testing.expectEqual(try draw(gpa, words, null, 0, &.{}), try draw(gpa, words, .{ .seed = 7, .temperature = 0 }, 99, &.{}));
-    words[0] = 0x7fc0;
-    try std.testing.expectError(error.NonfiniteLfmLogits, draw(gpa, words, null, 0, &.{}));
+    try @import("draw_timing_test.zig").checkCandidates(drawRow, value);
 }
 
 test "a masked draw is the full-vocabulary draw with the other tokens at -inf" {
-    const gpa = std.testing.allocator;
-    const words = try gpa.alloc(u16, c.vocab);
-    defer gpa.free(words);
-    const values = try gpa.alloc(f64, c.vocab);
-    defer gpa.free(values);
-    const ids = try gpa.alloc(u64, c.vocab);
-    defer gpa.free(ids);
-    var mask: [mask_words]u32 = @splat(0);
-    for (words, values, ids, 0..) |*w, *v, *id, i| {
-        const x: f32 = @as(f32, @floatFromInt((i * 37) % 257)) / 8.0 - 16.0;
-        w.* = @intCast(@as(u32, @bitCast(x)) >> 16);
-        const on = i % 7 == 3 or i % 1000 == 1;
-        if (on) mask[i / 32] |= @as(u32, 1) << @intCast(i % 32);
-        v.* = if (on) value(w.*) else -std.math.inf(f64);
-        id.* = i;
-    }
-    for ([_]u32{ 0, 1, 20, 257, c.vocab }) |k| {
-        for ([_]u64{ 0, 128, 65536 }) |position| {
-            const s: lanes.Sampling = .{ .seed = 99, .top_k = k, .temperature = 0.8, .top_p = 0.9, .min_p = 0.05 };
-            const want = try lanes.sampling.choose(gpa, values, ids, position, s);
-            try std.testing.expectEqual(want, try draw(gpa, words, s, position, &mask));
-        }
-    }
-    try std.testing.expectEqual(try lanes.sampling.choose(gpa, values, ids, 0, .{ .seed = 1, .temperature = 0 }), try draw(gpa, words, null, 0, &mask));
-    @memset(&mask, 0);
-    try std.testing.expectError(error.NoAllowedLfmToken, draw(gpa, words, null, 0, &mask));
+    try @import("draw_timing_test.zig").checkMasked(value);
 }
 
 test "measured shared rows price the batch without widening a stream's qualified window" {

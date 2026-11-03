@@ -4,6 +4,18 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- cortheon keeps a source, link, page or query that differs only in spelling (a capital scheme, a query- or fragment-only link, a Windows path, a scheme-relative result), and resolves `.` and `..` without dropping empty path segments, so `/docs/` keeps its slash (#2036). Thanks to @ppardus.
+
+- The Recall tests set their own disk floor, so the full host suite passes on a machine with less than 4 GiB free. The 4 GiB floor itself is unchanged and has its own test (#2051).
+
+- Passing test binaries no longer print, so `zig build test` shows a `failed command:` line only for a real failure.
+
+- Community-v2 benchmark receipts can carry 1-8 loaded ranks and per-node hardware in separate single-node and multi-node categories. Both managed and attached clients read the running group, while v1 remains unchanged and v2 uploads stay disabled (#974).
+
+- Six host-test steps that had gone red on main pass again: their fixtures follow the code they test, and each fix was checked by planting the original break (#2024). Thanks to @jishnuvenugopal.
+
+- Dory on CUDA takes its RoPE tables from core's exact helper, so they match transformers' words (they moved by up to 5 ulp) (#2035, part of #1852).
+
 - The No GPU and Zig format checks can run manually on a selected branch; No GPU takes an explicit baseline commit for the unchanged lean comparison, so branch checks do not depend on a pull request merge ref being available (#1394).
 
 - LFM2 DSpark prices request-level neural-context enrollment before prefill. Target-only requests keep cheap copies and canonical no-tap forwards; enrolled requests retain zero-grant context and recovery. Sparse lone target calibration considers only priced prefixes instead of silently enrolling on the first unmeasured width. Recent head-only rates seed fresh request state, with bounded cold/recovery admissions and no stream-count cutoff. This is not a throughput-qualification claim.
@@ -32,17 +44,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - DSpark recovery checks retain their shape-only exploration minimum when host-draw timing changes, applying the live draw quote at the funding boundary. Changed hold or forward prices still invalidate the cached shape; strict funding and recovery admission are unchanged.
 
-- cortheon keeps a source, link, page or query that differs only in spelling (a capital scheme, a query- or fragment-only link, a Windows path, a scheme-relative result), and resolves `.` and `..` without dropping empty path segments, so `/docs/` keeps its slash (#2036). Thanks to @ppardus.
-
-- The Recall tests set their own disk floor, so the full host suite passes on a machine with less than 4 GiB free. The 4 GiB floor itself is unchanged and has its own test (#2051).
-
-- Passing test binaries no longer print, so `zig build test` shows a `failed command:` line only for a real failure.
-
-- Community-v2 benchmark receipts can carry 1-8 loaded ranks and per-node hardware in separate single-node and multi-node categories. Both managed and attached clients read the running group, while v1 remains unchanged and v2 uploads stay disabled (#974).
-
-- Six host-test steps that had gone red on main pass again: their fixtures follow the code they test, and each fix was checked by planting the original break (#2024). Thanks to @jishnuvenugopal.
-
-- Dory on CUDA takes its RoPE tables from core's exact helper, so they match transformers' words (they moved by up to 5 ulp) (#2035, part of #1852).
+- LFM2 DSpark and shared-lane modules keep the 600-line source limit by separating scratch allocation and behavioral test fixtures. The original tap-only oracle stays untouched for independent rounding work; inference arithmetic, activation formats and the existing assertions are unchanged (#1394).
 
 ## 1.2.2
 

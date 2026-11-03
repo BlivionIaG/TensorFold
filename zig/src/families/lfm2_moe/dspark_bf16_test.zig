@@ -2,7 +2,7 @@
 const std = @import("std");
 const mtl = @import("metal");
 const quant = @import("dspark_quant.zig");
-const base = @import("dspark_test.zig");
+const base = @import("dspark_hold_test.zig");
 
 const Args = extern struct { rows: u32, n: u32, k: u32 };
 

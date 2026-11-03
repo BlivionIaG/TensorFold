@@ -1,8 +1,4 @@
-//! Request-stable DSpark enrollment, not an in-request hold controller.
-//! Prices pay the whole prompt/context debt in the prospective round, without amortizing it over an
-//! unknown reply length. Cold and recovery admissions are bounded experiments, not speed guarantees:
-//! calibration omits tap-staging/host noise and cannot predict an unseen request's acceptance. The
-//! unchanged same-head, zero-tolerance full gate remains the performance authority.
+//! Full context debt and bounded probes for request-stable admission; the same-head, zero-tolerance full gate rules.
 const std = @import("std");
 const lanes = @import("lanes");
 const hp = lanes.hold_price;
@@ -52,12 +48,11 @@ fn positive(x: f64) bool {
     return x > 0 and std.math.isFinite(x);
 }
 
-/// Only calibrated retained-prefix shapes can fund admission, as in the existing lone depth rule.
-/// A smaller prefix never buys a smaller query block. Missing grids or an entirely unpriced candidate
-/// set remain unknown, rather than flowing through hold_price's intentionally free empty convention.
+/// Only calibrated retained prefixes fund admission; smaller prefixes do not shrink their query blocks.
 pub fn quote(p: Prices, rates: []const f64) ?Quote {
     const target = p.target orelse return null;
     if (p.streams == 0 or p.streams > p.target_rows or p.block_rows == 0 or p.pass_rows < p.block_rows or p.context_chunk == 0) return null;
+    // Missing grids remain unknown, never the hold-price helper's intentionally free empty convention.
     if (p.holds.len == 0 or p.contexts.len == 0) return null;
     for (p.holds) |h| if (h.streams == 0 or h.depth == 0 or !positive(h.ms)) return null;
     for (p.contexts) |c| if (c.streams == 0 or c.rows == 0 or !positive(c.ms)) return null;
@@ -77,9 +72,9 @@ pub fn quote(p: Prices, rates: []const f64) ?Quote {
             const rows = p.streams + count * n;
             const verify = target.get(@intCast(rows)) orelse continue;
             if (!positive(verify)) return null;
-            // Overflow may have flushed individual streams before a hold. Charge those full chunks
-            // individually; the remaining debt pays at least the grouped AND the individual quote.
+            // Pay the whole prompt/context debt now, never amortized over an unknown reply length.
             const debt = @max(p.context_rows, n + 1);
+            // Overflow may flush streams separately, so full chunks pay the individual price.
             const overflow = (debt - 1) / p.context_chunk;
             const remainder: u32 = @intCast(debt - overflow * p.context_chunk);
             const one = hp.contextMs(p.contexts, 1, remainder);
@@ -104,6 +99,7 @@ pub fn quote(p: Prices, rates: []const f64) ?Quote {
             const grouped = hp.rowsMs(p.holds, p.contexts, p.pass_rows, p.block_rows, view);
             if (!positive(clean) or !positive(grouped)) return null;
             const count_f: f64 = @floatFromInt(count);
+            // Remaining debt pays at least both the grouped and individual quotes.
             const ms = verify + @max(grouped, clean + one * count_f) + flushed * count_f;
             if (!positive(ms)) return null;
             const tokens = @as(f64, @floatFromInt(p.streams)) + gain * count_f;
@@ -113,15 +109,15 @@ pub fn quote(p: Prices, rates: []const f64) ?Quote {
             }
         }
     }
+    // An entirely unpriced candidate set remains unknown, not a free enrollment.
     if (result.best == null and room > 0 and depth > 0 and p.heads > 0) return null;
     return result;
 }
 
-/// Provider/model/precision-local, and separate for greedy and sampled requests. Four prior trials
-/// are finite, and the effective sample count saturates so later genuine observations can recover.
-/// Only accepted conditionals and the first rejected conditional were attempted; deeper ones did not fail.
+/// Provider/model/precision-local history, separate for greedy and sampled requests.
 pub const Recent = struct {
     rates: [max_depth]f64 = prior,
+    // Four prior trials remain recoverable as the effective observation count saturates.
     weight: [max_depth]f64 = @splat(4),
     observed: bool = false,
     remaining: u16 = 0,
@@ -129,6 +125,7 @@ pub const Recent = struct {
 
     pub fn observe(r: *Recent, proposed: u32, accepted: u32) void {
         if (proposed == 0 or accepted > proposed) return;
+        // Accepted conditionals and the first rejection were attempted; deeper conditionals did not fail.
         const tried = @min(max_depth, @min(@as(u64, proposed), @as(u64, accepted) + 1));
         for (0..tried) |i| {
             r.weight[i] = @min(32, r.weight[i] + 1);
@@ -138,10 +135,9 @@ pub const Recent = struct {
         r.observed = true;
     }
 
-    /// Unknown prices preserve direct diagnostics. A cold or unprofitable history gets at most one
-    /// enrollment per growing 64..1024-request interval, and only if perfect acceptance could pay.
-    /// Merely consuming a probe admission changes no acceptance data, even if it runs zero holds.
+    /// Cold or unprofitable histories get at most one probe per growing 64..1024-request interval.
     pub fn enroll(r: *Recent, p: Prices, conservative_rates: []const f64) bool {
+        // Unknown prices preserve direct diagnostics; calibration omits staging/host noise and future acceptance.
         const priced = quote(p, conservative_rates) orelse return true;
         const pays = priced.pays();
         if (r.observed and pays) {
@@ -150,6 +146,7 @@ pub const Recent = struct {
             return true;
         }
         if (!pays) {
+            // Even perfect acceptance must pay before spending a recovery probe.
             const perfect: [max_depth]f64 = @splat(1);
             const possible = quote(p, perfect[0..@min(max_depth, p.depth)]) orelse return true;
             if (!possible.pays()) return false;
@@ -158,6 +155,7 @@ pub const Recent = struct {
             r.remaining -= 1;
             return false;
         }
+        // Enrollment alone changes no acceptance data, even if the probe runs zero holds.
         r.remaining = r.interval;
         r.interval = @min(1024, r.interval * 2);
         return true;

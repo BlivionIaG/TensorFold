@@ -12,6 +12,7 @@ const Model = @import("model.zig").Model;
 const backend = @import("backend.zig");
 const stage = @import("dspark_stage.zig");
 const admission = @import("dspark_admission.zig");
+const scratch = @import("dspark_scratch.zig");
 
 const dr = lanes.drafter;
 const Stream = lanes.Stream;
@@ -52,32 +53,6 @@ pub const Lane = struct {
     }
 };
 
-/// The passes' working buffers, one pass at a time on the target's queue.
-pub const Scratch = struct {
-    ids: mtl.Buffer,
-    h: mtl.Buffer,
-    x: mtl.Buffer,
-    r: mtl.Buffer,
-    y: mtl.Buffer,
-    k: mtl.Buffer,
-    v: mtl.Buffer,
-    queries: mtl.Buffer, // projected Q; normalized Q reuses the padded x after all projections finish
-    pm: mtl.Buffer,
-    pl: mtl.Buffer,
-    po: mtl.Buffer,
-    gate: mtl.Buffer,
-    up: mtl.Buffer,
-    act: mtl.Buffer,
-    logits: mtl.Buffer,
-    sums: mtl.Buffer,
-    fcx: mtl.Buffer, // an absorb pass's context rows: fc's output, normed in place
-    best: mtl.Buffer, // the Markov scan's best score and token of each threadgroup, by stream
-    at: mtl.Buffer,
-    picks: mtl.Buffer,
-    conf: mtl.Buffer, // the confidence logits, step by step, a pass's blocks each
-    gather: mtl.Buffer, // a hold's small staged pieces, side by side, for one fc call
-};
-
 pub const Drafter = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -85,7 +60,7 @@ pub const Drafter = struct {
     config: dc.Config,
     w: dw.Weights,
     options: Options,
-    s: Scratch,
+    s: scratch.Scratch,
     owned: std.ArrayList(mtl.Buffer) = .empty,
     lanes: std.AutoHashMapUnmanaged(*Stream, *Lane) = .empty,
     /// One stream's clean CPU-encode + GPU ms at full depth, and that over the block (the depth rule's cost a draft).
@@ -127,7 +102,7 @@ pub const Drafter = struct {
             for (d.owned.items) |b| b.deinit();
             d.owned.deinit(d.gpa);
         }
-        try d.scratch();
+        try scratch.prepare(d);
         try d.warm();
     }
 
@@ -141,45 +116,6 @@ pub const Drafter = struct {
         d.owned.deinit(d.gpa);
         d.w.deinit(d.gpa);
         d.gpa.destroy(d);
-    }
-
-    fn buffer(d: *Drafter, bytes: usize) !mtl.Buffer {
-        const b = try d.target.device.buffer(@max(bytes, 16), shared);
-        errdefer b.deinit();
-        try d.owned.append(d.gpa, b);
-        return b;
-    }
-
-    fn scratch(d: *Drafter) !void {
-        const r = pass_rows;
-        const wide = @max(pass_rows, absorb_rows);
-        const i = d.config.intermediate;
-        const partials = d.partRows() * block.part_row;
-        const sums = if (d.options.bits == 0) r * (c.hidden / 64) else @max(absorb_rows * (d.config.tap_count * c.hidden / 64), r * (i / 64));
-        d.s = .{
-            .ids = try d.buffer(r * 4),
-            .h = try d.buffer(r * c.hidden * 2),
-            .x = try d.buffer((r + st.attn_rows) * c.hidden * 2),
-            .r = try d.buffer(r * c.hidden * 2),
-            .y = try d.buffer(r * c.hidden * 2),
-            .k = try d.buffer(wide * kw * 2),
-            .v = try d.buffer(wide * kw * 2),
-            .queries = try d.buffer(r * c.hidden * 2),
-            .pm = try d.buffer(partials * 4),
-            .pl = try d.buffer(partials * 4),
-            .po = try d.buffer(partials * c.head_dim * 4),
-            .gate = try d.buffer(r * i * 2),
-            .up = try d.buffer(r * i * 2),
-            .act = try d.buffer(r * i * 2),
-            .logits = try d.buffer(r * c.vocab * 2),
-            .sums = try d.buffer(sums * 4),
-            .fcx = try d.buffer(absorb_rows * c.hidden * 2),
-            .best = try d.buffer(r * block.scan_groups * 4),
-            .at = try d.buffer(r * block.scan_groups * 4),
-            .picks = try d.buffer(d.config.block * r * 8),
-            .conf = try d.buffer(d.config.block * r * 4),
-            .gather = try d.buffer(gather_rows * d.tapBytes()),
-        };
     }
 
     /// Query rows the attention partials hold at once: a whole hold pass's, so its blocks attend side by side.
@@ -196,8 +132,7 @@ pub const Drafter = struct {
         return .{ .ptr = d, .hold_timing = .{ .ptr = d, .take = block.takeHoldMs }, .vtable = &.{ .taps = tapsFn, .facts = factsFn, .enroll = enrollFn, .observe_head = observeHeadFn, .open = openFn, .absorb = stage.absorb, .hold = holdFn, .held = heldFn, .release = releaseFn, .chances = chancesFn } };
     }
 
-    /// Borrow Config's stable bare-target calibration, never the engine's head-inclusive round EMA.
-    /// Unbound direct diagnostics preserve their tracked route and existing in-request recovery.
+    /// Borrow stable bare-target costs, never head-inclusive EMA; unbound diagnostics keep their tracked route.
     pub fn useTargetCosts(d: *Drafter, single: *const lanes.table.Table, shared_costs: *const lanes.table.Table) void {
         d.target_single = single;
         d.target_shared = shared_costs;
@@ -214,8 +149,7 @@ pub const Drafter = struct {
         var rates = recent.rates;
         var heads: usize = 1;
         var debt = s.prompt_len;
-        // Only actual eligible peers may fund a multi-head shape. Each candidate shape can use any
-        // subset, so pricing all peers at the weakest conditionals/deepest debt is conservative.
+        // Eligible peers fund any subset, priced conservatively at their weakest conditionals and deepest debt.
         var peers = d.lanes.iterator();
         while (peers.next()) |entry| {
             const peer = entry.key_ptr.*;
@@ -631,7 +565,7 @@ test "lfm2 dspark: scratch and warm allocation failures release buffers before t
             for (d.owned.items) |b| b.deinit();
             d.owned.deinit(d.gpa);
         }
-        try d.scratch();
+        try scratch.prepare(&d);
         break :blk failing.alloc_index;
     };
     for ([_]usize{ 1, warm_fail_index }) |fail_index| {

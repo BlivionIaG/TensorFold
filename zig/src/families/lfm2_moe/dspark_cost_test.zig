@@ -122,8 +122,7 @@ test "lfm2 dspark: admission full9 splits can reject a fourth prefix or fund two
     try std.testing.expectEqual(@as(usize, 3), three.best.?.heads);
     try std.testing.expectEqual(@as(usize, 1), three.best.?.passes);
     try std.testing.expectEqual(@as(u32, 7), three.best.?.rows);
-    // Four one-draft prefixes still run 36 query rows, not four. Lowering the measured physical
-    // prices (not pretending they share one pass) makes the fourth stream's gain worth that split.
+    // Four prefixes still run 36 query rows in two passes; lower physical prices make that split pay.
     holds[0].ms = 0.5;
     holds[1].ms = 1;
     const four = admission.quote(prices, &.{0.9}).?;

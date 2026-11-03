@@ -1,7 +1,7 @@
 //! Consumer-visible BF16 activations, including the hold's scalar/MMA boundary and offset guards.
 const std = @import("std");
 const mtl = @import("metal");
-const rig_ = @import("dspark_test.zig");
+const rig_ = @import("dspark_hold_test.zig");
 const bf16_ops = @import("dspark_bf16.zig");
 const quant = @import("dspark_quant.zig");
 

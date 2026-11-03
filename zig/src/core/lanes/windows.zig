@@ -248,15 +248,15 @@ fn reservedCopy(e: *Engine, s: *Stream) ?Copy {
     return .{ .tokens = s.copy_tokens.items, .recalled = r.recalled, .trusted = r.trusted };
 }
 
-/// Price the next logical window once, retaining empty answers too. Never retain a proposer's borrowed slice.
-/// Recall's Reader is per stream: cached probes do not call it again, and graft candidates leave its source evidence intact.
-/// Commits and lifecycle resets invalidate the reservation before another history can query that Reader.
+/// Own the next window's copy, including empty answers; commits and lifecycle resets invalidate it.
 pub fn reserveCopy(e: *Engine, s: *Stream) !Copy {
+    // Reusing a probe leaves the stream's Recall source evidence intact, as do graft candidates.
     if (reservedCopy(e, s)) |copy| return copy;
     const copy = try queryCopy(e, s);
     if (!s.drafts or s.finished or s.paused or s.force.items.len > 0 or
         e.cfg.max_copy == 0 or (s.proposer == null and s.recall == null)) return copy;
     const trusted = copy.trusted orelse true;
+    // Never retain a proposer's borrowed slice.
     try s.copy_tokens.ensureTotalCapacity(e.gpa, copy.tokens.len);
     s.copy_tokens.clearRetainingCapacity();
     s.copy_tokens.appendSliceAssumeCapacity(copy.tokens);
@@ -504,44 +504,7 @@ fn planChances(e: *Engine, p: Plan, n: usize) ![]const f64 {
 }
 
 test "copy rows: each priced at its parent's chance times the stream's copy rate, which follows its copies" {
-    const a = std.testing.allocator;
-    var cfg = try @import("config.zig").Config.init(a, .{ .exact_width = 64, .drafts = 15, .batch_rows = 128 }, 64, 15);
-    defer cfg.deinit(a);
-    var target: @import("fake.zig").Fake = .{ .gpa = a };
-    defer target.deinit();
-    var clock: @import("fake.zig").FixedClock = .{};
-    var e = Engine.init(a, &cfg, target.backend(), clock.clock());
-    defer e.deinit();
-    var s = try Stream.init(a, .{ .id = "copy", .prompt = &.{ 1, 2 }, .max_new = 64 });
-    defer s.deinit(a);
-    // two drafts, then a copy of two rows from the second draft (row parents -1, 0, 1, 2)
-    const parents = [_]i32{ -1, 0, 1, 2 };
-    const ids = [_]u32{ 5, 6, 7, 8 };
-    const p: Plan = .{ .stream = &s, .position = 2, .kind = .head, .tokens = &ids, .parents = &parents, .branch_from = 3, .context_copy = true };
-    const drafts = try nodeChances(&e, &s, 2);
-    const out = try planChances(&e, p, 4);
-    const rate = copyRate(&e, &s, true);
-    try std.testing.expectApproxEqAbs(cfg.copy_rate, rate, 1e-12);
-    try std.testing.expectApproxEqAbs(drafts[1], out[1], 1e-12);
-    try std.testing.expectApproxEqAbs(rate * drafts[1], out[2], 1e-12);
-    try std.testing.expectApproxEqAbs(rate * rate * drafts[1], out[3], 1e-12);
-    // copies that land whole raise the rate toward 1; copies that break lower it below the prior
-    for (0..30) |_| observeCopy(&e, &s, true, 12, 12);
-    try std.testing.expect(copyRate(&e, &s, true) > 0.99);
-    for (0..80) |_| observeCopy(&e, &s, true, 1, 12); // one row landed, then a miss: toward 1 / (1 + 1)
-    try std.testing.expect(copyRate(&e, &s, true) < 0.55);
-    // an untrusted copy starts from short_rate; trusted copies teach both histories, untrusted ones only their own
-    var fresh = try Stream.init(a, .{ .id = "short", .prompt = &.{ 1, 2 }, .max_new = 64 });
-    defer fresh.deinit(a);
-    const short: Plan = .{ .stream = &fresh, .position = 2, .kind = .head, .tokens = &ids, .parents = &parents, .branch_from = 3, .context_copy = true, .copy_trusted = false };
-    try std.testing.expectApproxEqAbs(short_rate * drafts[1], (try planChances(&e, short, 4))[2], 1e-12);
-    for (0..3) |_| observeCopy(&e, &fresh, true, 12, 12);
-    try std.testing.expect(copyRate(&e, &fresh, false) > 0.6);
-    for (0..60) |_| observeCopy(&e, &fresh, false, 0, 12);
-    try std.testing.expect(copyRate(&e, &fresh, false) < 0.1 and copyRate(&e, &fresh, true) > 0.95);
-    // a window without a copy keeps the head's own chances
-    const plain: Plan = .{ .stream = &s, .position = 2, .kind = .head, .tokens = ids[0..2] };
-    try std.testing.expectEqualSlices(f64, try nodeChances(&e, &s, 2), try planChances(&e, plain, 2));
+    try @import("copied_rate_test.zig").checkRows(planChances, short_rate);
 }
 
 test "a copy is trusted after a long match, or out of the prompt early in the reply" {

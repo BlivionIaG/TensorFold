@@ -5,7 +5,7 @@ const c = @import("config.zig");
 const st = @import("state.zig");
 const block = @import("dspark_block.zig");
 const quant = @import("dspark_quant.zig");
-const base = @import("dspark_test.zig");
+const base = @import("dspark_hold_test.zig");
 
 test "lfm2 dspark: attention past maximum target context preserves the next scratch row and includes the tail" {
     var r = try base.Rig.init();
