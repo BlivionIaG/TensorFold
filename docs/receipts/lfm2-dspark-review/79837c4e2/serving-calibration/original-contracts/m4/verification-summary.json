@@ -1,0 +1,51 @@
+{
+  "source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "records": [
+    {
+      "label": "original-guards",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/private/tmp/tf-dspark-perf/r31-serving-calibration-corrected/m4-production/run-guards.py"
+      ],
+      "returncode": 0,
+      "elapsed_s": 399.280105791986,
+      "log_sha256": "334814c5ca10f93788715683d258ad95463ebb7f4a826d36abc486e1e416a63f"
+    },
+    {
+      "label": "functional-0",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/private/tmp/tf-dspark-perf/r31-serving-calibration-corrected/m4-production/run-functional.py",
+        "--root",
+        "/tmp/tf-dspark-calibration-r30",
+        "--binding",
+        "/private/tmp/tf-dspark-perf/r31-serving-calibration-corrected/m4-production/binding.json",
+        "--output",
+        "/private/tmp/tf-dspark-perf/r31-serving-calibration-corrected/m4-production/functional-0",
+        "--bits",
+        "0"
+      ],
+      "returncode": 0,
+      "elapsed_s": 254.71992979198694,
+      "log_sha256": "f18334bf490a7d310f3afceb9937e9cfe9c2d5c9b30833eb673b192233e264f4"
+    },
+    {
+      "label": "functional-8",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/private/tmp/tf-dspark-perf/r31-serving-calibration-corrected/m4-production/run-functional.py",
+        "--root",
+        "/tmp/tf-dspark-calibration-r30",
+        "--binding",
+        "/private/tmp/tf-dspark-perf/r31-serving-calibration-corrected/m4-production/binding.json",
+        "--output",
+        "/private/tmp/tf-dspark-perf/r31-serving-calibration-corrected/m4-production/functional-8",
+        "--bits",
+        "8"
+      ],
+      "returncode": 0,
+      "elapsed_s": 248.91960808401927,
+      "log_sha256": "e38739e53c344ee29fb7863abb6b0c6966b893dc194f6fb53228d467b97fe97d"
+    }
+  ]
+}

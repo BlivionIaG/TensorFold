@@ -1,0 +1,76 @@
+diff --git a/zig/src/families/lfm2_moe/backend.zig b/zig/src/families/lfm2_moe/backend.zig
+index 465b553ed..c7e91da84 100644
+--- a/zig/src/families/lfm2_moe/backend.zig
++++ b/zig/src/families/lfm2_moe/backend.zig
+@@ -67,10 +67,15 @@ pub const Metal = struct {
+             else => return err,
+         };
+         out.width = st.window_rows;
+-        out.timed = try out.time();
+         return out;
+     }
+ 
++    /// Price before preparing tap destinations, after committing the admitted working set.
++    pub fn measure(self: *Metal, flush: ?mtl.keepalive.Target.Flush) !void {
++        if (self.width == 1) return;
++        self.timed = try self.time(flush);
++    }
++
+     pub fn deinit(self: *Metal) void {
+         mtl.resident.streams.set(self, null);
+         var it = self.caches.valueIterator();
+@@ -90,9 +95,11 @@ pub const Metal = struct {
+     }
+ 
+     /// Each window width's forward ms on a 256-token history (the fastest of three, after the GPU's clocks ramp up).
+-    fn time(self: *Metal) !usize {
++    fn time(self: *Metal, flush: ?mtl.keepalive.Target.Flush) !usize {
+         var cache = try st.Cache.init(self.gpa, self.model.device, &self.model.config.attention, 512);
+         defer cache.deinit();
++        cache.memory.setResident(self.residency);
++        if (flush) |f| f.run(f.ctx);
+         var ids: [256]u32 = undefined;
+         for (&ids, 0..) |*id, i| id.* = @intCast((i * 7919 + 13) % c.vocab);
+         try fwd.run(self.model, &self.scratch, &.{.{ .cache = &cache, .rows = 256 }}, &ids, false, .last);
+@@ -119,6 +126,8 @@ pub const Metal = struct {
+         // Two qualified windows measure shared-row increments against the same shared shape at 16 rows.
+         var other = try st.Cache.init(self.gpa, self.model.device, &self.model.config.attention, 512);
+         defer other.deinit();
++        other.memory.setResident(self.residency);
++        if (flush) |f| f.run(f.ctx);
+         try fwd.run(self.model, &self.scratch, &.{.{ .cache = &other, .rows = 256 }}, &ids, false, .last);
+         var shared_base: f64 = 0;
+         for (st.window_rows..st.batch_rows + 1) |rows| {
+diff --git a/zig/src/native/lfm2_moe.zig b/zig/src/native/lfm2_moe.zig
+index 405064a3b..740f9f584 100644
+--- a/zig/src/native/lfm2_moe.zig
++++ b/zig/src/native/lfm2_moe.zig
+@@ -112,6 +112,14 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
+         return null;
+     };
+     h.metal.options.streams = @max(served, 2);
++    try mtl.resident.streams.hold(h, io, "lfm2 moe");
++    errdefer mtl.resident.streams.drop(h);
++    if (h.draft) |d| if (h.resident) |*r| {
++        const held = try d.buffers(gpa);
++        defer gpa.free(held);
++        r.add(held);
++    };
++    try h.metal.measure(h.warm.flush);
+     if (h.draft) |d| {
+         // Borrow the lane stage before prepare_features sizes capture storage.
+         h.metal.stage_source = d.stageSource();
+@@ -155,13 +163,6 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
+         h.host.info_.prompt_cache = true;
+     }
+     errdefer if (h.cache) |*store| store.deinit();
+-    try mtl.resident.streams.hold(h, io, "lfm2 moe");
+-    errdefer mtl.resident.streams.drop(h);
+-    if (h.draft) |d| if (h.resident) |*r| {
+-        const held = try d.buffers(gpa);
+-        defer gpa.free(held);
+-        r.add(held);
+-    };
+     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
+     try h.host.start();
+     if (h.draft) |d| {

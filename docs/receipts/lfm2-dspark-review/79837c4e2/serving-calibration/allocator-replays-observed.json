@@ -1,0 +1,47 @@
+{
+  "runtime_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "published_docs_descendant": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "identical_old_offer_inputs": "2ac phase7/allocation31, four streams, fixed1 each, 15 probabilities0.94^k each, no neural context, common fixed overhead0.24972280811416847ms",
+  "allocation_module_unchanged_by_runtime_patch": true,
+  "observed_m4": {
+    "plain": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "bf16": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "bits8": [
+      3,
+      3,
+      3,
+      3
+    ]
+  },
+  "observed_m5_counterfactual": {
+    "plain": [
+      7,
+      6,
+      6,
+      6
+    ],
+    "bf16": [
+      7,
+      7,
+      6,
+      6
+    ],
+    "bits8": [
+      7,
+      6,
+      6,
+      6
+    ]
+  },
+  "limits": "M5 curves replay the saved M4 offers; these are counterfactual allocations, not new M5 request observations. Small cost differences can still change integer allocation. Neither replay is performance qualification."
+}

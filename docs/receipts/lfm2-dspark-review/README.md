@@ -1,5 +1,15 @@
 # DSpark review receipts
 
+## Retained calibration correction: runtime `79837c4e2`, published `afe8bda62`
+
+[Corrected-source report, original raw contracts and exact allocator replay](79837c4e2/serving-calibration/README.md).
+Actual M4 four-stream work now agrees in all three modes: 1,284 rounds, 836 proposed drafts and 760
+accepted. Replaying the same saved offers with corrected M4 curves selects three drafts per stream
+everywhere, removing the old BF16 six-draft choice. All 138 original phase outputs per device remain
+exact; both devices pass original cache, sampled and cancellation workflows with eight clean exits.
+The remaining same-work q8 sampled-solo GPU elapsed difference is retained and unexplained, not waived.
+This packet is runtime-source798 diagnosis/correctness, not a full AFE performance verdict.
+
 ## Diagnosis at `2acdb56a2`: copy pricing and actual GPU operator work
 
 [Causal report, exact allocator replay and calibrated GPU classes](2acdb56a2/copy-gpu-attribution/README.md).
@@ -10,7 +20,7 @@ GPU work. All 138 original counter-off/on phases per device retain identical gen
 The profiler is intrusive, invalid command-buffer stopwatch values are excluded, and this is not a
 performance qualification, occupancy measurement or MLX comparison. The complete CF failures remain.
 
-## Latest pushed source `2acdb56a2`: M5 original correctness contracts
+## Historical source `2acdb56a2`: M5 original correctness contracts
 
 [Exact-source M5 report and 17-file raw packet](2acdb56a2/m5-original-contracts/README.md):
 82/82 steps, 767/771 tests passed with four skips; original cache, sampled and cancellation

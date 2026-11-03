@@ -1,0 +1,13 @@
+{
+  "label": "ORIGINAL_CACHE_CANCEL_SAMPLE_FUNCTIONAL_ONLY",
+  "source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "bits": 0,
+  "activation_dtype": "BF16",
+  "native_binary_sha256": "c03ab9600d36c32dd1d80b7d94bf9dae15d7256fa8f41df7f23b488c19b43a2c",
+  "removed_environment": [
+    "TF_INPUT",
+    "TF_IN_AUTOMATION"
+  ],
+  "complete": true,
+  "elapsed_s": 254.64019104233012
+}

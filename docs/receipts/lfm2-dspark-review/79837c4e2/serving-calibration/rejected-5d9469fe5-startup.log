@@ -1,0 +1,5 @@
+2026-11-03 18:32:07.352 tensorfold-native[22292:24533855] Metal API Validation Enabled
+info: lfm2 dspark: a 1-draft clean hold takes 2.40 CPU-encode + GPU ms, a 9-draft hold 2.69 CPU-encode + GPU ms; 60 context quotes
+info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged
+info: lfm2 moe: 13.4 GiB kept wired between requests, inside 70% of 256 GiB of RAM
+error: BadLfmTapDestination

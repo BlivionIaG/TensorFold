@@ -1,0 +1,493 @@
+{
+  "runtime_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "published_docs_descendant": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "identical_instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+  "runtime_patch_from_2ac_sha256": "e5e89a04d58a288639e7ab31040a29c7c3cc8282df328888813b877cd8ecf6dc",
+  "capture_qualified_for_performance": false,
+  "bindings": {
+    "m4": {
+      "label": "PRIVATE_CALIBRATION_CAUSAL_COPY_NOT_QUALIFICATION",
+      "base_source": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+      "production_source_under_diagnosis": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+      "base_vs_production": "Exact local calibration candidate plus identical separately bound private instrumentation. No qualification or readiness claim.",
+      "binary_sha256": "d91a2dd41c3183d6f4eca8bac0aeb5f60daa0c30374f2594be16a3a93500d943",
+      "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+      "controller_sha256": "07fa0c054c387a925da900b18ffdb8bd085e172e8ccb42415ea283bf8559afd7",
+      "context": 4096,
+      "parallel": 16,
+      "tokens": 512,
+      "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+      "source_binding": {
+        "driver_sha256": {
+          "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+          "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+          "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+          "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+          "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+          "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+          "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+        },
+        "frozen_driver": "/private/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+        "shared_lock": "/tmp/tensorfold-model.lock",
+        "shared_lock_inode_observed": 68270044,
+        "model_sha256": {
+          "target": {
+            "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+            "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+            "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+            "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+            "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+            "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+            "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+            "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+            "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+          },
+          "drafter": {
+            "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+            "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+          }
+        },
+        "remote_target": "/tmp/tf-dspark-models-r15/target",
+        "remote_drafter": "/tmp/tf-dspark-models-r15/drafter",
+        "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+        "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+        "device_environment": {
+          "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+          "os_build": "25F80",
+          "machine": "arm64",
+          "hw_model": "Mac16,7",
+          "cpu": "Apple M4 Pro",
+          "memory_bytes": "51539607552",
+          "python": "3.14.7"
+        },
+        "source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+        "source_archive_sha256": "11ed01ba0bf434c1c9e24aba5840170b34530dae0fe47c1764533be8a7d94967",
+        "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "runtime_patch_sha256": "e5e89a04d58a288639e7ab31040a29c7c3cc8282df328888813b877cd8ecf6dc",
+        "retained_runtime_patch_scope": "2ac to local798; not an additional patch to798",
+        "private_diagnostic_limits": {
+          "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+          "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+          "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+          "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+          "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+          "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+        },
+        "comparison_source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "candidate_calibration_scope": "Admitted residency and committed head/calibration buffers, before preparing tap destinations; no target math, dtype, trial, driver or oracle change."
+      },
+      "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+      "qualification_throughput": false,
+      "diagnostic_environment": {
+        "LFM2_PRIVATE_COPY_TRACE": "1",
+        "LFM2_PRIVATE_TARGET_COUNTERS": "0"
+      },
+      "runtime_patch_sha256": "e5e89a04d58a288639e7ab31040a29c7c3cc8282df328888813b877cd8ecf6dc"
+    },
+    "m5": {
+      "label": "PRIVATE_CALIBRATION_CAUSAL_COPY_NOT_QUALIFICATION",
+      "base_source": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+      "production_source_under_diagnosis": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+      "base_vs_production": "Exact local calibration candidate plus identical separately bound private instrumentation. No qualification or readiness claim.",
+      "binary_sha256": "bd13e1d24d91c26f83fd3797920cfa3d9c4d3f1e0341fce07393cfcec57248ea",
+      "instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+      "controller_sha256": "07fa0c054c387a925da900b18ffdb8bd085e172e8ccb42415ea283bf8559afd7",
+      "context": 4096,
+      "parallel": 16,
+      "tokens": 512,
+      "history": "Original code,T0 scenario at all widths, then original code,T1 warmup and all16 seed oracles, then width1.",
+      "source_binding": {
+        "driver_sha256": {
+          "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+          "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+          "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+          "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+          "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+          "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+          "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+        },
+        "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+        "shared_lock": "/tmp/tensorfold-model.lock",
+        "shared_lock_inode_observed": 3719605,
+        "model_sha256": {
+          "target": {
+            "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+            "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+            "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+            "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+            "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+            "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+            "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+            "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+            "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+          },
+          "drafter": {
+            "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+            "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+          }
+        },
+        "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+        "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+        "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+        "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+        "device_environment": {
+          "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+          "os_build": "26A428",
+          "machine": "arm64",
+          "hw_model": "Mac17,15",
+          "cpu": "Apple M5 Ultra",
+          "memory_bytes": "274877906944",
+          "python": "3.13.15"
+        },
+        "source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+        "source_archive_sha256": "11ed01ba0bf434c1c9e24aba5840170b34530dae0fe47c1764533be8a7d94967",
+        "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+        "runtime_patch_sha256": "e5e89a04d58a288639e7ab31040a29c7c3cc8282df328888813b877cd8ecf6dc",
+        "retained_runtime_patch_scope": "2ac to local798; not an additional patch to798",
+        "private_diagnostic_limits": {
+          "target_shape": "Exact rows 0..32 only; calls_above32 explicitly counted; existing legacy bins clamp above32.",
+          "counter_unrecorded_head_last": "Route predicate only, not proof of frontend prefill versus queued decode.",
+          "copy_float_encoding": "decimal IEEE754 u64 bits; null retained for unknown.",
+          "counter_perturbation": "bounded samples/fences and encoder rotation; not performance qualification.",
+          "command_gpu_ms": "Raw command-buffer stopwatch; reject if invalid/outside calibrated CPU envelope before interpreting.",
+          "class_gpu_ms": "two-point calibrated GPU counter samples; unsupported/invalid fails."
+        },
+        "comparison_source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+        "candidate_calibration_scope": "Admitted residency and committed head/calibration buffers, before preparing tap destinations; no target math, dtype, trial, driver or oracle change."
+      },
+      "target_counter_phase_labels": "decode/prefill in old aggregate snapshots mean recorded/unrecorded, including queued decode; exact per-forward fields are separately named.",
+      "qualification_throughput": false,
+      "diagnostic_environment": {
+        "LFM2_PRIVATE_COPY_TRACE": "1",
+        "LFM2_PRIVATE_TARGET_COUNTERS": "0"
+      },
+      "runtime_patch_sha256": "e5e89a04d58a288639e7ab31040a29c7c3cc8282df328888813b877cd8ecf6dc"
+    }
+  },
+  "server_exits": {
+    "m4": [
+      {
+        "arm": "plain",
+        "returncode": 0,
+        "log_sha256": "7fde17c92f84c076cf910de1d1a3d6a42233910c3058570e2828c87df0ea06e2"
+      },
+      {
+        "arm": "bf16",
+        "returncode": 0,
+        "log_sha256": "7e8aae4c858aa41b58c0e832efb6ba3632e60c4ddc4fcb0f05bc9f635475924e"
+      },
+      {
+        "arm": "bits8",
+        "returncode": 0,
+        "log_sha256": "bb329b0fcc796d0225b4a512c2af0279be0ad189d25939dbc6ccd9ca654c7723"
+      }
+    ],
+    "m5": [
+      {
+        "arm": "plain",
+        "returncode": 0,
+        "log_sha256": "4d35b2a0659fc9f938fe4672eb7a88b344d651caee79f9104ab79dad4f9184aa"
+      },
+      {
+        "arm": "bf16",
+        "returncode": 0,
+        "log_sha256": "a85a59b66441f8e0d200d756eadd3104a2cd685e9e190d140dae2532026b0dce"
+      },
+      {
+        "arm": "bits8",
+        "returncode": 0,
+        "log_sha256": "20dce148de9e2209d841b19ec05e655a51eb549b9435ef0ec22385821a8486ff"
+      }
+    ]
+  },
+  "m5_observed_across_arm_startup_ranges": [
+    {
+      "rows": 1,
+      "shared_price_ms": {
+        "plain": 3.741,
+        "bf16": 3.776,
+        "bits8": 3.761
+      },
+      "across_arm_range_percent_of_plain": 0.9355787222667655
+    },
+    {
+      "rows": 2,
+      "shared_price_ms": {
+        "plain": 4.611,
+        "bf16": 4.651,
+        "bits8": 4.633
+      },
+      "across_arm_range_percent_of_plain": 0.8674907829104324
+    },
+    {
+      "rows": 3,
+      "shared_price_ms": {
+        "plain": 5.686,
+        "bf16": 5.694,
+        "bits8": 5.682
+      },
+      "across_arm_range_percent_of_plain": 0.21104467112204656
+    },
+    {
+      "rows": 4,
+      "shared_price_ms": {
+        "plain": 6.233,
+        "bf16": 6.235,
+        "bits8": 6.22
+      },
+      "across_arm_range_percent_of_plain": 0.2406545804588572
+    },
+    {
+      "rows": 5,
+      "shared_price_ms": {
+        "plain": 6.961,
+        "bf16": 6.989,
+        "bits8": 6.957
+      },
+      "across_arm_range_percent_of_plain": 0.4597040655078297
+    },
+    {
+      "rows": 6,
+      "shared_price_ms": {
+        "plain": 7.666,
+        "bf16": 7.668,
+        "bits8": 7.637
+      },
+      "across_arm_range_percent_of_plain": 0.40438298982520976
+    },
+    {
+      "rows": 7,
+      "shared_price_ms": {
+        "plain": 8.655,
+        "bf16": 8.683,
+        "bits8": 8.635
+      },
+      "across_arm_range_percent_of_plain": 0.5545927209705378
+    },
+    {
+      "rows": 8,
+      "shared_price_ms": {
+        "plain": 9.233,
+        "bf16": 9.269,
+        "bits8": 9.219
+      },
+      "across_arm_range_percent_of_plain": 0.5415357955160913
+    },
+    {
+      "rows": 9,
+      "shared_price_ms": {
+        "plain": 10.279,
+        "bf16": 10.309,
+        "bits8": 10.276
+      },
+      "across_arm_range_percent_of_plain": 0.32104290300612387
+    },
+    {
+      "rows": 10,
+      "shared_price_ms": {
+        "plain": 10.912,
+        "bf16": 10.95,
+        "bits8": 10.912
+      },
+      "across_arm_range_percent_of_plain": 0.3482404692081972
+    },
+    {
+      "rows": 11,
+      "shared_price_ms": {
+        "plain": 11.647,
+        "bf16": 11.687,
+        "bits8": 11.643
+      },
+      "across_arm_range_percent_of_plain": 0.37777968575597753
+    },
+    {
+      "rows": 12,
+      "shared_price_ms": {
+        "plain": 12.179,
+        "bf16": 12.197,
+        "bits8": 12.15
+      },
+      "across_arm_range_percent_of_plain": 0.38591017324902555
+    },
+    {
+      "rows": 13,
+      "shared_price_ms": {
+        "plain": 12.856,
+        "bf16": 12.867,
+        "bits8": 12.836
+      },
+      "across_arm_range_percent_of_plain": 0.24113254511512588
+    },
+    {
+      "rows": 14,
+      "shared_price_ms": {
+        "plain": 13.411,
+        "bf16": 13.464,
+        "bits8": 13.422
+      },
+      "across_arm_range_percent_of_plain": 0.39519797181418853
+    },
+    {
+      "rows": 15,
+      "shared_price_ms": {
+        "plain": 14.147,
+        "bf16": 14.194,
+        "bits8": 14.14
+      },
+      "across_arm_range_percent_of_plain": 0.38170636884145237
+    },
+    {
+      "rows": 16,
+      "shared_price_ms": {
+        "plain": 17.15,
+        "bf16": 17.178,
+        "bits8": 17.185
+      },
+      "across_arm_range_percent_of_plain": 0.20408163265306206
+    },
+    {
+      "rows": 17,
+      "shared_price_ms": {
+        "plain": 15.910999999999998,
+        "bf16": 16.019000000000002,
+        "bits8": 15.940000000000001
+      },
+      "across_arm_range_percent_of_plain": 0.6787756897743957
+    },
+    {
+      "rows": 18,
+      "shared_price_ms": {
+        "plain": 16.336999999999993,
+        "bf16": 16.395999999999997,
+        "bits8": 16.387000000000004
+      },
+      "across_arm_range_percent_of_plain": 0.3611434167840156
+    },
+    {
+      "rows": 19,
+      "shared_price_ms": {
+        "plain": 17.425,
+        "bf16": 17.535,
+        "bits8": 17.470000000000002
+      },
+      "across_arm_range_percent_of_plain": 0.6312769010043009
+    },
+    {
+      "rows": 20,
+      "shared_price_ms": {
+        "plain": 17.890999999999995,
+        "bf16": 17.913999999999998,
+        "bits8": 17.962999999999997
+      },
+      "across_arm_range_percent_of_plain": 0.4024369794869082
+    },
+    {
+      "rows": 21,
+      "shared_price_ms": {
+        "plain": 18.291,
+        "bf16": 18.346,
+        "bits8": 18.375999999999994
+      },
+      "across_arm_range_percent_of_plain": 0.4647094199332663
+    },
+    {
+      "rows": 22,
+      "shared_price_ms": {
+        "plain": 18.824,
+        "bf16": 18.834,
+        "bits8": 18.893999999999995
+      },
+      "across_arm_range_percent_of_plain": 0.3718657033573798
+    },
+    {
+      "rows": 23,
+      "shared_price_ms": {
+        "plain": 20.387999999999995,
+        "bf16": 20.421000000000003,
+        "bits8": 20.465999999999998
+      },
+      "across_arm_range_percent_of_plain": 0.3825779870512212
+    },
+    {
+      "rows": 24,
+      "shared_price_ms": {
+        "plain": 20.996,
+        "bf16": 21.044,
+        "bits8": 20.974
+      },
+      "across_arm_range_percent_of_plain": 0.33339683749285715
+    },
+    {
+      "rows": 25,
+      "shared_price_ms": {
+        "plain": 20.694999999999997,
+        "bf16": 20.720000000000002,
+        "bits8": 20.735000000000003
+      },
+      "across_arm_range_percent_of_plain": 0.1932834017879017
+    },
+    {
+      "rows": 26,
+      "shared_price_ms": {
+        "plain": 21.295999999999996,
+        "bf16": 21.288999999999998,
+        "bits8": 21.435999999999996
+      },
+      "across_arm_range_percent_of_plain": 0.6902704733283175
+    },
+    {
+      "rows": 27,
+      "shared_price_ms": {
+        "plain": 22.268999999999995,
+        "bf16": 22.352,
+        "bits8": 22.38
+      },
+      "across_arm_range_percent_of_plain": 0.4984507611478029
+    },
+    {
+      "rows": 28,
+      "shared_price_ms": {
+        "plain": 22.696,
+        "bf16": 22.816,
+        "bits8": 22.791
+      },
+      "across_arm_range_percent_of_plain": 0.5287275290800028
+    },
+    {
+      "rows": 29,
+      "shared_price_ms": {
+        "plain": 23.053,
+        "bf16": 23.16,
+        "bits8": 23.157
+      },
+      "across_arm_range_percent_of_plain": 0.4641478332538035
+    },
+    {
+      "rows": 30,
+      "shared_price_ms": {
+        "plain": 23.708999999999993,
+        "bf16": 23.722000000000005,
+        "bits8": 23.795999999999996
+      },
+      "across_arm_range_percent_of_plain": 0.3669492597747831
+    },
+    {
+      "rows": 31,
+      "shared_price_ms": {
+        "plain": 25.932999999999996,
+        "bf16": 26.110000000000003,
+        "bits8": 26.125000000000004
+      },
+      "across_arm_range_percent_of_plain": 0.7403694134886334
+    },
+    {
+      "rows": 32,
+      "shared_price_ms": {
+        "plain": 26.642999999999997,
+        "bf16": 26.651999999999997,
+        "bits8": 26.748
+      },
+      "across_arm_range_percent_of_plain": 0.39409976354015686
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "records": [
+    {
+      "label": "original-guards",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r31-serving-calibration-79837c4e2/guards/run-guards.py"
+      ],
+      "returncode": 0,
+      "elapsed_s": 358.83877229178324,
+      "log_sha256": "ee509e19822f9e5c39a46fe9744d1c5b2f3c0155110890c6c33390f6d1d43fea"
+    },
+    {
+      "label": "functional-0",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r31-serving-calibration-79837c4e2/guards/run-functional.py",
+        "--root",
+        "/Users/kletorch/tf-lfm2-test/r31-serving-calibration-79837c4e2/source",
+        "--binding",
+        "/Users/kletorch/tf-lfm2-test/r31-serving-calibration-79837c4e2/guards/binding.json",
+        "--output",
+        "/Users/kletorch/tf-lfm2-test/r31-serving-calibration-79837c4e2/guards/functional-0",
+        "--bits",
+        "0"
+      ],
+      "returncode": 0,
+      "elapsed_s": 194.18073133332655,
+      "log_sha256": "e99332213ab2ed731f86bc219626925a18bfb412bc09499aee5b15cac0d35dfa"
+    },
+    {
+      "label": "functional-8",
+      "command": [
+        "/Users/kletorch/lfm3-qualification-1502/standard-venv/bin/python",
+        "/Users/kletorch/tf-lfm2-test/r31-serving-calibration-79837c4e2/guards/run-functional.py",
+        "--root",
+        "/Users/kletorch/tf-lfm2-test/r31-serving-calibration-79837c4e2/source",
+        "--binding",
+        "/Users/kletorch/tf-lfm2-test/r31-serving-calibration-79837c4e2/guards/binding.json",
+        "--output",
+        "/Users/kletorch/tf-lfm2-test/r31-serving-calibration-79837c4e2/guards/functional-8",
+        "--bits",
+        "8"
+      ],
+      "returncode": 0,
+      "elapsed_s": 191.37613270897418,
+      "log_sha256": "672f149a289373e4009a79bd26e85dc4d055b93f3b84022793af891791f0c52d"
+    }
+  ]
+}

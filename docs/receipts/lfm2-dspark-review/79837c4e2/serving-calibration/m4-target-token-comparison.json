@@ -1,0 +1,8 @@
+{
+  "before_source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+  "after_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "identical_private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+  "phase_pairs": 138,
+  "mismatches": [],
+  "warning": "Generated-token comparison across real runs; no performance verdict or rerun."
+}
