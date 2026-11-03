@@ -1,0 +1,60 @@
+{
+  "scope": "IntegratedPinnedMainM5OriginalGuards;NoServingQualification",
+  "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "base_revision": "2c8422a0c49d04a1867cffec081a1a42b65c857f",
+  "source_tree_ids": {
+    "zig": "dc425cce7d4bb20d2e623cc08439966a64d67f35",
+    "build.zig": "cd4e87a234349b3d37dd8651c3dad3d3f6f2e9cc",
+    "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+  },
+  "production_binary_sha256": "0ada11bcd2ac70eee71afd0fc0cfaf418983c2c29975c47979e8444a54ef6f43",
+  "binary_sha256": "2c8a60d62a92792d4d40caf1e14337364df38fcb32fba0de43e5efa1702eb485",
+  "cases": [
+    {
+      "bits": 0,
+      "requested_prefix": 9,
+      "reference_equal": 9,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.0,
+      "confidence_max_difference": 0.0008,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "eb8642b14bb87020a61134c7df114a39aaeb6f161d8f55b70e2c059318757d36"
+    },
+    {
+      "bits": 8,
+      "requested_prefix": 9,
+      "reference_equal": 8,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.075,
+      "confidence_max_difference": 0.00225,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "394cc5a90fd6572bcdec11368d2150e1ca79ea9bcc53f0d41ff803e8f59be3d5"
+    }
+  ],
+  "records": [
+    {
+      "returncode": 0,
+      "seconds": 260.6535932919942,
+      "log_sha256": "67e55f553ecbcf8be735a49f52765f32a2e00fbe36280f2f0f9917190c85868f"
+    },
+    {
+      "returncode": 0,
+      "seconds": 113.69041433371603,
+      "log_sha256": "249cf0d34116f7cebd98b91af543225b009cec48439e9ba2e0258e47f7bb0cd9"
+    },
+    {
+      "returncode": 0,
+      "seconds": 6.309211709070951,
+      "log_sha256": "eb8642b14bb87020a61134c7df114a39aaeb6f161d8f55b70e2c059318757d36"
+    },
+    {
+      "returncode": 0,
+      "seconds": 6.159376250114292,
+      "log_sha256": "394cc5a90fd6572bcdec11368d2150e1ca79ea9bcc53f0d41ff803e8f59be3d5"
+    }
+  ]
+}
