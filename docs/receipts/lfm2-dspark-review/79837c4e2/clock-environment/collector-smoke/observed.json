@@ -1,0 +1,60 @@
+{
+  "label": "PRIVATE_COMPLETE_GLOBAL_GPU_CLOCK_COVERAGE_NOT_QUALIFICATION",
+  "runtime_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "published_docs_descendant": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "controller_command": [
+    "/usr/bin/true"
+  ],
+  "raw_samples_private": true,
+  "limitations": "Global GPU clocks, not process GPU attribution or occupancy. Raw freq_hz units are preserved without assuming SI Hz. No power or frequency override.",
+  "start": {
+    "wall_ns": 1793735401289042000,
+    "perf_counter_ns": 4160470213145791,
+    "monotonic_ns": 4160470213146333
+  },
+  "power_command": [
+    "sudo",
+    "-n",
+    "/usr/bin/powermetrics",
+    "--samplers",
+    "gpu_power,thermal",
+    "--format",
+    "plist",
+    "--buffer-size",
+    "0",
+    "--sample-rate",
+    "1000"
+  ],
+  "owned_sampler_pid": 77142,
+  "controller_start": {
+    "wall_ns": 1793735403669286000,
+    "perf_counter_ns": 4160472593376916,
+    "monotonic_ns": 4160472593377041
+  },
+  "controller_returncode": 0,
+  "controller_end": {
+    "wall_ns": 1793735403671798000,
+    "perf_counter_ns": 4160472595889791,
+    "monotonic_ns": 4160472595889875
+  },
+  "sampler_ended_before_controller_cleanup": false,
+  "owned_sampler_flush_returncode": 0,
+  "owned_sampler_stop_returncode": 0,
+  "owned_sampler_kill_returncode": 0,
+  "owned_sampler_forced_stop": true,
+  "sampler_returncode": -9,
+  "reader_stopped": false,
+  "samples": {
+    "complete_records": 40,
+    "parse_errors": [],
+    "incomplete_tail_bytes": 0,
+    "first_complete_timestamp": "2026-11-03T19:50:02+00:00",
+    "last_complete_timestamp": "2026-11-03T19:50:41+00:00",
+    "max_timestamp_gap_seconds": 1.0
+  },
+  "end": {
+    "wall_ns": 1793735443730326000,
+    "perf_counter_ns": 4160512654204708,
+    "monotonic_ns": 4160512654205000
+  }
+}

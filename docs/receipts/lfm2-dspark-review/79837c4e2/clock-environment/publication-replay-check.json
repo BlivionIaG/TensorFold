@@ -1,0 +1,12 @@
+{
+  "offline_only_no_model_loaded": true,
+  "exit_code": 0,
+  "byte_equal": true,
+  "analysis_sha256": "928dd6cbe4dd3dfd5bee742fbf45b990212367921c378e9067fc3c434c7fbd47",
+  "replay_sha256": "928dd6cbe4dd3dfd5bee742fbf45b990212367921c378e9067fc3c434c7fbd47",
+  "raw_clock_decompression_byte_identity": true,
+  "clean_server_exits": 3,
+  "complete_clock_records": 1745,
+  "phase_pairs_exact": 208,
+  "temporary_replay_files_removed": true
+}

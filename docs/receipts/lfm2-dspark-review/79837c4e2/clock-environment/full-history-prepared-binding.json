@@ -1,0 +1,20 @@
+{
+  "runtime_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "published_docs_descendant": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "native_binary_sha256": "d91a2dd41c3183d6f4eca8bac0aeb5f60daa0c30374f2594be16a3a93500d943",
+  "private_instrumentation_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+  "collector_sha256": "7c7dc25120ee58d90840b932329ebef8e6b921a27fa131d67d6d1fd033b3da56",
+  "controller_sha256": "252a31c1fa962a77728b3dac81a8a8fd307eb40d7ac6a0f6113b7b183e6b15d1",
+  "intent": "Explain actual nonstationary M4 timing: unchanged plain baseline range32.25640969309376percent,15/16 negative flags change sign. Complete original code/chat and q8 clock coverage; no qualification rerun or power/frequency override.",
+  "samplers": "gpu_power,thermal; no tasks or per-process GPU attribution; no power override",
+  "real_prior_failure_exercised_offline": {
+    "complete_plists": 306,
+    "incomplete_tail_bytes": 88526,
+    "lost_metadata_reconstruction": false
+  },
+  "history": "All original code/chat T0/T1 scenarios and all widths, one ordered diagnostic rotation. COPY_TRACE=0 and TARGET_COUNTERS=0; only existing aggregate timers plus global clocks.",
+  "collector_smoke": "collector-smoke-owned-child/observed.json: actual complete record, exit0, owned powermetrics child stopped without forced kill; no model loaded",
+  "full_history_capture_started": true,
+  "sampler_only_smoke_exercised": true,
+  "background_job": "bg_630"
+}

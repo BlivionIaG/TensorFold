@@ -1,0 +1,62 @@
+{
+  "source_revision": "2acdb56a26d71361412136f5f36bf3bfdd12d563",
+  "private_patch_sha256": "41fd643ed0ba78fddf752257ec8b35f4323cd145bb9a5c7dbc49df19c930dc40",
+  "source_group_file_sha256": "909f063f272d6777b7ed81e6c835972ce56690943da3996c95e3e37a1a46e305",
+  "scenario": "code-T1-w1",
+  "physical_calls_per_arm": {
+    "row1": 499,
+    "row7": 1,
+    "row16": 4
+  },
+  "calibrated_class_gpu_ms_by_arm": {
+    "plain": {
+      "norm": 95.11472900000004,
+      "embedding": 1.3037069999999984,
+      "attention": 154.91584900000004,
+      "attention_projection": 236.0567,
+      "convolution_projection": 806.8681349999995,
+      "convolution": 51.960581999999945,
+      "dense_ffn": 186.5944349999999,
+      "expert_route": 178.8189049999999,
+      "expert_gate_up": 1360.0392770000005,
+      "expert_down": 732.7483889999999,
+      "expert_combine_norm": 73.12242700000007,
+      "final_combine_norm": 2.0525410000000006,
+      "vocab_head": 416.0225060000004,
+      "argmax": 5.582566000000008
+    },
+    "bf16": {
+      "norm": 94.17124099999991,
+      "embedding": 1.3145939999999972,
+      "attention": 154.2895840000001,
+      "attention_projection": 235.93406299999998,
+      "convolution_projection": 809.5090630000005,
+      "convolution": 51.70680200000001,
+      "dense_ffn": 190.69762100000008,
+      "expert_route": 181.06917199999998,
+      "expert_gate_up": 1378.463702999999,
+      "expert_down": 741.946555,
+      "expert_combine_norm": 73.11583999999993,
+      "final_combine_norm": 2.0246330000000006,
+      "vocab_head": 423.897876,
+      "argmax": 5.376345000000001
+    },
+    "bits8": {
+      "norm": 95.03642399999991,
+      "embedding": 1.307037999999999,
+      "attention": 155.17838400000008,
+      "attention_projection": 235.23886800000014,
+      "convolution_projection": 802.7926710000012,
+      "convolution": 52.08102499999998,
+      "dense_ffn": 186.25269900000035,
+      "expert_route": 179.25803399999995,
+      "expert_gate_up": 1357.9301790000015,
+      "expert_down": 732.1918770000007,
+      "expert_combine_norm": 73.35972199999996,
+      "final_combine_norm": 2.048745,
+      "vocab_head": 414.93119400000035,
+      "argmax": 5.5599090000000055
+    }
+  },
+  "limits": "Older intrusive class recording, not current-source ordinary timing. Absolute command-buffer stopwatches were invalid under profiling and are excluded. These class sums are not used to clear performance or explain the newer residual causally."
+}

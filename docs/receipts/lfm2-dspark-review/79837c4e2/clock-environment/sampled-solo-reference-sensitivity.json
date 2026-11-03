@@ -1,0 +1,30 @@
+{
+  "runtime_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "published_docs_descendant": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "scenario": "code-T1-w1",
+  "all_modes_and_both_points_same_activity_and_physical_row_histograms": true,
+  "activity": {
+    "rounds": 504,
+    "drafted": 66,
+    "accepted": 7
+  },
+  "rows": [
+    {
+      "point": "solo",
+      "plain_decode_gpu_ms": 4733.002991999994,
+      "bf16_decode_gpu_ms": 4515.002829000005,
+      "bits8_decode_gpu_ms": 4510.041494999998,
+      "bf16_delta_percent": -4.6059586982823975,
+      "bits8_delta_percent": -4.710782929502888
+    },
+    {
+      "point": "measured",
+      "plain_decode_gpu_ms": 4315.448792999989,
+      "bf16_decode_gpu_ms": 4490.471254000004,
+      "bits8_decode_gpu_ms": 4548.82362499999,
+      "bf16_delta_percent": 4.0557186377443655,
+      "bits8_delta_percent": 5.407892508852252
+    }
+  ],
+  "interpretation": "The normal earlier solo oracle and later measured request are identical inputs with equal activity and physical row histograms. The apparent mode delta reverses sign across those existing points. This establishes reference/history/time sensitivity; it does not establish a universal error floor or hardware cause. It is not substituted into the frozen performance verdict."
+}

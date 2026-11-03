@@ -1,0 +1,152 @@
+{
+  "label": "EXISTING_IDENTICAL_REQUEST_REPEATS_NOT_A_DEDICATED_AA_ERROR_FLOOR",
+  "runtime_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "published_docs_descendant": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "rows": [
+    {
+      "arm": "plain",
+      "scenario": "code-T0-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 3265.146424,
+      "measured_decode_gpu_ms": 3243.199791,
+      "repeat_decode_gpu_delta_percent": -0.672148508829018,
+      "solo_rpc_wall_ms": 3448.754459153861,
+      "measured_rpc_wall_ms": 3429.239833727479,
+      "elapsed_between_starts_seconds": 8.615534500218928,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "plain",
+      "scenario": "code-T1-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 4733.002991999994,
+      "measured_decode_gpu_ms": 4315.448792999989,
+      "repeat_decode_gpu_delta_percent": -8.82218328840655,
+      "solo_rpc_wall_ms": 5048.43212524429,
+      "measured_rpc_wall_ms": 4612.477249931544,
+      "elapsed_between_starts_seconds": 151.21928041707724,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "plain",
+      "scenario": "chat-T0-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 4488.658500999969,
+      "measured_decode_gpu_ms": 4485.107131000026,
+      "repeat_decode_gpu_delta_percent": -0.07911873890944499,
+      "solo_rpc_wall_ms": 4777.837041765451,
+      "measured_rpc_wall_ms": 4770.650750026107,
+      "elapsed_between_starts_seconds": 9.828744041733444,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "plain",
+      "scenario": "chat-T1-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 4587.612658999977,
+      "measured_decode_gpu_ms": 4481.931750999996,
+      "repeat_decode_gpu_delta_percent": -2.303614447323832,
+      "solo_rpc_wall_ms": 4911.814334336668,
+      "measured_rpc_wall_ms": 4792.082624975592,
+      "elapsed_between_starts_seconds": 157.10760220931843,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "bf16",
+      "scenario": "code-T0-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 3137.106041,
+      "measured_decode_gpu_ms": 3130.5323259999996,
+      "repeat_decode_gpu_delta_percent": -0.20954710851612823,
+      "solo_rpc_wall_ms": 3313.930250238627,
+      "measured_rpc_wall_ms": 3308.7812908925116,
+      "elapsed_between_starts_seconds": 8.193235500250012,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "bf16",
+      "scenario": "code-T1-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 4515.002829000005,
+      "measured_decode_gpu_ms": 4490.471254000004,
+      "repeat_decode_gpu_delta_percent": -0.5433346540213435,
+      "solo_rpc_wall_ms": 4812.308624852449,
+      "measured_rpc_wall_ms": 4780.6446249596775,
+      "elapsed_between_starts_seconds": 146.18615845777094,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "bf16",
+      "scenario": "chat-T0-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 4395.391999999993,
+      "measured_decode_gpu_ms": 4396.217465999973,
+      "repeat_decode_gpu_delta_percent": 0.01878025896167035,
+      "solo_rpc_wall_ms": 4665.067000314593,
+      "measured_rpc_wall_ms": 4674.888500012457,
+      "elapsed_between_starts_seconds": 9.588802041020244,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "bf16",
+      "scenario": "chat-T1-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 4399.8058350000065,
+      "measured_decode_gpu_ms": 4397.394113000017,
+      "repeat_decode_gpu_delta_percent": -0.05481428250321274,
+      "solo_rpc_wall_ms": 4707.8642919659615,
+      "measured_rpc_wall_ms": 4711.565749719739,
+      "elapsed_between_starts_seconds": 150.95077054202557,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "bits8",
+      "scenario": "code-T0-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 3130.922623,
+      "measured_decode_gpu_ms": 3134.884996999999,
+      "repeat_decode_gpu_delta_percent": 0.12655611387171195,
+      "solo_rpc_wall_ms": 3307.3308328166604,
+      "measured_rpc_wall_ms": 3309.5300002023578,
+      "elapsed_between_starts_seconds": 8.168511290568858,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "bits8",
+      "scenario": "code-T1-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 4510.041494999998,
+      "measured_decode_gpu_ms": 4548.82362499999,
+      "repeat_decode_gpu_delta_percent": 0.8599062789774292,
+      "solo_rpc_wall_ms": 4797.743875067681,
+      "measured_rpc_wall_ms": 4845.865957904607,
+      "elapsed_between_starts_seconds": 146.5136524173431,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "bits8",
+      "scenario": "chat-T0-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 4438.089746999991,
+      "measured_decode_gpu_ms": 4436.359915999987,
+      "repeat_decode_gpu_delta_percent": -0.038976926980205384,
+      "solo_rpc_wall_ms": 4699.733749963343,
+      "measured_rpc_wall_ms": 4699.352332856506,
+      "elapsed_between_starts_seconds": 9.652896292041987,
+      "same_seeds_tokens_hashes": true
+    },
+    {
+      "arm": "bits8",
+      "scenario": "chat-T1-w1",
+      "same_activity_and_physical_row_histograms": true,
+      "solo_decode_gpu_ms": 4436.175664999988,
+      "measured_decode_gpu_ms": 4432.260702,
+      "repeat_decode_gpu_delta_percent": -0.08825085604423633,
+      "solo_rpc_wall_ms": 4748.045917134732,
+      "measured_rpc_wall_ms": 4730.4820832796395,
+      "elapsed_between_starts_seconds": 152.10867062490433,
+      "same_seeds_tokens_hashes": true
+    }
+  ],
+  "limits": "Original solo oracle and later one-stream measured RPC have identical seeds, lengths and output hashes. Adaptive state/history and elapsed time differ; physical work equality is checked and reported, not assumed. These observations are not a randomized A/A design or a universal measurement-error bound."
+}

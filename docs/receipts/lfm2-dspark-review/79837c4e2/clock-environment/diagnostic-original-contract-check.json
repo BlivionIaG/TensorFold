@@ -1,0 +1,32 @@
+{
+  "diagnostic_not_qualification": true,
+  "runtime_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "published_docs_descendant": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "arms": {
+    "plain": {
+      "records": 50,
+      "cells": 16,
+      "oracles": 34,
+      "exactness_or_scenario_failures": 0,
+      "sha256": "b8b31c086664bf104639c4036792b563d32d06278a144199a353f7aa542be58c"
+    },
+    "bf16": {
+      "records": 50,
+      "cells": 16,
+      "oracles": 34,
+      "exactness_or_scenario_failures": 0,
+      "sha256": "c89cde2bd00b96abcf6e879198e874a52931454184fced52bfff48c9033c98fd"
+    },
+    "bits8": {
+      "records": 50,
+      "cells": 16,
+      "oracles": 34,
+      "exactness_or_scenario_failures": 0,
+      "sha256": "c5b25cbf092d09785d97a5a8858cd11eb7f994fd1533a931f5e1b8c58d3a78d7"
+    }
+  },
+  "total_cells": 48,
+  "total_oracles": 102,
+  "exactness_or_scenario_failures": 0,
+  "limits": "One ordered diagnostic rotation only. These correctness records do not replace the complete three-rotation AFE qualification and do not clear performance."
+}

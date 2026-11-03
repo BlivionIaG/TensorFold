@@ -1,0 +1,10 @@
+{
+  "raw_bytes": 11961294,
+  "raw_sha256": "7154b62ac4fcfbc0dcb3252742ac9840cc60efc366d9a9876b02910fea82dcaf",
+  "gzip_bytes": 181797,
+  "gzip_sha256": "b73398c96eb9feb3110b7eff252e88eab731d2a5caf6f6db8f94dfba7b8f00f5",
+  "gzip_mtime": 0,
+  "decompression_byte_identity_checked": true,
+  "samplers": "gpu_power,thermal only; no tasks or per-process metadata",
+  "private_native_logs_published": false
+}

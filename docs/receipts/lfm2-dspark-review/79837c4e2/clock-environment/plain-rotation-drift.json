@@ -1,0 +1,122 @@
+{
+  "qualified_source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "source_cells_sha256": "a89a1690adddccac6f28c42463976738d820663913e8e3d5c7f07c3456bdab2b",
+  "source_variation_sha256": "284e03c96842a0924aff8a794831021b2cc130c4734079cd75efe56834f381fe",
+  "plain_cells": 16,
+  "monotonically_decreasing_plain_cells": 16,
+  "rows": [
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "rotation2_vs_rotation0_percent": -4.343925801881266,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "rotation2_vs_rotation0_percent": -4.900849129698425,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "rotation2_vs_rotation0_percent": -6.797611473367782,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "rotation2_vs_rotation0_percent": -8.272341555526175,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "rotation2_vs_rotation0_percent": -13.03987078545903,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "rotation2_vs_rotation0_percent": -18.14338761618871,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "rotation2_vs_rotation0_percent": -19.851750154137516,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "rotation2_vs_rotation0_percent": -22.235260216046427,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "rotation2_vs_rotation0_percent": -13.822663577680206,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "rotation2_vs_rotation0_percent": -13.681545398217787,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "rotation2_vs_rotation0_percent": -14.779376641173814,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "rotation2_vs_rotation0_percent": -20.67369444172813,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "rotation2_vs_rotation0_percent": -7.704590791412547,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "rotation2_vs_rotation0_percent": -12.21185466533461,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "rotation2_vs_rotation0_percent": -11.039277789062819,
+      "monotonically_decreasing": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "rotation2_vs_rotation0_percent": -24.389297855541393,
+      "monotonically_decreasing": true
+    }
+  ],
+  "interpretation": "Every unchanged-plain group decreases at both rotation transitions. This is evidence of a common timing drift, not a head-mode regression count or an established hardware cause. No model work was rerun."
+}

@@ -1,0 +1,78 @@
+{
+  "label": "PRIVATE_COMPLETE_GLOBAL_GPU_CLOCK_COVERAGE_NOT_QUALIFICATION",
+  "runtime_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "published_docs_descendant": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "controller_command": [
+    "/usr/bin/true"
+  ],
+  "raw_samples_private": true,
+  "limitations": "Global GPU clocks, not process GPU attribution or occupancy. Raw freq_hz units are preserved without assuming SI Hz. No power or frequency override.",
+  "start": {
+    "wall_ns": 1793735656928657000,
+    "perf_counter_ns": 4160725851404250,
+    "monotonic_ns": 4160725851404750
+  },
+  "power_command": [
+    "sudo",
+    "-n",
+    "/usr/bin/powermetrics",
+    "--samplers",
+    "gpu_power,thermal",
+    "--format",
+    "plist",
+    "--buffer-size",
+    "0",
+    "--sample-rate",
+    "1000"
+  ],
+  "owned_sampler_pid": 88227,
+  "controller_start": {
+    "wall_ns": 1793735659282456000,
+    "perf_counter_ns": 4160728205189833,
+    "monotonic_ns": 4160728205189958
+  },
+  "controller_returncode": 0,
+  "controller_end": {
+    "wall_ns": 1793735659285234000,
+    "perf_counter_ns": 4160728207969458,
+    "monotonic_ns": 4160728207969583
+  },
+  "sampler_ended_before_controller_cleanup": false,
+  "owned_power_pids": [
+    88228
+  ],
+  "owned_sampler_stop_results": [
+    {
+      "pid": 88228,
+      "returncode": 0
+    }
+  ],
+  "sampler_returncode": 0,
+  "reader_stopped": true,
+  "samples": {
+    "complete_records": 2,
+    "parse_errors": [],
+    "incomplete_tail_bytes": 0,
+    "first_complete_timestamp": "2026-11-03T19:54:18+00:00",
+    "last_complete_timestamp": "2026-11-03T19:54:19+00:00",
+    "max_timestamp_gap_seconds": 1.0
+  },
+  "end": {
+    "wall_ns": 1793735659323819000,
+    "perf_counter_ns": 4160728246553208,
+    "monotonic_ns": 4160728246553291
+  },
+  "sha256": {
+    "powermetrics.pliststream": "2fe02eb1ed34418fe32683866fec98a3fd5641ca2d7d9901963833bcd47ef37a",
+    "powermetrics.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "clock-samples.jsonl": "22dbe9308832f020b32a4fb5b9d7a7696c0eb404dfa83aeaa1e5b95a8a715d80",
+    "controller.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "clock_time_coverage": {
+    "first_sample_end_wall_ns": 1793735658000000000,
+    "last_sample_end_wall_ns": 1793735659000000000,
+    "began_before_controller": true,
+    "ended_within_two_samples_of_controller": true,
+    "no_gap_over_two_and_half_samples": true
+  }
+}

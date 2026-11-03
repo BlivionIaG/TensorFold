@@ -11,6 +11,17 @@ uncertainty bound. Raw zero-tolerance script failures remain visible; negative t
 not statistically confirmed regression counts. No qualification rerun, pooling or combined formal
 clearance. Historical CF results below retain their original source.
 
+## Complete clock diagnostic: runtime `79837c4e2`, not a new qualification
+
+[Actual complete q8 clock coverage, existing same-request controls and interpretation](79837c4e2/clock-environment/README.md).
+Three arms finish104 phases each with208 exact cross-arm phase pairs and three clean exits.
+The unchanged-plain sampled-code request shifts8.822183% in GPU elapsed between two original
+occurrences with identical inputs/activity/physical-row histograms; the apparent mode delta reverses
+sign across those reference points. Thermal pressure also changes during this later diagnostic.
+This establishes uncontrolled reference/history/time sensitivity, not a universal error allowance
+or proved hardware cause. Frozen qualification verdicts and production head remain unchanged.
+
+
 ## Retained calibration correction: runtime `79837c4e2`, published `afe8bda62`
 
 [Corrected-source report, original raw contracts and exact allocator replay](79837c4e2/serving-calibration/README.md).

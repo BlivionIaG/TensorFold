@@ -1,0 +1,22 @@
+{
+  "label": "READ_ONLY_HISTORICAL_ENVIRONMENT_NOT_CAUSAL_PROOF",
+  "qualified_source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "command": ["/usr/bin/pmset", "-g", "log"],
+  "qualified_metadata_started_at": "2026-11-03T18:17:57Z",
+  "selection_window_utc": ["2026-11-03T18:17:00Z", "2026-11-03T19:44:00Z"],
+  "source_local_offset": "+0100",
+  "events": [
+    {"utc": "2026-11-03T18:30:03Z", "kind": "display", "state": "on"},
+    {"utc": "2026-11-03T18:30:50Z", "kind": "power_summary", "source": "AC", "charge_percent": 80},
+    {"utc": "2026-11-03T18:44:23Z", "kind": "power_summary", "source": "AC", "charge_percent": 80},
+    {"utc": "2026-11-03T18:44:33Z", "kind": "display", "state": "off"},
+    {"utc": "2026-11-03T19:02:41Z", "kind": "display", "state": "on"},
+    {"utc": "2026-11-03T19:05:11Z", "kind": "power_summary", "source": "AC", "charge_percent": 80},
+    {"utc": "2026-11-03T19:30:34Z", "kind": "power_summary", "source": "AC", "charge_percent": 80},
+    {"utc": "2026-11-03T19:30:44Z", "kind": "display", "state": "off"},
+    {"utc": "2026-11-03T19:42:53Z", "kind": "display", "state": "on"},
+    {"utc": "2026-11-03T19:43:07Z", "kind": "power_summary", "source": "AC", "charge_percent": 80}
+  ],
+  "observed": "Selected summaries show AC power at80percent; display changes occurred during the qualification. No matching battery-source or thermal event was found by the targeted historical-log search.",
+  "limitations": "These are recorded snapshots, not continuous AC or low-power-mode proof. Absence of a logged event is not proof that no power, thermal, background-load or memory-clock change occurred. Display changes are not established as the cause. No settings or user processes were changed; unrelated application assertions from the full private system log are not published."
+}

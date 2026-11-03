@@ -1,0 +1,71 @@
+{
+  "runtime_source_revision": "79837c4e205a18b5eb7236ea393e51dca1264fe2",
+  "published_docs_descendant": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "qualified_source_under_diagnosis": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "record_counts": {
+    "Nominal": 846,
+    "Moderate": 826,
+    "Heavy": 73
+  },
+  "sample_elapsed_seconds": {
+    "Nominal": 850.4633775700004,
+    "Moderate": 830.2690135480008,
+    "Heavy": 73.38630355400002
+  },
+  "thermal_transitions": [
+    {
+      "timestamp": "2026-11-03T19:55:17+00:00",
+      "thermal_pressure": "Nominal"
+    },
+    {
+      "timestamp": "2026-11-03T19:58:01+00:00",
+      "thermal_pressure": "Moderate"
+    },
+    {
+      "timestamp": "2026-11-03T19:58:03+00:00",
+      "thermal_pressure": "Heavy"
+    },
+    {
+      "timestamp": "2026-11-03T19:59:17+00:00",
+      "thermal_pressure": "Moderate"
+    },
+    {
+      "timestamp": "2026-11-03T20:03:22+00:00",
+      "thermal_pressure": "Nominal"
+    },
+    {
+      "timestamp": "2026-11-03T20:05:07+00:00",
+      "thermal_pressure": "Moderate"
+    },
+    {
+      "timestamp": "2026-11-03T20:07:47+00:00",
+      "thermal_pressure": "Nominal"
+    },
+    {
+      "timestamp": "2026-11-03T20:10:12+00:00",
+      "thermal_pressure": "Moderate"
+    },
+    {
+      "timestamp": "2026-11-03T20:12:26+00:00",
+      "thermal_pressure": "Nominal"
+    },
+    {
+      "timestamp": "2026-11-03T20:14:59+00:00",
+      "thermal_pressure": "Moderate"
+    },
+    {
+      "timestamp": "2026-11-03T20:17:33+00:00",
+      "thermal_pressure": "Nominal"
+    },
+    {
+      "timestamp": "2026-11-03T20:19:51+00:00",
+      "thermal_pressure": "Moderate"
+    },
+    {
+      "timestamp": "2026-11-03T20:22:06+00:00",
+      "thermal_pressure": "Nominal"
+    }
+  ],
+  "plain_qualification_baseline_monotonic_cells": 16,
+  "limitations": "Thermal changes observed in this later diagnostic, not retroactively measured during the frozen qualification. Global frequencies do not by themselves explain the same-work sampled-solo elapsed difference. No additional model run or power override."
+}
