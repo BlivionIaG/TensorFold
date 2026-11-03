@@ -1,0 +1,49 @@
+{
+  "label": "PRESPECIFIED_CONTROLLED_STUDY_NOT_REPLACEMENT_FROZEN_VERDICT",
+  "runtime_change": "None intended; CI manual-dispatch addition only. New head/binary must be bound before launch.",
+  "source_of_correctness_oracles": {
+    "qualified_source": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+    "cells_sha256": "a89a1690adddccac6f28c42463976738d820663913e8e3d5c7f07c3456bdab2b"
+  },
+  "scope": {
+    "arms": [
+      "plain_before",
+      "bf16",
+      "bits8",
+      "plain_after"
+    ],
+    "rounds": 6,
+    "prompts": [
+      "code",
+      "chat"
+    ],
+    "temperatures": [
+      0,
+      1
+    ],
+    "widths": [
+      1,
+      4,
+      8,
+      16
+    ],
+    "tokens": 512,
+    "parallel": 16,
+    "context": 4096,
+    "prompt_cache_gib": 0,
+    "warmup": "Two complete fixed 16-cell sweeps per server, same order/requests/settings as measured sweep; no speed-dependent warmup or sample discard.",
+    "measured_sweeps_per_launch": 1,
+    "candidate_order": "BF16 then8bit in even rounds;8bit thenBF16 in odd rounds; unchanged plain brackets each pair.",
+    "same_target_drafter_and_frozen_clients": true
+  },
+  "controls": "Independent plain-before/plain-after launches per round; complete global GPU/thermal coverage. No existing qualification cell is removed or overwritten. No thermal/power override, competing-process kill, pressure override or repetition for a better sign.",
+  "acceptance": {
+    "owner_margin_percent": 1,
+    "candidate": "Every32 candidate comparison has observed median loss<1% and one-sided95% Student-t lower bound for paired log TPS ratio above log(0.99). Six independent launch-round ratios, df5; tcritical2.015048373333.",
+    "paired_reference": "Geometric mean of the two same-round plain controls; both candidates same reference.",
+    "aa_validity": "For every16 cell,90% two-sided Student-t interval of plain-after/plain-before log ratio wholly inside [log(0.99),log(1.01)]. Failure invalidates fine-grained performance clearance; do not drop controls or rerun for a better sign.",
+    "assumptions": "Student-t model over independent launch-round log ratios; no claim of a universal noise floor or proof of stationarity. Global thermal observations and individual A/A ratios published.",
+    "correctness": "Every512-token warmup/measured request must match the original same-prompt/temp/seed token hash and pass unchanged client problems/pressure guards."
+  },
+  "failure_behavior": "Stop on correctness, process, source binding, or pressure failure; retain every attempted launch and clean up only owned children. No automatic restart/retry. Statistical or A/A failure reported without relabelling it a confirmed software regression."
+}

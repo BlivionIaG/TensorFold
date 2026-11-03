@@ -1,0 +1,18 @@
+{
+  "old_qualified_source": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "new_ci_source": "17649539d3cf1375dd711455fd2001a3f75fe725",
+  "zig_tree_build_zig_build_zon_objects": {
+    "afe8bda62562519b4fd84ee9a956392a21f26a60": [
+      "6409b22d0ddd8bfd1070f24aed479d6fa84b0486",
+      "ef2f6f996190298992baab21af75bc935961685e",
+      "c1301ceb2c69f952530753a884227d3fe41d6b5e"
+    ],
+    "17649539d3cf1375dd711455fd2001a3f75fe725": [
+      "6409b22d0ddd8bfd1070f24aed479d6fa84b0486",
+      "ef2f6f996190298992baab21af75bc935961685e",
+      "c1301ceb2c69f952530753a884227d3fe41d6b5e"
+    ]
+  },
+  "native_before_rebuild_sha256": "c03ab9600d36c32dd1d80b7d94bf9dae15d7256fa8f41df7f23b488c19b43a2c",
+  "committed_runtime_inputs_equal": true
+}

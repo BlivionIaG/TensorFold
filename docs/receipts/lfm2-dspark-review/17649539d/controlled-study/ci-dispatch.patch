@@ -1,0 +1,70 @@
+diff --git a/.github/workflows/no-gpu.yml b/.github/workflows/no-gpu.yml
+index e068a4e5f..621beaa4d 100644
+--- a/.github/workflows/no-gpu.yml
++++ b/.github/workflows/no-gpu.yml
+@@ -5,6 +5,12 @@ on:
+     branches: [main]
+   pull_request:
+     types: [opened, synchronize, reopened]
++  workflow_dispatch:
++    inputs:
++      base_commit:
++        description: Full baseline commit SHA for the lean comparison
++        required: true
++        type: string
+ 
+ permissions:
+   contents: read
+@@ -83,7 +89,7 @@ jobs:
+       - name: lean check
+         env:
+           BASE_REF: ${{ github.base_ref }}
+-          PUSH_BASE: ${{ github.event.before }}
++          PUSH_BASE: ${{ github.event.before || inputs.base_commit }}
+         run: |
+           if [ -n "$BASE_REF" ]; then
+             base=$(git merge-base HEAD "origin/$BASE_REF")
+diff --git a/.github/workflows/zig-fmt.yml b/.github/workflows/zig-fmt.yml
+index 4ad740e0c..6125b4f91 100644
+--- a/.github/workflows/zig-fmt.yml
++++ b/.github/workflows/zig-fmt.yml
+@@ -5,6 +5,7 @@ on:
+     branches: [main]
+   pull_request:
+     types: [opened, synchronize, reopened]
++  workflow_dispatch:
+ 
+ permissions:
+   contents: read
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index bd79b7fbf..d35e1eac9 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
+ 
+ ## Unreleased
+ 
++- The No GPU and Zig format checks can run manually on a selected branch; No GPU takes an explicit baseline commit for the unchanged lean comparison, so branch checks do not depend on a pull request merge ref being available (#1394).
++
+ - Seven host BF16 conversions on load and inference paths (the XPU loader, the CUDA vision towers, Gemma 4's assistant weights, Step5's vision, DeepSeek's DSpark and Flash Next's PLE scale) round through core's shared conversion, so a negative NaN no longer overflows in Debug builds; every finite value gives the same bits (#1954, part of #1863). Thanks to @jschmied.
+ 
+ - Qwen 3.5 on CUDA rounds its host-side weight copies (norm weights, EXL3 norms and vectors, drafter scales and biases) with core's bf16 rounding, so a NaN weight stays NaN instead of becoming a finite value at load; every other value is bit-identical (#1863).
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 7347ffde7..e6aa2817a 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -33,6 +33,14 @@ Run the full suite on an isolated machine when the local GPU is serving a model.
+ These results do not substitute for an actual checkpoint/model gate.
+ On macOS, `zig build dev-tools` compiles and links every `tf-*` developer tool without running one; run it after changing an API they call.
+ 
++The `No GPU` and `Zig format` workflows also accept manual runs on a selected branch.
++Use the PR's pinned baseline commit for the lean comparison; a manual run does not waive any check:
++
++```sh
++gh workflow run no-gpu.yml --repo OWNER/TensorFold --ref BRANCH -f base_commit=BASE_SHA
++gh workflow run zig-fmt.yml --repo OWNER/TensorFold --ref BRANCH
++```
++
+ For the CUDA host-test subset without the macOS Metal family tests:
+ 
+ ```sh

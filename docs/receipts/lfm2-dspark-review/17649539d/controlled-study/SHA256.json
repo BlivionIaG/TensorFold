@@ -1,0 +1,9 @@
+{
+  "README.md": "9ade1b6fc4059f3646aa53ef576a4a9a2e2262e63f24998a872428bc8e16005a",
+  "analyze-controlled-study.py": "2e8d63b86037d72817ae706cd5cdc73f7108009c87238160af17dcdad8016bff",
+  "ci-dispatch.patch": "3fc3c88ed36558e62776e2d7df3f4731adceac4b2a14388e816a4da406a5776d",
+  "protocol.json": "d4dea2d29b0a4e2c4d2af09222b60c89c27a8090500789e7a660a9e639f31765",
+  "run-controlled-study.py": "431118d791c34a9a4443002a38a90f0b4d9f240e2b1073d0cf85054ac691ff4c",
+  "runtime-source-identity.json": "b8c24c3194b1539bc86417639d60c2511cf728d3bf2d64308e4e8535e533298d",
+  "study-binding.json": "3673189db58bc0655735945cbcf05907882f93accc1205657ff80a3d17ce9f13"
+}
