@@ -36,6 +36,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     const late_fits = o.tp == 1;
     if (Draft.lateWanted() == true and !late_fits) return error.FlashNextKeepLateUnsupported;
     Draft.late_on = (Draft.lateWanted() orelse true) and late_fits;
+    const elastic_memory = try @import("exl3/elastic/elastic_config.zig").check(mode == .exl3, page_tokens > 0); // refused here, before anything loads
     const driver: *cuda.Driver = @constCast(ctx.d);
     const own = try gpa.create(Cuda);
     errdefer gpa.destroy(own);
@@ -136,8 +137,10 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     }
     errdefer if (own.profile) |*profile| profile.deinit();
     const profile_counts = if (own.profile_counts) |*counts| &counts.decoder else null;
+    if (elastic_memory) pool_budget.elastic = .{ .kv_floor_bytes = try @import("exl3/elastic/cuda_exl3_elastic_attach.zig").kvFloorBytes(own.kv.layout.?, o.lanes) };
     const attached = try exl3_pass.attach(gpa, io, driver, own.stream, &own.engine.exl3_prefill, own.engine.layers[0..own.engine.n_layers], if (own.head) |h| &h.layer else null, own.engine.chunk, pool_budget, profile_counts);
     own.graph_reservation = attached.graph_reservation;
+    own.elastic.reserve = attached.reserve_bytes; // what elastic memory keeps free
     own.engine.exl3_dplan.mtp_pool = attached.mtp_pool;
     if (own.graph_reservation != 0) std.log.info("flashnext rank {d}: pools and lanes keep {d} bytes free for the retained graphs (measured exec memory of a full run: under 64 MiB a stream; captures draw on the device reserve)", .{ o.rank, own.graph_reservation });
     if (own.profile_counts) |*counts| try placement.finish(own, counts);

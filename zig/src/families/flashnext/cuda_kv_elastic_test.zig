@@ -12,17 +12,17 @@ const D = cuda.paging_test_device.Device;
 const t = std.testing;
 
 /// A fake virtual range at its own base: which chunks are mapped, the calls made and the failures asked for.
-fn Range(comptime tag: u64) type {
+pub fn Range(comptime tag: u64) type {
     return struct {
         const base: u64 = (tag + 1) << 44;
         var chunk: usize = 0;
         var mapped: [1024]bool = @splat(false);
         var maps: usize = 0;
         var unmaps: usize = 0;
-        var calls: usize = 0;
+        pub var calls: usize = 0;
         var opens: usize = 0;
         var closes: usize = 0;
-        var fail_map_call: usize = 0; // the nth map call fails (0: none)
+        pub var fail_map_call: usize = 0; // the nth map call fails (0: none)
         var fail_unmap = false;
         var fail_unmap_call: usize = 0; // the nth unmap call fails (0: none)
         var unmap_calls: usize = 0;
@@ -121,7 +121,7 @@ const Rec = struct {
 
 var queue: cuda.Stream = undefined;
 
-fn driver() cuda.Driver {
+pub fn driver() cuda.Driver {
     Rec.reset();
     var d = D.driver();
     d.api.cuMemsetD8Async = Rec.fill;
@@ -129,7 +129,7 @@ fn driver() cuda.Driver {
     return d;
 }
 
-fn engine(d: *cuda.Driver) E {
+pub fn engine(d: *cuda.Driver) E {
     var e: E = undefined;
     e.driver = d;
     queue = .{ .d = d, .handle = D.stream };
@@ -148,7 +148,7 @@ fn chunksOf(pages_n: usize) usize {
 }
 
 /// The pool, its layout and its page count: the lifetime tests' shape, a lane's run and room for the rest.
-fn made(e: *E, comptime R: type, streams: usize) !struct { pool: *pages.Pool, count: usize, run: usize } {
+pub fn made(e: *E, comptime R: type, streams: usize) !struct { pool: *pages.Pool, count: usize, run: usize } {
     R.reset(chunk_bytes);
     const l = pages.layout(64, tokens, null, 0);
     const count = 3 * l.runPages() + 24;
@@ -396,7 +396,7 @@ test "elastic K/V: the leader resizes both ranks to the same pages, a refusal se
     rank.collective.failed = false;
     rank.collective.comm = null;
     var lane = try a.open(20);
-    try t.expectError(error.Busy, rank.resizeKv(1)); // refused here: the peer hears nothing
+    try t.expectError(error.ElasticRefused, rank.resizeKv(1)); // Busy here: the peer hears nothing
     try t.expectError(error.RankTimeout, peer.receiveHeader(wire.deadline(20)));
     try t.expect(a.close(&lane) and !rank.stopped);
     const target = m0.count - 10;

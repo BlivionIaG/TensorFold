@@ -422,7 +422,7 @@ pub const Experts = struct {
     }
 
     /// Makes the pool: `lines` device lines, `counts` the family's lifetime use table (null: the pool's own), `layer`
-    pub fn attach(x: *Experts, io: std.Io, d: *const cuda.Driver, which: u8, lines: usize, max_rows: usize, counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !void {
+    pub fn attach(x: *Experts, io: std.Io, d: *const cuda.Driver, which: u8, lines: usize, active: usize, max_rows: usize, counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !void {
         if (x.bank == null or x.pool != null) return error.Invalid;
         const p = try x.gpa.create(pool_.Pool);
         errdefer x.gpa.destroy(p);
@@ -430,6 +430,7 @@ pub const Experts = struct {
         p.* = try pool_.Pool.init(x.gpa, io, d, .{ .routed = x.routed, .shared = if (x.shared[0].len == 0) null else x.shared, .pinned_bank = x.bank.?.bytes }, .{ .suh_g = l.suh_g, .suh_u = l.suh_u, .svh_g = l.svh_g, .svh_u = l.svh_u, .suh_d = l.suh_d, .svh_d = l.svh_d }, .{
             .layer = which,
             .lines = lines,
+            .active_lines = if (active == lines) 0 else active, // lines mapped at start when elastic (0: all)
             .dims = wt.dims,
             .width = wt.moe_w,
             .max_rows = max_rows,

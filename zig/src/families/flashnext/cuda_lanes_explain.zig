@@ -8,6 +8,9 @@ pub fn open(err: anyerror) ?[]const u8 {
         error.FlashNextRanksOnCapturedGlue => "--tp 2 runs Flash Next's own glue, not a captured set: set TENSORFOLD_CUDA_KERNELS=native, or serve on one GPU",
         error.BadFlashNextKvPages, error.BadFlashNextPageTest, error.FlashNextPagesUnsupported, error.UnsupportedCheckpoint => explain(err),
         error.UnsupportedLearningFormat, error.TrainingOnCapturedGlue => explain(err),
+        error.BadFlashNextKvElastic, error.FlashNextKvElasticUnavailable, error.FlashNextKvMapFailed => explain(err),
+        error.BadFlashNextElasticMemory, error.ElasticMemoryNeedsBothElasticModes => explain(err),
+        error.ElasticMemoryNeedsPagedKv, error.ElasticMemoryNoExpertPools => explain(err),
         else => null,
     };
 }
@@ -20,6 +23,8 @@ pub fn explain(err: anyerror) ?[]const u8 {
         error.BadFlashNextKvPages, error.BadFlashNextPageTest => "TF_FLASHNEXT_KV_PAGES and _PAGE_TEST take positions a page, a multiple of 4",
         error.BadFlashNextKvElastic => "TF_FLASHNEXT_KV_ELASTIC is 0 or 1 and needs no host tier; _MIN_PAGES an integer within the pool's pages",
         error.FlashNextKvElasticUnavailable, error.FlashNextKvMapFailed => "the elastic K/V arena needs CUDA virtual memory and room for its chunks: unset TF_FLASHNEXT_KV_ELASTIC",
+        error.BadFlashNextElasticMemory => "TF_FLASHNEXT_ELASTIC_MEMORY is 0 or 1; its _HIGH_PCT > _FILL_PCT > _LOW_PCT are percents, the ticks and _STEP_MB integers",
+        error.ElasticMemoryNeedsBothElasticModes, error.ElasticMemoryNeedsPagedKv, error.ElasticMemoryNoExpertPools => "TF_FLASHNEXT_ELASTIC_MEMORY=1 needs an EXL3 pack with offloaded experts, TF_FLASHNEXT_KV_PAGES, TF_FLASHNEXT_KV_ELASTIC=1 and TF_FLASHNEXT_EXL3_ELASTIC_LINES=1: set them or unset it",
         error.FlashNextPagesUnsupported => "TF_FLASHNEXT_KV_PAGES needs our own glue and no --slide: unset it",
         error.UnsupportedCheckpoint => "the checkpoint differs from the supported Flash Next CUDA layout; the log names its config field",
         error.TensorRankDraftSnapshotUnavailable => "tensor-rank MTP snapshots are unavailable: disable the prompt cache for this configuration",
@@ -39,4 +44,13 @@ test "--tp refusals at load are worded, and a request's words stay out of a load
     // generic errors other load paths raise at one GPU too, and a request's out-of-memory, keep cuda.zig's own words
     for ([_]anyerror{ error.UnsupportedQuantization, error.BadRank, error.OutOfDeviceMemory, error.PromptTooLong }) |e|
         try t.expect(open(e) == null);
+}
+
+test "exl3: elastic memory refusals name the flags that must be set" {
+    const std = @import("std");
+    for ([_]anyerror{ error.ElasticMemoryNeedsBothElasticModes, error.ElasticMemoryNeedsPagedKv, error.ElasticMemoryNoExpertPools }) |e| {
+        const text = explain(e).?;
+        for ([_][]const u8{ "TF_FLASHNEXT_ELASTIC_MEMORY=1", "TF_FLASHNEXT_KV_PAGES", "TF_FLASHNEXT_KV_ELASTIC=1", "TF_FLASHNEXT_EXL3_ELASTIC_LINES=1" }) |flag| try std.testing.expect(std.mem.indexOf(u8, text, flag) != null);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, explain(error.BadFlashNextElasticMemory).?, "TF_FLASHNEXT_ELASTIC_MEMORY") != null);
 }

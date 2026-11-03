@@ -232,18 +232,48 @@ allocation with every line active, the planner state, trace version and kernel f
   It returns the pool's residency to the host first (`toHost`) and the next device round pushes it again with the new
   active word. A failed map or unmap leaves the mapping as it was.
 - It is a local primitive: it must only run while every stream of the rank is quiescent (no graph in flight), and the
-  caller keeps the ranks in lockstep. Nothing in the engine calls it yet.
+  caller keeps the ranks in lockstep. Only the elastic memory controller below calls it.
 - Lines are packed back to back and mapped in whole driver-granularity chunks (at least 2 MiB), so a pool holds less
   than one chunk of mapped but unused memory beyond its active lines. A `Lines` of an elastic pool reports mapped bytes
   only; the startup ledger does not know the unmapped part.
-- The host planner (prefill, the non-device decode path) works on the active prefix; the prefill line ring maps every
-  line of every pool and is refused while elastic pools exist, so those layers stage into their own lines. Where the
-  driver has no VMM support, startup fails instead of silently falling back.
+- The host planner (prefill, the non-device decode path) works on the active prefix, and the prefill line ring runs over
+  the active lines of every elastic pool. Where the driver has no VMM support, startup fails instead of silently falling
+  back.
 - Only an elastic pool's planner state has the active word (one word longer) and its trace is version 5; the kernel is
   told through bit 1 of the argument that already carries the recent-eviction flag, so no launch argument is added.
 - Residency never changes output bytes, but this needs its own GPU receipt: `flashnext-exl3-pool <dir> elastic` (output
   equality at 64, 32 and 10 active lines, shrink then grow, a forced in-place round) and `flashnext-exl3-graph
   plan-elastic` (one graph replayed across resizes against the exact trace replay).
+
+## Elastic memory: K/V pages and expert lines trade bytes (opt-in)
+
+`TF_FLASHNEXT_ELASTIC_MEMORY=1` lets one controller move device bytes between the paged K/V arena and the expert lines
+while serving: more lines resident when K/V use is small, fewer as K/V grows, and back again as it shrinks. It requires
+an EXL3 pack with offloaded experts, `TF_FLASHNEXT_KV_PAGES`, `TF_FLASHNEXT_KV_ELASTIC=1` and
+`TF_FLASHNEXT_EXL3_ELASTIC_LINES=1`; without all of them the load is refused with a message naming what is missing.
+Unset (the default) nothing changes: the tick hook is a null check and no controller exists.
+
+- Startup: the K/V arena starts fully mapped. Each pool's line capacity covers the lines that would fit if K/V sat at its
+  floor (`TF_FLASHNEXT_KV_ELASTIC_MIN_PAGES`, else one run of pages plus one per lane); only the start count is mapped.
+  The reserve is the reserve floor plus the allocator margin, also when `TF_FLASHNEXT_EXPERT_RESERVE_MB` names one.
+- The controller runs on the engine thread between rounds (the backend is synchronous, so no graph is in flight) and when
+  a stream opens. Each tick (`TF_FLASHNEXT_ELASTIC_TICK_MS`, default 250) reads K/V use, the pools and the free device
+  bytes and may apply a plan of at most 24 resize steps. Pointers never move and nothing is captured again.
+- Policy: K/V use above `_HIGH_PCT` (85), or a stream the mapped pages cannot hold, grows K/V now, from free bytes first,
+  else by cutting lines uniformly down to their floor (the pool minimum). K/V use at or below `_LOW_PCT` (35) for
+  `_IDLE_TICKS` (8) ticks, and `_DWELL_TICKS` (16) since the last plan, lets lines grow into free bytes and K/V give
+  back, down to what it holds plus headroom (`_FILL_PCT`, 60, of use). A refused or failed plan is backed off for
+  `_BACKOFF_TICKS` (40); steps move about `_STEP_MB` (512) at a time.
+- It reads the engine's phase: no line moves and no lazy growth in a prefill. It forecasts the queue's K/V pages and
+  holds them after a burst, and logs the decode expert counters at each plan.
+- A request that fails on mapped capacity is not refused: admission asks the controller whether a plan could map the
+  pages and the stream's open applies it; if that cannot be had the request waits as it did before.
+- TP2: both ranks apply each step in lockstep from the leader. K/V steps compare the page census, lines steps compare
+  an epoch; a rank that cannot take a step refuses, the leader takes its own step back, and nothing is poisoned.
+- Limits: pages a prompt-store entry keeps block a K/V shrink; an error that is not a refusal stops the controller for
+  the life of the process.
+- Residency and capacity never change output bytes, but this needs its own GPU receipt (graph replay across resizes,
+  output equality against fixed lines, TP2 with unequal free bytes) before it is used.
 
 ## Checks
 

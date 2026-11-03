@@ -5,6 +5,7 @@ const cuda = @import("cuda");
 const pool_ = @import("../offload/cuda_exl3_pool.zig");
 const wt = @import("../../cuda_prompt_wt.zig");
 const attribution_ = @import("cuda_exl3_prefill_attribution.zig");
+const slots_ = @import("cuda_exl3_prefill_ring_slots.zig");
 
 const layers_n = wt.layers_n;
 const routed_n = wt.experts_n;
@@ -56,6 +57,11 @@ pub const Ring = struct {
     epoch_of: []u64,
     next: usize = 0,
     pending_n: usize = 0,
+    /// Slots in use: every pool's first `active` lines (all lines unless elastic); the arrays hold the capacity.
+    n_slots: usize = 0,
+    elastic: bool = false,
+    /// Between `begin` and `end`: the pools' mapped lines are the ring's, and elastic memory must not move them.
+    live: bool = false,
     copy: cuda.Stream,
     cev: [batch_ring]cuda.Event,
     batches: u64 = 0,
@@ -87,15 +93,15 @@ pub const Ring = struct {
         // the tables' entries: 513 (routed and shared), or 512 on an expert-parallel rank without the shared expert
         const te = pools[0].lines.spec.experts;
         if (te != table_n and te != routed_n) return error.Invalid;
-        var n: usize = 0;
+        var elastic = false;
         for (pools) |p| {
             if (p.lines.spec.experts != te) return error.Invalid;
-            if (p.lines.isElastic()) return error.ElasticLines; // the ring would take lines that may be unmapped
-            n += p.opt.lines;
+            elastic = elastic or p.lines.isElastic();
         }
+        const n = slots_.capacity(pools);
         const r = try gpa.create(Ring);
         errdefer gpa.destroy(r);
-        r.* = .{ .gpa = gpa, .d = d, .pools = undefined, .off = undefined, .room_of = undefined, .addr = undefined, .state = undefined, .owner = undefined, .epoch_of = undefined, .copy = undefined, .cev = undefined, .rev = undefined, .tlay = cuda.exl3_pool.Tables.init(te), .shadow = undefined, .snaps = undefined };
+        r.* = .{ .gpa = gpa, .d = d, .pools = undefined, .off = undefined, .room_of = undefined, .addr = undefined, .state = undefined, .owner = undefined, .epoch_of = undefined, .copy = undefined, .cev = undefined, .rev = undefined, .tlay = cuda.exl3_pool.Tables.init(te), .shadow = undefined, .snaps = undefined, .elastic = elastic };
         r.telemetry_id = try @import("../model/exl3_telemetry.zig").identity();
         @memcpy(&r.pools, pools);
         r.addr = try gpa.alloc(u64, n);
@@ -112,17 +118,7 @@ pub const Ring = struct {
         errdefer gpa.free(r.epoch_of);
         r.attribution = try attribution_.State.init(gpa, n, telemetry);
         errdefer if (r.attribution) |*state| state.deinit(gpa);
-        var k: usize = 0;
-        for (pools) |p| for (0..p.opt.lines) |i| {
-            const lay = p.lines.layout;
-            r.addr[k] = p.lines.at(i, 0);
-            for (0..3) |w| {
-                const stop = if (w < 2) lay.off[w + 1] else lay.line_bytes;
-                r.off[k][w] = @intCast(lay.off[w]);
-                r.room_of[k][w] = @intCast(stop - lay.off[w]);
-            }
-            k += 1;
-        };
+        r.n_slots = slots_.fill(pools, r.addr, r.off, r.room_of);
         r.copy = try cuda.Stream.init(d, true);
         errdefer r.copy.deinit();
         var made_c: usize = 0;
@@ -161,8 +157,9 @@ pub const Ring = struct {
         r.gpa.destroy(r);
     }
 
+    /// The slots this prefill has: it follows the pools' active lines, so keepFree (half of them, at most) does too.
     pub fn slots(r: *const Ring) usize {
-        return r.addr.len;
+        return r.n_slots;
     }
 
     fn shadowOf(r: *Ring, layer: usize) []u8 {
@@ -179,8 +176,15 @@ pub const Ring = struct {
 
     /// Before a prefill: nothing of the pools' may run (`s` drained), every slot free, each layer's table image read
     pub fn begin(r: *Ring, s: cuda.Stream) !void {
+        r.live = true;
+        errdefer r.live = false;
         try s.synchronize();
         for (r.pools) |p| try p.lines.drain();
+        if (r.elastic) { // the controller moved the pools' active lines since the last prefill, never during one
+            const was = r.n_slots;
+            r.n_slots = slots_.fill(&r.pools, r.addr, r.off, r.room_of);
+            if (r.n_slots != was) std.log.info("flashnext exl3 prefill: the ring has {d} expert slots now (was {d}) on the pools' active lines", .{ r.n_slots, was });
+        }
         @memset(r.state, .free);
         @memset(r.owner, 0);
         @memset(r.epoch_of, 0);
@@ -225,6 +229,7 @@ pub const Ring = struct {
 
     /// After a prefill: every pool empty (policy state, routed table entries), the device idle; then, with `reseed`
     pub fn end(r: *Ring, s: cuda.Stream, reseed: bool) !void {
+        defer r.live = false;
         try r.closeBatch();
         try r.copy.synchronize();
         try s.synchronize();
@@ -235,7 +240,7 @@ pub const Ring = struct {
                 r.k2Entry(l, w, id).* = 0;
             };
             try p.lines.tables.upload(0, img);
-            p.v = pool_.offload.Vram.init(p.slots_tab, p.line_tab, p.stamp_tab, p.layer_tab);
+            p.emptyView();
             p.prev_n = 0;
             @memset(p.lines.line_pending, false);
             @memset(p.lines.line_epoch, 0);
@@ -257,7 +262,7 @@ pub const Ring = struct {
                 }
             };
             std.mem.sort(u16, order[0..n], Ctx{ .c = &r.counts[l] }, Ctx.hotter);
-            const take = @min(n, p.opt.lines, p.opt.max_rows * p.opt.slots);
+            const take = @min(n, p.active, p.opt.max_rows * p.opt.slots);
             if (take == 0) continue;
             const rows = (take + p.opt.slots - 1) / p.opt.slots;
             var fake: [routed_n + 16]i32 = undefined;

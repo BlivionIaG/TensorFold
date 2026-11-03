@@ -1,4 +1,5 @@
 //! Which queued request a lane host admits next: the head, or one behind a head that waits for pool room.
+const api = @import("engine_api.zig");
 const LaneHost = @import("lane_host.zig").LaneHost;
 const Job = LaneHost.Job;
 const lanes = @import("lanes");
@@ -55,6 +56,21 @@ fn fits(h: *const LaneHost, job: *const Job) bool {
     if (h.kv != null) return ledger.fits(h, job);
     const a = h.info_.admit.?;
     return a.fits(a.ctx, @intCast(job.request.prompt.len), job.request.max_tokens);
+}
+
+/// The admission tick's view of the queue (the first asks copied into `out`) and of what runs; takes the lock.
+pub fn read(p: *anyopaque, out: []api.Ask) api.Snapshot {
+    const h: *LaneHost = @ptrCast(@alignCast(p));
+    h.lock();
+    defer h.unlock();
+    const n = @min(out.len, h.queued.items.len);
+    for (h.queued.items[0..n], out[0..n]) |job, *ask| ask.* = .{ .prompt = @intCast(job.request.prompt.len), .max_tokens = job.request.max_tokens };
+    return .{
+        .queued = @intCast(h.queued.items.len),
+        .running = @intCast(h.admitted.items.len),
+        .lanes = @intCast(@min(h.info_.lanes, h.memory_lanes orelse h.info_.lanes)),
+        .copied = @intCast(n),
+    };
 }
 
 /// Whether to admit several at once: prompts batch (beside chunked fills up to many_rows), two wait, two lanes free.

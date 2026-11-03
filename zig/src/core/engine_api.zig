@@ -223,7 +223,13 @@ pub const Info = struct {
 pub const Admit = struct {
     ctx: *anyopaque,
     fits: *const fn (ctx: *anyopaque, prompt: u32, max_tokens: u32) bool,
+    /// Runs at the top of each engine-thread pass with nothing in flight; the queue is read on demand (null: none).
+    tick: ?*const fn (ctx: *anyopaque, queue: Queue) void = null,
 };
+
+pub const Ask = @import("engine_queue.zig").Ask;
+pub const Snapshot = @import("engine_queue.zig").Snapshot;
+pub const Queue = @import("engine_queue.zig").Queue;
 
 /// The bytes the lane host may promise at once, and what one request's caches cost at most (core/kv_ledger.zig).
 pub const Ledger = struct {

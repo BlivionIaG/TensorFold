@@ -35,7 +35,9 @@ pub const Session = struct {
     drafting: bool = false,
     stopped: bool = false,
     available: std.atomic.Value(bool) = .init(true),
-    reply: u64 = 0, // the `arg` of the ack a follower sends next: a resize's census
+    reply: u64 = 0, // the `arg` of the ack a follower sends next: a resize's census or a lines step's epoch
+    refused: bool = false, // the follower's next ack says it refused a resize and kept its state (flags 1)
+    lines: ?*@import("exl3/elastic/cuda_exl3_lines.zig").Lines = null, // this rank's expert pools, when memory is elastic
 
     /// `wait_ms` bounds the link and the hello: the peer may still be reading every byte for its digest (`linkWait`).
     pub fn init(a: std.mem.Allocator, io: std.Io, host: []const u8, port: u16, rank: usize, mine: Identity, wait_ms: u64) !*Session {
@@ -137,24 +139,21 @@ pub const Session = struct {
         _ = try s.ackReply(sent);
     }
 
-    /// The peer's ack of `sent` and its `arg` (0 but for a resize's census).
-    fn ackReply(s: *Session, sent: wire.Header) !u64 {
+    /// The peer's ack of `sent`: its `arg` and whether it refused a resize or lines step and kept its state (flags 1).
+    pub fn ackReply(s: *Session, sent: wire.Header) !struct { arg: u64, refused: bool } {
         const h = try s.link.receiveHeader(wire.deadline(30_000));
-        if (h.kind != .ack or h.sequence != sent.sequence or h.object != sent.object or h.bytes != 0 or (h.arg != 0 and sent.kind != .resize)) return error.BadRankFrame;
+        const answers = sent.kind == .resize or sent.kind == .lines;
+        if (h.kind != .ack or h.sequence != sent.sequence or h.object != sent.object or h.bytes != 0 or (h.arg != 0 and !answers)) return error.BadRankFrame;
+        if (h.flags == 1 and answers and (sent.kind == .resize or sent.flags == 0)) return .{ .arg = h.arg, .refused = true };
         if (h.flags == 1) return error.OutOfDeviceMemory;
         if (h.flags != 0) return error.RemoteRank;
-        return h.arg;
+        return .{ .arg = h.arg, .refused = false };
     }
 
-    /// Both ranks' K/V pools at `target` mapped pages, every stream of both quiescent; a split poisons (resizeMapped).
-    pub fn resizeKv(s: *Session, target: usize) !void {
-        const pool = s.pool orelse return error.BadRankFrame;
-        try pool.resizeMapped(target); // refused here: the peer has heard nothing
-        const h = try s.command(.{ .kind = .resize, .arg = target }, &.{});
-        errdefer s.poison();
-        const theirs = try s.ackReply(h);
-        if (theirs != pool.tally()) return error.RemoteRank; // one rank mapped what the other did not
-    }
+    pub const resizeKv = @import("cuda_rank_elastic.zig").resizeKv;
+    pub const resizeLines = @import("cuda_rank_elastic.zig").resizeLines;
+    pub const undoLines = @import("cuda_rank_elastic.zig").undoLines;
+    pub const peerFree = @import("cuda_rank_elastic.zig").peerFree;
 
     /// A stream's caches given back: a pool lane's to the pool, else freed (a window's swapped-in states first).
     fn release(s: *Session, q: *prompt.Seq) void {
@@ -312,8 +311,9 @@ pub const Session = struct {
                 s.link.sendHeader(.{ .kind = .ack, .sequence = h.sequence, .object = h.object, .flags = 2 }, wire.deadline(30_000)) catch {};
                 return err;
             };
-            try s.link.sendHeader(.{ .kind = .ack, .sequence = h.sequence, .object = h.object, .arg = s.reply }, wire.deadline(30_000));
+            try s.link.sendHeader(.{ .kind = .ack, .sequence = h.sequence, .object = h.object, .arg = s.reply, .flags = @intFromBool(s.refused) }, wire.deadline(30_000));
             s.reply = 0;
+            s.refused = false;
             if (stop) {
                 s.stopped = true;
                 s.available.store(false, .release);
@@ -413,11 +413,8 @@ pub const Session = struct {
                 const entry = s.saved.fetchRemove(h.object) orelse return error.UnknownRankSnapshot;
                 snaps.drop(s.gpa, s.engine.stream.*, entry.value);
             },
-            .resize => {
-                const pool = s.pool orelse return error.BadRankFrame;
-                try pool.resizeMapped(@intCast(h.arg));
-                s.reply = pool.tally();
-            },
+            .resize => try @import("cuda_rank_elastic.zig").applyKv(s, h),
+            .lines => try @import("cuda_rank_elastic.zig").applyLines(s, h),
             .stop => return true,
             else => return error.BadRankFrame,
         }
@@ -461,6 +458,7 @@ pub fn shape(h: wire.Header) !void {
         .save, .restore => if (h.object == 0 or h.arg == 0 or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
         .drop_seq, .drop_snap => if (h.object == 0 or h.arg != 0 or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
         .resize => if (h.object != 0 or h.arg > std.math.maxInt(u32) or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
+        .lines => if (h.object != 0 or h.arg > std.math.maxInt(u32) or h.bytes != 0 or h.flags > 2) return error.BadRankFrame,
         .stop => if (h.object != 0 or h.arg != 0 or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
         else => return error.BadRankFrame,
     }

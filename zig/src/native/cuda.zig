@@ -464,7 +464,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
     }
     errdefer if (h.recording) |r| r.free(gpa);
     // the family cuts its own prompt grid from position 0, as `tensorfold run` does: prefill_step 0
-    const admit: ?api.Admit = if (comptime !@hasDecl(F, "fits")) null else if (paged != null) .{ .ctx = loaded.ctx, .fits = F.fits } else null;
+    const admit: ?api.Admit = if (comptime !@hasDecl(F, "fits")) null else if (paged != null) .{ .ctx = loaded.ctx, .fits = F.fits, .tick = if (@hasDecl(F, "tick")) F.tick else null } else null;
     h.kv = kv_pages.watchOf(F, loaded, paged);
     const bench = if (@hasDecl(F, "benchmark")) F.benchmark(loaded.ctx) else api.Benchmark{ .ranks = 1 };
     try h.serve(io, served.facts, loaded.rows, .{

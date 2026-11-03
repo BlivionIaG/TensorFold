@@ -375,6 +375,11 @@ pub const Pool = struct {
         return cut(slots, line, stamp, layer, n);
     }
 
+    /// Every line empty again with the policy on the active lines (the prefill ring's end: all residency is gone).
+    pub fn emptyView(p: *Pool) void {
+        p.v = view(p.slots_tab, p.line_tab, p.stamp_tab, p.layer_tab, p.active);
+    }
+
     /// Moves an elastic pool to `n` active lines, streams quiescent; a failed map or unmap changes no count or mapping.
     pub fn setActive(p: *Pool, n: usize) !void {
         if (!p.opt.elastic or n < min_lines or n > p.opt.lines) return error.Invalid;

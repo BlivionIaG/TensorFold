@@ -233,3 +233,61 @@ test "a prompt requeued after memory exhaustion can be cancelled before it fills
     try std.testing.expectEqual(@as(usize, 0), boxes[1].state()[0]);
     try std.testing.expectEqual(@as(u32, 0), target.lanes.count());
 }
+
+/// An admission whose tick reads the queue when asked and keeps the last look at a non-empty one.
+const Look = struct {
+    queued: std.atomic.Value(u32) = .init(0),
+    running: std.atomic.Value(u32) = .init(0),
+    lanes: std.atomic.Value(u32) = .init(0),
+    prompt: std.atomic.Value(u32) = .init(0),
+    max_tokens: std.atomic.Value(u32) = .init(0),
+    fn fits(_: *anyopaque, prompt: u32, _: u32) bool {
+        return prompt < 64;
+    }
+    fn tick(ctx: *anyopaque, q: api.Queue) void {
+        const w: *Look = @ptrCast(@alignCast(ctx));
+        var asks: [4]api.Ask = undefined;
+        const s = q.snapshot(&asks);
+        if (s.queued == 0 or s.copied == 0) return;
+        w.running.store(s.running, .monotonic);
+        w.lanes.store(s.lanes, .monotonic);
+        w.prompt.store(asks[0].prompt, .monotonic);
+        w.max_tokens.store(asks[0].max_tokens, .monotonic);
+        w.queued.store(s.queued, .release);
+    }
+};
+
+test "the admission tick reads the queued asks and the running count on demand" {
+    const gpa = std.testing.allocator;
+    var cfg = try lanes.Config.init(gpa, .{ .exact_width = 8, .gpu_tokens = true, .hidden_rows = true }, 8, 7);
+    defer cfg.deinit(gpa);
+    var target: lanes.fake.Fake = .{ .gpa = gpa };
+    defer target.deinit();
+    var clock: lanes.fake.FixedClock = .{};
+    var core = lanes.Engine.init(gpa, &cfg, target.backend(), clock.clock());
+    defer core.deinit();
+    var look: Look = .{};
+    var host = LaneHost.init(gpa, std.testing.io, &core, .{ .lanes = 3, .admit = .{ .ctx = &look, .fits = Look.fits, .tick = Look.tick } });
+    try host.start();
+    defer host.stop();
+    const e = host.engine();
+    var a: Box = .{};
+    var long: Box = .{};
+    const running: Request = .{ .prompt = &short_prompt, .max_tokens = 100000 };
+    const big: Request = .{ .prompt = &long_prompt, .max_tokens = 4 };
+    try e.submit(1, &running, .{ .ctx = &a, .event = Box.event });
+    try std.testing.expect(a.startsWithin(2000));
+    try e.submit(2, &big, .{ .ctx = &long, .event = Box.event }); // it does not fit beside the first: it queues
+    for (0..2000) |_| {
+        if (look.queued.load(.acquire) > 0 and look.prompt.load(.monotonic) == 64) break; // the first stream's own look is earlier
+        std.Io.sleep(std.testing.io, .fromMilliseconds(1), .awake) catch {};
+    }
+    try std.testing.expectEqual(@as(u32, 1), look.queued.load(.acquire));
+    try std.testing.expectEqual(@as(u32, 1), look.running.load(.monotonic));
+    try std.testing.expectEqual(@as(u32, 3), look.lanes.load(.monotonic));
+    try std.testing.expectEqual(@as(u32, 64), look.prompt.load(.monotonic));
+    try std.testing.expectEqual(@as(u32, 4), look.max_tokens.load(.monotonic));
+    e.cancel(1);
+    try std.testing.expectEqual(@as(?Reason, .cancelled), a.waitFor(2000));
+    try std.testing.expectEqual(@as(?Reason, .length), long.waitFor(2000));
+}

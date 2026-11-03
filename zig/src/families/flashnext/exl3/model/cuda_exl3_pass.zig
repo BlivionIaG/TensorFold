@@ -173,6 +173,8 @@ pub const Budget = struct {
     other: u64 = 0,
     /// Lines a layer, or null: from free memory (cuda_exl3_round.linesFor).
     lines: ?usize = null,
+    /// Elastic memory: each pool also reserves virtual room for the lines that fit with K/V at `kv_floor_bytes`.
+    elastic: ?struct { kv_floor_bytes: u64 } = null,
     /// Rows a planned round holds (the pass's block of routed rows).
     max_rows: usize = moe_rows,
 };
@@ -212,7 +214,7 @@ test "EXL3 pool reserves the requested number of concurrent stream caches" {
     try std.testing.expectError(error.InvalidStreamCount, streamReservation(100, 0));
 }
 
-pub const Attached = struct { layers: usize = 0, lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, free_after: u64 = 0, scratch_bytes: u64 = 0, graph_reservation: u64 = 0, after_pool_bytes: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0, prefill_window_bytes: u64 = 0, mtp_pool: ?*pool_.Pool = null };
+pub const Attached = struct { layers: usize = 0, lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, free_after: u64 = 0, scratch_bytes: u64 = 0, graph_reservation: u64 = 0, after_pool_bytes: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0, prefill_window_bytes: u64 = 0, mtp_pool: ?*pool_.Pool = null, reserve_bytes: u64 = 0 };
 
 pub fn freeBytes(d: *const cuda.Driver) !u64 {
     var free: usize = 0;
@@ -254,7 +256,9 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     out.free_before = free;
     out.scratch_bytes = scratch_before -| free;
     const reserve_floor = b.reserve orelse serverReserve(total);
-    const reserve = b.reserve orelse try std.math.add(u64, reserve_floor, b.margin);
+    // an elastic pool keeps the allocator margin above an overriding reserve too
+    const reserve = if (b.reserve != null and b.elastic == null) b.reserve.? else try std.math.add(u64, reserve_floor, b.margin);
+    out.reserve_bytes = reserve;
     // beside its lines a layer holds the shared expert's region, its six tables and its masked picks (sized for the
     var fixed: u64 = 0;
     for (all[0..n]) |x| {
@@ -294,6 +298,12 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     if (startup_bytes > pool_room) return error.InsufficientStartupMemory;
     out.after_pool_bytes = if (b.planner_rows) |planner_rows| try memory.plannerBytes(n, lines, planner_rows) else 0;
     out.lines = lines;
+    // elastic memory: virtual room for the lines that would fit if K/V sat at its floor (nothing is mapped for them)
+    var headroom: usize = 0;
+    if (b.elastic) |e| {
+        const at_floor = pool_.linesFor(free, reserve, try std.math.add(u64, (future -| b.other) + e.kv_floor_bytes, all_fixed), line_cost, n, 0) catch 0;
+        headroom = @min(wt.experts_n, @max(lines, at_floor)) - lines;
+    }
     var pool_lines: [wt.layers_n + 1]usize = @splat(lines);
     var line_bytes: [wt.layers_n + 1]usize = undefined;
     var profile_sized = false;
@@ -363,12 +373,17 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
         out.after_pool_bytes = plan.planner_bytes;
         std.log.info("flashnext exl3: experimental rank-local decoder pool line deltas {s}; base={d} planner_bytes={d} startup_bytes={d}", .{ text, lines, plan.planner_bytes, plan.pool_bytes });
     }
+    if (headroom > 0 and b.planner_rows != null) { // the planner's state is sized for the capacity
+        var capacity: [wt.layers_n + 1]usize = undefined;
+        for (pool_lines[0..n], capacity[0..n]) |active, *c| c.* = @min(wt.experts_n, active + headroom);
+        out.after_pool_bytes = try memory.plannerBytesForPools(capacity[0..n], b.planner_rows.?);
+    }
     // the first decoder layer's pool owns the lifetime use table the other decoder layers share
     var counts = profile_counts;
     var decoder: u8 = 0;
     for (all[0..n], pool_lines[0..n]) |x, count| {
         const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
-        try x.attach(io, d, if (is_mtp) 0 else decoder, count, b.max_rows, if (is_mtp) null else counts);
+        try x.attach(io, d, if (is_mtp) 0 else decoder, @min(wt.experts_n, count + headroom), count, b.max_rows, if (is_mtp) null else counts);
         if (is_mtp) out.mtp_pool = x.pool.?; // the draft head's experts plan on the device too (cuda_exl3_chain.zig)
         if (!is_mtp and counts == null) counts = x.pool.?.counts;
         if (!is_mtp) decoder += 1;

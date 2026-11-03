@@ -51,7 +51,11 @@ pub fn Namespace(comptime Tri: type) type {
             try kvl.attachTo(of(p), streams, count);
         }
         pub fn fits(p: *anyopaque, rows: u32, max_tokens: u32) bool {
-            return of(p).kv.fits(rows, max_tokens);
+            return @import("exl3/elastic/cuda_exl3_elastic_attach.zig").fits(of(p), rows, max_tokens);
+        }
+        /// The lane host's engine loop, between rounds: elastic memory takes its tick (a clock read when none is due).
+        pub fn tick(p: *anyopaque, q: @import("engine_api").Queue) void {
+            of(p).elastic.tick(of(p), q);
         }
         /// The pass ignores its cuts, so states keep at any token; the MTP head reads one token on (lookahead 1).
         pub const cache_rules = struct {
@@ -102,18 +106,11 @@ pub fn Namespace(comptime Tri: type) type {
         };
 
         /// Device bytes of the checkpoint: the n-gram tables stay mapped, the MTP head counts; 0 if unread.
-        pub fn deviceWeightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) u64 {
-            return bytes.deviceWeightBytes(gpa, io, dir);
-        }
-
-        pub fn placementWeightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, world: usize, rank: usize, drafts: bool) !u64 {
-            return bytes.placementWeightBytes(gpa, io, dir, world, rank, drafts);
-        }
+        pub const deviceWeightBytes = bytes.deviceWeightBytes;
+        pub const placementWeightBytes = bytes.placementWeightBytes;
 
         /// The tower's weights and one call's scratch, which rank zero holds beside the text weights with --vision.
-        pub fn visionBytes(a: std.mem.Allocator, io: std.Io, dir: []const u8) !u64 {
-            return bytes.visionBytes(a, io, dir);
-        }
+        pub const visionBytes = bytes.visionBytes;
 
         pub fn healthy(ptr: *anyopaque) bool {
             return if (of(ptr).ranks) |r| r.healthy() else true;
@@ -181,6 +178,7 @@ pub fn Namespace(comptime Tri: type) type {
             /// --slide: the pocket's layout, from config.json at load.
             lay: living.Layout = undefined,
             kv: kvl.State = .{},
+            elastic: @import("exl3/elastic/cuda_exl3_elastic_attach.zig").Slot = .{}, // TF_FLASHNEXT_ELASTIC_MEMORY
 
             pub fn tri(self: *Cuda) Tri {
                 return .{ .set = if (self.set) |*x| x else null, .own = &self.glue, .s = self.stream };
@@ -299,6 +297,7 @@ pub fn Namespace(comptime Tri: type) type {
                 // a window's rows past the reply's last token (its drafts) still need cache slots
                 const from = self.kv.choose();
                 const cap = @import("exl3/offload/cuda_exl3_recycle.zig").capFor(from == .pool, ids.len + s.max_new + (if (drafting) mtp.max_rows else 0), self.context + mtp.max_rows);
+                self.elastic.room(&self.kv, cap, from); // elastic memory maps the pages this stream needs, or leaves it to LaneMemory
                 // a contiguous lane's fixed-size buffers from the parts kept from an earlier stream
                 var part_seq: ?cuda.DeviceBuffer = null;
                 if (self.parts.forLane(self.ranks != null, from == .pool)) part_seq = Parts.take(&self.parts.seqs, self.engine.driver, seq_parts.seqPartsBytes()) catch null;
@@ -392,6 +391,7 @@ pub fn Namespace(comptime Tri: type) type {
             @import("exl3/model/cuda_exl3_chain.zig").releaseRuntime(&own.engine.exl3_chain);
             if (own.head) |h| h.deinit();
             if (own.vision) |v| v.deinit();
+            own.elastic.destroy();
             if (own.ranks) |r| r.deinit();
             if (own.kv.pool) |kp| kp.deinit();
             own.engine.deinit();

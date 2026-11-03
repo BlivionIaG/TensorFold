@@ -509,6 +509,7 @@ pub const LaneHost = struct {
         while (true) {
             var activity = @import("lane_activity.zig").Activity.enter(h.activity);
             defer activity.end();
+            if (h.info_.admit) |a| if (a.tick) |tick| tick(a.ctx, .{ .host = h, .read = admit.read });
             ends.takeCancels(h);
             pressure.step(h);
             rows_host.answer(h);

@@ -38,6 +38,10 @@ fn scanned(p: *const kv.Pool) !void {
     try equal(reclaimable, p.reclaimable());
     for (0..p.capacity() + 2) |need| try equal(free - p.promised + reclaimable >= need, p.fits(need));
     try equal(p.promised == 0 and leased == 0 and free + kept == p.mapped, p.idle());
+    // the tail floor is the least `n` a shrink accepts (the brute force of `tailIdle` from below)
+    var floor: usize = 0;
+    while (!p.tailIdle(floor)) floor += 1;
+    try equal(floor, p.tailFloor());
 }
 
 /// The first id of `k` free pages in a row at a multiple of `step` below `mapped`, lowest or highest, by brute force.

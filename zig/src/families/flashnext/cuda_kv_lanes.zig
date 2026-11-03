@@ -81,6 +81,7 @@ pub fn attachTo(own: anytype, streams: u32, count: usize) !void {
     own.kv.pool = try Pool.init(own.gpa, own.engine, lay, own.context, own.kv.head, lane_count, page_count);
     own.kv.paged_only = pagedOnly() and lane_count > 0;
     if (own.ranks) |r| r.pool = own.kv.pool;
+    try @import("exl3/elastic/cuda_exl3_elastic_attach.zig").attach(own); // TF_FLASHNEXT_ELASTIC_MEMORY
 }
 
 /// Where a stream's caches came from: no pool, the one stream on its own caches beside a pool, or a pool lane.
@@ -118,6 +119,27 @@ pub const State = struct {
         const p = s.pool orelse return true;
         if (!s.paged_only and !s.own_busy) return true;
         return p.fits(@as(usize, prompt_rows) + max_tokens + window_rows);
+    }
+
+    /// The pages `fits` finds a request short of (0: it fits, or the own stream is free and takes none).
+    pub fn short(s: *const State, prompt_rows: u32, max_tokens: u32) usize {
+        const p = s.pool orelse return 0;
+        if (!s.paged_only and !s.own_busy) return 0;
+        return p.short(@as(usize, prompt_rows) + max_tokens + window_rows);
+    }
+
+    /// The pages the next `asks` (each `.prompt` rows, `.max_tokens`) lack together beyond those free or reclaimable.
+    pub fn shortAll(s: *const State, asks: anytype) usize {
+        const p = s.pool orelse return 0;
+        if (p.host != null) return 0;
+        const skip: usize = if (!s.paged_only and !s.own_busy) 1 else 0; // the own stream takes the first and no pages
+        var need: usize = 0;
+        for (asks, 0..) |a, i| {
+            if (i < skip) continue;
+            const cap = @min(@as(usize, a.prompt) + a.max_tokens + window_rows, p.capacity + window_rows);
+            need += p.layout.pages(cap) + p.layout.runPages();
+        }
+        return need -| (p.pool.available() + p.pool.reclaimable());
     }
 };
 
@@ -285,6 +307,24 @@ pub const Pool = struct {
     pub fn tally(p: *const Pool) u64 {
         const c = p.pool.census();
         return (@as(u64, c.total) << 32) | c.free;
+    }
+
+    /// What elastic memory reads of the arena: pages mapped and held, the shrink floor now, the demand and the bytes.
+    pub const View = struct { mapped: usize, count: usize, min: usize, floor: usize, demand: usize, stride: u64, chunk: u64 };
+
+    /// The arena's view, or null when it is not elastic.
+    pub fn view(p: *const Pool) ?View {
+        const x = p.elastic orelse return null;
+        const c = p.pool.census();
+        return .{ .mapped = c.total, .count = p.plain.capacity(), .min = x.min_pages, .floor = p.plain.tailFloor(), .demand = c.total - c.free + c.promised, .stride = x.stride, .chunk = x.span.maps.chunk };
+    }
+
+    /// Pages a cache of `cap` rows and its run still lack (0: they fit, a run among them), as `fits` finds them.
+    pub fn short(p: *const Pool, cap: usize) usize {
+        if (p.host != null) return 0;
+        const k = p.layout.runPages();
+        const lack = (p.layout.pages(cap) + k) -| (p.pool.available() + p.pool.reclaimable());
+        return if (lack == 0 and p.pool.findRun(k) == null) k else lack;
     }
 
     /// `target` pages mapped in place, ranks quiescent; Busy and a failed map, fill or unmap leave the mapping as is.
@@ -544,4 +584,9 @@ test {
     _ = @import("cuda_kv_init_test.zig");
     _ = @import("cuda_kv_lifetime_test.zig");
     _ = @import("cuda_kv_elastic_test.zig");
+    _ = @import("cuda_rank_elastic_test.zig");
+    _ = @import("cuda_lanes_explain.zig");
+    _ = @import("exl3/elastic/cuda_exl3_elastic.zig");
+    _ = @import("exl3/elastic/elastic_config.zig");
+    _ = @import("exl3/elastic/cuda_exl3_lines.zig");
 }

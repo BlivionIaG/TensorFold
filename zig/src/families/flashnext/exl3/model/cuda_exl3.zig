@@ -41,6 +41,7 @@ test {
     _ = @import("../prefill/cuda_exl3_prefill_test.zig");
     _ = @import("../prefill/cuda_exl3_prefill_head.zig");
     _ = @import("../prefill/cuda_exl3_prefill_ring.zig");
+    _ = @import("../prefill/cuda_exl3_prefill_ring_slots.zig");
     _ = dplan;
     _ = graph;
     _ = fork;

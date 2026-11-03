@@ -231,6 +231,13 @@ pub const Pool = struct {
         return p.nfree - (p.mapped - new_mapped) >= p.promised;
     }
 
+    /// The fewest ids a `shrink` could keep right now: the least `n` with `tailIdle(n)` (at most `total`).
+    pub fn tailFloor(p: *const Pool) usize {
+        var top = p.mapped;
+        while (top > 0 and p.refs[top - 1] == 0) top -= 1;
+        return @min(p.mapped, @max(top, p.mapped - p.nfree + p.promised));
+    }
+
     /// Ids from `new_mapped` up leave the pool (<= total); Busy when `tailIdle` is false, and nothing changes then.
     pub fn shrink(p: *Pool, new_mapped: usize) error{Busy}!void {
         std.debug.assert(new_mapped <= p.mapped);

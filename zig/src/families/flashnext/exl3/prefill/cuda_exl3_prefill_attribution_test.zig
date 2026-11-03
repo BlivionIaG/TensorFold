@@ -96,6 +96,7 @@ const Fixture = struct {
         ring.d = &fixture.driver;
         ring.pools = @splat(fixture.pool);
         ring.addr = &fixture.addresses;
+        ring.n_slots = fixture.addresses.len;
         ring.off = &fixture.offsets;
         ring.room_of = &fixture.rooms;
         ring.state = &fixture.states;
