@@ -24,6 +24,7 @@ test {
     _ = @import("kernel_tests/chain.zig");
     _ = @import("kernel_tests/attention.zig");
     _ = @import("kernel_tests/attention_pin.zig");
+    _ = @import("kernel_tests/stats.zig");
     _ = @import("kernel_tests/ops.zig");
     _ = @import("kernel_tests/argmax.zig");
     _ = @import("kernel_tests/tp.zig");
@@ -34,6 +35,7 @@ test {
     _ = @import("kernel_tests/graph_split.zig");
     _ = @import("kernel_tests/flashnext.zig");
     _ = @import("kernel_tests/flashnext_attn.zig");
+    _ = @import("kernel_tests/moe_gate.zig");
     _ = @import("kernel_tests/nemotron/moe.zig");
     _ = @import("kernel_tests/nemotron/pick.zig");
     _ = @import("kernel_tests/nemotron/attention.zig");

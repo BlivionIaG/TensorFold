@@ -9,11 +9,11 @@ const wt = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_prompt_load.zig");
 const parts = @import("cuda_batch_state.zig");
 const late = @import("cuda_batch_late.zig");
-const shared = @import("cuda_batch_side.zig");
+const hc = @import("cuda_batch_hc.zig");
 const batch_lanes = @import("cuda_batch_lanes.zig");
 const tiles = @import("cuda_tiles.zig");
 const tk = @import("cuda_tile_kernels.zig");
-const nvfp4_tile = @import("cuda_nvfp4_tile.zig");
+const moe_native = @import("cuda_moe_native.zig");
 const zs = @import("cuda_zero_slice.zig");
 const ops = @import("cuda_batch_ops.zig");
 
@@ -40,7 +40,6 @@ const out_k = wt.out_k;
 const nch = wt.nch;
 const ple_layer = wt.ple_layer;
 const ple_tail_n = wt.ple_tail_n;
-const state_n = wt.state_n;
 const hc_sk = wt.hc_sk;
 const out_sk = wt.out_sk;
 const Q4 = wt.Q4;
@@ -133,20 +132,16 @@ pub fn Pass(comptime Tri: type) type {
             if (try zs.lane(self.k, self.stream, self.s, self.zero_slices, x, w, part, m, sk)) |one| return one;
             return tiles.matmul(self.k, self.stream, x, xs, w, out, part, self.s.native_part, m, sk);
         }
-
         pub fn sumSlices(self: *Self, part: u64, out: u64, bf16: bool, n: usize, sk: usize) !void {
             return ops.sumSlices(self.k, self.stream, part, out, bf16, n, sk);
         }
-
         pub fn shiftWindow(self: *Self, win: u64, rows_ptr: u64, stride: usize, n: usize, taps: usize, c: usize) !void {
             return ops.shiftWindow(self.k, self.stream, win, rows_ptr, stride, n, taps, c);
         }
-
         /// rows x width 16-bit columns from src (src_pitch values a row) to dst (dst_pitch); dst 0: none.
         pub fn copyCols(self: *Self, src: u64, src_pitch: usize, dst: u64, dst_pitch: usize, width: usize, rows: usize) !void {
             return ops.copyCols(self.k, self.stream, src, src_pitch, dst, dst_pitch, width, rows);
         }
-
         /// The adds to layer `l`'s MoE output: a training pass's, else the model's pockets; null: none there.
         pub fn addAt(self: *const Self, l: usize) ?MoeAdd {
             const m = self.hooks.moe_add orelse self.m.pocket orelse return null;
@@ -209,18 +204,13 @@ pub fn Pass(comptime Tri: type) type {
             const norm = s.norm + r0 * wide * 2;
             const act = s.act + r0 * low * 2;
             const xs_act = s.xs_act + r0 * (low / 32) * 4;
-            if (hc_w.down.native) |down| {
-                const up = hc_w.up.native orelse return error.UnexpectedTensor;
+            if (hc_w.down.native != null) {
                 try self.tri.hcNormalize(h, pss, hc_w.scale.ptr, norm, eps, n, dims, streams);
-                try self.k.native_lane.matmulF32(self.stream, norm, wide, n, down, s.hc_part, s.native_part);
-                const inj_ptr = if (hc_w.has_inj == 1) inj else act;
-                try self.tri.hcReduceAct(s.hc_part, act, xs_act, inj_ptr, 1, n, streams, low, hc_w.n_down, hc_w.has_inj);
-                try self.k.native_lane.matmul(self.stream, act, low, n, up, s.hc_up, s.native_part);
-                try self.tri.hcDenseMix(s.hc_up, norm, s.mixed + r0 * dims * 2, s.xsm + r0 * (dims / 32) * 4, n, dims, streams);
-                return;
+                return hc.readoutNative(self, hc_w, r0, n);
             }
             if (n >= parts.readoutTileRows() and self.tri.readoutTilesOwned() and std.meta.eql(keep, HcKeep{})) return self.readoutTiles(hc_w, r0, n);
             try self.copy(keep.h, h, n * wide * 2);
+            if (hc_sk * n * hc_w.n_down * 4 > s.hc_part_bytes) return error.UnexpectedTensor;
             try self.tri.hcDown(h, pss, hc_w.scale.ptr, norm, hc_w.down.w.ptr, hc_w.down.s.ptr, hc_w.down.b.ptr, s.dn, s.hc_part, eps, n, hc_w.n_down, wide, dims, dims / 256, streams, hc_sk);
             if (keep.v != 0) try self.sumSlices(s.hc_part, keep.v, false, n * hc_w.n_down, hc_sk);
             const inj_ptr = if (hc_w.has_inj == 1) inj else act;
@@ -453,22 +443,7 @@ pub fn Pass(comptime Tri: type) type {
             try self.copy(keep.moe_wts, s.wts, pairs * 4);
             const e = experts_n + 1;
             const plan: cuda.grouped.Plan = .{ .members = s.members, .items = s.items, .counts = s.counts, .rank = s.rank, .hist = s.hist };
-            if (lw.native_experts) |*native| {
-                const owned = &native.experts;
-                if (zs.clearsY(native.world, native.rank)) try self.stream.d.check(self.stream.d.api.cuMemsetD8Async(s.y, 0, pairs * dims * 4, self.stream.handle), "cuMemsetD8Async");
-                const pt = nvfp4_tile.size(n);
-                try self.k.router.route(self.stream, s.picks, pairs, e, pt, plan);
-                const items = cuda.grouped.maxItems(pairs, e, pt);
-                const side = try shared.fork(self, native, n);
-                try nvfp4_tile.run(self.k, pt, self.stream, .up, .{ .x = s.mixed, .stride = dims, .slots = slots }, owned.view(), plan, s.moe_act, items, experts_n);
-                try nvfp4_tile.run(self.k, pt, self.stream, .down_f32, .{ .x = s.moe_act, .stride = owned.width }, owned.view(), plan, s.y, items, experts_n);
-                try shared.join(self, side, native, n);
-                if (native.world != 1) {
-                    const collective = self.m.collective orelse return error.TensorParallelUnavailable;
-                    try collective.sum(self.stream, s.y, pairs * dims);
-                }
-                return;
-            }
+            if (lw.native_experts) |*native| return moe_native.run(self, native, n, pairs, plan);
             if (n >= 64) {
                 // prompt rows on 64-pair factored tiles, expert_rows' bits
                 try self.k.router.route(self.stream, s.picks, pairs, e, tk.fexp_tile, plan);
@@ -550,8 +525,13 @@ pub fn Pass(comptime Tri: type) type {
                     if (self.pending != null) try self.writeback(0, n);
                     try self.pleBlock(lw, ids);
                 }
-                try self.writeback(0, n);
-                try self.readoutKeep(lw.attn_hc, 0, n, keep.attn_hc);
+                if (hc.fuses(self, lw.attn_hc, n, keep.attn_hc)) {
+                    try hc.writebackNorm(self, lw.attn_hc, 0, n);
+                    try hc.readoutNative(self, lw.attn_hc, 0, n);
+                } else {
+                    try self.writeback(0, n);
+                    try self.readoutKeep(lw.attn_hc, 0, n, keep.attn_hc);
+                }
                 self.zero_slices = zs.usable(self.s.part_zero, keep.mix_branch, self.m.collective != null, lw.out.native != null);
                 if (lw.linear) {
                     try self.gdnBlock(lw, layer, wt.linearIndex(layer), keep);
@@ -561,8 +541,13 @@ pub fn Pass(comptime Tri: type) type {
                 if (keep.mix_branch != 0) try self.sumSlices(s.part, keep.mix_branch, true, n * dims, self.out_slices);
                 const sl = zs.slices(self.zero_slices, s.cap, n, self.out_slices);
                 self.zero_slices = false;
-                try self.tri.hcWriteback(s.h, s.h, s.pss, s.part, "*fp32", s.inj, s.dummy, "*bf16", s.dummy, "*bf16", sl.stride, n, dims, streams, 4, 1, 1, sl.count);
-                try self.readoutKeep(lw.mlp_hc, 0, n, keep.mlp_hc);
+                if (hc.fuses(self, lw.mlp_hc, n, keep.mlp_hc)) {
+                    try self.tri.hcWritebackNorm(s.h, s.h, s.pss, s.part, s.inj, s.dummy, s.dummy, lw.mlp_hc.scale.ptr, s.norm, eps, sl.stride, n, dims, streams, 4, 1, 1, sl.count);
+                    try hc.readoutNative(self, lw.mlp_hc, 0, n);
+                } else {
+                    try self.tri.hcWriteback(s.h, s.h, s.pss, s.part, "*fp32", s.inj, s.dummy, "*bf16", s.dummy, "*bf16", sl.stride, n, dims, streams, 4, 1, 1, sl.count);
+                    try self.readoutKeep(lw.mlp_hc, 0, n, keep.mlp_hc);
+                }
                 try self.moeBlockKeep(lw, keep);
                 try self.moeAdds(layer, keep);
                 self.pending = layer;
@@ -593,6 +578,7 @@ pub fn Pass(comptime Tri: type) type {
 
 test "a pass's scratch at the dense cap stays near a gigabyte and a half" {
     _ = @import("cuda_paging_batch_test.zig");
-    try std.testing.expect(Scratch.bytes(default_chunk) < 2 << 30);
-    try std.testing.expect(Scratch.bytes(1) < Scratch.bytes(2));
+    try std.testing.expect(Scratch.bytes(default_chunk, .{ .head_rows = default_chunk }) < 2 << 30);
+    try std.testing.expect(Scratch.bytes(1, .{}) < Scratch.bytes(2, .{}));
+    try std.testing.expect(Scratch.bytes(4096, .{ .lane_reduce = false }) < Scratch.bytes(4096, .{}));
 }

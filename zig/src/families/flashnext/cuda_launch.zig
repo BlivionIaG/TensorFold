@@ -10,6 +10,8 @@ pub const rank_engine = @import("cuda_rank_engine.zig");
 pub const collective = @import("cuda_collective.zig");
 pub const rank_wire = @import("cuda_rank_wire.zig");
 pub const modelopt_experts = @import("cuda_modelopt_experts.zig");
+/// The MoE pass's native routed experts (NVFP4, block FP8), whose FP8 call a device test takes.
+pub const moe_native = @import("cuda_moe_native.zig");
 pub const hc = @import("cuda_hc.zig");
 pub const draft_affine = @import("cuda_draft_affine.zig");
 pub const qmm = @import("cuda_qmm.zig");
@@ -85,6 +87,11 @@ pub const Tri = struct {
         if (t.set == null) return t.own.?;
         const g = t.own orelse return null;
         return if (g.mixed & glue_.entryBit(name) != 0) g else null;
+    }
+
+    /// The writeback runs on our glue (hcWritebackNorm fuses it with the normalize).
+    pub fn writebackOwned(t: Tri) bool {
+        return t.glue("_hc_writeback") != null;
     }
 
     /// The read-out tiles replace down, reduction and upmix together; mixed operation ownership stays on its route.
@@ -342,6 +349,12 @@ pub const Tri = struct {
         }, &.{ ci("D", dims), ci("S", streams), ci("MODE", mode), ci("TOPK", topk), ci("SLOTS", slots), ci("BLOCK", 256), ci("WORLD", world) });
     }
 
+    /// hcWriteback and hcNormalize (`scale` into `norm`) in one launch on the native glue: the same bits as the two.
+    pub fn hcWritebackNorm(t: Tri, h: u64, hout: u64, pss: u64, branch: u64, inj: u64, y: u64, wts: u64, scale: u64, norm: u64, eps: f32, rs: usize, rows: usize, dims: usize, streams: usize, mode: usize, topk: usize, slots: usize, world: usize) !void {
+        const g = t.glue("_hc_writeback") orelse return error.NativeGlueRequired;
+        return g.hcWritebackNorm(t.s, h, hout, pss, branch, inj, y, wts, scale, norm, eps, rs, rows, dims, streams, mode, topk, slots, world);
+    }
+
     /// glue.ple_embed: gathered n-gram rows, MLX 4-bit group 32. `scale` is a constexpr.
     pub fn pleEmbed(t: Tri, weight: u64, scales: u64, biases: u64, out: u64, xs: u64, rows: usize, heads: usize, dh: usize, scale: f32) !void {
         if (t.set == null) return error.CapturedKernelsRequired; // the row path's n-gram check only
@@ -438,6 +451,7 @@ test {
     _ = @import("cuda_pages.zig");
     _ = @import("cuda_kv_lanes.zig");
     _ = @import("cuda_config.zig");
+    _ = @import("cuda_lanes_explain.zig");
     _ = @import("cuda_projection_load.zig");
     _ = @import("cuda_rank_engine.zig");
     _ = @import("cuda_round_graph.zig");

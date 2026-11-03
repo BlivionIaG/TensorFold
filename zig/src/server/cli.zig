@@ -110,6 +110,7 @@ pub const flags = [_]Flag{
     .{ .name = "--mtp-confidence", .native = served("--mtp-confidence") },
     .{ .name = "--lane-kernels", .choices = &.{ "auto", "on", "off" } },
     .{ .name = "--prompt-cache-gib", .native = true },
+    .{ .name = "--prompt-cache-disk", .native = true },
     .{ .name = "--prompt-cache-over-cap", .kind = .store_true, .native = true },
     .{ .name = "--checkpoint-slots", .native = served("--checkpoint-slots") },
     .{ .name = "--spill-gib", .native = served("--spill-gib") },
@@ -269,6 +270,8 @@ pub fn fail(u: *Usage, a: Allocator, comptime fmt: []const u8, args: anytype) er
 pub fn parse(a: Allocator, argv: []const []const u8, u: *Usage) error{ Usage, OutOfMemory }!Args {
     var out: Args = .{};
     var repeated: Repeated = .{};
+    var disk_named = false;
+    var disk_legacy: ?[]const u8 = null;
     var model: ?[]const u8 = null;
     var i: usize = 0;
     while (i < argv.len) : (i += 1) {
@@ -286,6 +289,8 @@ pub fn parse(a: Allocator, argv: []const []const u8, u: *Usage) error{ Usage, Ou
             if (eq) |e| value = token[e + 1 ..] else {
                 i += 1;
                 if (i >= argv.len) return fail(u, a, "argument {s}: expected one argument", .{name});
+                if (std.mem.eql(u8, name, "--prompt-cache-disk") and std.mem.startsWith(u8, argv[i], "--"))
+                    return fail(u, a, "argument {s}: expected one argument", .{name});
                 value = argv[i];
             }
             if (flag.choices.len > 0) for (flag.choices) |c| {
@@ -296,6 +301,13 @@ pub fn parse(a: Allocator, argv: []const []const u8, u: *Usage) error{ Usage, Ou
         if (flag.native_values) |allowed| if (value) |v| for (allowed) |x| {
             if (std.mem.eql(u8, x, v)) break;
         } else return fail(u, a, "{s} {s} is not served by the native engine; the Python engine 0.6.6 serves it: python -m pip install git+https://github.com/ashhart/TensorFold.git@v0.6.6", .{ name, v });
+        if (std.mem.eql(u8, name, "--prompt-cache-disk")) {
+            if (disk_legacy) |old| return fail(u, a, "argument {s}: not allowed with {s}", .{ name, old });
+            disk_named = true;
+        } else if (std.mem.eql(u8, name, "--learn-dir") or std.mem.eql(u8, name, "--learn-conversations")) {
+            if (disk_named) return fail(u, a, "argument {s}: not allowed with --prompt-cache-disk", .{name});
+            disk_legacy = name;
+        }
         try apply(a, &out, name, value, u, &repeated);
     }
     out.model = model orelse return fail(u, a, "the following arguments are required: model", .{});
@@ -326,7 +338,7 @@ pub fn parse(a: Allocator, argv: []const []const u8, u: *Usage) error{ Usage, Ou
 
 /// --spill-gib writes to the conversation store: beside --learn's shared prefixes only with --learn-conversations.
 fn spillWith(u: *Usage, a: Allocator, out: Args) error{ Usage, OutOfMemory }!void {
-    if (spills(out) and out.learn and !out.learn_conversations) return fail(u, a, "--spill-gib writes evicted states to the conversation store, which --learn's shared prefixes do not use: add --learn-conversations, or serve without --learn", .{});
+    if (spills(out) and out.learn and !out.learn_conversations) return fail(u, a, "--spill-gib writes evicted states to the conversation store, which --learn's shared prefixes do not use: use --prompt-cache-disk DIR without --learn-dir, add --learn-conversations, or serve without --learn", .{});
 }
 
 fn spills(args: Args) bool {
@@ -419,6 +431,11 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
         out.port = @intCast(p);
     } else if (is(name, "--name")) out.name = v else if (is(name, "--alias")) try repeated.alias.append(a, v) else if (is(name, "--name-priority")) try repeated.priorities.append(a, v) else if (is(name, "--api-key")) try repeated.keys.append(a, v) else if (is(name, "--api-key-file")) out.api_key_file = v else if (is(name, "--metrics-open")) out.metrics_open = true else if (is(name, "--dashboard")) out.dashboard = true else if (is(name, "--context")) out.context = try int(u, a, name, v) else if (is(name, "--speed-up")) out.speed_up = v else if (is(name, "--prompt-cache-gib")) out.prompt_cache_gib = try gib(u, a, name, v) else if (is(name, "--prompt-cache-over-cap")) out.prompt_cache_over_cap = true else if (is(name, "--learn")) out.learn = true else if (is(name, "--learn-dir")) {
         out.learn = true;
+        out.learn_dir = v;
+    } else if (is(name, "--prompt-cache-disk")) {
+        if (v.len == 0) return fail(u, a, "argument --prompt-cache-disk: directory must not be empty", .{});
+        out.learn = true;
+        out.learn_conversations = true;
         out.learn_dir = v;
     } else if (is(name, "--learn-min-free-gib")) {
         out.learn_min_free_gib = try gib(u, a, name, v);

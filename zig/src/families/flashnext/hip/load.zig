@@ -189,6 +189,7 @@ const Loader = struct {
         const u = l.up.uploader();
         return .{
             .rows32 = (try u.tensor(r.rows32)).ptr,
+            .rows16 = (try u.tensor(r.router)).ptr,
             .top_k = r.top_k,
             .rows = r.router.shape[0],
             .remap = if (r.remap) |t| (try u.tensor(t)).ptr else 0,
@@ -199,6 +200,11 @@ const Loader = struct {
                 .count = r.experts.count,
                 .width = r.experts.width,
                 .dims = r.experts.dims,
+                // a shared expert of another width than the stack: its own projections, run beside the routed launch
+                .shared = if (r.experts.separate) |s| hip.moe.Shared{
+                    .gate_up = try quant.view(try quant.upload(u, .{ .mlx = s.gate_up }), false),
+                    .down = try quant.view(try quant.upload(u, .{ .mlx = s.down }), false),
+                } else null,
             },
         };
     }
