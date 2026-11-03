@@ -319,3 +319,42 @@ its wrapper clock anchors and has no per-process GPU fields or complete three-ar
 Review readiness still requires both unchanged full matrices on the new exact head and green
 exact-head CI. The CF GitHub metadata was DIRTY/no-CI despite verified pinned-base ancestry.
 No tolerance, re-review request, force push or merge is implied by this follow-up.
+
+## Admitted-residency calibration: corrected measurement context, performance still open
+
+The [causal copy-price and GPU-class packet](https://github.com/BlivionIaG/TensorFold/blob/0c87e639ac2f65809ad30a4a422c2ba2a0024d48/docs/receipts/lfm2-dspark-review/2acdb56a2/copy-gpu-attribution/README.md)
+diagnoses pushed source `2acdb56a2`, not a new qualification. In the captured M4 four-stream case,
+every neural context is declined and all copy offers/probability bits agree. The real allocator chooses
+three drafts per stream with plain startup prices and six with BF16 prices. Swapping the price curve
+alone reproduces that decision; swapping measured fixed overhead does not. BF16 accepts more drafts
+but its wider batches spend more target GPU time. This explains that workload divergence without
+claiming the older M5 all-declined case or every remaining performance loss is explained.
+
+Startup target prices previously preceded normal serving residency and loaded-head enrollment.
+Calibration now follows admission and residency, with temporary cache buffers following the same owner.
+The existing idle-flush callback commits pending buffers before timings; cache teardown unregisters them.
+Tap destinations are prepared afterward, preserving bare-target calibration instead of capturing into
+temporary caches that have no stream destination. Target math, BF16 activations, admission limits,
+deterministic calibration history, warmup and timing-trial counts are unchanged.
+
+The first local ordering candidate, `5d9469fe5`, passed original kernel/reference guards on both devices
+but failed actual native startup with `BadLfmTapDestination`; it was never a published PR tip.
+Corrected source `79837c4e2` passes the original 82-step scope on both devices and the unchanged
+long-context/cache, fresh-cache, sampled and cancellation workflows in both head-weight modes.
+The [source/binary-bound receipt](serving-calibration.json) retains exact commands, skips, sample hashes,
+FP32 comparisons, cache counts and all eight clean non-forced exits. M4's build summary counts
+355/362 newly run tests, seven skipped, with the shared-allocation test cached; M5 reports 767/771,
+four skipped. M4 matches 9/9 FP32 picks in both modes; M5 matches BF16 9/9 and 8-bit 8/9, with
+0.075 maximum margin for the different 8-bit pick. That result is not relabelled as universal equality.
+Stress completes 818 requests and 468 cancellations on M4, 2,788 and 1,514 on M5, without wrong
+answers/errors. These counts are observed correctness workload totals, not speed comparisons.
+
+Calibrated operator-class captures on the preceding source put expert gate/up and down projections
+first in the larger target batches. All 138 original counter-off/on phases per device retain identical
+target tokens. Serial encoder fences are intrusive; invalid command-buffer stopwatches are excluded.
+Neither GPU occupancy, bandwidth saturation nor a matched MLX-LM comparison is established.
+
+Correcting the measurement context and passing native correctness do not establish the zero-regression
+gate. The complete CF matrices above remain the last full qualification until a newer same-head
+matrix is completed. No tolerance, resource override or re-review is implied.
+

@@ -172,6 +172,14 @@ Context-aware recovery prices the actual selected trial group's debt once while 
 optimism over allowed deeper clean shapes. An expensive due peer cannot veto a funded cheaper prefix.
 Zero-context and opt-out backends retain their original recovery semantics.
 
+Native target calibration is separate from backend construction. It runs after admission, with
+the normal serving residency and loaded head buffers in place, but before preparing tap destinations.
+Temporary calibration caches follow that residency; its existing idle-flush callback commits pending
+head and cache buffers before timing. Cache teardown removes those buffers before their owner leaves.
+The original deterministic history, warmup, per-width timing trials and target arithmetic are unchanged.
+The [source-bound original-contract proof](../receipts/lfm2-dspark-review/serving-calibration.json)
+records actual cache, sampled and cancellation workflows on both devices; it is not a performance pass.
+
 Before prefill, the lane host snapshots admitted and already queued requests under its existing mutex,
 bounded by the advertised and memory-admitted lane limits. Context enrollment prices the larger of
 that cohort and the drafter's registered streams. This matters for LFM2: whole-prompt prefill runs
