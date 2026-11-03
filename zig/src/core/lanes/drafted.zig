@@ -176,7 +176,7 @@ pub const Drafted = struct {
         try x.lanes.ensureUnusedCapacity(x.gpa, 1);
         // Only providers offering enrollment may skip context; legacy feature-prefill stays intact.
         s.head_context = if (x.drafter.vtable.enroll != null)
-            s.drafts and x.drafter.enroll(s, .{ .streams = x.lanes.count() + 1, .heads = x.heads + 1 })
+            s.drafts and x.drafter.enroll(s, .{ .streams = @max(x.lanes.count() + 1, s.prefill_cohort), .heads = x.heads + 1 })
         else
             null;
         if (s.head_context == false) s.head_prior = &.{};

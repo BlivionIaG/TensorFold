@@ -157,6 +157,7 @@ pub const Stream = struct {
     drafts: bool,
     head_context: ?bool = null, // null: legacy; false: request-stable target-only external-head route
     head_prior: []const f64 = &.{}, // provider-owned conditional rates, cloned when the rule first needs them
+    prefill_cohort: usize = 0, // host's admitted/queued lane bound before prefill (0: unknown)
     proposer: ?Proposer,
     recall: ?*Reader,
     stop_check: ?StopCheck,

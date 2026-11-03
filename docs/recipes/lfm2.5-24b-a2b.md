@@ -172,6 +172,15 @@ Context-aware recovery prices the actual selected trial group's debt once while 
 optimism over allowed deeper clean shapes. An expensive due peer cannot veto a funded cheaper prefix.
 Zero-context and opt-out backends retain their original recovery semantics.
 
+Before prefill, the lane host snapshots admitted and already queued requests under its existing mutex,
+bounded by the advertised and memory-admitted lane limits. Context enrollment prices the larger of
+that cohort and the drafter's registered streams. This matters for LFM2: whole-prompt prefill runs
+inside admission, before queued peers reach the drafter's stream map. Direct engine callers without
+a host hint retain their registered-stream estimate. No request is delayed to await future arrivals,
+and declining neural context does not disable copies or user-provided drafts.
+The [scheduled-cohort receipt](../receipts/lfm2-dspark-review/scheduled-cohort.json) records actual
+queued serving and its limits: correctly declining a known cohort is not a complete performance pass.
+
 The no-confidence depth fallback stages newly committed context before choosing a lone head depth.
 An unobserved positive-depth round includes its context quote once; an observed whole-round cost is
 already inclusive and is returned unchanged. Recorder and CUDA-bound adapters retain the optional

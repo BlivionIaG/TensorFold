@@ -264,3 +264,58 @@ drafter-reference results, not permission to tolerate different final target tok
 - Actual phase attribution: private `d6ae603903e91aecd146386bf6214078e2b292d8`; M5 packet `/Users/kletorch/tf-lfm2-test/r18-phase-d6ae60390`; BF16 log SHA-256 `1188eab48ab4b1e71ec4f47a4046a4dec4d061d6cc08cf85488fcc72b5a7cdf3`, 8-bit log `1769ea2b6d1e702c0a184bbd32e9cfe6ed377c7ab6bf065bf337ed717581a09e`. Original native controls ran first and passed, including zero host allocations/resizes in the 20 steady rounds; BF16 matched 9/9 FP32 picks and 8-bit matched 8/9 with the previously stated bounds. An initial empty-context counter attempt (`4d3e1df7d`) returned `InvalidCounterSample` and supplies no phase timing; the published table uses only valid nonempty-stage captures.
 - Narrow BF16 tensor follow-up: private `0fdcedf12733466ba7aa28d45b225d4a3bacda2b`; M5 packet `/Users/kletorch/tf-lfm2-test/r18-narrow-0fdcedf12`; actual native log SHA-256 `6292b344fe16e7b2cde13834e0ad2601b3ec2697b21d85d75c9e190c99ae601f`. Same staged real-input fixture and phase sampler; FP32 picks 9/9, worst confidence difference 0.00129, all profiled outputs identical to their matched unprofiled runs. Rejected and not published.
 - No new full serving matrix is being used as a substitute for the missing causal explanation.
+
+## Scheduled-cohort follow-up: one enrollment defect fixed, performance still open
+
+The complete `cf23762368785b470b3bf7485026e2ea4837ce82` matrices supersede the older
+qualification numbers above, not their historical source labels. M4 has **12/32** strict losses
+(worst **-5.322375682894121%**); M5 has **16/32** (worst **-1.4341478593879908%**).
+Both completed 144/144 cells and 306/306 token oracles without exactness failures.
+The [immutable full packet](https://github.com/BlivionIaG/TensorFold/blob/4488fea6ba35edef9271931d0b0678f9bb0fa27d/docs/receipts/lfm2-dspark-review/cf2376236/qualification/README.md)
+contains all 64 comparisons and the unchanged zero-tolerance verdicts.
+The [GPU/cohort diagnosis](https://github.com/BlivionIaG/TensorFold/blob/2a61f7a96b8a47fd1b92712e366fab81296d93bc/docs/receipts/lfm2-dspark-review/cf2376236/prefix-attribution/README.md)
+separates observed work from unproven kernel and MLX-LM hypotheses.
+
+**Confirmed defect:** LFM2 prefills a whole prompt during `admitOne`, before taking the next queued
+job. Pricing only the drafter's registered stream map can therefore price the first request of a
+known queued cohort as a lone request. The host now supplies its already admitted/queued lane bound
+before prefill; enrollment uses the larger count. No new allocation, mutex, artificial delay,
+stream-count cutoff, activation dtype or target arithmetic is introduced.
+
+The [source-bound receipt](scheduled-cohort.json) records the three-file runtime delta from CF,
+the actual M5 serving replay and M4 guards. In the measured four-stream M5 case, BF16 changed from
+one tracked context to none; 8-bit also declined all four. All three diagnostic servers exited 0
+without forced termination. Each completed 46 phases and retained the original request/token
+contracts; measured target tokens matched plain. A final diagnostic parser failed after the
+third server exited because its validation tuple shadowed `fields()`. Offline recovery used the
+saved logs and requests, exactly reproduced both already-persisted arm records, and did not rerun
+the models. The executed controller failure is retained in the receipt.
+
+**Not solved:** M5 four-stream target GPU time remains higher with every context declined.
+Plain used 1,660 rounds / 786 copied drafts / 384 accepted drafts; both loaded-head modes used
+1,662 / 775 / 382. Those are different target workloads, so the remaining loss is not attributable
+solely to feature capture. At wider widths a first request can still arrive before its peers:
+an already-queued hint cannot predict future arrivals. These fixed-history diagnostics are not
+a replacement for either full qualification matrix.
+
+M4's candidate passed the original 82-step scope: 763 of 771 tests passed, eight skipped,
+all six original commands exited 0, and both native weight modes matched 9/9 FP32 picks.
+Activations remain BF16; 8-bit changes weights only. The FP32 reference consumes BF16 target taps,
+not an FP32 target server.
+
+The profiled M4 long-context/cache functional run is **incomplete**: six-slot stress completed
+149 requests and 87 cancellations without wrong answers/errors, then the original memory-pressure
+guard aborted sixteen-slot stress. The owned server exited 0 without a forced kill. Sampled and
+fresh-cache checks were not reached; neither a retry nor a memory override is counted as success.
+Its 30.617045-second Metal System Trace recorded 505 native compute intervals totaling
+28.519554947 seconds of union activity (93.1493% of the trace), while other processes' recorded
+GPU activity totaled only 0.014343135 seconds of union activity. Native Metal allocation stayed
+between 14.120925903320312 and 14.144302368164062 GiB during the captured interval.
+This is evidence against a large CPU/GPU idle gap in that profiled workload, **not** SIMD occupancy,
+achieved bandwidth, or proof of the memory-pressure cause. The intrusive trace is not performance
+clearance. The earlier clock capture retained 306 complete samples and an incomplete tail, but lost
+its wrapper clock anchors and has no per-process GPU fields or complete three-arm coverage.
+
+Review readiness still requires both unchanged full matrices on the new exact head and green
+exact-head CI. The CF GitHub metadata was DIRTY/no-CI despite verified pinned-base ancestry.
+No tolerance, re-review request, force push or merge is implied by this follow-up.
