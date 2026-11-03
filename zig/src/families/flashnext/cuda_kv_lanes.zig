@@ -255,7 +255,7 @@ pub const Pool = struct {
         const k = p.layout.runPages();
         const n = p.layout.pages(cap);
         if (p.host) |h| {
-            for (p.lanes) |x| if (!x.used) return h.tier.fits(n, n + k);
+            for (p.lanes) |x| if (!x.used) return h.tier.fits(n, kvt.framesFor(k, p.slot_frames));
             return false;
         }
         for (p.lanes) |x| if (!x.used) return p.pool.fits(n + k) and p.pool.findRun(k) != null;
@@ -433,6 +433,53 @@ test "a stream's pages: its rows and a drafted window, no more than a full windo
     try std.testing.expect(h.run_bytes >= seqRunBytes() + mtp.Draft.runBytes(32768, 1536));
     try std.testing.expectEqual(@as(usize, 161), mostPages(40960, 256));
     try std.testing.expect(l.pages(40960 + window_rows) <= mostPages(40960, 256));
+}
+
+test "exl3: host-tier admission follows frame reservations rather than logical context size" {
+    const t = std.testing;
+    const run_pages = 2;
+    const slots = 9;
+    const frames = comptime kvt.framesFor(run_pages, slots);
+    const logical = frames + run_pages + 8;
+    const page_bytes = 256;
+    var backing: [2 * logical * page_bytes]u8 = undefined;
+    var host: host_tier.Host = .{ .tier = undefined, .store = undefined, .kv_page = page_bytes };
+    try host.tier.init(t.allocator, &backing, frames, page_bytes);
+    defer host.tier.deinit();
+    var lanes = [_]Lane{.{ .seq = undefined }};
+    const pool: Pool = .{
+        .gpa = t.allocator,
+        .e = undefined,
+        .layout = .{ .fixed_bytes = 0, .token_bytes = 1, .page_tokens = page_bytes, .snap_bytes = 0, .run_bytes = run_pages * page_bytes },
+        .capacity = logical * page_bytes,
+        .head = null,
+        .plain = undefined,
+        .pool = &host.tier.pool,
+        .host = &host,
+        .slot_frames = slots,
+        .arena = undefined,
+        .ibase = 0,
+        .lanes = &lanes,
+    };
+    try t.expect(pool.fits(pool.capacity));
+    {
+        var lease: kv.tier.Lease = .{};
+        try host.tier.reserve(&lease, 1, frames);
+        defer host.tier.finish(&lease);
+        try t.expect(!pool.fits(pool.capacity));
+    }
+    try t.expect(pool.fits(pool.capacity));
+    {
+        var lease: kv.tier.Lease = .{};
+        try host.tier.reserve(&lease, 2 * logical, 0);
+        defer host.tier.finish(&lease);
+        try t.expect(!pool.fits(pool.capacity));
+    }
+    try t.expect(pool.fits(pool.capacity));
+    lanes[0].used = true;
+    try t.expect(!pool.fits(pool.capacity));
+    lanes[0].used = false;
+    try t.expect(!pool.fits(pool.capacity + window_rows + 1));
 }
 
 test {
