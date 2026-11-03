@@ -106,6 +106,7 @@ Current PR metadata says CONFLICTING/DIRTY and has no current-head CI rollup, wh
 - `source-label-correction.json`: metadata-only correction provenance; raw records are not rewritten.
 - `serving-functionals.json`: actual current-source cache/sample/cancellation results and clean shutdowns in both weight modes.
 - [Current-source full qualification](qualification/README.md): all 64 comparisons, both complete failed speed verdicts, raw records, frozen driver, source-bound controllers and assembly proof.
+- [Remaining-loss GPU/cohort diagnosis](prefix-attribution/README.md): completed exact-history probes on both devices; actual kernel gate, enrollment decisions, physical target row histograms and GPU elapsed, with raw receipts and explicit limits.
 - [Complete historical750bca95c report](https://github.com/BlivionIaG/TensorFold/blob/0cece53cc7be9fa67c9c792945ae3b2f17fbc6bf/docs/receipts/lfm2-dspark-review/750bca95c/README.md): all64 original comparisons and raw receipts. Both original speed verdicts failed. They are not renamed as current-source results.
 
 No current MLX comparison was run in this diagnostic. These findings identify TensorFold's own paid work and dominant waits; they do not invent an MLX speedup, achieved-bandwidth measurement, or GPU-occupancy claim.

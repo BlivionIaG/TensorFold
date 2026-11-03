@@ -1,0 +1,1236 @@
+{
+  "m4": {
+    "label": "PRIVATE_DIAGNOSTIC_NOT_QUALIFICATION",
+    "source_observed_sha256": "af2f7b5cb3644e01569f4215c39622034c4cd48c8f6dc82395b52ca146eb69c0",
+    "actual_twins": {
+      "plain": [
+        true
+      ],
+      "bf16": [
+        true
+      ],
+      "bits8": [
+        true
+      ]
+    },
+    "measured": [
+      {
+        "arm": "plain",
+        "case": "T0-w1",
+        "rpc_wall_ms": 3096.1687923409045,
+        "target_gpu_ms": 3011.355123,
+        "activity": {
+          "rounds": 272,
+          "drafted": 310,
+          "accepted": 239
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "plain",
+        "case": "T0-w4",
+        "rpc_wall_ms": 7076.935625169426,
+        "target_gpu_ms": 6939.107792,
+        "activity": {
+          "rounds": 1284,
+          "drafted": 836,
+          "accepted": 760
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "plain",
+        "case": "T0-w8",
+        "rpc_wall_ms": 12742.204958107322,
+        "target_gpu_ms": 12553.916293999999,
+        "activity": {
+          "rounds": 2576,
+          "drafted": 1664,
+          "accepted": 1512
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "plain",
+        "case": "T0-w16",
+        "rpc_wall_ms": 22851.118540856987,
+        "target_gpu_ms": 22541.260373,
+        "activity": {
+          "rounds": 6160,
+          "drafted": 2128,
+          "accepted": 2016
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "plain",
+        "case": "T1-w1",
+        "rpc_wall_ms": 4517.454375047237,
+        "target_gpu_ms": 4312.433499999991,
+        "activity": {
+          "rounds": 504,
+          "drafted": 66,
+          "accepted": 7
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T0-w1",
+        "rpc_wall_ms": 3213.6113340966403,
+        "target_gpu_ms": 3124.2434139999987,
+        "activity": {
+          "rounds": 272,
+          "drafted": 310,
+          "accepted": 239
+        },
+        "tracked": [
+          false
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 61,
+          "rate0": 0.872,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.081,
+            "quoted_ms": 38.115542,
+            "quoted_tokens": 4.841758,
+            "best_heads": 1,
+            "best_depth": 7
+          }
+        },
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 3.7487538463260472,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T0-w4",
+        "rpc_wall_ms": 7444.238165859133,
+        "target_gpu_ms": 7304.9256239999995,
+        "activity": {
+          "rounds": 1284,
+          "drafted": 836,
+          "accepted": 760
+        },
+        "tracked": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 57,
+          "rate0": 0.872,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.081,
+            "quoted_ms": 38.115542,
+            "quoted_tokens": 4.841758,
+            "best_heads": 1,
+            "best_depth": 7
+          }
+        },
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 5.2718280644342475,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T0-w8",
+        "rpc_wall_ms": 13256.902625318617,
+        "target_gpu_ms": 13080.106414000002,
+        "activity": {
+          "rounds": 2576,
+          "drafted": 1664,
+          "accepted": 1512
+        },
+        "tracked": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 50,
+          "rate0": 0.872,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.081,
+            "quoted_ms": 38.115542,
+            "quoted_tokens": 4.841758,
+            "best_heads": 1,
+            "best_depth": 7
+          }
+        },
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 4.191441998474121,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T0-w16",
+        "rpc_wall_ms": 23688.551917206496,
+        "target_gpu_ms": 23366.213631000002,
+        "activity": {
+          "rounds": 6160,
+          "drafted": 2128,
+          "accepted": 2016
+        },
+        "tracked": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 42,
+          "rate0": 0.872,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.081,
+            "quoted_ms": 38.115542,
+            "quoted_tokens": 4.841758,
+            "best_heads": 1,
+            "best_depth": 7
+          }
+        },
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 3.659747699769844,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T1-w1",
+        "rpc_wall_ms": 4672.674916218966,
+        "target_gpu_ms": 4484.5591279999935,
+        "activity": {
+          "rounds": 504,
+          "drafted": 66,
+          "accepted": 7
+        },
+        "tracked": [
+          false
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 46,
+          "rate0": 0.84,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.081,
+            "quoted_ms": 38.173953,
+            "quoted_tokens": 4.700776,
+            "best_heads": 1,
+            "best_depth": 7
+          }
+        },
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 3.9913804583885826,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T0-w1",
+        "rpc_wall_ms": 3224.2605416104198,
+        "target_gpu_ms": 3144.874038000001,
+        "activity": {
+          "rounds": 272,
+          "drafted": 310,
+          "accepted": 239
+        },
+        "tracked": [
+          false
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 61,
+          "rate0": 0.672,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.427,
+            "quoted_ms": 23.063038,
+            "quoted_tokens": 2.710643,
+            "best_heads": 1,
+            "best_depth": 3
+          }
+        },
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 4.433848202764801,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T0-w4",
+        "rpc_wall_ms": 7365.4533750377595,
+        "target_gpu_ms": 7228.663462000001,
+        "activity": {
+          "rounds": 1284,
+          "drafted": 836,
+          "accepted": 760
+        },
+        "tracked": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 56,
+          "rate0": 0.672,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.427,
+            "quoted_ms": 23.063038,
+            "quoted_tokens": 2.710643,
+            "best_heads": 1,
+            "best_depth": 3
+          }
+        },
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 4.172808359222002,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T0-w8",
+        "rpc_wall_ms": 13127.208791673183,
+        "target_gpu_ms": 12946.191287000001,
+        "activity": {
+          "rounds": 2578,
+          "drafted": 1660,
+          "accepted": 1510
+        },
+        "tracked": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 44,
+          "rate0": 0.672,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.427,
+            "quoted_ms": 23.063038,
+            "quoted_tokens": 2.710643,
+            "best_heads": 1,
+            "best_depth": 3
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": 3.1247220692995015,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T0-w16",
+        "rpc_wall_ms": 24644.683459308,
+        "target_gpu_ms": 24305.02704,
+        "activity": {
+          "rounds": 6189,
+          "drafted": 2125,
+          "accepted": 1987
+        },
+        "tracked": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 26,
+          "rate0": 0.672,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.427,
+            "quoted_ms": 23.063038,
+            "quoted_tokens": 2.710643,
+            "best_heads": 1,
+            "best_depth": 3
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": 7.824614231033178,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T1-w1",
+        "rpc_wall_ms": 4757.986249867827,
+        "target_gpu_ms": 4566.335292999998,
+        "activity": {
+          "rounds": 504,
+          "drafted": 66,
+          "accepted": 7
+        },
+        "tracked": [
+          false
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 46,
+          "rate0": 0.84,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 8.427,
+            "quoted_ms": 29.441594,
+            "quoted_tokens": 4.054387,
+            "best_heads": 1,
+            "best_depth": 5
+          }
+        },
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 5.887668598252183,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      }
+    ],
+    "incomplete_price_records": [
+      {
+        "cell": "r0-bits8-code-T0-w4",
+        "phase": "warmup",
+        "enrollment": {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 60,
+          "rate0": 0.672,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": "[tensorfold]"
+          }
+        },
+        "limitation": "Diagnostic log interleaving; preserve parsed record without repairing missing/tainted quote fields."
+      }
+    ]
+  },
+  "m5": {
+    "label": "PRIVATE_DIAGNOSTIC_NOT_QUALIFICATION",
+    "source_observed_sha256": "3790ef8565986760d32962efc954cad7b9ac485f1994c024f91a0ebc42187c28",
+    "actual_twins": {
+      "plain": [
+        true
+      ],
+      "bf16": [
+        true
+      ],
+      "bits8": [
+        true
+      ]
+    },
+    "measured": [
+      {
+        "arm": "plain",
+        "case": "T0-w1",
+        "rpc_wall_ms": 1803.9857079274952,
+        "target_gpu_ms": 1649.135667,
+        "activity": {
+          "rounds": 410,
+          "drafted": 315,
+          "accepted": 101
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "plain",
+        "case": "T0-w4",
+        "rpc_wall_ms": 3180.0731671974063,
+        "target_gpu_ms": 2984.6850030000005,
+        "activity": {
+          "rounds": 1660,
+          "drafted": 786,
+          "accepted": 384
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "plain",
+        "case": "T0-w8",
+        "rpc_wall_ms": 4804.409999866039,
+        "target_gpu_ms": 4555.976623,
+        "activity": {
+          "rounds": 3392,
+          "drafted": 1066,
+          "accepted": 696
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "plain",
+        "case": "T0-w16",
+        "rpc_wall_ms": 9394.989207852632,
+        "target_gpu_ms": 9038.370711,
+        "activity": {
+          "rounds": 7298,
+          "drafted": 1232,
+          "accepted": 878
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "plain",
+        "case": "T1-w1",
+        "rpc_wall_ms": 1891.6623750701547,
+        "target_gpu_ms": 1679.6512989999983,
+        "activity": {
+          "rounds": 459,
+          "drafted": 135,
+          "accepted": 52
+        },
+        "tracked": [],
+        "first_enrollment": null,
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.0,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T0-w1",
+        "rpc_wall_ms": 1788.4691250510514,
+        "target_gpu_ms": 1617.51925,
+        "activity": {
+          "rounds": 406,
+          "drafted": 280,
+          "accepted": 105
+        },
+        "tracked": [
+          true
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.624,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 3.776,
+            "quoted_ms": 10.303242,
+            "quoted_tokens": 3.268973,
+            "best_heads": 1,
+            "best_depth": 5
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": -1.9171507616177141,
+        "reservation": {
+          "calls": 406,
+          "wall_ms": 1.132417
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T0-w4",
+        "rpc_wall_ms": 3227.6970827952027,
+        "target_gpu_ms": 3030.518293,
+        "activity": {
+          "rounds": 1662,
+          "drafted": 775,
+          "accepted": 382
+        },
+        "tracked": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.607273,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": "[tensorfold]"
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": 1.5356156496893592,
+        "reservation": {
+          "calls": 414,
+          "wall_ms": 0.5635840000000001
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T0-w8",
+        "rpc_wall_ms": 4803.489291109145,
+        "target_gpu_ms": 4553.1170440000005,
+        "activity": {
+          "rounds": 3392,
+          "drafted": 1046,
+          "accepted": 696
+        },
+        "tracked": [
+          true,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.607273,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 3.776,
+            "quoted_ms": 10.279198,
+            "quoted_tokens": 3.20815,
+            "best_heads": 1,
+            "best_depth": 5
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": -0.06276544496657266,
+        "reservation": {
+          "calls": 423,
+          "wall_ms": 0.629791
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T0-w16",
+        "rpc_wall_ms": 9403.078833129257,
+        "target_gpu_ms": 9045.144332000002,
+        "activity": {
+          "rounds": 7298,
+          "drafted": 1211,
+          "accepted": 878
+        },
+        "tracked": [
+          true,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.607273,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 3.776,
+            "quoted_ms": 10.279198,
+            "quoted_tokens": 3.20815,
+            "best_heads": 1,
+            "best_depth": 5
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": 0.07494294288856729,
+        "reservation": {
+          "calls": 456,
+          "wall_ms": 1.7320000000000002
+        }
+      },
+      {
+        "arm": "bf16",
+        "case": "T1-w1",
+        "rpc_wall_ms": 1899.7478750534356,
+        "target_gpu_ms": 1686.3408360000083,
+        "activity": {
+          "rounds": 459,
+          "drafted": 135,
+          "accepted": 52
+        },
+        "tracked": [
+          false
+        ],
+        "first_enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 47,
+          "rate0": 0.489231,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": false,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 3.776,
+            "quoted_ms": 10.243726,
+            "quoted_tokens": 2.778929,
+            "best_heads": 1,
+            "best_depth": 5
+          }
+        },
+        "same_activity_as_plain": true,
+        "same_physical_row_histograms_as_plain": true,
+        "target_gpu_delta_pct_vs_plain": 0.3982693910332902,
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T0-w1",
+        "rpc_wall_ms": 1777.27354131639,
+        "target_gpu_ms": 1613.735004,
+        "activity": {
+          "rounds": 404,
+          "drafted": 283,
+          "accepted": 107
+        },
+        "tracked": [
+          true
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.668235,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 3.759,
+            "quoted_ms": 8.959375,
+            "quoted_tokens": 3.077504,
+            "best_heads": 1,
+            "best_depth": 5
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": -2.1466192083759106,
+        "reservation": {
+          "calls": 404,
+          "wall_ms": 1.124125
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T0-w4",
+        "rpc_wall_ms": 3223.0007923208177,
+        "target_gpu_ms": 3031.388414,
+        "activity": {
+          "rounds": 1662,
+          "drafted": 775,
+          "accepted": 382
+        },
+        "tracked": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.667692,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 3.759,
+            "quoted_ms": 8.139735,
+            "quoted_tokens": 2.619512,
+            "best_heads": 1,
+            "best_depth": 4
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": 1.5647685083369334,
+        "reservation": {
+          "calls": 414,
+          "wall_ms": 0.5579170000000002
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T0-w8",
+        "rpc_wall_ms": 4799.323957879096,
+        "target_gpu_ms": 4554.970832,
+        "activity": {
+          "rounds": 3392,
+          "drafted": 1063,
+          "accepted": 696
+        },
+        "tracked": [
+          true,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.667692,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 3.759,
+            "quoted_ms": 8.139735,
+            "quoted_tokens": 2.619512,
+            "best_heads": 1,
+            "best_depth": 4
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": -0.022076298524498217,
+        "reservation": {
+          "calls": 423,
+          "wall_ms": 0.6560410000000001
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T0-w16",
+        "rpc_wall_ms": 9208.303458057344,
+        "target_gpu_ms": 8785.365708,
+        "activity": {
+          "rounds": 7154,
+          "drafted": 1502,
+          "accepted": 1022
+        },
+        "tracked": [
+          true,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.655714,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 3.759,
+            "quoted_ms": 8.094381,
+            "quoted_tokens": 2.590459,
+            "best_heads": 1,
+            "best_depth": 4
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": -2.799232417985298,
+        "reservation": {
+          "calls": 348,
+          "wall_ms": 1.5240420000000001
+        }
+      },
+      {
+        "arm": "bits8",
+        "case": "T1-w1",
+        "rpc_wall_ms": 1889.13495792076,
+        "target_gpu_ms": 1664.9942450000015,
+        "activity": {
+          "rounds": 456,
+          "drafted": 116,
+          "accepted": 55
+        },
+        "tracked": [
+          true
+        ],
+        "first_enrollment": {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.592566,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": 14,
+            "priced_heads": 1,
+            "plain_ms": 3.759,
+            "quoted_ms": 9.108587,
+            "quoted_tokens": 3.094496,
+            "best_heads": 1,
+            "best_depth": 5
+          }
+        },
+        "same_activity_as_plain": false,
+        "same_physical_row_histograms_as_plain": false,
+        "target_gpu_delta_pct_vs_plain": -0.872624812585987,
+        "reservation": {
+          "calls": 456,
+          "wall_ms": 0.4115000000000002
+        }
+      }
+    ],
+    "incomplete_price_records": [
+      {
+        "cell": "r0-bf16-code-T0-w4",
+        "phase": "measured",
+        "enrollment": {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.607273,
+          "price": {
+            "known": true,
+            "best": true,
+            "pays": true,
+            "context_rows": "[tensorfold]"
+          }
+        },
+        "limitation": "Diagnostic log interleaving; preserve parsed record without repairing missing/tainted quote fields."
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "label": "PRIVATE_DIAGNOSTIC_ARTIFACT_INTEGRITY_NOT_QUALIFICATION",
+  "production_source_under_diagnosis": "cf23762368785b470b3bf7485026e2ea4837ce82",
+  "raw_receipt_hashes_match": true,
+  "patch_and_controller_hashes_match_both_receipts": true,
+  "phases_per_device": 138,
+  "measured_cases_per_device": 15,
+  "M4_measured_head_context_admissions": 0,
+  "M4_BF16_measured_row_histograms_equal_plain": true,
+  "incomplete_price_records_per_device": {
+    "m4": 1,
+    "m5": 1
+  },
+  "raw_private_server_logs_published": false,
+  "full_qualification_verdict_changed": false
+}
