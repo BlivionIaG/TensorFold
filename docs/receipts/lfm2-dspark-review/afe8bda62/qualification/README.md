@@ -2,7 +2,7 @@
 
 ## M5 Ultra complete; M4 same-head result not included yet
 
-**M5 strict maintainer verdict: FAIL.** 12/32 comparisons are below same-head plain (BF16 seven, 8-bit five), worst **-0.268625302766234%** in BF16 sampled-chat/one-stream. All 32 meet the task owner's less-than-1% regression criterion; that does **not** override the maintainer's explicit zero-tolerance rule. No rerun, pooling, reduced scope or loss waiver.
+**Literal maintainer-script verdict: FAIL; not a statistical finding of 12 regressions.** 12/32 observed median comparisons are below same-head plain (BF16 seven, 8-bit five), worst **-0.268625302766234%** in BF16 sampled-chat/one-stream. All 32 observed medians meet the task owner's less-than-1% regression budget. The original maintainer script applies zero tolerance; its raw verdict is retained separately. No rerun, pooling or reduced scope.
 
 M5 completed **144/144 launch cells and306/306 token oracles**, with zero exactness/scenario failures and all nine servers exiting0 without forced kills. Three balanced rotations; plain/BF16/8-bit; code/chat; temperatures0/1; widths1/4/8/16;512-token replies; parallel16; context4096; prompt cache0. Plain cheap-copy speculation stays enabled. Activations remain BF16 in both head-weight modes.
 
@@ -46,8 +46,26 @@ Metric: median of three aggregate decode TPS samples. Delta is `(arm median / sa
 
 To replay the exact verdict without serving a model, put `frozen-driver` on `PYTHONPATH`, load `m5/metadata.json`, each JSON line of `m5/cells.jsonl` and `m5/events.jsonl`, call `bench_lfm2_dspark_verdict.summarize`, and serialize with `json.dumps(result, indent=1)+'\n'`. The [replay identity record](verdict-replay-check.json) binds the original and recomputed bytes. [SHA256 manifest](SHA256.json) covers every published file.
 
+## Measurement variability is separate from a literal timing flag
+
+The [existing paired observations](measurement-variation.json) show that six of the twelve negative
+median comparisons change sign across the three rotations; six are negative in all three pairings.
+For the worst median, BF16 sampled-chat/one-stream, the paired differences are -0.203%, -0.372%
+and -0.132%. Its plain samples span 0.074% across these three runs. A small systematic cost is
+plausible there; it is not valid to dismiss every negative as noise.
+
+Conversely, a negative point estimate is not proof of a real regression. Three rotations establish
+neither a reliable measurement-error floor nor a robust uncertainty bound, and this matrix has no
+unchanged-binary plain-vs-plain A/A control. Sign changes are not proof of equivalence either.
+The owner's 1% budget is an engineering acceptance margin, not an empirically measured noise floor.
+
+Correctness keeps its strict zero-failure requirement. Performance reporting separates the observed
+differences, uncertainty, owner budget and literal maintainer-policy result. No qualification is
+rerun for a better sign, and tiny timing flags are not treated as confirmed bugs without causal or
+control evidence.
+
 ## What changed, and what remains
 
-The retained calibration fix removes the captured M4 cheap-copy work divergence; its [causal report and original proof](../../79837c4e2/serving-calibration/README.md) remain bound to runtime798 and its documentation-only AFE descendant. That diagnosis is not substituted for this complete matrix. Historical CF M5 had16/32 strict losses and worst−1.4341478593879908%; this run has12 and worst−0.2686253027662344%, without pooling the two datasets.
+The retained calibration fix removes the captured M4 cheap-copy work divergence; its [causal report and original proof](../../79837c4e2/serving-calibration/README.md) remain bound to runtime798 and its documentation-only AFE descendant. That diagnosis is not substituted for this complete matrix. Historical CF M5 had16/32 negative median comparisons and worst−1.4341478593879908%; this run has12 and worst−0.2686253027662344%, without pooling the two datasets or treating either count as a statistical regression count.
 
-This packet does not attribute the remaining small losses to timing noise, wrapper overhead or GPU clocks without causal evidence. The separately observed same-work M4 q8 sampled-solo GPU difference remains unexplained. GitHub also still reports DIRTY/no checks at the pushed head; no re-review or merge readiness is claimed.
+This packet does not attribute the remaining small differences to timing noise, wrapper overhead or GPU clocks without causal evidence. The separately observed same-work M4 q8 sampled-solo GPU difference remains unexplained. GitHub also still reports DIRTY/no checks at the pushed head; no re-review or merge readiness is claimed.

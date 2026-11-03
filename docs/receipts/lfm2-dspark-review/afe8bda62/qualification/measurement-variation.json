@@ -1,0 +1,188 @@
+{
+  "source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+  "device": "M5 Ultra",
+  "original_summary_unchanged": true,
+  "owner_regression_budget_percent": 1,
+  "largest_below_baseline_point_estimate_percent": -0.2686253027662344,
+  "below_baseline_point_estimates": 12,
+  "sign_changes_across_three_paired_rotations": 6,
+  "all_three_paired_differences_negative": 6,
+  "observations": [
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bf16",
+      "median_difference_percent": -0.062019821385972396,
+      "paired_differences_percent": [
+        -0.014104590117247628,
+        -0.4049088676906343,
+        -0.019361890492486378
+      ],
+      "paired_all_negative": true,
+      "plain_three_run_range_percent": 0.14325256902629757
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bits8",
+      "median_difference_percent": -0.09701595888730319,
+      "paired_differences_percent": [
+        -0.062314579456479446,
+        -0.07379373019862356,
+        -0.1972762946047535
+      ],
+      "paired_all_negative": true,
+      "plain_three_run_range_percent": 0.08199194613538463
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bf16",
+      "median_difference_percent": -0.13494074155123714,
+      "paired_differences_percent": [
+        -0.01018001813394287,
+        -0.2319422486400824,
+        -0.09947534731292729
+      ],
+      "paired_all_negative": true,
+      "plain_three_run_range_percent": 0.13544467272172955
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bits8",
+      "median_difference_percent": -0.07040437284834278,
+      "paired_differences_percent": [
+        0.054436975405169896,
+        0.04927345164496,
+        -0.4175101668759895
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 0.13544467272172955
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bf16",
+      "median_difference_percent": -0.18622080299957045,
+      "paired_differences_percent": [
+        -0.4590513676308916,
+        -0.18622080299957045,
+        -0.009895139690774268
+      ],
+      "paired_all_negative": true,
+      "plain_three_run_range_percent": 0.2390871044814613
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bits8",
+      "median_difference_percent": -0.25986801973159057,
+      "paired_differences_percent": [
+        -0.4034006773583787,
+        -0.004863641302588206,
+        -0.40765315534695423
+      ],
+      "paired_all_negative": true,
+      "plain_three_run_range_percent": 0.2390871044814613
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bf16",
+      "median_difference_percent": -0.03783500216869573,
+      "paired_differences_percent": [
+        0.04644565314328997,
+        -0.1669291701831166,
+        0.04706380494701179
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 0.11131284161707278
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bits8",
+      "median_difference_percent": -0.00975636864283258,
+      "paired_differences_percent": [
+        -0.00975636864283258,
+        0.2254885749289226,
+        -0.09975405174723617
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 0.11131284161707278
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bf16",
+      "median_difference_percent": -0.0099479429011895,
+      "paired_differences_percent": [
+        -0.0099479429011895,
+        -0.2939141251384503,
+        0.25005293155520025
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 0.2372128308715693
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bf16",
+      "median_difference_percent": -0.2686253027662344,
+      "paired_differences_percent": [
+        -0.20280367460899784,
+        -0.37213937516217266,
+        -0.13157900642883913
+      ],
+      "paired_all_negative": true,
+      "plain_three_run_range_percent": 0.07438492200180225
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bits8",
+      "median_difference_percent": -0.14599730634468067,
+      "paired_differences_percent": [
+        0.19100654008810114,
+        -0.16274440828084602,
+        -0.2689856584535133
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 0.15782098636538677
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bf16",
+      "median_difference_percent": -0.050270129775309425,
+      "paired_differences_percent": [
+        -0.11764386246421177,
+        -0.08893814039039327,
+        0.1426118183759817
+      ],
+      "paired_all_negative": false,
+      "plain_three_run_range_percent": 0.2056066782001542
+    }
+  ],
+  "inference_limits": [
+    "Three rotations do not establish a reliable measurement-error floor or confidence bound.",
+    "No unchanged-binary A/A control was performed for this matrix.",
+    "A negative median is not itself proof of a real regression; a sign change is not proof of equivalence.",
+    "Some consistently negative cells may have a small systematic cost; not all negatives are labelled noise.",
+    "All32 observed medians meet the owner less-than1percent regression criterion; the maintainer literal zero-tolerance script remains fail."
+  ],
+  "action": "Preserve raw strict verdict; separate correctness, observed differences, uncertainty and owner budget. Do not rerun qualification for a better sign or chase tiny flags without causal/control evidence."
+}

@@ -1,5 +1,5 @@
 {
-  "README.md": "14dc4f5aa04f161bcd515718f6d34f49f7ba4958bddeb6e06c1424b76d1b7fe3",
+  "README.md": "81ff17f311ca25ebd7e40abd08ef9e05a141a6493a29f8db7a7cdc6ebc01fa55",
   "frozen-driver/bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
   "frozen-driver/bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
   "frozen-driver/bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
@@ -33,5 +33,6 @@
   "m5/raw-request-binding.json": "237a215d30dce2a2878f2b79b606882b899b21000b9450824489c0f72fb2766e",
   "m5/requests.jsonl.gz": "d0a3877de44166c0cec165b77635ac74eceb70c8751690646f16ae2df7443163",
   "m5/summary.json": "3aacb10049718275a5abeb92f714f86444b50a77ecf6089081271122610b2a32",
+  "measurement-variation.json": "687c833c1215a17749c67510bb390027833c40197b1981afa02a15e577e239aa",
   "verdict-replay-check.json": "a6d0d46bdada2218219154d0a5e463789032748665c6487a3e4b6b4f394c0452"
 }
