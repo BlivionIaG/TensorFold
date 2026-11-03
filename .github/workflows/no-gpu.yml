@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      base_commit:
+        description: Full baseline commit SHA for the lean comparison
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -83,7 +89,7 @@ jobs:
       - name: lean check
         env:
           BASE_REF: ${{ github.base_ref }}
-          PUSH_BASE: ${{ github.event.before }}
+          PUSH_BASE: ${{ github.event.before || inputs.base_commit }}
         run: |
           if [ -n "$BASE_REF" ]; then
             base=$(git merge-base HEAD "origin/$BASE_REF")

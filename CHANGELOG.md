@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- The No GPU and Zig format checks can run manually on a selected branch; No GPU takes an explicit baseline commit for the unchanged lean comparison, so branch checks do not depend on a pull request merge ref being available (#1394).
+
 - Seven host BF16 conversions on load and inference paths (the XPU loader, the CUDA vision towers, Gemma 4's assistant weights, Step5's vision, DeepSeek's DSpark and Flash Next's PLE scale) round through core's shared conversion, so a negative NaN no longer overflows in Debug builds; every finite value gives the same bits (#1954, part of #1863). Thanks to @jschmied.
 
 - Qwen 3.5 on CUDA rounds its host-side weight copies (norm weights, EXL3 norms and vectors, drafter scales and biases) with core's bf16 rounding, so a NaN weight stays NaN instead of becoming a finite value at load; every other value is bit-identical (#1863).
