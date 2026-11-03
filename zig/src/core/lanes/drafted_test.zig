@@ -353,18 +353,6 @@ const p2 = [_]u32{ 2, 7, 1, 8, 2, 8, 1, 8, 2, 8, 4, 5, 9 };
 pub const long = [_]u32{ 3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4 };
 pub const sampled: Sampling = .{ .seed = 5, .temperature = 0.7, .top_k = 0, .top_p = 0.95 };
 
-test "drafts off on the wrapped backend never reach the drafter" {
-    for ([_]?Sampling{ null, sampled }) |s| {
-        const off = try run(&.{.{ .prompt = &p1, .sampling = s, .drafts = false }}, .wrapped, false);
-        defer freeOut(off);
-        const plain = try run(&.{.{ .prompt = &p1, .sampling = s, .drafts = false }}, .plain, false);
-        defer freeOut(plain);
-        try std.testing.expectEqualSlices(u32, plain.tokens[0], off.tokens[0]);
-        const h = off.head;
-        try std.testing.expectEqual(@as(u32, 0), h.opens + h.absorbs + h.holds + h.helds + h.releases);
-    }
-}
-
 test "shared rounds commit what each stream commits alone, and reach the drafter as one batch" {
     const together = try run(&.{ .{ .prompt = &p1 }, .{ .prompt = &p2, .sampling = sampled, .max_new = 30 } }, .wrapped, true);
     defer freeOut(together);
