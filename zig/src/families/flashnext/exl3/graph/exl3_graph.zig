@@ -227,6 +227,17 @@ test "the pointer tables and picks are replay inputs; pool lines and scales are 
     try std.testing.expect(!sameTopology(capture(1, &t), capture(1, &moved)));
 }
 
+test "an elastic pool's resize keeps the pool_lines address, so the captured graph stays valid" {
+    const t = [_]Binding{
+        .{ .name = "expert_tables", .address = 0x100, .replay = true },
+        .{ .name = "pool_lines", .address = 0x300, .replay = false },
+    };
+    // `Lines.mem.ptr` is the reservation's base for the pool's whole life: a resize changes the bytes behind it only
+    const resized = t;
+    try std.testing.expect(sameTopology(capture(1, &t), capture(1, &resized)));
+    try std.testing.expect(valid(capture(1, &resized)));
+}
+
 test "roundReady: an all-hit single-pass round replays straight away, a copy or a second pass stages first" {
     const gpa = std.testing.allocator;
     var slots: [4]u16 = undefined;

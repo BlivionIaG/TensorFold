@@ -1,10 +1,12 @@
-//! DPLAN v4: default off, little-endian u32 words, fixed 1 MiB per device pool.
+//! DPLAN v4: default off, little-endian u32 words, fixed 1 MiB per device pool; v5 adds an elastic pool's word.
 
 const std = @import("std");
 const layout = @import("exl3_dplan_layout.zig");
 
 pub const magic: u32 = 0x44505431;
 pub const version: u32 = 4;
+/// The elastic pool's version: its state has the active-lines word after the counters (layout.active_words).
+pub const version_active: u32 = 5;
 pub const pool_bytes: usize = 1024 * 1024;
 pub const pool_words: usize = pool_bytes / 4;
 pub const header_words: usize = 16;
@@ -15,8 +17,10 @@ pub fn checkpointWords(state_words: usize) usize {
     return checkpoint_header_words + 2 * state_words;
 }
 
+/// The seed's lines and stamps are the first `active` ones (the planner never uses a line at or above its active word).
 pub fn seedFromState(comptime Seed: type, lines: usize, seed: []const u32) Seed {
-    return .{ .line_ids = @ptrCast(seed[0..lines]), .stamps = seed[lines .. 2 * lines], .counts = seed[2 * lines + layout.experts_n ..][0..layout.experts_n].*, .now = seed[layout.miscOffset(lines)] };
+    const active = layout.activeLines(lines, seed);
+    return .{ .line_ids = @ptrCast(seed[0..active]), .stamps = seed[lines..][0..active], .counts = seed[2 * lines + layout.experts_n ..][0..layout.experts_n].*, .now = seed[layout.miscOffset(lines)] };
 }
 
 pub const Checkpoint = struct {
@@ -41,13 +45,19 @@ pub fn enabledValue(value: ?[]const u8) bool {
 }
 
 pub fn header(pool_index: usize, layer: usize, lines: usize, max_rows: usize) ![header_words]u32 {
+    return headerWith(pool_index, layer, lines, max_rows, false);
+}
+
+/// `active_word`: the state has the active-lines word (an elastic pool), which makes it a v5 trace.
+pub fn headerWith(pool_index: usize, layer: usize, lines: usize, max_rows: usize, active_word: bool) ![header_words]u32 {
     if (max_rows == 0 or max_rows > pool_words / 11) return error.TraceShapeTooLarge;
-    const entry = layout.PoolState.init(lines, 0) catch return error.TraceShapeTooLarge;
+    const entry = layout.PoolState.initWith(lines, 0, active_word) catch return error.TraceShapeTooLarge;
     if (entry.words > (pool_words - header_words) / 2) return error.TraceShapeTooLarge;
     const stride = record_header_words + max_rows * 11;
     const available = pool_words - header_words - 2 * entry.words;
     if (stride > available or pool_index > std.math.maxInt(u32) or layer > std.math.maxInt(u32)) return error.TraceShapeTooLarge;
-    return .{ magic, version, @intCast(pool_index), @intCast(layer), @intCast(lines), @intCast(max_rows), @intCast(entry.words), @intCast(stride), @intCast(available / stride), 0, 0, 0, 0, 0, 0, 0 };
+    const kind = if (active_word) version_active else version;
+    return .{ magic, kind, @intCast(pool_index), @intCast(layer), @intCast(lines), @intCast(max_rows), @intCast(entry.words), @intCast(stride), @intCast(available / stride), 0, 0, 0, 0, 0, 0, 0 };
 }
 
 pub const Round = struct {
@@ -99,8 +109,9 @@ pub const View = struct {
     words: []const u32,
 
     pub fn init(words: []const u32) !View {
-        if (words.len < header_words or words.len > pool_words or words[0] != magic or words[1] != version) return error.InvalidTrace;
-        const expected = header(words[2], words[3], words[4], words[5]) catch return error.InvalidTrace;
+        if (words.len < header_words or words.len > pool_words or words[0] != magic) return error.InvalidTrace;
+        if (words[1] != version and words[1] != version_active) return error.InvalidTrace;
+        const expected = headerWith(words[2], words[3], words[4], words[5], words[1] == version_active) catch return error.InvalidTrace;
         if (!std.mem.eql(u32, words[0..9], expected[0..9]) or words[9] > words[8]) return error.InvalidTrace;
         if (words[12] > 1 or words[13] > 1) return error.InvalidTrace;
         const self: View = .{ .words = words };

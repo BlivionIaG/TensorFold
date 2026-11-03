@@ -1,6 +1,7 @@
 //! CPU counterfactuals for one ordered pool-demand timeline.
 
 const std = @import("std");
+const layout = @import("exl3_dplan_layout.zig");
 const trace = @import("exl3_dplan_trace.zig");
 
 pub const expert_count: usize = 512;
@@ -247,7 +248,7 @@ pub fn evaluateTrace(allocator: std.mem.Allocator, view: trace.View) !Comparison
     const rounds = try allocator.alloc(trace.Round, view.recorded());
     defer allocator.free(rounds);
     for (rounds, 0..) |*round, index| round.* = try view.round(index);
-    var options: Options = .{ .capacity = view.words[4], .seed = view.seedState(Seed) };
+    var options: Options = .{ .capacity = layout.activeLines(view.words[4], view.initialSeed()), .seed = view.seedState(Seed) };
     var total: Comparison = .{ .lifetime = .{}, .lru = .{}, .decayed_frequency = .{}, .decayed_admission = .{}, .belady_unique_misses_lower_bound = 0 };
     var begin: usize = 0;
     for (0..view.checkpoints() + 1) |index| {
@@ -260,7 +261,10 @@ pub fn evaluateTrace(allocator: std.mem.Allocator, view: trace.View) !Comparison
             }
             total.belady_unique_misses_lower_bound = try std.math.add(u64, total.belady_unique_misses_lower_bound, segment.belady_unique_misses_lower_bound);
         }
-        if (checkpoint) |entry| options.seed = trace.seedFromState(Seed, view.words[4], entry.after());
+        if (checkpoint) |entry| {
+            options.capacity = layout.activeLines(view.words[4], entry.after());
+            options.seed = trace.seedFromState(Seed, view.words[4], entry.after());
+        }
         begin = end;
     }
     const baseline = total.lifetime;

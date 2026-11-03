@@ -8,6 +8,9 @@
 #define DP_RECENT_WINDOW 256
 #define DP_RECENT_WORDS_PER_ROW (DP_EXPERTS / 32)
 #define DP_RECENT_WORDS (DP_RECENT_WINDOW * DP_RECENT_WORDS_PER_ROW)
+#define DP_MISC_WORDS 10
+// An elastic pool's state has one word more (see dp_trace_valid)
+#define DP_ACTIVE_WORDS 1
 
 struct DpMisc {
     unsigned now, rounds, hit_slots, miss_slots, copies, evictions, overflow, inplace, recent_cursor, recent_filled;
@@ -23,12 +26,14 @@ static_assert(sizeof(DpMisc) == 40, "planner misc ABI");
 
 static constexpr unsigned DP_TRACE_WORDS = 1024 * 1024 / 4;
 
+// Version 4 ends the state at the counters; version 5, an elastic pool's, follows them with the active-lines word.
 __device__ __forceinline__ bool dp_trace_valid(DpTraceHeader* header, int lines) {
-    const unsigned long long state_words = 2ull * static_cast<unsigned>(lines) + 3 * DP_EXPERTS + DP_RECENT_WORDS + 10;
+    const unsigned long long state_words = 2ull * static_cast<unsigned>(lines) + 3 * DP_EXPERTS + DP_RECENT_WORDS +
+                                           DP_MISC_WORDS + (header->version == 5 ? DP_ACTIVE_WORDS : 0);
     const unsigned long long record_words = 15ull + 11ull * header->max_rows;
     const unsigned long long base = 16 + 2 * state_words;
     const unsigned long long checkpoint_words = 4 + 2 * state_words;
-    if (lines <= 0 || header->magic != 0x44505431 || header->version != 4 ||
+    if (lines <= 0 || header->magic != 0x44505431 || (header->version != 4 && header->version != 5) ||
         header->lines != static_cast<unsigned>(lines) || header->max_rows == 0 ||
         base >= DP_TRACE_WORDS || record_words > DP_TRACE_WORDS - base ||
         header->seed_words != state_words || header->record_words != record_words ||
@@ -156,7 +161,7 @@ __device__ __forceinline__ bool dp_colder(unsigned ca, unsigned sa, int ia, unsi
 
 // One block of 256 threads. picks [n] int32 (-1 skipped, 512 the shared expert, masked to the rank's ids at tp=2).
 extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
-    const int* __restrict__ picks, int n, unsigned* __restrict__ st, int lines, int recent_enabled, long long* __restrict__ tab0,
+    const int* __restrict__ picks, int n, unsigned* __restrict__ st, int lines, int flags, long long* __restrict__ tab0,
     long long* __restrict__ tab1, long long* __restrict__ tab2, int* __restrict__ k2t0, int* __restrict__ k2t1,
     int* __restrict__ k2t2, const long long* __restrict__ src, const long long* __restrict__ lens,
     const int* __restrict__ k2, unsigned long long line_base, unsigned long long line_bytes, unsigned long long off0,
@@ -170,7 +175,11 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     unsigned* recent_counts = counts + DP_EXPERTS;
     unsigned* recent_rows = recent_counts + DP_EXPERTS;
     DpMisc* misc = reinterpret_cast<DpMisc*>(recent_rows + DP_RECENT_WORDS);
+    const int recent_enabled = flags & 1;
     const unsigned* score = recent_enabled ? recent_counts : counts;
+    // flags bit 1: the state ends with the active-lines word and the victim search stays inside it (clamped to `lines`)
+    const unsigned want = (flags & 2) ? reinterpret_cast<const unsigned*>(misc)[DP_MISC_WORDS] : 0xffffffffu;
+    const int act = want < static_cast<unsigned>(lines) ? static_cast<int>(want) : lines;
 
     __shared__ unsigned short uniq[DP_MAXU];
     __shared__ unsigned short app[DP_MAXU];
@@ -286,7 +295,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
         unsigned bc = 0xffffffffu, bs = 0xffffffffu;
         int bi = -1;
         bool bempty = false;
-        for (int i = t; i < lines; i += blockDim.x) {
+        for (int i = t; i < act; i += blockDim.x) {
             const int id = line_id[i];
             if (id < 0) {
                 if (!bempty || i < bi) { bempty = true; bi = i; }

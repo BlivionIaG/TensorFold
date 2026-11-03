@@ -32,7 +32,7 @@ const genRound = data.genRound;
 
 // ---------------------------------------------------------------------------------------------------- gate 2
 
-fn verifyPool(gpu: Gpu, pool: *fpool.Pool, ld: *const LayerData) !usize {
+pub fn verifyPool(gpu: Gpu, pool: *fpool.Pool, ld: *const LayerData) !usize {
     const gpa = gpu.gpa;
     try pool.lines.drain();
     const lb = pool.lines.layout.line_bytes;

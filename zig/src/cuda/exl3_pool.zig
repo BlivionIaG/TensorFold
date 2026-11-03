@@ -5,6 +5,7 @@ const abi = @import("abi.zig");
 const memory = @import("memory.zig");
 const stream_ = @import("stream.zig");
 pub const dma = @import("exl3_dma.zig");
+pub const elastic = @import("exl3_pool_elastic.zig");
 
 const Driver = @import("driver.zig").Driver;
 const Error = @import("driver.zig").Error;
@@ -12,6 +13,7 @@ const DeviceBuffer = memory.DeviceBuffer;
 const HostBuffer = memory.HostBuffer;
 const Stream = stream_.Stream;
 const Event = stream_.Event;
+const Elastic = elastic.Elastic;
 
 fn align256(n: usize) usize {
     return (n + 255) / 256 * 256;
@@ -25,6 +27,10 @@ pub const Spec = struct {
     lines: usize,
     /// Pinned staging lines (a ring); 0 when every copy is `direct`.
     staging: usize = 8,
+    /// The lines in a fixed virtual range with memory behind only the first `active` (`Lines.setMapped` moves it).
+    elastic: bool = false,
+    /// Lines backed at start when `elastic` (0: all `lines`); anything else without `elastic` is refused.
+    active: usize = 0,
 };
 
 /// Byte offsets of gate, up and down inside a line, each 256-aligned.
@@ -80,6 +86,8 @@ pub const Lines = struct {
     layout: Layout,
     tlay: Tables,
     mem: DeviceBuffer,
+    /// The virtual range behind `mem` when elastic: `mem.len` is then the bytes of the lines backed now.
+    window: ?Elastic = null,
     tables: DeviceBuffer,
     shared: ?DeviceBuffer = null,
     pinned_bank: ?[]const u8 = null,
@@ -100,10 +108,22 @@ pub const Lines = struct {
 
     pub fn init(gpa: std.mem.Allocator, d: *const Driver, spec: Spec) !Lines {
         if (spec.lines == 0 or spec.experts == 0) return error.Invalid;
+        const active = if (spec.active == 0) spec.lines else spec.active;
+        if (active > spec.lines or (!spec.elastic and active != spec.lines)) return error.Invalid;
         const layout = Layout.init(spec.bytes);
         const tlay = Tables.init(spec.experts);
-        var mem = try DeviceBuffer.alloc(d, spec.lines * layout.line_bytes);
-        errdefer mem.free();
+        var window: ?Elastic = null;
+        var mem: DeviceBuffer = undefined;
+        if (spec.elastic) {
+            var w = try Elastic.open(gpa, d, spec.lines, layout.line_bytes);
+            errdefer w.close(gpa);
+            try w.resize(active);
+            mem = .{ .d = d, .ptr = w.base, .len = w.mappedBytes(), .borrowed = true };
+            window = w;
+        } else {
+            mem = try DeviceBuffer.alloc(d, spec.lines * layout.line_bytes);
+        }
+        errdefer if (window) |*w| w.close(gpa) else mem.free();
         var tables = try DeviceBuffer.alloc(d, tlay.bytes);
         errdefer tables.free();
         try tables.fill8(0, null); // every expert absent; synchronous, before any stream uses the tables
@@ -137,6 +157,7 @@ pub const Lines = struct {
             .layout = layout,
             .tlay = tlay,
             .mem = mem,
+            .window = window,
             .tables = tables,
             .staging = staging,
             .stage_ev = stage_ev,
@@ -181,7 +202,7 @@ pub const Lines = struct {
         if (l.staging) |*h| h.free();
         if (l.shared) |*b| b.free();
         l.tables.free();
-        l.mem.free();
+        if (l.window) |*w| w.close(l.gpa) else l.mem.free();
         l.* = undefined;
     }
 
@@ -201,6 +222,27 @@ pub const Lines = struct {
     /// Device address of projection `which` (0 gate, 1 up, 2 down) of line `line`.
     pub fn at(l: Lines, line: usize, which: usize) u64 {
         return l.mem.ptr + line * l.layout.line_bytes + l.layout.off[which];
+    }
+
+    /// Whether the lines sit in a fixed virtual range with memory behind only some of them.
+    pub fn isElastic(l: Lines) bool {
+        return l.window != null;
+    }
+
+    /// Backs exactly the first `active` lines (quiescent streams only); the virtual range and `mem.ptr` never move.
+    pub fn setMapped(l: *Lines, active: usize) !void {
+        const w = if (l.window) |*mapped| mapped else return error.Invalid;
+        if (active == 0 or active > l.spec.lines) return error.Invalid;
+        try l.drain();
+        @memset(l.line_epoch, 0);
+        defer l.mem.len = w.mappedBytes(); // also after a partial resize: the bytes in place are what `mem` spans
+        try w.resize(active);
+    }
+
+    /// Marks `id` absent in the three tables, on the copy stream (a line's expert that is dropped without a load).
+    pub fn forget(l: *Lines, id: usize) !void {
+        if (id >= l.spec.experts) return error.Invalid;
+        for (0..3) |w| try l.writeEntry(id, 0, 0, w);
     }
 
     /// Uploads the never-offloaded expert `id` (the shared expert) once into its own region (it may be wider than a
@@ -312,6 +354,7 @@ pub const Lines = struct {
 
 test {
     _ = dma;
+    _ = elastic;
 }
 
 test "a line packs gate, up and down 256-aligned; the tables sit in one allocation" {

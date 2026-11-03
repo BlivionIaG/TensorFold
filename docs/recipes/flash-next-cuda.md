@@ -218,6 +218,33 @@ and never fewer than one). Unset, the pool is the one cuMemAlloc arena as before
   falling back. A capacity control only: pages are zero-filled before they are used and addresses never change, but
   nothing here has a GPU receipt yet.
 
+## Elastic expert lines (opt-in, mechanism only)
+
+`TF_FLASHNEXT_EXL3_ELASTIC_LINES=1` makes every EXL3 expert pool's `lines` a capacity: the lines live in one fixed
+virtual address range (CUDA virtual memory management), device memory is mapped only behind the first *active* lines,
+and the device planner bounds its victim search by an active word at the end of that pool's planner state. The pool's
+base address, the planner kernel's `lines`, `line_base` and `line_bytes` arguments and the table addresses never change,
+so a captured graph needs no recapture when the active count moves. Unset (or `0`), nothing of this exists: one
+allocation with every line active, the planner state, trace version and kernel flags as before, no extra launch.
+
+- The call is `DevPlan.setActive(pool_index, n)` (`n` from the pool minimum, 10, to the capacity). A shrink drains the
+  pool, forgets the experts on the removed lines and unmaps the tail; a grow maps memory and the new lines start empty.
+  It returns the pool's residency to the host first (`toHost`) and the next device round pushes it again with the new
+  active word. A failed map or unmap leaves the mapping as it was.
+- It is a local primitive: it must only run while every stream of the rank is quiescent (no graph in flight), and the
+  caller keeps the ranks in lockstep. Nothing in the engine calls it yet.
+- Lines are packed back to back and mapped in whole driver-granularity chunks (at least 2 MiB), so a pool holds less
+  than one chunk of mapped but unused memory beyond its active lines. A `Lines` of an elastic pool reports mapped bytes
+  only; the startup ledger does not know the unmapped part.
+- The host planner (prefill, the non-device decode path) works on the active prefix; the prefill line ring maps every
+  line of every pool and is refused while elastic pools exist, so those layers stage into their own lines. Where the
+  driver has no VMM support, startup fails instead of silently falling back.
+- Only an elastic pool's planner state has the active word (one word longer) and its trace is version 5; the kernel is
+  told through bit 1 of the argument that already carries the recent-eviction flag, so no launch argument is added.
+- Residency never changes output bytes, but this needs its own GPU receipt: `flashnext-exl3-pool <dir> elastic` (output
+  equality at 64, 32 and 10 active lines, shrink then grow, a forced in-place round) and `flashnext-exl3-graph
+  plan-elastic` (one graph replayed across resizes against the exact trace replay).
+
 ## Checks
 
 - `tf-cuda-test flashnext-hc`, `flashnext-attn` and `route-rows`, and `norm-rows` for the shared rows: each kernel

@@ -36,7 +36,7 @@ const Model = struct {
         return ia > ib;
     }
 
-    fn round(m: *Model, lines: usize, recent: bool, picks: []const i32, src: []const i64, lens: []const i64, k2: []const i32, line_base: u64, line_bytes: u64, offs: [3]u64) void {
+    fn round(m: *Model, lines: usize, recent: bool, elastic: bool, picks: []const i32, src: []const i64, lens: []const i64, k2: []const i32, line_base: u64, line_bytes: u64, offs: [3]u64) void {
         const line_id: []i32 = @ptrCast(m.st[0..lines]);
         const stamp = m.st[lines .. 2 * lines];
         const line_of: []i32 = @ptrCast(m.st[2 * lines ..][0..experts]);
@@ -44,6 +44,8 @@ const Model = struct {
         const recent_counts = m.st[2 * lines + 2 * experts ..][0..experts];
         const recent_rows = m.st[2 * lines + 3 * experts ..][0..recent_rows_words];
         const misc = m.st[2 * lines + 3 * experts + recent_rows_words ..][0..10];
+        // an elastic pool's state ends with the active word: the victim search stays inside it
+        const active: usize = if (elastic) @min(m.st[2 * lines + 3 * experts + recent_rows_words + 10], lines) else lines;
         const score = if (recent) recent_counts else counts;
         const n = picks.len;
         misc[0] += 1;
@@ -123,11 +125,11 @@ const Model = struct {
         }
         for (miss[0..n_miss]) |mi| {
             var victim: ?usize = null;
-            for (line_id, 0..) |id, i| if (id < 0) {
+            for (line_id[0..active], 0..) |id, i| if (id < 0) {
                 victim = i;
                 break;
             };
-            if (victim == null) for (line_id, 0..) |id, i| {
+            if (victim == null) for (line_id[0..active], 0..) |id, i| {
                 const e: usize = @intCast(id);
                 if (keep[e >> 5] & (@as(u32, 1) << @intCast(e & 31)) != 0) continue;
                 if (victim == null or colder(score[e], stamp[i], i, score[@intCast(line_id[victim.?])], stamp[victim.?], victim.?)) victim = i;
@@ -172,6 +174,8 @@ pub const Plan = struct {
     rig: rig_.Rig,
     f: cuda.Function,
     recent: bool = false,
+    /// The state ends with the active-lines word and the kernel is told so (flag bit 1).
+    elastic: bool = false,
     lines: usize = 0,
     picks: []i32 = &.{},
     st0: []u32 = &.{},
@@ -222,6 +226,15 @@ pub const Plan = struct {
         const lines = shape.n;
         self.lines = lines;
         self.recent = seed & 1 == 1;
+        self.elastic = seed & 2 == 2;
+        // an elastic pool: most seeds use every line, the rest a smaller pool, none, and a word past the count
+        const active: usize = if (!self.elastic) lines else switch ((seed >> 2) % 11) {
+            3 => 0,
+            5 => lines + 5,
+            0, 1, 2 => lines,
+            else => 1 + @as(usize, @intCast((seed >> 8) % @as(u64, lines))),
+        };
+        const usable = @min(active, lines);
         var prng = std.Random.DefaultPrng.init(seed ^ 0x706c616e);
         const rng = prng.random();
         self.picks = try a.alloc(i32, shape.rows * 11);
@@ -231,7 +244,7 @@ pub const Plan = struct {
             if (i % 11 == 10) p.* = 512;
             if (fill == .nonfinite and i % 3 == 0) p.* = edge[(i / 3) % edge.len];
         }
-        self.st0 = try a.alloc(u32, stateWords(lines));
+        self.st0 = try a.alloc(u32, stateWords(lines) + @intFromBool(self.elastic));
         @memset(self.st0, 0);
         const line_id: []i32 = @ptrCast(self.st0[0..lines]);
         const line_of: []i32 = @ptrCast(self.st0[2 * lines ..][0..experts]);
@@ -241,7 +254,7 @@ pub const Plan = struct {
         for (&order, 0..) |*o, i| o.* = @intCast(i);
         rng.shuffle(u16, &order);
         for (line_id, 0..) |*id, i| {
-            if (i >= experts or (fill != .stress and rng.uintLessThan(u8, 10) < 3)) {
+            if (i >= usable or i >= experts or (fill != .stress and rng.uintLessThan(u8, 10) < 3)) {
                 id.* = -1;
                 continue;
             }
@@ -252,6 +265,7 @@ pub const Plan = struct {
         for (self.st0[2 * lines + experts ..][0..experts]) |*cnt| cnt.* = rng.uintLessThan(u32, 4);
         for (self.st0[2 * lines + 2 * experts ..][0..experts]) |*cnt| cnt.* = 0;
         self.st0[2 * lines + 3 * experts + recent_rows_words] = rng.uintLessThan(u32, 100); // now
+        if (self.elastic) self.st0[2 * lines + 3 * experts + recent_rows_words + 10] = @intCast(active);
         for (0..3) |w| for (0..experts) |i| {
             self.tab0[w][i] = 0x1111 + @as(i64, @intCast(rng.uintLessThan(u16, 1000)));
         };
@@ -309,7 +323,7 @@ pub const Plan = struct {
         a.add(@as(c_int, @intCast(self.picks.len)));
         a.add(d[4]);
         a.add(@as(c_int, @intCast(self.lines)));
-        a.add(@as(c_int, @intFromBool(self.recent)));
+        a.add(@as(c_int, @intFromBool(self.recent)) | @as(c_int, @intFromBool(self.elastic)) << 1);
         for (5..11) |i| a.add(d[i]);
         a.add(d[1]);
         a.add(d[2]);
@@ -352,7 +366,7 @@ pub const Plan = struct {
         @memset(m.hit, 0);
         @memset(m.miss, 0);
         @memset(m.ovf, 0);
-        m.round(self.lines, self.recent, self.picks, &self.src, &self.lens, &self.k2, line_base, line_bytes, offs);
+        m.round(self.lines, self.recent, self.elastic, self.picks, &self.src, &self.lens, &self.k2, line_base, line_bytes, offs);
         const r = &self.rig;
         const msg = &self.msg;
         if (try same(r, u32, self.d[4], m.st, "state", msg)) |why| return why;

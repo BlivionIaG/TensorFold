@@ -52,6 +52,10 @@ pub const Options = struct {
     double_buffer: bool = true,
     /// Masked-pick buffers for this many passes of a split round (0: the round's own bound, uniq + 1).
     max_passes: usize = 0,
+    /// Elastic lines (TF_FLASHNEXT_EXL3_ELASTIC_LINES=1): `lines` is a capacity, memory is mapped behind `setActive`.
+    elastic: bool = false,
+    /// Lines in use at start when `elastic` (0: all `lines`).
+    active_lines: usize = 0,
 };
 
 /// Passes a round of a `lines`-line pool can split into when nothing prefetches (`prefetch_bytes` 0): pass 0 and one
@@ -91,6 +95,8 @@ pub const Pool = struct {
     counts: *[shape.layers][shape.experts]u32,
     own_counts: bool,
     round: Round,
+    /// Lines the host and device planners may use: `opt.lines` unless elastic. The lines above hold nothing.
+    active: usize,
     now: u32 = 0,
     round_no: u32 = 0,
     picks_host: cuda.HostBuffer,
@@ -108,6 +114,9 @@ pub const Pool = struct {
     /// `counts`: the family's lifetime use table shared by every layer's pool (null: the pool owns one).
     pub fn init(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, src: Source, scales: Scales, opt: Options, counts: ?*[shape.layers][shape.experts]u32) !Pool {
         if (opt.lines < min_lines) return error.PoolTooSmall;
+        const active = if (opt.active_lines == 0) opt.lines else opt.active_lines;
+        if (active < min_lines) return error.PoolTooSmall;
+        if (active > opt.lines or (!opt.elastic and active != opt.lines)) return error.Invalid;
         if (src.routed.len != shape.experts) return error.Invalid;
         const tiles = (opt.dims / 16) * (opt.width / 16);
         var bytes: [3]usize = .{ 0, 0, 0 };
@@ -130,7 +139,7 @@ pub const Pool = struct {
         }
         if (held == 0) return error.Invalid;
         const table_e: usize = if (src.shared != null) shape.experts + 1 else shape.experts;
-        var lines = try Lines.init(gpa, d, .{ .experts = table_e, .bytes = bytes, .lines = opt.lines, .staging = if (opt.direct) 0 else opt.staging });
+        var lines = try Lines.init(gpa, d, .{ .experts = table_e, .bytes = bytes, .lines = opt.lines, .staging = if (opt.direct) 0 else opt.staging, .elastic = opt.elastic, .active = active });
         errdefer lines.deinit();
         lines.pinned_bank = if (opt.direct) src.pinned_bank else null;
         if (src.shared) |sh| {
@@ -158,11 +167,12 @@ pub const Pool = struct {
             break :blk t;
         };
         errdefer if (own) gpa.destroy(c);
-        var rnd = try Round.init(gpa, n, opt.max_rows * opt.slots);
+        var rnd = try Round.init(gpa, active, opt.max_rows * opt.slots);
         errdefer rnd.deinit(gpa);
         const passes_n = if (opt.max_passes == 0) rnd.passes.len else @min(opt.max_passes, rnd.passes.len);
         // in-flight prefetches lengthen rounds
         if (opt.max_passes != 0 and opt.prefetch_bytes != 0) return error.Invalid;
+        if (opt.elastic and opt.max_passes != 0 and opt.max_passes < passesFor(min_lines)) return error.Invalid; // a shrink splits more
         const pick_bytes = passes_n * opt.max_rows * opt.slots * 4;
         var picks_host = try cuda.HostBuffer.alloc(d, pick_bytes);
         errdefer picks_host.free();
@@ -186,7 +196,8 @@ pub const Pool = struct {
             .line_tab = line_tab,
             .stamp_tab = stamp_tab,
             .layer_tab = layer_tab,
-            .v = offload.Vram.init(slots_tab, line_tab, stamp_tab, layer_tab),
+            .active = active,
+            .v = view(slots_tab, line_tab, stamp_tab, layer_tab, active),
             .counts = c,
             .own_counts = own,
             .round = rnd,
@@ -307,6 +318,7 @@ pub const Pool = struct {
     }
 
     fn loadCopy(p: *Pool, c: round_.Copy) !void {
+        if (c.line >= p.active) return error.Invalid; // the planner never picks a line above the active count
         if (p.k2[c.id][0] == 0) return error.Invalid; // another rank's expert reached the planner unmasked
         const ev: ?usize = if (c.evicted == offload.Cache.empty_id) null else c.evicted;
         try p.lines.load(c.line, c.id, p.src.routed[c.id], p.k2[c.id], ev, p.opt.direct, p.io);
@@ -350,5 +362,46 @@ pub const Pool = struct {
 
     pub fn lineBytes(p: *const Pool) usize {
         return p.lines.layout.line_bytes;
+    }
+
+    /// The policy's view of the first `n` lines, the rest never planned, read or copied into.
+    fn cut(slots: []u16, line: []offload.Line, stamp: []u32, layer: []u8, n: usize) offload.Vram {
+        return .{ .slots = slots[0..n], .line = line[0..n], .stamp = stamp[0..n], .layer = layer[0..n] };
+    }
+
+    /// Every line empty, the policy looking at the first `n`.
+    fn view(slots: []u16, line: []offload.Line, stamp: []u32, layer: []u8, n: usize) offload.Vram {
+        _ = offload.Vram.init(slots, line, stamp, layer);
+        return cut(slots, line, stamp, layer, n);
+    }
+
+    /// Moves an elastic pool to `n` active lines, streams quiescent; a failed map or unmap changes no count or mapping.
+    pub fn setActive(p: *Pool, n: usize) !void {
+        if (!p.opt.elastic or n < min_lines or n > p.opt.lines) return error.Invalid;
+        if (n == p.active) return;
+        var fresh = try Round.init(p.gpa, n, p.opt.max_rows * p.opt.slots);
+        var adopted = false;
+        errdefer if (!adopted) fresh.deinit(p.gpa);
+        if (n > p.active) {
+            try p.lines.setMapped(n);
+        } else {
+            try p.lines.drain();
+            try p.reap();
+            for (n..p.active) |ln| {
+                if (p.line_tab[ln] == .empty) continue;
+                try p.lines.forget(p.slots_tab[ln]);
+                p.slots_tab[ln] = offload.Cache.empty_id;
+                p.line_tab[ln] = .empty;
+                p.stamp_tab[ln] = 0;
+            }
+            try p.lines.setMapped(n); // the tail holds nothing now; a failure puts it back and leaves `active` as it was
+        }
+        p.active = n;
+        p.v = cut(p.slots_tab, p.line_tab, p.stamp_tab, p.layer_tab, n);
+        p.round.deinit(p.gpa);
+        p.round = fresh;
+        adopted = true;
+        p.prev_n = 0;
+        p.picks_pending = false;
     }
 };

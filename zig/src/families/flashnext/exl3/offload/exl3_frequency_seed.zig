@@ -28,7 +28,7 @@ pub fn warm(pool: anytype) !usize {
     }
     if (pool.round_no != 0) return error.ProfilePoolNotEmpty;
     var selected: [512]u16 = undefined;
-    const count = try select(&pool.counts[pool.opt.layer], pool.k2, selected[0..@min(pool.opt.lines, selected.len)]);
+    const count = try select(&pool.counts[pool.opt.layer], pool.k2, selected[0..@min(pool.opt.lines, pool.v.slots.len, selected.len)]);
     for (selected[0..count], 0..) |expert, held| {
         const line = try policy.stageUsedAt(&pool.v, pool.opt.layer, expert, selected[0..held], pool.counts);
         try pool.lines.load(line, expert, pool.src.routed[expert], pool.k2[expert], null, pool.opt.direct, pool.io);

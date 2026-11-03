@@ -292,3 +292,39 @@ test "exl3: v4 overflow dropped empty invalid and discontinuous timelines cannot
     for (1..words[8] + 1) |_| _ = try capture(words, &state, &picks, false);
     try std.testing.expectError(error.TraceDroppedRecords, replay.verifyTrace(allocator, try trace.View.init(words)));
 }
+
+test "exl3: v5 replay never uses a line at or above the active word and rejects seeds that break it" {
+    const allocator = std.testing.allocator;
+    const words = try fixture.makeActive(allocator, 4, 1);
+    defer allocator.free(words);
+    const seed = try fixture.activeSeed(allocator, 4, 2);
+    defer allocator.free(seed);
+    var state = try replay.ExactState.init(allocator, 4, seed);
+    defer state.deinit();
+    // three distinct misses on two active lines: two copies, the third expert is read in place
+    const first = try capture(words, &state, &.{ 7, 7, 8, 9, -1, -1, -1, -1, -1, -1, 512 }, false);
+    try std.testing.expectEqual(replay.Delta{ .miss_picks = 4, .copies = 2, .inplace = 1, .mapped_picks = 1 }, first);
+    try std.testing.expectEqualSlices(u32, &.{ 7, 8, std.math.maxInt(u32), std.math.maxInt(u32) }, state.words[0..4]);
+    // a hot held expert stays; the cold one on the other line is the victim, never line 2 or 3
+    const second = try capture(words, &state, &.{ 7, 9, -1, -1, -1, -1, -1, -1, -1, -1, 512 }, false);
+    try std.testing.expectEqual(@as(u64, 1), second.copies);
+    try std.testing.expectEqual(@as(u64, 1), second.evictions);
+    try std.testing.expectEqual(@as(u32, std.math.maxInt(u32)), state.words[2]);
+    try std.testing.expectEqual(@as(u32, std.math.maxInt(u32)), state.words[3]);
+    const view = try trace.View.init(words);
+    _ = try replay.verifyTraceWithFinal(allocator, view, state.words);
+    const comparison = try policies.evaluateTrace(allocator, view);
+    try std.testing.expectEqual(first.copies + second.copies, comparison.lifetime.copies);
+    try std.testing.expectEqual(first.inplace + second.inplace, comparison.lifetime.mapped_experts);
+    // seeds: no zero or oversized active word, no resident expert above it
+    var bad = try allocator.dupe(u32, seed);
+    defer allocator.free(bad);
+    bad[layout.activeOffset(4)] = 0;
+    try std.testing.expectError(error.InvalidSeed, replay.ExactState.init(allocator, 4, bad));
+    bad[layout.activeOffset(4)] = 5;
+    try std.testing.expectError(error.InvalidSeed, replay.ExactState.init(allocator, 4, bad));
+    bad[layout.activeOffset(4)] = 2;
+    bad[3] = 11;
+    bad[2 * 4 + 11] = 3;
+    try std.testing.expectError(error.InvalidSeed, replay.ExactState.init(allocator, 4, bad));
+}

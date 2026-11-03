@@ -5,6 +5,7 @@ const check = @import("../../check.zig");
 const data = @import("exl3_pool_data.zig");
 const equal = @import("exl3_pool_equal_tests.zig");
 const bench = @import("exl3_pool_bench_tests.zig");
+const elastic = @import("exl3_pool_elastic_tests.zig");
 const hits = @import("exl3_pool_hits_tests.zig");
 
 const exl3e = cuda.exl3_experts;
@@ -54,5 +55,6 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         }
         if (all or std.mem.eql(u8, mode, "graph")) try equal.graphRun(gpu, &ex, s, ld);
         if (std.mem.eql(u8, mode, "bench")) try bench.benchRun(gpu, &ex, s, ld);
+        if (std.mem.eql(u8, mode, "elastic")) try elastic.elasticRun(gpu, &ex, s, ld, 0xe1 + layer);
     }
 }

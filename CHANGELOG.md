@@ -30,6 +30,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Flash Next on CUDA, opt-in: `TF_FLASHNEXT_KV_ELASTIC=1` (with `TF_FLASHNEXT_KV_PAGES`) keeps the K/V pages in one CUDA virtual range reserved at the pool's full size and maps its chunks on demand, so device memory can move between the K/V pages and something else while every base pointer and captured graph stays valid; `TF_FLASHNEXT_KV_ELASTIC_MIN_PAGES` sets the fewest pages kept mapped. A resize is refused while a page past the target is held, a map, fill or unmap that fails leaves the mapping as it was, and with two ranks both apply it or neither. Nothing calls a resize yet, a host tier (`TF_FLASHNEXT_KV_HOST`) is refused, and unset, nothing changes.
 
+- Flash Next EXL3 on CUDA, opt-in: `TF_FLASHNEXT_EXL3_ELASTIC_LINES=1` keeps each expert pool's lines at one fixed address in a CUDA virtual range and maps memory only behind the first active lines, so a pool can give lines back and take them again without moving the rest. The device planner reads the active count from one more word at the end of that pool's state, which only an elastic pool has (trace version 5). A resize that fails puts the mapping back as it was. Nothing changes the count yet, and unset, nothing changes: the same allocations, planner state, kernel arguments and launches as before.
+
 ## 1.2.2
 
 - CUDA lanes: Gemma 4, MiniMax M3, Kolibri-1, Spark 2.5 and Dory can verify root and context copies as Nemotron does, opt-in: set `TF_GEMMA4_COPIES`, `TF_MINIMAX_COPIES`, `TF_KOLIBRI_COPIES`, `TF_SPARK_COPIES` or `TF_DORY_COPIES` to 1. Replies equal `"draft": false`, and unset is the old policy (#2022, part of #1910).

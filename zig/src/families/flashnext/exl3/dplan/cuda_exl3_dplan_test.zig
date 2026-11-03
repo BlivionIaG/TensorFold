@@ -69,6 +69,26 @@ test "exl3: recent-demand planner state is separate from lifetime profile counts
     try std.testing.expectEqual(@as(usize, 3 * experts_n), recentOffset(10) - 20);
     try std.testing.expectEqual(@as(usize, recent_window * recent_words_per_row), miscOffset(10) - recentOffset(10));
     try std.testing.expectEqual(@as(usize, misc_words), stateWords(10) - miscOffset(10));
+    try std.testing.expectEqual(stateWords(10), layout.activeOffset(10)); // an elastic pool's extra word comes after
+}
+
+test "exl3: setActive refuses a pool that is not elastic and counts outside the minimum and the capacity" {
+    var resident: pool_.Pool = undefined;
+    resident.opt = .{ .layer = 0, .lines = 20 };
+    resident.active = 20;
+    var pools = [_]*pool_.Pool{&resident};
+    var device: DevPlan = undefined;
+    device.pools = &pools;
+    // every refusal comes before the planner pulls the residency or touches a stream
+    try std.testing.expectError(error.Invalid, device.setActive(0, 12));
+    resident.opt.elastic = true;
+    try std.testing.expectError(error.Invalid, device.setActive(0, pool_.min_lines - 1));
+    try std.testing.expectError(error.Invalid, device.setActive(0, 21));
+    try std.testing.expectError(error.Invalid, device.setActive(1, 12));
+    try std.testing.expectError(error.Invalid, resident.setActive(pool_.min_lines - 1));
+    try std.testing.expectError(error.Invalid, resident.setActive(21));
+    try std.testing.expectEqual(@as(usize, 20), device.active(0));
+    try resident.setActive(20); // already there: nothing to do, nothing touched
 }
 
 test "exl3: demand trace planner arguments stay fixed and joined reads isolate pools" {
@@ -164,4 +184,76 @@ test "exl3: two engines in one process keep separate planner state" {
     dplan.release(&a);
     try std.testing.expectEqual(@as(?*pool_.Pool, null), a.mtp_pool);
     try std.testing.expect(b.active.? == plan_b and b.mtp_pool.? == pool_b and b.plan.? == plan_b);
+}
+
+const PlanProbe = struct {
+    var args: [26]u64 = undefined;
+    var launches: usize = 0;
+
+    fn launch(function: cuda.abi.Function, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: cuda.abi.Stream, parameters: ?[*]?*anyopaque, _: ?[*]?*anyopaque) callconv(.c) c_int {
+        if (@intFromPtr(function.?) != 1) return 0;
+        launches += 1;
+        for (0..26) |index| {
+            const narrow = index == 1 or index == 3 or index == 4; // n, lines and the flags are c_int
+            args[index] = if (narrow) @as(u64, @intCast(@as(*const c_int, @ptrCast(@alignCast(parameters.?[index].?))).*)) else @as(*const u64, @ptrCast(@alignCast(parameters.?[index].?))).*;
+        }
+        return 0;
+    }
+};
+
+/// The planner's 26 launch arguments for a 20-line pool before and after it holds `active_after` lines (a fake launch).
+fn planArgs(elastic: bool, active_after: usize) ![2][26]u64 {
+    var driver: cuda.Driver = undefined;
+    driver.api.cuLaunchKernel = PlanProbe.launch;
+    var resident: pool_.Pool = undefined;
+    resident.opt = .{ .layer = 0, .lines = 20, .elastic = elastic };
+    resident.active = 20;
+    resident.lines.tables.ptr = 4096;
+    resident.lines.mem = .{ .d = &driver, .ptr = 1 << 40, .len = 20 * 256 * 3, .borrowed = true };
+    resident.lines.tlay = cuda.exl3_pool.Tables.init(513);
+    resident.lines.layout = cuda.exl3_pool.Layout.init(.{ 256, 256, 256 });
+    var pools = [_]*pool_.Pool{&resident};
+    var states = [_]PoolState{try PoolState.initWith(20, 0, elastic)};
+    var device: DevPlan = undefined;
+    device.recent_eviction = false;
+    device.pools = &pools;
+    device.pool_states = &states;
+    device.max_rows = 16;
+    device.state.ptr = 16384;
+    device.statics.ptr = 32768;
+    device.work.ptr = 65536;
+    device.plan_fn = .{ .d = &driver, .handle = @ptrFromInt(1) };
+    device.copy_fn = .{ .d = &driver, .handle = @ptrFromInt(2) };
+    device.copy_blocks = 1;
+    device.overlap = false;
+    device.trace_mem = null;
+    const stream: cuda.Stream = .{ .d = &driver, .handle = null };
+    PlanProbe.launches = 0;
+    try device.plan(stream, 0, 1024, 1);
+    const before = PlanProbe.args;
+    // what a shrink leaves behind: the count and the bytes behind the lines, never an address
+    resident.active = active_after;
+    resident.lines.mem.len = active_after * 256 * 3;
+    try device.plan(stream, 0, 1024, 1);
+    try std.testing.expectEqual(@as(usize, 2), PlanProbe.launches);
+    try std.testing.expectEqual(active_after, device.active(0));
+    return .{ before, PlanProbe.args };
+}
+
+test "exl3: no planner kernel argument depends on the active count, so a captured graph survives a resize" {
+    const pair = try planArgs(true, 12);
+    try std.testing.expectEqualSlices(u64, &pair[0], &pair[1]);
+    try std.testing.expectEqual(@as(u64, 20), pair[1][3]); // the capacity, as at init
+    try std.testing.expectEqual(@as(u64, 1 << 40), pair[1][14]); // the lines' base address
+    try std.testing.expectEqual(@as(u64, 2), pair[1][4]); // the state ends with the active word
+}
+
+test "exl3: a pool that is not elastic launches the planner with exactly the arguments it had before" {
+    const plain = try planArgs(false, 20);
+    const elastic = try planArgs(true, 20);
+    try std.testing.expectEqual(@as(u64, 0), plain[0][4]); // no flag bit
+    // the one difference an elastic pool makes is bit 1 of the flags: the same 26 arguments otherwise
+    for (plain[0], elastic[0], 0..) |a, b, index| if (index != 4) try std.testing.expectEqual(a, b);
+    try std.testing.expectEqual(@as(usize, layout.stateWords(20)), (try PoolState.init(20, 0)).words);
+    try std.testing.expectEqual(@as(usize, layout.stateWords(20) + 1), (try PoolState.initWith(20, 0, true)).words);
 }

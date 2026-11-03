@@ -10,11 +10,28 @@ pub fn emptySeed(allocator: std.mem.Allocator, lines: usize) ![]u32 {
     return seed;
 }
 
+/// The empty seed of an elastic pool: the planner may use the first `active` of `lines` lines.
+pub fn activeSeed(allocator: std.mem.Allocator, lines: usize, active: usize) ![]u32 {
+    const base = try emptySeed(allocator, lines);
+    defer allocator.free(base);
+    const seed = try allocator.alloc(u32, base.len + layout.active_words);
+    @memcpy(seed[0..base.len], base);
+    seed[layout.activeOffset(lines)] = @intCast(active);
+    return seed;
+}
+
 pub fn make(allocator: std.mem.Allocator, lines: usize, rows: usize) ![]u32 {
     const words = try allocator.alloc(u32, trace.pool_words);
     errdefer allocator.free(words);
     @memset(words, 0);
     @memcpy(words[0..trace.header_words], &try trace.header(3, 48, lines, rows));
+    return words;
+}
+
+/// An elastic pool's trace (v5): the seeds are one word longer, `activeSeed`.
+pub fn makeActive(allocator: std.mem.Allocator, lines: usize, rows: usize) ![]u32 {
+    const words = try make(allocator, lines, rows);
+    @memcpy(words[0..trace.header_words], &try trace.headerWith(3, 48, lines, rows, true));
     return words;
 }
 
@@ -39,7 +56,7 @@ pub fn append(words: []u32, before: []const u32, after: []const u32, picks: []co
     @memset(record, 0);
     record[0] = @intCast(picks.len / 11);
     record[3] = @intFromBool(recent);
-    @memcpy(record[4..][0..layout.misc_words], after[layout.miscOffset(words[4])..]);
+    @memcpy(record[4..][0..layout.misc_words], after[layout.miscOffset(words[4])..][0..layout.misc_words]);
     record[14] = mapped;
     var seen: [layout.experts_n]bool = @splat(false);
     for (picks, 0..) |expert, index| {
@@ -259,4 +276,21 @@ test "exl3: v4 raw picks cover all 512 experts beyond the planner unique bound" 
     try std.testing.expectEqual(@as(usize, 512), record.uniqueCount());
     try std.testing.expectEqual(@as(u32, 512), record.validPicks());
     for (picks, record.picks()) |expert, raw| try std.testing.expectEqual(expert, @as(i32, @bitCast(raw)));
+}
+
+test "exl3: v5 is an elastic pool's trace, and a v4 header over its longer state or the reverse is refused" {
+    const allocator = std.testing.allocator;
+    const words = try makeActive(allocator, 4, 1);
+    defer allocator.free(words);
+    _ = try trace.View.init(words);
+    try std.testing.expectEqual(trace.version_active, words[1]);
+    try std.testing.expectEqual(layout.stateWords(4) + layout.active_words, words[6]);
+    words[1] = trace.version;
+    try std.testing.expectError(error.InvalidTrace, trace.View.init(words));
+    const plain = try make(allocator, 4, 1);
+    defer allocator.free(plain);
+    try std.testing.expectEqual(trace.version, plain[1]);
+    try std.testing.expectEqual(layout.stateWords(4), plain[6]);
+    plain[1] = trace.version_active;
+    try std.testing.expectError(error.InvalidTrace, trace.View.init(plain));
 }

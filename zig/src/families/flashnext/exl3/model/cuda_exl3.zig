@@ -49,4 +49,5 @@ test {
     _ = telemetry;
     _ = frequency;
     _ = @import("../offload/cuda_exl3_frequency_state.zig");
+    _ = @import("../offload/exl3_elastic_lines_env.zig");
 }

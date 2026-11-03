@@ -145,8 +145,13 @@ pub const ExactState = struct {
     lines: usize,
     words: []u32,
 
+    /// Lines the planner may use: the active word (1..lines; every line above it is empty) if the state has one.
+    fn active(self: *const ExactState) usize {
+        return layout.activeLines(self.lines, self.words);
+    }
+
     pub fn init(allocator: std.mem.Allocator, lines: usize, seed: []const u32) !ExactState {
-        const entry = layout.PoolState.init(lines, 0) catch return error.InvalidSeed;
+        const entry = layout.PoolState.initWith(lines, 0, seed.len == layout.stateWords(lines) + layout.active_words) catch return error.InvalidSeed;
         if (seed.len != entry.words) return error.InvalidSeed;
         var reverse: [expert_count]u32 = @splat(std.math.maxInt(u32));
         for (seed[0..lines], 0..) |raw, line| {
@@ -159,6 +164,11 @@ pub const ExactState = struct {
             }
         }
         if (!std.mem.eql(u32, &reverse, seed[2 * lines ..][0..expert_count])) return error.InvalidSeed;
+        if (seed.len > layout.stateWords(lines)) {
+            const limit = seed[layout.activeOffset(lines)];
+            if (limit == 0 or limit > lines) return error.InvalidSeed;
+            for (seed[limit..lines]) |raw| if (raw != std.math.maxInt(u32)) return error.InvalidSeed;
+        }
         const misc = seed[layout.miscOffset(lines)..];
         if (misc[8] >= layout.recent_window or misc[9] > layout.recent_window) return error.InvalidSeed;
         var recent_counts: [expert_count]u32 = @splat(0);
@@ -261,7 +271,7 @@ pub const ExactState = struct {
             delta.overflow = 1;
         } else for (misses[0..missing]) |expert| {
             var victim: ?usize = null;
-            for (ids, 0..) |raw, line| {
+            for (ids[0..self.active()], 0..) |raw, line| {
                 if (raw == std.math.maxInt(u32)) {
                     victim = line;
                     break;
@@ -322,7 +332,7 @@ pub fn verifyTraceWithFinal(allocator: std.mem.Allocator, view: trace.View, fina
         if (index == view.recorded()) break;
         const record = try view.round(index);
         const delta = try state.replay(record);
-        if (!std.mem.eql(u32, state.words[layout.miscOffset(state.lines)..], record.misc()) or delta.mapped_picks != record.mappedPicks()) return error.PlannerCounterMismatch;
+        if (!std.mem.eql(u32, state.words[layout.miscOffset(state.lines)..][0..layout.misc_words], record.misc()) or delta.mapped_picks != record.mappedPicks()) return error.PlannerCounterMismatch;
         try add(&total, delta);
     }
     if (!std.mem.eql(u32, state.words, view.terminalSeed())) return error.PlannerFinalStateMismatch;

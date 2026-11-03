@@ -156,12 +156,13 @@ pub const Draft = struct {
 
 /// The kernel's checkpoint on a host copy of the trace buffer (dp_trace_valid, then the transfer 0 / 1 rules).
 fn modelCheckpoint(tr: []u32, st: []const u32, lines: u32, transfer: i32) void {
-    const seed_words: u64 = 2 * @as(u64, lines) + 3 * experts + recent_rows_words + 10;
+    // version 4: the counters end the state; version 5 (an elastic pool's): the active-lines word follows them
+    const seed_words: u64 = 2 * @as(u64, lines) + 3 * experts + recent_rows_words + 10 + @intFromBool(tr[1] == 5);
     const record_words: u64 = 15 + 11 * @as(u64, tr[5]);
     const base = 16 + 2 * seed_words;
     const stride: u64 = 4 + 2 * seed_words;
     const capacity = if (record_words == 0) 0 else (trace_words - base) / record_words;
-    const valid = lines > 0 and tr[0] == 0x44505431 and tr[1] == 4 and tr[4] == lines and tr[5] != 0 and base < trace_words and
+    const valid = lines > 0 and tr[0] == 0x44505431 and (tr[1] == 4 or tr[1] == 5) and tr[4] == lines and tr[5] != 0 and base < trace_words and
         record_words <= trace_words - base and tr[6] == seed_words and tr[7] == record_words and tr[8] == capacity and tr[9] <= capacity and
         tr[12] <= 1 and tr[13] <= 1 and tr[14] <= (trace_words - base) / stride and
         base + @as(u64, tr[9]) * record_words <= trace_words - @as(u64, tr[14]) * stride;
@@ -233,7 +234,8 @@ pub const Checkpoint = struct {
         const a = self.rig.gpu.gpa;
         self.lines = @intCast(shape.n);
         var prng = std.Random.DefaultPrng.init(seed ^ 0x636b7074);
-        const words = stateWords(shape.n);
+        const elastic = seed & 1 == 1; // half the seeds are an elastic pool's trace (version 5, one word longer)
+        const words = stateWords(shape.n) + @intFromBool(elastic);
         for (&self.st) |*s| {
             a.free(s.*);
             s.* = try a.alloc(u32, words);
@@ -242,7 +244,7 @@ pub const Checkpoint = struct {
         const max_rows: u32 = 16;
         const record_words = 15 + 11 * max_rows;
         const base = 16 + 2 * @as(u32, @intCast(words));
-        self.header = .{ 0x44505431, 4, 0, 3, self.lines, max_rows, @intCast(words), record_words, (trace_words - base) / record_words, 0, 0, 0, 0, 0, 0, 0 };
+        self.header = .{ 0x44505431, @as(u32, if (elastic) 5 else 4), 0, 3, self.lines, max_rows, @intCast(words), record_words, (trace_words - base) / record_words, 0, 0, 0, 0, 0, 0, 0 };
         self.d[0] = try self.rig.input(std.mem.sliceAsBytes(self.st[0]));
         self.d[1] = try self.rig.input(std.mem.sliceAsBytes(self.st[1]));
         self.d[2] = try self.rig.output(trace_words * 4);

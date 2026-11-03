@@ -14,6 +14,7 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if (rest.len >= 2 and std.mem.eql(u8, rest[0], "ngram")) return prefill_tests.ngramMode(gpu, rest[1]);
     if (rest.len < 1) return error.MissingArgument;
     if (std.mem.eql(u8, rest[0], "plan")) return plan_tests.planMode(gpu);
+    if (std.mem.eql(u8, rest[0], "plan-elastic")) return @import("flashnext_exl3_graph_elastic_tests.zig").elasticMode(gpu);
     if (std.mem.eql(u8, rest[0], "frequency")) return @import("../offload/exl3_frequency_tests.zig").run(gpu, rest[1..]);
     if (rest.len < 6) return error.MissingArgument;
     const rank = try std.fmt.parseInt(usize, rest[0], 10);

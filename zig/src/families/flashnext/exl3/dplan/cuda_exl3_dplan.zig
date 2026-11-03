@@ -95,7 +95,7 @@ pub const DevPlan = struct {
         var total_words: usize = 0;
         for (pools, pool_states) |p, *entry| {
             if (p.lines.spec.experts < experts_n) return error.Invalid;
-            entry.* = try PoolState.init(p.opt.lines, total_words);
+            entry.* = try PoolState.initWith(p.opt.lines, total_words, p.opt.elastic);
             total_words = entry.endWords();
         }
         var mod = try cuda.Module.load(d, cuda.kernels.flashnext_exl3_dplan);
@@ -115,11 +115,11 @@ pub const DevPlan = struct {
         var trace_mem: ?cuda.DeviceBuffer = null;
         errdefer if (trace_mem) |*buffer| buffer.free();
         if (demand_trace.requested) {
-            for (pools, pool_states, 0..) |p, entry, index| _ = try demand_trace.header(index, p.opt.layer, entry.lines, max_rows);
+            for (pools, pool_states, 0..) |p, entry, index| _ = try demand_trace.headerWith(index, p.opt.layer, entry.lines, max_rows, entry.active_word);
             trace_mem = try cuda.DeviceBuffer.alloc(d, try std.math.mul(usize, pools.len, demand_trace.pool_bytes));
             try trace_mem.?.fill32(0, null);
             for (pools, pool_states, 0..) |p, entry, index| {
-                const header = try demand_trace.header(index, p.opt.layer, entry.lines, max_rows);
+                const header = try demand_trace.headerWith(index, p.opt.layer, entry.lines, max_rows, entry.active_word);
                 try trace_mem.?.upload(index * demand_trace.pool_bytes, std.mem.asBytes(&header));
             }
         }
@@ -233,6 +233,7 @@ pub const DevPlan = struct {
             const recent_filled = if (dp.history_initialized) misc.recent_filled else 0;
             misc.* = .{ .now = p.now, .rounds = 0, .hit_slots = 0, .miss_slots = 0, .copies = 0, .evictions = 0, .overflow = 0, .inplace = 0, .recent_cursor = recent_cursor, .recent_filled = recent_filled };
             dp.seen[i] = misc.*;
+            if (dp.pool_states[i].active_word) m[layout.activeOffset(lines)] = @intCast(p.active); // the planner reads this, not `lines`
         }
         try s.d.check(s.d.api.cuMemcpyHtoDAsync_v2(dp.state.ptr, dp.mirror.bytes.ptr, dp.state.len, s.handle), "cuMemcpyHtoDAsync");
         try dp.traceOwnership(s, true);
@@ -288,6 +289,20 @@ pub const DevPlan = struct {
             std.log.err("flashnext exl3 dplan: {d} rounds had more distinct experts than the planner holds (256): results of those rounds are wrong", .{overflow});
             return error.PoolPasses;
         }
+    }
+
+    /// Lines pool `i` may use now (`opt.lines` unless the pool is elastic).
+    pub fn active(dp: *const DevPlan, i: usize) usize {
+        return dp.pools[i].active;
+    }
+
+    /// Moves elastic pool `i` to `n` active lines, quiescent streams only (no graph in flight), ranks in lockstep.
+    pub fn setActive(dp: *DevPlan, i: usize, n: usize) !void {
+        if (i >= dp.pools.len) return error.Invalid;
+        const p = dp.pools[i];
+        if (!p.opt.elastic or n < pool_.min_lines or n > p.opt.lines) return error.Invalid;
+        try dp.toHost();
+        try p.setActive(n);
     }
 
     /// Device statistics so far, summed over the layers (synchronizes; does not change the owner).
@@ -400,7 +415,8 @@ pub const DevPlan = struct {
         a.add(@as(c_int, @intCast(rows * 11)));
         a.add(st);
         a.add(@as(c_int, @intCast(entry.lines)));
-        a.add(@as(c_int, @intFromBool(dp.recent_eviction)));
+        // bit 0: the recent-eviction score; bit 1 (an elastic pool only): the state ends with the active-lines word
+        a.add(@as(c_int, @intFromBool(dp.recent_eviction)) | (@as(c_int, @intFromBool(entry.active_word)) << 1));
         for (0..3) |w| a.add(p.lines.table(w));
         for (0..3) |w| a.add(p.lines.widths(w));
         a.add(sb);

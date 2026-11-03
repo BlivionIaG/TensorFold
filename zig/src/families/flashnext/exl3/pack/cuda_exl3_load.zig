@@ -438,6 +438,7 @@ pub const Experts = struct {
             .codebook = .mul1,
             .act_mode = l.act_mode,
             .max_passes = pool_.passesFor(pool_.min_lines),
+            .elastic = try @import("../offload/exl3_elastic_lines_env.zig").fromEnv(),
         }, counts);
         x.pool = p;
         x.layer = p.tables();

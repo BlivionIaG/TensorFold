@@ -90,6 +90,7 @@ pub const Ring = struct {
         var n: usize = 0;
         for (pools) |p| {
             if (p.lines.spec.experts != te) return error.Invalid;
+            if (p.lines.isElastic()) return error.ElasticLines; // the ring would take lines that may be unmapped
             n += p.opt.lines;
         }
         const r = try gpa.create(Ring);

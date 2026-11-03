@@ -25,7 +25,7 @@ const upload = state.upload;
 
 /// Lines a pass may fill: half the layer's lines (the other half holds the previous pass, still computing).
 fn passLines(pool: *const pool_.Pool, o: Options) usize {
-    const lines = pool.opt.lines;
+    const lines = pool.active;
     return @max(1, if (o.pass_lines_half) lines / 2 else lines);
 }
 

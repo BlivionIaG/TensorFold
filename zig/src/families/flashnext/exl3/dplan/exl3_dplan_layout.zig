@@ -22,17 +22,38 @@ pub fn stateWords(lines: usize) usize {
     return miscOffset(lines) + misc_words;
 }
 
+/// The one word an elastic pool's state has after the counters (nothing else's does): the lines the planner may use.
+pub const active_words: usize = 1;
+
+/// Where that word sits: the end of a state without it.
+pub fn activeOffset(lines: usize) usize {
+    return stateWords(lines);
+}
+
+/// Lines the planner may use in `state`: its active word, at most `lines`, when it has one; else every line.
+pub fn activeLines(lines: usize, state: []const u32) usize {
+    return if (state.len > stateWords(lines)) @min(state[activeOffset(lines)], lines) else lines;
+}
+
 pub const PoolState = struct {
     lines: usize,
     offset_words: usize,
     words: usize,
+    /// The state ends with the active-lines word (an elastic pool's).
+    active_word: bool = false,
 
     pub fn init(lines: usize, offset_words: usize) !PoolState {
-        if (lines == 0 or lines > (std.math.maxInt(c_int) - stateWords(0)) / 2) return error.Invalid;
-        const words = stateWords(lines);
+        return initWith(lines, offset_words, false);
+    }
+
+    /// `active_word`: an elastic pool's state, one word longer.
+    pub fn initWith(lines: usize, offset_words: usize, active_word: bool) !PoolState {
+        const extra: usize = if (active_word) active_words else 0;
+        if (lines == 0 or lines > (std.math.maxInt(c_int) - stateWords(0) - extra) / 2) return error.Invalid;
+        const words = stateWords(lines) + extra;
         const end = try std.math.add(usize, offset_words, words);
         _ = try std.math.mul(usize, end, @sizeOf(u32));
-        return .{ .lines = lines, .offset_words = offset_words, .words = words };
+        return .{ .lines = lines, .offset_words = offset_words, .words = words, .active_word = active_word };
     }
 
     pub fn endWords(self: PoolState) usize {
@@ -124,5 +145,26 @@ test "exl3: ragged planner state round trip isolates line maps history and count
         try std.testing.expectEqual(@as(u32, @intCast(index + 10)), state[recentOffset(entry.lines)]);
         try std.testing.expectEqual(@as(u32, @intCast(index + 20)), state[miscOffset(entry.lines)]);
         try std.testing.expectEqual(@as(u32, @intCast(index + 30)), state[state.len - 1]);
+    }
+}
+
+test "exl3: only an elastic pool's state has the active word, after the counters, and it never exceeds the capacity" {
+    for ([_]usize{ 1, 10, 73 }) |lines| {
+        const plain = try PoolState.init(lines, 0);
+        const elastic = try PoolState.initWith(lines, 0, true);
+        try std.testing.expectEqual(stateWords(lines), plain.words);
+        try std.testing.expect(!plain.active_word and elastic.active_word);
+        try std.testing.expectEqual(plain.words + active_words, elastic.words);
+        try std.testing.expectEqual(miscOffset(lines) + misc_words, activeOffset(lines));
+        const state = try std.testing.allocator.alloc(u32, elastic.words);
+        defer std.testing.allocator.free(state);
+        @memset(state, 0);
+        // a state without the word, however its last words read, uses every line
+        try std.testing.expectEqual(lines, activeLines(lines, state[0..plain.words]));
+        try std.testing.expectEqual(@as(usize, 0), activeLines(lines, state));
+        state[activeOffset(lines)] = @intCast(lines);
+        try std.testing.expectEqual(lines, activeLines(lines, state));
+        state[activeOffset(lines)] = @intCast(lines + 5);
+        try std.testing.expectEqual(lines, activeLines(lines, state));
     }
 }

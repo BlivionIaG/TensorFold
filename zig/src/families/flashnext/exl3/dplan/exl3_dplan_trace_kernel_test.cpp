@@ -28,12 +28,12 @@ static void cudaGraphSetConditional(cudaGraphConditionalHandle, unsigned) {}
 static constexpr unsigned pool_words = 1024 * 1024 / 4;
 static constexpr unsigned sentinel = 0xfeedface;
 
-static std::vector<unsigned> make_trace(unsigned lines, unsigned rows) {
+static std::vector<unsigned> make_trace(unsigned lines, unsigned rows, bool active_word = false) {
     std::vector<unsigned> trace(pool_words + 1, 0);
-    const unsigned seed_words = 2 * lines + 3 * DP_EXPERTS + DP_RECENT_WORDS + 10;
+    const unsigned seed_words = 2 * lines + 3 * DP_EXPERTS + DP_RECENT_WORDS + DP_MISC_WORDS + (active_word ? DP_ACTIVE_WORDS : 0);
     const unsigned stride = 15 + rows * 11;
     auto* header = reinterpret_cast<DpTraceHeader*>(trace.data());
-    *header = {0x44505431, 4, 0, 0, lines, rows, seed_words, stride,
+    *header = {0x44505431, active_word ? 5u : 4u, 0, 0, lines, rows, seed_words, stride,
                (pool_words - 16 - 2 * seed_words) / stride, 0, 0, 0, 0, 0, 0, 0};
     trace[pool_words] = sentinel;
     return trace;
@@ -151,6 +151,60 @@ static void test_bounds_and_flags() {
     assert(reinterpret_cast<DpTraceHeader*>(sealed.data())->discontinuity == 1);
 }
 
+// A pool of `lines` lines whose state ends with the active word (flag bit 1) plans exactly like a pool of `active` lines
+// without it: the same tables, copies and in-place experts every round, the same line words below the active word,
+// and nothing above it. Its trace is version 5 and records every round.
+static void test_active_bound() {
+    const unsigned lines = 12;
+    for (unsigned active : {1u, 4u, 10u, 12u}) {
+        auto wide = make_state(lines);
+        wide.push_back(active);
+        auto narrow = make_state(active);
+        auto wide_trace = make_trace(lines, 3, true);
+        PlanOutput wide_out, narrow_out;
+        unsigned seed = 0x9e3779b9u + active;
+        auto next = [&seed](unsigned bound) {
+            seed = seed * 1664525u + 1013904223u;
+            return (seed >> 8) % bound;
+        };
+        const unsigned inplace_at = 2 * active + 3 * DP_EXPERTS + DP_RECENT_WORDS + 7;
+        for (int round = 0; round < 300; ++round) {
+            std::vector<int> picks(3 * 11, -1);
+            for (unsigned slot = 0; slot < picks.size(); ++slot) {
+                if (slot % 11 == 10) picks[slot] = round % 3 == 0 ? -1 : 512;
+                else picks[slot] = next(4) != 0 ? static_cast<int>(next(24) * 7) : static_cast<int>(next(512));
+            }
+            const int recent = round % 2;
+            run_plan(wide, lines, picks, round < 50 ? wide_trace.data() : nullptr, recent | 2, wide_out);
+            run_plan(narrow, active, picks, nullptr, recent, narrow_out);
+            assert_same(wide_out, narrow_out);
+            for (unsigned line = 0; line < lines; ++line) {
+                if (line < active) {
+                    assert(wide[line] == narrow[line]);
+                    assert(wide[lines + line] == narrow[active + line]);
+                } else {
+                    assert(wide[line] == 0xffffffffu);
+                }
+            }
+        }
+        const unsigned tail = 3 * DP_EXPERTS + DP_RECENT_WORDS + DP_MISC_WORDS;
+        assert(std::memcmp(wide.data() + 2 * lines, narrow.data() + 2 * active, tail * 4) == 0);
+        assert(wide.back() == active);
+        assert(wide_trace[pool_words] == sentinel);
+        const auto* header = reinterpret_cast<const DpTraceHeader*>(wide_trace.data());
+        assert(header->invalid_launch == 0 && header->recorded == 50);
+        if (active < 10) assert(narrow[inplace_at] > 0);  // the in-place path ran
+    }
+    // the same wide state without the flag is a plain pool, however its last word reads: every line is usable
+    auto plain = make_state(12);
+    plain.push_back(1);
+    PlanOutput out;
+    run_plan(plain, 12, std::vector<int>{7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 512}, nullptr, 0, out);
+    unsigned resident = 0;
+    for (unsigned line = 0; line < 12; ++line) resident += plain[line] != 0xffffffffu;
+    assert(resident == 10);
+}
+
 static std::vector<unsigned> test_checkpoint_capture() {
     const unsigned lines = 10;
     auto trace = make_trace(lines, 16);
@@ -254,6 +308,7 @@ static void write_trace(const std::vector<unsigned>& trace, const char* path) {
 
 int main(int argc, char** argv) {
     test_bounds_and_flags();
+    test_active_bound();
     const auto trace = test_long_capture();
     const auto checkpoint_trace = test_checkpoint_capture();
     if (argc >= 2) write_trace(trace, argv[1]);
