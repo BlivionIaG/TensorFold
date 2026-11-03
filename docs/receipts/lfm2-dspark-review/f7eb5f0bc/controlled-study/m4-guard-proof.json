@@ -1,0 +1,61 @@
+{
+  "scope": "IntegratedPinnedMainM4OriginalGuards;NoServingQualification",
+  "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "source_tree_ids": {
+    "zig": "dc425cce7d4bb20d2e623cc08439966a64d67f35",
+    "build.zig": "cd4e87a234349b3d37dd8651c3dad3d3f6f2e9cc",
+    "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+  },
+  "source_label": "EXACT_INTEGRATED_SOURCE",
+  "production_binary_sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0",
+  "base_revision": "2c8422a0c49d04a1867cffec081a1a42b65c857f",
+  "binary_sha256": "1dd4ca5795b816bedbbc92c66f381e94f29c613db5a85870fecd4f0492680cbc",
+  "cases": [
+    {
+      "bits": 0,
+      "requested_prefix": 9,
+      "reference_equal": 9,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.0,
+      "confidence_max_difference": 0.00085,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "2d753c428ee0bd6809ff9796bc79c036da57b51919fb20921b96f92e01ee10d0"
+    },
+    {
+      "bits": 8,
+      "requested_prefix": 9,
+      "reference_equal": 9,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.0,
+      "confidence_max_difference": 0.00152,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "ef641380400ff6c1cdca762017284a7ec1653996d9bdbbbb68901245e855ac22"
+    }
+  ],
+  "records": [
+    {
+      "returncode": 0,
+      "seconds": 241.26891975011677,
+      "log_sha256": "b276b982c88768834d36cc7328369da430cf04253fd93d0845ddbdf0b76cfa36"
+    },
+    {
+      "returncode": 0,
+      "seconds": 75.28947374969721,
+      "log_sha256": "82570893f59bbf91d7ad979b2564e37be306ba046a2ec112844019aa8de1a0c2"
+    },
+    {
+      "returncode": 0,
+      "seconds": 23.794966542162,
+      "log_sha256": "2d753c428ee0bd6809ff9796bc79c036da57b51919fb20921b96f92e01ee10d0"
+    },
+    {
+      "returncode": 0,
+      "seconds": 20.90690204082057,
+      "log_sha256": "ef641380400ff6c1cdca762017284a7ec1653996d9bdbbbb68901245e855ac22"
+    }
+  ]
+}

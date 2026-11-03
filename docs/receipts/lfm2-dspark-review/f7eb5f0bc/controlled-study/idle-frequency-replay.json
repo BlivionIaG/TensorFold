@@ -1,0 +1,15 @@
+{
+  "source_raw_sha256": "7c6f72e504e7834564e07b29a2526c52ec43e900f022ec589eb5a803f05ce363",
+  "actual_raw_records": 11,
+  "old_preflight_invalid_frequency_records": 10,
+  "corrected_validation_accepted_records": 11,
+  "actual_fully_idle_zero_frequency_records": 10,
+  "invalid_readings_still_rejected": [
+    "active_zero",
+    "negative",
+    "nonfinite",
+    "missing"
+  ],
+  "models_loaded": false,
+  "scope": "CollectorBoundaryReplayNotQualification"
+}

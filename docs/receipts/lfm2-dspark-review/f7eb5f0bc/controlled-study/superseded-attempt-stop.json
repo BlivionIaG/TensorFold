@@ -1,0 +1,30 @@
+{
+  "superseded_source_revision": "17649539d3cf1375dd711455fd2001a3f75fe725",
+  "replacement_source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "pinned_upstream_revision": "2c8422a0c49d04a1867cffec081a1a42b65c857f",
+  "reason": "Actual upstream conflicts and real lean CI defects required source integration. The old-source attempt was stopped before inspecting its timing results.",
+  "stopped_for_timing_result": false,
+  "candidate_performance_verdict_produced": false,
+  "retained_launches": [
+    {
+      "rotation": 0,
+      "role": "plain_before",
+      "recorded_cells": 48,
+      "returncode": 0,
+      "error_type": null
+    },
+    {
+      "rotation": 0,
+      "role": "bf16",
+      "recorded_cells": 6,
+      "returncode": 0,
+      "error_type": "KeyboardInterrupt"
+    }
+  ],
+  "controller_returncode": -2,
+  "sampler_returncode": 0,
+  "reader_stopped": true,
+  "old_observed_sha256": "86a9bc48bddef38ef55152534cf1d6d59eb1a112ad581b72d68127ee4454e960",
+  "all_aggregate_records_published": true,
+  "original_private_request_and_native_logs_retained": true
+}

@@ -1,0 +1,1647 @@
+{
+  "binding": {
+    "label": "PRESPECIFIED_CONTROLLED_STUDY_NOT_REPLACEMENT_FROZEN_VERDICT",
+    "binding": {
+      "source_revision": "17649539d3cf1375dd711455fd2001a3f75fe725",
+      "native_binary_sha256": "c03ab9600d36c32dd1d80b7d94bf9dae15d7256fa8f41df7f23b488c19b43a2c",
+      "native_private_instrumentation": false,
+      "native_build_flags": [
+        "-Dcpu=apple_m1",
+        "-Dversion=1.2.0",
+        "-j1"
+      ],
+      "byte_identical_native_to_qualified_source": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+      "oracle_source_revision": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+      "oracle_cells_sha256": "a89a1690adddccac6f28c42463976738d820663913e8e3d5c7f07c3456bdab2b",
+      "protocol_sha256": "d4dea2d29b0a4e2c4d2af09222b60c89c27a8090500789e7a660a9e639f31765",
+      "collector_sha256": "431118d791c34a9a4443002a38a90f0b4d9f240e2b1073d0cf85054ac691ff4c",
+      "analyzer_sha256": "2e8d63b86037d72817ae706cd5cdc73f7108009c87238160af17dcdad8016bff",
+      "clock_wrapper_sha256": "7c7dc25120ee58d90840b932329ebef8e6b921a27fa131d67d6d1fd033b3da56",
+      "driver_sha256": {
+        "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+        "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+        "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+        "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+        "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+        "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+        "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+      },
+      "model_sha256": {
+        "target": {
+          "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+          "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+          "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+          "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+          "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+          "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+          "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+          "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+          "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+        },
+        "drafter": {
+          "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+          "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+        }
+      },
+      "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+      "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+      "hardware": "Apple M4 Pro,20GPUcores,48GiB,Mac16,7",
+      "original_frozen_qualification_replaced": false
+    },
+    "protocol": {
+      "label": "PRESPECIFIED_CONTROLLED_STUDY_NOT_REPLACEMENT_FROZEN_VERDICT",
+      "runtime_change": "None intended; CI manual-dispatch addition only. New head/binary must be bound before launch.",
+      "source_of_correctness_oracles": {
+        "qualified_source": "afe8bda62562519b4fd84ee9a956392a21f26a60",
+        "cells_sha256": "a89a1690adddccac6f28c42463976738d820663913e8e3d5c7f07c3456bdab2b"
+      },
+      "scope": {
+        "arms": [
+          "plain_before",
+          "bf16",
+          "bits8",
+          "plain_after"
+        ],
+        "rounds": 6,
+        "prompts": [
+          "code",
+          "chat"
+        ],
+        "temperatures": [
+          0,
+          1
+        ],
+        "widths": [
+          1,
+          4,
+          8,
+          16
+        ],
+        "tokens": 512,
+        "parallel": 16,
+        "context": 4096,
+        "prompt_cache_gib": 0,
+        "warmup": "Two complete fixed 16-cell sweeps per server, same order/requests/settings as measured sweep; no speed-dependent warmup or sample discard.",
+        "measured_sweeps_per_launch": 1,
+        "candidate_order": "BF16 then8bit in even rounds;8bit thenBF16 in odd rounds; unchanged plain brackets each pair.",
+        "same_target_drafter_and_frozen_clients": true
+      },
+      "controls": "Independent plain-before/plain-after launches per round; complete global GPU/thermal coverage. No existing qualification cell is removed or overwritten. No thermal/power override, competing-process kill, pressure override or repetition for a better sign.",
+      "acceptance": {
+        "owner_margin_percent": 1,
+        "candidate": "Every32 candidate comparison has observed median loss<1% and one-sided95% Student-t lower bound for paired log TPS ratio above log(0.99). Six independent launch-round ratios, df5; tcritical2.015048373333.",
+        "paired_reference": "Geometric mean of the two same-round plain controls; both candidates same reference.",
+        "aa_validity": "For every16 cell,90% two-sided Student-t interval of plain-after/plain-before log ratio wholly inside [log(0.99),log(1.01)]. Failure invalidates fine-grained performance clearance; do not drop controls or rerun for a better sign.",
+        "assumptions": "Student-t model over independent launch-round log ratios; no claim of a universal noise floor or proof of stationarity. Global thermal observations and individual A/A ratios published.",
+        "correctness": "Every512-token warmup/measured request must match the original same-prompt/temp/seed token hash and pass unchanged client problems/pressure guards."
+      },
+      "failure_behavior": "Stop on correctness, process, source binding, or pressure failure; retain every attempted launch and clean up only owned children. No automatic restart/retry. Statistical or A/A failure reported without relabelling it a confirmed software regression."
+    },
+    "original_frozen_qualification_replaced": false,
+    "controller_sha256": "431118d791c34a9a4443002a38a90f0b4d9f240e2b1073d0cf85054ac691ff4c",
+    "started_unix_ns": 1793742849755579000
+  },
+  "launches": [
+    {
+      "rotation": 0,
+      "role": "plain_before",
+      "arm": "plain",
+      "started_unix_ns": 1793742855031528000,
+      "cells": [
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 1,
+          "aggregate_tps": 168.34328885207628,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          },
+          "sent": 4167933.080690791,
+          "completed": 4167936.215919166,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 4,
+          "aggregate_tps": 289.9307110432341,
+          "activity": {
+            "rounds": 1284,
+            "drafted": 836,
+            "accepted": 760
+          },
+          "sent": 4167936.224355041,
+          "completed": 4167943.359820791,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 8,
+          "aggregate_tps": 320.0598645741188,
+          "activity": {
+            "rounds": 2576,
+            "drafted": 1664,
+            "accepted": 1512
+          },
+          "sent": 4167943.367336666,
+          "completed": 4167956.225735708,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 16,
+          "aggregate_tps": 356.22378626909597,
+          "activity": {
+            "rounds": 6160,
+            "drafted": 2128,
+            "accepted": 2016
+          },
+          "sent": 4167956.234843375,
+          "completed": 4167979.273029166,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 1,
+          "aggregate_tps": 114.85896661079438,
+          "activity": {
+            "rounds": 504,
+            "drafted": 66,
+            "accepted": 7
+          },
+          "sent": 4167979.287644458,
+          "completed": 4167983.822012833,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 4,
+          "aggregate_tps": 202.65966017084972,
+          "activity": {
+            "rounds": 2006,
+            "drafted": 138,
+            "accepted": 38
+          },
+          "sent": 4167983.829679791,
+          "completed": 4167994.000792416,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 8,
+          "aggregate_tps": 243.8342373053832,
+          "activity": {
+            "rounds": 3739,
+            "drafted": 532,
+            "accepted": 349
+          },
+          "sent": 4167994.010130791,
+          "completed": 4168010.861238166,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f",
+            "6715041da8f3e0941ef63529f0d1f134f638e4a9dc86f38821ec713895c70fbc",
+            "e39ead16a498357d419811924e65f5f8be5596535cc5831cb5c50a6c31a80b5c",
+            "cedcc69746e6aa813d410c71c63aea4e899bd52231798865096e0c39be902eef",
+            "b7bba5c5fb2608694fc75647171ff0519350dc32985f4a00eb49303d1ca07224"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 16,
+          "aggregate_tps": 297.4982168413331,
+          "activity": {
+            "rounds": 7470,
+            "drafted": 834,
+            "accepted": 706
+          },
+          "sent": 4168010.875388041,
+          "completed": 4168038.444306041,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f",
+            "6715041da8f3e0941ef63529f0d1f134f638e4a9dc86f38821ec713895c70fbc",
+            "e39ead16a498357d419811924e65f5f8be5596535cc5831cb5c50a6c31a80b5c",
+            "cedcc69746e6aa813d410c71c63aea4e899bd52231798865096e0c39be902eef",
+            "b7bba5c5fb2608694fc75647171ff0519350dc32985f4a00eb49303d1ca07224",
+            "5d5025e61d39dcae4aa7d4916c9bd92188be5e97588b9ab0f222a006fbf34c91",
+            "427083d0f4a464f66a70adf5635142b1d2f337bce0dc59d2835958f5838d1f9d",
+            "506648ade602ba4f3cbd08563ad666f381c1b05ce944a6fdb02f11421bcdfc1f",
+            "3786f593681e54c2500d7cc98039cef1a1bf583d37dd78ce2beb3718fb692f6a",
+            "993e78ae2e9651b3bf555ecb63517bda88140939b9a94d106aa97b43278f5d2c",
+            "2e4b028010f77fb0f6490bd1f62fc4beba6c46e15e5203e2df9f9f578f757717",
+            "775cb3026fcccd4a64cab8f8c2d67059054902ace81d45dce7feee1453cc8113",
+            "bb2ae47fe5553aef5c92acd3d12a9b6a9bf9d0f52209030a2261a65edac2aa71"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 1,
+          "aggregate_tps": 118.47490456199124,
+          "activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168038.456999791,
+          "completed": 4168042.877708,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 4,
+          "aggregate_tps": 246.50754718679042,
+          "activity": {
+            "rounds": 2044,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168042.884894625,
+          "completed": 4168051.283501416,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 8,
+          "aggregate_tps": 283.8489184290111,
+          "activity": {
+            "rounds": 4088,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168051.292755375,
+          "completed": 4168065.803966666,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 16,
+          "aggregate_tps": 341.837325976562,
+          "activity": {
+            "rounds": 8176,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168065.814256166,
+          "completed": 4168089.839775875,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 1,
+          "aggregate_tps": 117.5692184483435,
+          "activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168089.857026916,
+          "completed": 4168094.31084075,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 4,
+          "aggregate_tps": 213.2047021329892,
+          "activity": {
+            "rounds": 2044,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168094.321312083,
+          "completed": 4168104.016152875,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3",
+            "4a5cf20afca8fbb87811fe44034501b67cdce68cbcd88f48e56aa86325a45e55",
+            "552e27e818f076b5ff0fc3951d6a69638c105914d4dbacc6d8dbd7eb50a2fc6a",
+            "57cfbd7cbfb21a61fac2694419dca7ff3d624a63b85a929bc14a6915ae21e975"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 8,
+          "aggregate_tps": 255.94576086285593,
+          "activity": {
+            "rounds": 4087,
+            "drafted": 4,
+            "accepted": 1
+          },
+          "sent": 4168104.024390375,
+          "completed": 4168120.104564208,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3",
+            "4a5cf20afca8fbb87811fe44034501b67cdce68cbcd88f48e56aa86325a45e55",
+            "552e27e818f076b5ff0fc3951d6a69638c105914d4dbacc6d8dbd7eb50a2fc6a",
+            "57cfbd7cbfb21a61fac2694419dca7ff3d624a63b85a929bc14a6915ae21e975",
+            "e276281625be3cbe7033d10d7bd72a1e77c5504c7dc59adabc5fe4edf3bda905",
+            "d27f03529a120e218898c3758466449c21d9aa2b15d95c89976d1be9545d3d5b",
+            "f3ead55f85d94627d267d6b1a2f59faee1dab5c9c5723e23131c92a8fd6170b8",
+            "dc98b32cfef943a336d8550fa7b2dba409377ba97be989b225361165975be492"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 16,
+          "aggregate_tps": 311.16835055182287,
+          "activity": {
+            "rounds": 8176,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168120.116874208,
+          "completed": 4168146.500732291,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3",
+            "4a5cf20afca8fbb87811fe44034501b67cdce68cbcd88f48e56aa86325a45e55",
+            "552e27e818f076b5ff0fc3951d6a69638c105914d4dbacc6d8dbd7eb50a2fc6a",
+            "57cfbd7cbfb21a61fac2694419dca7ff3d624a63b85a929bc14a6915ae21e975",
+            "e276281625be3cbe7033d10d7bd72a1e77c5504c7dc59adabc5fe4edf3bda905",
+            "d27f03529a120e218898c3758466449c21d9aa2b15d95c89976d1be9545d3d5b",
+            "f3ead55f85d94627d267d6b1a2f59faee1dab5c9c5723e23131c92a8fd6170b8",
+            "dc98b32cfef943a336d8550fa7b2dba409377ba97be989b225361165975be492",
+            "7be049e510d86558eb3fc55b61641be3c284bb835e1226a47c6b6382742fad89",
+            "c6011bcfaa55def36686e651a2dc6ea8ee268af0924f31828e4b066e5e59f2b5",
+            "e58708fcafd58972feeb5ba744f98fd341aed53cb7f952901cd9ba21c255f31b",
+            "9bd497e87e4e945f7b2feba2e8472c9388865812f87fa2abf2e16aba37d4de0f",
+            "843d60417a71954fd353506ce772d128fcb38454b056b30420d162da196932ca",
+            "f0afa35eac202e30de34c2a7d8470e3c1c89e84d443eaee23da7ddaa4a9cb79c",
+            "740362dd15377f6caa00f1319f9c3a3536049295a8210e253dcbefb879a9b1b6",
+            "f9429fddeddc0518120d743b545446276c7f162b3fcc6f12ad71faee8c374569"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 1,
+          "aggregate_tps": 168.31148462179237,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          },
+          "sent": 4168146.513873791,
+          "completed": 4168149.635186708,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 4,
+          "aggregate_tps": 290.16932346292543,
+          "activity": {
+            "rounds": 1284,
+            "drafted": 836,
+            "accepted": 760
+          },
+          "sent": 4168149.645920083,
+          "completed": 4168156.776351125,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 8,
+          "aggregate_tps": 319.0066086510492,
+          "activity": {
+            "rounds": 2576,
+            "drafted": 1664,
+            "accepted": 1512
+          },
+          "sent": 4168156.78482525,
+          "completed": 4168169.685142375,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 16,
+          "aggregate_tps": 345.10081127172026,
+          "activity": {
+            "rounds": 6160,
+            "drafted": 2128,
+            "accepted": 2016
+          },
+          "sent": 4168169.694826625,
+          "completed": 4168193.47196075,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 1,
+          "aggregate_tps": 118.18512629572237,
+          "activity": {
+            "rounds": 504,
+            "drafted": 66,
+            "accepted": 7
+          },
+          "sent": 4168193.483811083,
+          "completed": 4168197.895797125,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 4,
+          "aggregate_tps": 194.5025667015337,
+          "activity": {
+            "rounds": 2006,
+            "drafted": 138,
+            "accepted": 38
+          },
+          "sent": 4168197.903061666,
+          "completed": 4168208.502370958,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 8,
+          "aggregate_tps": 225.40459069694955,
+          "activity": {
+            "rounds": 3739,
+            "drafted": 532,
+            "accepted": 349
+          },
+          "sent": 4168208.511010916,
+          "completed": 4168226.744436333,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f",
+            "6715041da8f3e0941ef63529f0d1f134f638e4a9dc86f38821ec713895c70fbc",
+            "e39ead16a498357d419811924e65f5f8be5596535cc5831cb5c50a6c31a80b5c",
+            "cedcc69746e6aa813d410c71c63aea4e899bd52231798865096e0c39be902eef",
+            "b7bba5c5fb2608694fc75647171ff0519350dc32985f4a00eb49303d1ca07224"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 16,
+          "aggregate_tps": 276.667916310197,
+          "activity": {
+            "rounds": 7402,
+            "drafted": 967,
+            "accepted": 774
+          },
+          "sent": 4168226.755114333,
+          "completed": 4168256.403202666,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f",
+            "6715041da8f3e0941ef63529f0d1f134f638e4a9dc86f38821ec713895c70fbc",
+            "e39ead16a498357d419811924e65f5f8be5596535cc5831cb5c50a6c31a80b5c",
+            "cedcc69746e6aa813d410c71c63aea4e899bd52231798865096e0c39be902eef",
+            "b7bba5c5fb2608694fc75647171ff0519350dc32985f4a00eb49303d1ca07224",
+            "5d5025e61d39dcae4aa7d4916c9bd92188be5e97588b9ab0f222a006fbf34c91",
+            "427083d0f4a464f66a70adf5635142b1d2f337bce0dc59d2835958f5838d1f9d",
+            "506648ade602ba4f3cbd08563ad666f381c1b05ce944a6fdb02f11421bcdfc1f",
+            "3786f593681e54c2500d7cc98039cef1a1bf583d37dd78ce2beb3718fb692f6a",
+            "993e78ae2e9651b3bf555ecb63517bda88140939b9a94d106aa97b43278f5d2c",
+            "2e4b028010f77fb0f6490bd1f62fc4beba6c46e15e5203e2df9f9f578f757717",
+            "775cb3026fcccd4a64cab8f8c2d67059054902ace81d45dce7feee1453cc8113",
+            "bb2ae47fe5553aef5c92acd3d12a9b6a9bf9d0f52209030a2261a65edac2aa71"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 1,
+          "aggregate_tps": 123.26093437288873,
+          "activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168256.417197041,
+          "completed": 4168260.675411541,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 4,
+          "aggregate_tps": 242.14490632277375,
+          "activity": {
+            "rounds": 2044,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168260.682734875,
+          "completed": 4168269.23041125,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 8,
+          "aggregate_tps": 279.6278818448203,
+          "activity": {
+            "rounds": 4088,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168269.240314833,
+          "completed": 4168283.968731791,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 16,
+          "aggregate_tps": 338.35365814944896,
+          "activity": {
+            "rounds": 8176,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168283.979233708,
+          "completed": 4168308.253961916,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 1,
+          "aggregate_tps": 121.39922344791286,
+          "activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168308.268009833,
+          "completed": 4168312.58371825,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 4,
+          "aggregate_tps": 212.62261623753557,
+          "activity": {
+            "rounds": 2044,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168312.592369833,
+          "completed": 4168322.314120375,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3",
+            "4a5cf20afca8fbb87811fe44034501b67cdce68cbcd88f48e56aa86325a45e55",
+            "552e27e818f076b5ff0fc3951d6a69638c105914d4dbacc6d8dbd7eb50a2fc6a",
+            "57cfbd7cbfb21a61fac2694419dca7ff3d624a63b85a929bc14a6915ae21e975"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 8,
+          "aggregate_tps": 253.17005489840784,
+          "activity": {
+            "rounds": 4087,
+            "drafted": 4,
+            "accepted": 1
+          },
+          "sent": 4168322.322824208,
+          "completed": 4168338.579712916,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3",
+            "4a5cf20afca8fbb87811fe44034501b67cdce68cbcd88f48e56aa86325a45e55",
+            "552e27e818f076b5ff0fc3951d6a69638c105914d4dbacc6d8dbd7eb50a2fc6a",
+            "57cfbd7cbfb21a61fac2694419dca7ff3d624a63b85a929bc14a6915ae21e975",
+            "e276281625be3cbe7033d10d7bd72a1e77c5504c7dc59adabc5fe4edf3bda905",
+            "d27f03529a120e218898c3758466449c21d9aa2b15d95c89976d1be9545d3d5b",
+            "f3ead55f85d94627d267d6b1a2f59faee1dab5c9c5723e23131c92a8fd6170b8",
+            "dc98b32cfef943a336d8550fa7b2dba409377ba97be989b225361165975be492"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_1",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 16,
+          "aggregate_tps": 311.29033156703093,
+          "activity": {
+            "rounds": 8176,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168338.590443,
+          "completed": 4168364.96272925,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3",
+            "4a5cf20afca8fbb87811fe44034501b67cdce68cbcd88f48e56aa86325a45e55",
+            "552e27e818f076b5ff0fc3951d6a69638c105914d4dbacc6d8dbd7eb50a2fc6a",
+            "57cfbd7cbfb21a61fac2694419dca7ff3d624a63b85a929bc14a6915ae21e975",
+            "e276281625be3cbe7033d10d7bd72a1e77c5504c7dc59adabc5fe4edf3bda905",
+            "d27f03529a120e218898c3758466449c21d9aa2b15d95c89976d1be9545d3d5b",
+            "f3ead55f85d94627d267d6b1a2f59faee1dab5c9c5723e23131c92a8fd6170b8",
+            "dc98b32cfef943a336d8550fa7b2dba409377ba97be989b225361165975be492",
+            "7be049e510d86558eb3fc55b61641be3c284bb835e1226a47c6b6382742fad89",
+            "c6011bcfaa55def36686e651a2dc6ea8ee268af0924f31828e4b066e5e59f2b5",
+            "e58708fcafd58972feeb5ba744f98fd341aed53cb7f952901cd9ba21c255f31b",
+            "9bd497e87e4e945f7b2feba2e8472c9388865812f87fa2abf2e16aba37d4de0f",
+            "843d60417a71954fd353506ce772d128fcb38454b056b30420d162da196932ca",
+            "f0afa35eac202e30de34c2a7d8470e3c1c89e84d443eaee23da7ddaa4a9cb79c",
+            "740362dd15377f6caa00f1319f9c3a3536049295a8210e253dcbefb879a9b1b6",
+            "f9429fddeddc0518120d743b545446276c7f162b3fcc6f12ad71faee8c374569"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 1,
+          "aggregate_tps": 168.15736995050253,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          },
+          "sent": 4168364.979393208,
+          "completed": 4168368.10357475,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 4,
+          "aggregate_tps": 290.0725782266112,
+          "activity": {
+            "rounds": 1284,
+            "drafted": 836,
+            "accepted": 760
+          },
+          "sent": 4168368.111204291,
+          "completed": 4168375.24375,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 8,
+          "aggregate_tps": 320.2803351234747,
+          "activity": {
+            "rounds": 2576,
+            "drafted": 1664,
+            "accepted": 1512
+          },
+          "sent": 4168375.256117083,
+          "completed": 4168388.106339583,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 16,
+          "aggregate_tps": 356.2553370152128,
+          "activity": {
+            "rounds": 6160,
+            "drafted": 2128,
+            "accepted": 2016
+          },
+          "sent": 4168388.116477916,
+          "completed": 4168411.152103833,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 1,
+          "aggregate_tps": 114.81474158374438,
+          "activity": {
+            "rounds": 504,
+            "drafted": 66,
+            "accepted": 7
+          },
+          "sent": 4168411.167426833,
+          "completed": 4168415.703466958,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 4,
+          "aggregate_tps": 202.40457008216188,
+          "activity": {
+            "rounds": 2006,
+            "drafted": 138,
+            "accepted": 38
+          },
+          "sent": 4168415.712082458,
+          "completed": 4168425.896144291,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 8,
+          "aggregate_tps": 246.22569256230523,
+          "activity": {
+            "rounds": 3739,
+            "drafted": 532,
+            "accepted": 349
+          },
+          "sent": 4168425.905255708,
+          "completed": 4168442.593490041,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f",
+            "6715041da8f3e0941ef63529f0d1f134f638e4a9dc86f38821ec713895c70fbc",
+            "e39ead16a498357d419811924e65f5f8be5596535cc5831cb5c50a6c31a80b5c",
+            "cedcc69746e6aa813d410c71c63aea4e899bd52231798865096e0c39be902eef",
+            "b7bba5c5fb2608694fc75647171ff0519350dc32985f4a00eb49303d1ca07224"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 16,
+          "aggregate_tps": 286.7578606226655,
+          "activity": {
+            "rounds": 7418,
+            "drafted": 921,
+            "accepted": 758
+          },
+          "sent": 4168442.604124583,
+          "completed": 4168471.201643,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f",
+            "6715041da8f3e0941ef63529f0d1f134f638e4a9dc86f38821ec713895c70fbc",
+            "e39ead16a498357d419811924e65f5f8be5596535cc5831cb5c50a6c31a80b5c",
+            "cedcc69746e6aa813d410c71c63aea4e899bd52231798865096e0c39be902eef",
+            "b7bba5c5fb2608694fc75647171ff0519350dc32985f4a00eb49303d1ca07224",
+            "5d5025e61d39dcae4aa7d4916c9bd92188be5e97588b9ab0f222a006fbf34c91",
+            "427083d0f4a464f66a70adf5635142b1d2f337bce0dc59d2835958f5838d1f9d",
+            "506648ade602ba4f3cbd08563ad666f381c1b05ce944a6fdb02f11421bcdfc1f",
+            "3786f593681e54c2500d7cc98039cef1a1bf583d37dd78ce2beb3718fb692f6a",
+            "993e78ae2e9651b3bf555ecb63517bda88140939b9a94d106aa97b43278f5d2c",
+            "2e4b028010f77fb0f6490bd1f62fc4beba6c46e15e5203e2df9f9f578f757717",
+            "775cb3026fcccd4a64cab8f8c2d67059054902ace81d45dce7feee1453cc8113",
+            "bb2ae47fe5553aef5c92acd3d12a9b6a9bf9d0f52209030a2261a65edac2aa71"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 1,
+          "aggregate_tps": 117.98744587372838,
+          "activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168471.220607583,
+          "completed": 4168475.661011416,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 4,
+          "aggregate_tps": 244.71741182128375,
+          "activity": {
+            "rounds": 2044,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168475.669772375,
+          "completed": 4168484.132240083,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 8,
+          "aggregate_tps": 278.43361149982735,
+          "activity": {
+            "rounds": 4088,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168484.142267875,
+          "completed": 4168498.933195083,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 0.0,
+          "streams": 16,
+          "aggregate_tps": 337.9648116720484,
+          "activity": {
+            "rounds": 8176,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168498.945462958,
+          "completed": 4168523.247963333,
+          "run_hashes": [
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48",
+            "b6599e5b685f4d407864e31e35d602ad56cfec87b1688df58fc56949b3431a48"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 1,
+          "aggregate_tps": 118.94666327802196,
+          "activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168523.261987708,
+          "completed": 4168527.665116666,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 4,
+          "aggregate_tps": 214.9423989399774,
+          "activity": {
+            "rounds": 2044,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168527.672759416,
+          "completed": 4168537.28935375,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3",
+            "4a5cf20afca8fbb87811fe44034501b67cdce68cbcd88f48e56aa86325a45e55",
+            "552e27e818f076b5ff0fc3951d6a69638c105914d4dbacc6d8dbd7eb50a2fc6a",
+            "57cfbd7cbfb21a61fac2694419dca7ff3d624a63b85a929bc14a6915ae21e975"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 8,
+          "aggregate_tps": 258.0537116302978,
+          "activity": {
+            "rounds": 4087,
+            "drafted": 4,
+            "accepted": 1
+          },
+          "sent": 4168537.298721625,
+          "completed": 4168553.247010583,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3",
+            "4a5cf20afca8fbb87811fe44034501b67cdce68cbcd88f48e56aa86325a45e55",
+            "552e27e818f076b5ff0fc3951d6a69638c105914d4dbacc6d8dbd7eb50a2fc6a",
+            "57cfbd7cbfb21a61fac2694419dca7ff3d624a63b85a929bc14a6915ae21e975",
+            "e276281625be3cbe7033d10d7bd72a1e77c5504c7dc59adabc5fe4edf3bda905",
+            "d27f03529a120e218898c3758466449c21d9aa2b15d95c89976d1be9545d3d5b",
+            "f3ead55f85d94627d267d6b1a2f59faee1dab5c9c5723e23131c92a8fd6170b8",
+            "dc98b32cfef943a336d8550fa7b2dba409377ba97be989b225361165975be492"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "measured",
+          "rotation": 0,
+          "role": "plain_before",
+          "arm": "plain",
+          "prompt": "chat",
+          "temperature": 1.0,
+          "streams": 16,
+          "aggregate_tps": 313.72599880947337,
+          "activity": {
+            "rounds": 8176,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "sent": 4168553.257660958,
+          "completed": 4168579.427396916,
+          "run_hashes": [
+            "aee3c320cef29a5f3fa1fb73b0b7a0d768f80c074b02ed98ad9d22c6df460fc3",
+            "4a5cf20afca8fbb87811fe44034501b67cdce68cbcd88f48e56aa86325a45e55",
+            "552e27e818f076b5ff0fc3951d6a69638c105914d4dbacc6d8dbd7eb50a2fc6a",
+            "57cfbd7cbfb21a61fac2694419dca7ff3d624a63b85a929bc14a6915ae21e975",
+            "e276281625be3cbe7033d10d7bd72a1e77c5504c7dc59adabc5fe4edf3bda905",
+            "d27f03529a120e218898c3758466449c21d9aa2b15d95c89976d1be9545d3d5b",
+            "f3ead55f85d94627d267d6b1a2f59faee1dab5c9c5723e23131c92a8fd6170b8",
+            "dc98b32cfef943a336d8550fa7b2dba409377ba97be989b225361165975be492",
+            "7be049e510d86558eb3fc55b61641be3c284bb835e1226a47c6b6382742fad89",
+            "c6011bcfaa55def36686e651a2dc6ea8ee268af0924f31828e4b066e5e59f2b5",
+            "e58708fcafd58972feeb5ba744f98fd341aed53cb7f952901cd9ba21c255f31b",
+            "9bd497e87e4e945f7b2feba2e8472c9388865812f87fa2abf2e16aba37d4de0f",
+            "843d60417a71954fd353506ce772d128fcb38454b056b30420d162da196932ca",
+            "f0afa35eac202e30de34c2a7d8470e3c1c89e84d443eaee23da7ddaa4a9cb79c",
+            "740362dd15377f6caa00f1319f9c3a3536049295a8210e253dcbefb879a9b1b6",
+            "f9429fddeddc0518120d743b545446276c7f162b3fcc6f12ad71faee8c374569"
+          ],
+          "original_oracles_equal": true
+        }
+      ],
+      "returncode": 0,
+      "completed_unix_ns": 1793743510995532000,
+      "private_native_log_sha256": "7fdafe3af280cca7b77484c44643ba4a58cc361ed024462185ebc6f2007a9a86"
+    },
+    {
+      "rotation": 0,
+      "role": "bf16",
+      "arm": "bf16",
+      "started_unix_ns": 1793743510996125000,
+      "cells": [
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "bf16",
+          "arm": "bf16",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 1,
+          "aggregate_tps": 158.70825149089,
+          "activity": {
+            "rounds": 278,
+            "drafted": 322,
+            "accepted": 233
+          },
+          "sent": 4168598.113695958,
+          "completed": 4168601.4291175,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "bf16",
+          "arm": "bf16",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 4,
+          "aggregate_tps": 292.0609398898481,
+          "activity": {
+            "rounds": 1284,
+            "drafted": 836,
+            "accepted": 760
+          },
+          "sent": 4168601.437216291,
+          "completed": 4168608.522615625,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "bf16",
+          "arm": "bf16",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 8,
+          "aggregate_tps": 320.9781395028376,
+          "activity": {
+            "rounds": 2568,
+            "drafted": 1672,
+            "accepted": 1520
+          },
+          "sent": 4168608.530492458,
+          "completed": 4168621.353430958,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "bf16",
+          "arm": "bf16",
+          "prompt": "code",
+          "temperature": 0.0,
+          "streams": 16,
+          "aggregate_tps": 357.6584482730718,
+          "activity": {
+            "rounds": 6160,
+            "drafted": 2128,
+            "accepted": 2016
+          },
+          "sent": 4168621.3719935,
+          "completed": 4168644.318469541,
+          "run_hashes": [
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa",
+            "13b8de016c4b74203c702b8405d77853d7de1df719b9f87b0a3fe83da5d9d1aa"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "bf16",
+          "arm": "bf16",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 1,
+          "aggregate_tps": 120.02076757951247,
+          "activity": {
+            "rounds": 503,
+            "drafted": 34,
+            "accepted": 8
+          },
+          "sent": 4168644.331166708,
+          "completed": 4168648.673466,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4"
+          ],
+          "original_oracles_equal": true
+        },
+        {
+          "kind": "controlled_cell",
+          "phase": "warmup_0",
+          "rotation": 0,
+          "role": "bf16",
+          "arm": "bf16",
+          "prompt": "code",
+          "temperature": 1.0,
+          "streams": 4,
+          "aggregate_tps": 208.58276493750992,
+          "activity": {
+            "rounds": 2006,
+            "drafted": 138,
+            "accepted": 38
+          },
+          "sent": 4168648.68100175,
+          "completed": 4168658.565342833,
+          "run_hashes": [
+            "a23e68f78b72fd65f0d4d360a0544da5938b7fafd78aa56d9063b2ebbd77e1d4",
+            "7e7869bd7bb0921629e7da9e5e2cbed48b2904bd963d8d0b209168a83fa960dc",
+            "20e46805c2d17618560bd2dd1dfcce922a3632274b3bb87937055cef02c3a9c0",
+            "773f97752552f460fad2c036e74fa487f13f7b9f2d2d3871ece51acd2495028f"
+          ],
+          "original_oracles_equal": true
+        }
+      ],
+      "error": {
+        "type": "KeyboardInterrupt",
+        "message": "Owned study interrupted by signal 15"
+      },
+      "observed_returncode": 0
+    }
+  ],
+  "complete": false
+}
