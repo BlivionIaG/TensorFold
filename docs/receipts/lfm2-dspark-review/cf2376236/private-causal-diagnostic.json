@@ -1,0 +1,295 @@
+{
+  "label": "PRIVATE_CAUSAL_DIAGNOSTIC_NOT_QUALIFICATION",
+  "binding": {
+    "label": "PRIVATE_CAUSAL_DIAGNOSTIC_NOT_QUALIFICATION",
+    "base_source_revision": "5bed4bd92c7c257f963046b945d83fc931dcbf29",
+    "instrumentation_patch_sha256": "04e1633372c20c62ef6724fa940fa1aa718aaf01fdeb24c3ea458a5e9bc01a33",
+    "controller_sha256": "3b92e62b751ed66c2798824eb66db32ef01d2ee2512892673851ee918504c38e",
+    "binary_sha256": "4ece120959114a1fddc1006fe9e0823daf78d5473d2962c437a6c1dd241c8799",
+    "raw_observed_sha256": "f5188092405f9ccaaab2eaf82f59c26853ef5914dbbb04772e45fcf79f14be57",
+    "new_source_files": [
+      "zig/src/core/lanes/dspark_probe_private.zig"
+    ],
+    "production_pr_contains_instrumentation": false,
+    "extra_gpu_synchronization": false,
+    "extra_gpu_timing_queries": false,
+    "gpu_buffer_duration_is_hardware_occupancy": false,
+    "exclusive_gpu_and_original_pressure_guard": true
+  },
+  "derived_attribution": [
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 0.0,
+        "streams": 1
+      },
+      "arm": "plain",
+      "activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "measured_enrolled": [],
+      "measured_entry_rates": [],
+      "decode": {
+        "calls": 287,
+        "rows": 597,
+        "captured_calls": 0,
+        "encode_cpu_ms": 23.709667,
+        "gpu_ms": 3039.327212,
+        "timed_gpu_calls": 287
+      },
+      "host_step_wall_ms": 3129.822125,
+      "host_draw_wall_ms": 0.512125,
+      "reservation": {
+        "calls": 0,
+        "wall_ms": 0.0
+      },
+      "holds": null,
+      "gpu_buffer_elapsed_fraction_of_step_wall": 0.9710862440784873,
+      "target_encoding_fraction_of_step_wall": 0.0075754039856178726,
+      "host_draw_fraction_of_step_wall": 0.00016362750966239016
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 0.0,
+        "streams": 1
+      },
+      "arm": "bf16",
+      "activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "measured_enrolled": [
+        false
+      ],
+      "measured_entry_rates": [
+        0.872
+      ],
+      "decode": {
+        "calls": 286,
+        "rows": 597,
+        "captured_calls": 14,
+        "encode_cpu_ms": 30.519083,
+        "gpu_ms": 3029.733373,
+        "timed_gpu_calls": 286
+      },
+      "host_step_wall_ms": 3151.682917,
+      "host_draw_wall_ms": 3.023125,
+      "reservation": {
+        "calls": 14,
+        "wall_ms": 0.154167
+      },
+      "holds": {
+        "passes": 1,
+        "blocks": 1,
+        "retained": 3,
+        "staged_rows": 16,
+        "encode_gpu_ms": 10.2015
+      },
+      "gpu_buffer_elapsed_fraction_of_step_wall": 0.9613065313955883,
+      "target_encoding_fraction_of_step_wall": 0.009683424317650036,
+      "host_draw_fraction_of_step_wall": 0.0009592097554273096
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 0.0,
+        "streams": 1
+      },
+      "arm": "bits8",
+      "activity": {
+        "rounds": 279,
+        "drafted": 289,
+        "accepted": 232
+      },
+      "measured_enrolled": [
+        true
+      ],
+      "measured_entry_rates": [
+        0.872
+      ],
+      "decode": {
+        "calls": 293,
+        "rows": 583,
+        "captured_calls": 293,
+        "encode_cpu_ms": 22.685208,
+        "gpu_ms": 3108.268583,
+        "timed_gpu_calls": 293
+      },
+      "host_step_wall_ms": 3259.526583,
+      "host_draw_wall_ms": 0.355125,
+      "reservation": {
+        "calls": 293,
+        "wall_ms": 1.013333
+      },
+      "holds": {
+        "passes": 8,
+        "blocks": 8,
+        "retained": 12,
+        "staged_rows": 506,
+        "encode_gpu_ms": 50.393
+      },
+      "gpu_buffer_elapsed_fraction_of_step_wall": 0.9535951015742952,
+      "target_encoding_fraction_of_step_wall": 0.006959663442634363,
+      "host_draw_fraction_of_step_wall": 0.00010894987077330427
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 1.0,
+        "streams": 8
+      },
+      "arm": "plain",
+      "activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "measured_enrolled": [],
+      "measured_entry_rates": [],
+      "decode": {
+        "calls": 526,
+        "rows": 4391,
+        "captured_calls": 0,
+        "encode_cpu_ms": 56.410292,
+        "gpu_ms": 15770.246292,
+        "timed_gpu_calls": 526
+      },
+      "host_step_wall_ms": 16360.42925,
+      "host_draw_wall_ms": 330.847208,
+      "reservation": {
+        "calls": 0,
+        "wall_ms": 0.0
+      },
+      "holds": null,
+      "gpu_buffer_elapsed_fraction_of_step_wall": 0.9639261935624336,
+      "target_encoding_fraction_of_step_wall": 0.0034479713910929325,
+      "host_draw_fraction_of_step_wall": 0.020222403883443343
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 1.0,
+        "streams": 8
+      },
+      "arm": "bf16",
+      "activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "measured_enrolled": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "measured_entry_rates": [
+        0.84,
+        0.84,
+        0.84,
+        0.84,
+        0.84,
+        0.84,
+        0.84,
+        0.84
+      ],
+      "decode": {
+        "calls": 526,
+        "rows": 4391,
+        "captured_calls": 15,
+        "encode_cpu_ms": 58.4445,
+        "gpu_ms": 15785.43009,
+        "timed_gpu_calls": 526
+      },
+      "host_step_wall_ms": 16393.6515,
+      "host_draw_wall_ms": 340.671792,
+      "reservation": {
+        "calls": 15,
+        "wall_ms": 0.067542
+      },
+      "holds": {
+        "passes": 0,
+        "blocks": 0,
+        "retained": 0,
+        "staged_rows": 0,
+        "encode_gpu_ms": 0.0
+      },
+      "gpu_buffer_elapsed_fraction_of_step_wall": 0.9628989667128156,
+      "target_encoding_fraction_of_step_wall": 0.003565069075672372,
+      "host_draw_fraction_of_step_wall": 0.020780714534525756
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 1.0,
+        "streams": 8
+      },
+      "arm": "bits8",
+      "activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "measured_enrolled": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "measured_entry_rates": [
+        0.84,
+        0.84,
+        0.84,
+        0.84,
+        0.84,
+        0.84,
+        0.84,
+        0.84
+      ],
+      "decode": {
+        "calls": 526,
+        "rows": 4391,
+        "captured_calls": 15,
+        "encode_cpu_ms": 57.805083,
+        "gpu_ms": 15818.622205,
+        "timed_gpu_calls": 526
+      },
+      "host_step_wall_ms": 16425.688083,
+      "host_draw_wall_ms": 335.169917,
+      "reservation": {
+        "calls": 15,
+        "wall_ms": 0.053625
+      },
+      "holds": {
+        "passes": 0,
+        "blocks": 0,
+        "retained": 0,
+        "staged_rows": 0,
+        "encode_gpu_ms": 0.0
+      },
+      "gpu_buffer_elapsed_fraction_of_step_wall": 0.9630416774668763,
+      "target_encoding_fraction_of_step_wall": 0.003519187915167231,
+      "host_draw_fraction_of_step_wall": 0.020405228402388138
+    }
+  ],
+  "timer_definitions": {
+    "scope": "Aggregate step counters include warm-up and measured requests; measured enrollment distinguished by max_new=512.",
+    "gpu": "Existing completed target command-buffer duration, not hardware occupancy or bandwidth.",
+    "cpu": "Elapsed host spans, not thread CPU cycles; scopes are non-exclusive.",
+    "quoted_prices": "Quote counters are counts, not directly timed quote CPU cost."
+  },
+  "qualifies_throughput": false,
+  "raw_source_file": "private-observed.json"
+}

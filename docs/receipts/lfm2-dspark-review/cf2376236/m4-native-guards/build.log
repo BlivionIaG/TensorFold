@@ -1,0 +1,117 @@
+test-native
++- run test w
+[default] (warn): drama3: reference cache keeps no entry (OutOfMemory); misses prefill whole
+[default] (warn): drama3: reference cache restore failed (CudaFailed); prefilling whole
+failed command: ./.zig-cache/o/c0aa824344e764e992533f44d8152091/test --cache-dir=./.zig-cache --seed=0x2ed2af84 --listen=-
+
+Build Summary: 82/82 steps succeeded; 355/362 tests passed (7 skipped)
+tf-lfm2-dspark success
++- install tf-lfm2-dspark success
+   +- compile exe tf-lfm2-dspark fast native-native success 10s MaxRSS:719M
+      +- WriteFile exlr8_alias.zig cached
+      +- WriteFile draft_ids.txt cached
+      +- WriteFile xsum.metal cached
+      +- WriteFile nemotron_packed.metallib cached
+      |  +- run xcrun (nemotron_packed.metallib) cached
+      |     +- run xcrun (coop_down_1_0.air) cached
+      |     +- run xcrun (coop_down_2_0.air) cached
+      |     +- run xcrun (coop_down_2_1.air) cached
+      |     +- run xcrun (coop_draft_1_0.air) cached
+      |     +- run xcrun (coop_draft_2_0.air) cached
+      |     +- run xcrun (coop_draft_2_1.air) cached
+      |     +- run xcrun (coop_eh_1_0.air) cached
+      |     +- run xcrun (coop_eh_1_0_sk.air) cached
+      |     +- run xcrun (coop_eh_2_0.air) cached
+      |     +- run xcrun (coop_eh_2_0_sk.air) cached
+      |     +- run xcrun (coop_eh_2_1.air) cached
+      |     +- run xcrun (coop_eh_2_1_sk.air) cached
+      |     +- run xcrun (coop_head_1_0.air) cached
+      |     +- run xcrun (coop_head_2_0.air) cached
+      |     +- run xcrun (coop_head_2_1.air) cached
+      |     +- run xcrun (coop_in_1_0.air) cached
+      |     +- run xcrun (coop_in_1_0_sk.air) cached
+      |     +- run xcrun (coop_in_2_0.air) cached
+      |     +- run xcrun (coop_in_2_0_sk.air) cached
+      |     +- run xcrun (coop_in_2_1.air) cached
+      |     +- run xcrun (coop_in_2_1_sk.air) cached
+      |     +- run xcrun (coop_out_1_0.air) cached
+      |     +- run xcrun (coop_out_1_0_sk.air) cached
+      |     +- run xcrun (coop_out_2_0.air) cached
+      |     +- run xcrun (coop_out_2_0_sk.air) cached
+      |     +- run xcrun (coop_out_2_1.air) cached
+      |     +- run xcrun (coop_out_2_1_sk.air) cached
+      |     +- run xcrun (coop_qkv_1_0.air) cached
+      |     +- run xcrun (coop_qkv_2_0.air) cached
+      |     +- run xcrun (coop_qkv_2_1.air) cached
+      |     +- run xcrun (coop_up_1_0.air) cached
+      |     +- run xcrun (coop_up_2_0.air) cached
+      |     +- run xcrun (coop_up_2_1.air) cached
+      |     +- run xcrun (up_relu2_1_0.air) cached
+      |     +- run xcrun (up_relu2_2_0.air) cached
+      |     +- run xcrun (up_relu2_2_1.air) cached
+      +- WriteFile drama3_core.zig cached
+      +- WriteFile drama3.metallib cached
+         +- run xcrun (drama3.metallib) cached
+            +- run xcrun (d3_dense.air) cached
+            +- run xcrun (d3_gdn.air) cached
+            +- run xcrun (d3_attn.air) cached
+            +- run xcrun (d3_moe.air) cached
+            +- run xcrun (d3_nvfp4.air) cached
+            +- run xcrun (d3_guidance.air) cached
+            +- run xcrun (d3_sample.air) cached
+            +- run xcrun (d3_codec.air) cached
+tf-kernel-contract success
++- install tf-kernel-contract success
+   +- compile exe tf-kernel-contract fast native-native success 32s MaxRSS:1G
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-drafter-skip-metal-host success
++- run test 54 pass (54 total) 40ms MaxRSS:7M
+   +- compile test fast native-native success 11s MaxRSS:737M
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-draft-metal-host success
++- run test 11 pass (11 total) 3ms MaxRSS:6M
+   +- compile test fast native-native success 6s MaxRSS:511M
+      +- WriteFile drama3_core.zig (reused)
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile drama3.metallib (+1 more reused dependencies)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-qwen27-shared-allocation-host success
++- run test cached
+   +- compile test debug native cached 40ms MaxRSS:31M
+test-native success
++- run test 103 pass, 3 skip (106 total) 1s MaxRSS:11M
+   +- compile test fast native-native success 1m MaxRSS:4G
+      +- WriteFile drama3_core.zig (reused)
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile drama3.metallib (+1 more reused dependencies)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-lfm2-dspark success
++- run test 84 pass, 2 skip (86 total) 2s MaxRSS:302M
+   +- compile test fast native-native success 9s MaxRSS:687M
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-lfm2 success
++- run test 103 pass, 2 skip (105 total) 2s MaxRSS:302M
+   +- compile test fast native-native success 15s MaxRSS:924M
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+native success
++- install tensorfold-native success
+   +- compile exe tensorfold-native safe native-native success 1m MaxRSS:5G
+      +- options cached
+      +- WriteFile drama_prompt.zig cached
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile drama3_core.zig (reused)
+      +- WriteFile exlr8_alias.zig cached
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+      +- WriteFile drama3.metallib (+1 more reused dependencies)
+

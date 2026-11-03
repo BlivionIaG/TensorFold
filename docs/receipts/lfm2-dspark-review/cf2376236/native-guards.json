@@ -1,0 +1,323 @@
+{
+  "source_revision": "cf23762368785b470b3bf7485026e2ea4837ce82",
+  "integrated_main_revision": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+  "production_binaries": {
+    "M4": "20d09fbea8be085a9b9b55d2843517779ac794e914b1bb1cb5d61481cba774ac",
+    "M5": "7a1210390424df60a2610454499f53018fa99bd466cd5a24757ecd7680a541ab"
+  },
+  "M4_original_guards": {
+    "scope": "PriceEnrollmentAndReservedCopyM4OriginalGuards;NoServingQualification",
+    "source_revision": "cf23762368785b470b3bf7485026e2ea4837ce82",
+    "base_revision": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+    "binary_sha256": "37cc12d469e559cc4dfb267012bdaab94821f1108af47ea66749a22a20b02a50",
+    "cases": [
+      {
+        "bits": 0,
+        "requested_prefix": 9,
+        "reference_equal": 9,
+        "reference_count": 9,
+        "different_pick_max_margin": 0.0,
+        "confidence_max_difference": 0.00085,
+        "prefix_bytes_and_first_pick_invariant": true,
+        "confidence_prefix_invariant": true,
+        "logical_cohorts_8_and_16": true,
+        "log_sha256": "f1a8ac5f2dea4ee57cb7a68681ed4501f337d25dd21a5636b07067968a0a21ec"
+      },
+      {
+        "bits": 8,
+        "requested_prefix": 9,
+        "reference_equal": 9,
+        "reference_count": 9,
+        "different_pick_max_margin": 0.0,
+        "confidence_max_difference": 0.00152,
+        "prefix_bytes_and_first_pick_invariant": true,
+        "confidence_prefix_invariant": true,
+        "logical_cohorts_8_and_16": true,
+        "log_sha256": "0ecc3cf9e6558fbc9448ed3a21caac2fc356c14a68503816a991c5ef9b34a5a8"
+      }
+    ],
+    "records": [
+      {
+        "command": [
+          "/Users/kletorch/.local/zig-0.17.0/zig",
+          "build",
+          "native",
+          "test-lfm2",
+          "test-lfm2-dspark",
+          "test-native",
+          "test-qwen27-shared-allocation-host",
+          "test-draft-metal-host",
+          "test-drafter-skip-metal-host",
+          "tf-kernel-contract",
+          "tf-lfm2-dspark",
+          "-Dcpu=apple_m1",
+          "-Dversion=1.2.0",
+          "-j1",
+          "--summary",
+          "all"
+        ],
+        "returncode": 0,
+        "seconds": 199.163954957854,
+        "log_sha256": "b3c8ae3846d64bcd6ec2018e341ab27dc3534e4f9243032cb8a45e192a46ac4d"
+      },
+      {
+        "command": [
+          "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-kernel-contract",
+          "--only",
+          "metal lfm2 block attention"
+        ],
+        "returncode": 0,
+        "seconds": 1.3080549580045044,
+        "log_sha256": "bc3d12d2250f8d85b1c35ef8d8dd74b2fc08dc655068792634326f90fcf42246"
+      },
+      {
+        "command": [
+          "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-kernel-contract",
+          "--only",
+          "metal lfm2 bf16"
+        ],
+        "returncode": 0,
+        "seconds": 57.74112133309245,
+        "log_sha256": "1e37c5d25b5337d8e01551f32973f6e03b48e6c727b034bc48ce349cd5463ff8"
+      },
+      {
+        "command": [
+          "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-kernel-contract",
+          "--only",
+          "metal lfm2 norm tap"
+        ],
+        "returncode": 0,
+        "seconds": 0.6582912909798324,
+        "log_sha256": "f2a8af69a2e00274d2a64ad043e4dfdfd78b8663b0a62dd86fd0d5af0a11840a"
+      },
+      {
+        "command": [
+          "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-lfm2-dspark",
+          "/tmp/tf-dspark-models-r15/target",
+          "/tmp/tf-dspark-models-r15/drafter",
+          "64",
+          "9",
+          "0"
+        ],
+        "returncode": 0,
+        "seconds": 21.198187083937228,
+        "log_sha256": "f1a8ac5f2dea4ee57cb7a68681ed4501f337d25dd21a5636b07067968a0a21ec"
+      },
+      {
+        "command": [
+          "/tmp/tf-dspark-consolidated-r19/zig-out/bin/tf-lfm2-dspark",
+          "/tmp/tf-dspark-models-r15/target",
+          "/tmp/tf-dspark-models-r15/drafter",
+          "64",
+          "9",
+          "8"
+        ],
+        "returncode": 0,
+        "seconds": 20.280372959095985,
+        "log_sha256": "0ecc3cf9e6558fbc9448ed3a21caac2fc356c14a68503816a991c5ef9b34a5a8"
+      }
+    ],
+    "binding": {
+      "driver_sha256": {
+        "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+        "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+        "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+        "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+        "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+        "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+        "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+      },
+      "frozen_driver": "/private/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+      "shared_lock": "/tmp/tensorfold-model.lock",
+      "shared_lock_inode_observed": 68270044,
+      "model_sha256": {
+        "target": {
+          "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+          "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+          "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+          "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+          "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+          "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+          "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+          "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+          "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+        },
+        "drafter": {
+          "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+          "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+        }
+      },
+      "remote_target": "/tmp/tf-dspark-models-r15/target",
+      "remote_drafter": "/tmp/tf-dspark-models-r15/drafter",
+      "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+      "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55"
+    }
+  },
+  "M5_original_guards": {
+    "scope": "PriceEnrollmentAndReservedCopyM5OriginalGuards;NoServingQualification",
+    "source_revision": "cf23762368785b470b3bf7485026e2ea4837ce82",
+    "base_revision": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+    "binary_sha256": "24838f9f36b032b9d74cdd80bb71426dc4572f0a650db6500ec8e96508d81d89",
+    "cases": [
+      {
+        "bits": 0,
+        "requested_prefix": 9,
+        "reference_equal": 9,
+        "reference_count": 9,
+        "different_pick_max_margin": 0.0,
+        "confidence_max_difference": 0.0008,
+        "prefix_bytes_and_first_pick_invariant": true,
+        "confidence_prefix_invariant": true,
+        "logical_cohorts_8_and_16": true,
+        "log_sha256": "7d79bdc225e3de1902e07ef51ccfb5311e2803a0d03854b47601cb44d0acbcaf"
+      },
+      {
+        "bits": 8,
+        "requested_prefix": 9,
+        "reference_equal": 8,
+        "reference_count": 9,
+        "different_pick_max_margin": 0.075,
+        "confidence_max_difference": 0.00225,
+        "prefix_bytes_and_first_pick_invariant": true,
+        "confidence_prefix_invariant": true,
+        "logical_cohorts_8_and_16": true,
+        "log_sha256": "41447b4d1615036c3d47dc67eb9ed195f0eba9ceebe57d1affa3323cfa94df92"
+      }
+    ],
+    "records": [
+      {
+        "command": [
+          "/Users/kletorch/tf-lfm2-test/r16-source-unit-9348e8306/zig-0.17.0/zig",
+          "build",
+          "native",
+          "test-lfm2",
+          "test-lfm2-dspark",
+          "test-native",
+          "test-qwen27-shared-allocation-host",
+          "test-draft-metal-host",
+          "test-drafter-skip-metal-host",
+          "tf-kernel-contract",
+          "tf-lfm2-dspark",
+          "-Dcpu=apple_m1",
+          "-Dversion=1.2.0",
+          "-j1",
+          "--summary",
+          "all"
+        ],
+        "returncode": 0,
+        "seconds": 153.27203675033525,
+        "log_sha256": "81c2bcb92275e63308534f449b7112b9c0c0830463861fe90120767945ec7b4d"
+      },
+      {
+        "command": [
+          "/Users/kletorch/tf-lfm2-test/r24-review-cf2376236/source/zig-out/bin/tf-kernel-contract",
+          "--only",
+          "metal lfm2 block attention"
+        ],
+        "returncode": 0,
+        "seconds": 10.587256500031799,
+        "log_sha256": "6adfc70f1b4170e9cffad67e325f954d538ca2ba0f4d38004766c7239f4976c8"
+      },
+      {
+        "command": [
+          "/Users/kletorch/tf-lfm2-test/r24-review-cf2376236/source/zig-out/bin/tf-kernel-contract",
+          "--only",
+          "metal lfm2 bf16"
+        ],
+        "returncode": 0,
+        "seconds": 99.33404558384791,
+        "log_sha256": "470ff1d31d72bdc12a147a2206f89a0f934d91c0151416ea39e84f956c43beea"
+      },
+      {
+        "command": [
+          "/Users/kletorch/tf-lfm2-test/r24-review-cf2376236/source/zig-out/bin/tf-kernel-contract",
+          "--only",
+          "metal lfm2 norm tap"
+        ],
+        "returncode": 0,
+        "seconds": 0.869518999941647,
+        "log_sha256": "af6798284f8f51bd739462c214d3ca81059a2f219ffee7538c60ceb938dc32fd"
+      },
+      {
+        "command": [
+          "/Users/kletorch/tf-lfm2-test/r24-review-cf2376236/source/zig-out/bin/tf-lfm2-dspark",
+          "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+          "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+          "64",
+          "9",
+          "0"
+        ],
+        "returncode": 0,
+        "seconds": 6.249480834230781,
+        "log_sha256": "7d79bdc225e3de1902e07ef51ccfb5311e2803a0d03854b47601cb44d0acbcaf"
+      },
+      {
+        "command": [
+          "/Users/kletorch/tf-lfm2-test/r24-review-cf2376236/source/zig-out/bin/tf-lfm2-dspark",
+          "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+          "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+          "64",
+          "9",
+          "8"
+        ],
+        "returncode": 0,
+        "seconds": 6.12153579108417,
+        "log_sha256": "41447b4d1615036c3d47dc67eb9ed195f0eba9ceebe57d1affa3323cfa94df92"
+      }
+    ],
+    "binding": {
+      "driver_sha256": {
+        "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+        "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+        "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+        "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+        "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+        "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+        "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+      },
+      "frozen_driver": "/Users/kletorch/tf-lfm2-test/r3-owned-capture-ced6c5ce51/driver",
+      "shared_lock": "/tmp/tensorfold-model.lock",
+      "shared_lock_inode_observed": 3719605,
+      "model_sha256": {
+        "target": {
+          "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+          "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+          "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+          "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+          "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+          "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+          "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+          "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+          "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+        },
+        "drafter": {
+          "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+          "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+        }
+      },
+      "remote_target": "/Users/kletorch/tf-lfm2-test/models/LFM2.5-24B-A2B-MLX-4bit",
+      "remote_drafter": "/Users/kletorch/tf-lfm2-test/dspark/LFM2.5-24B-A2B-DSpark",
+      "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+      "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+      "source_archive_sha256": "5c43f984522404e10242ca25f4afc998f8bf6c4a9e505ed7a15ffbb78e564253"
+    }
+  },
+  "M4_scope_counts": {
+    "build_steps_passed": 82,
+    "build_steps_total": 82,
+    "executed_tests_passed": 355,
+    "executed_tests_skipped": 7,
+    "separately_verified_cached_core_passed": 408,
+    "separately_verified_cached_core_skipped": 1
+  },
+  "M5_scope_counts": {
+    "build_steps_passed": 82,
+    "build_steps_total": 82,
+    "executed_tests_passed": 767,
+    "executed_tests_skipped": 4
+  },
+  "source_archive_sha256": "5c43f984522404e10242ca25f4afc998f8bf6c4a9e505ed7a15ffbb78e564253",
+  "full_performance_qualification_status": "IN_PROGRESS_NOT_A_PASS",
+  "ci_status": "NO_CURRENT_HEAD_ROLLUP_REPORTED",
+  "review_ready": false
+}

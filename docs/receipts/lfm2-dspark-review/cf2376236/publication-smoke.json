@@ -1,0 +1,23 @@
+{
+  "production_source_revision": "cf23762368785b470b3bf7485026e2ea4837ce82",
+  "evidence_only": true,
+  "diagnostic_patch_applies_without_mutating_production": true,
+  "diagnostic_binary_previously_exercised_all_six_arms": true,
+  "byte_exact_private_patch_controller_and_original_data_verified": true,
+  "twelve_original_native_guard_log_sha256_verified": true,
+  "original_gpu_numerical_bounds_changed": false,
+  "correctly_bound_functional_modes": [
+    0,
+    8
+  ],
+  "functional_server_shutdowns": {
+    "total": 4,
+    "exit_zero": 4,
+    "forced": 0
+  },
+  "credential_format_scan": "No matches in complete publication namespace",
+  "full_performance_qualification": "Both original full matrices running; no completed current-source performance verdict yet",
+  "ci": "Current-head rollup absent; contradictory mergeability reported and maintainer refresh requested",
+  "review_requested": false,
+  "pr_merged": false
+}

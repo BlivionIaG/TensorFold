@@ -1,0 +1,832 @@
+{
+  "binding": {
+    "label": "PRIVATE_CAUSAL_DIAGNOSTIC_NOT_QUALIFICATION",
+    "base_source": "5bed4bd92c7c257f963046b945d83fc931dcbf29",
+    "binary_sha256": "4ece120959114a1fddc1006fe9e0823daf78d5473d2962c437a6c1dd241c8799",
+    "context": 4096,
+    "parallel": 16,
+    "tokens": 512,
+    "cases": [
+      {
+        "prompt": "code",
+        "temperature": 0.0,
+        "streams": 1
+      },
+      {
+        "prompt": "code",
+        "temperature": 1.0,
+        "streams": 8
+      }
+    ]
+  },
+  "records": [
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 0.0,
+        "streams": 1
+      },
+      "arm": "plain",
+      "aggregate_tps": 169.64213588726764,
+      "activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "private_counters": {
+        "step": {
+          "calls": 287,
+          "wall_ms": 3129.822125
+        },
+        "plan": {
+          "calls": 287,
+          "wall_ms": 0.407875
+        },
+        "allocation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        },
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        },
+        "copy": {
+          "calls": 287,
+          "wall_ms": 0.313625
+        },
+        "draw": {
+          "calls": 599,
+          "wall_ms": 0.512125
+        },
+        "hold_quote": {
+          "calls": 0,
+          "wall_ms": null
+        },
+        "context_quote": {
+          "calls": 0,
+          "wall_ms": null
+        }
+      },
+      "private_holds": null,
+      "private_target": {
+        "prefill": {
+          "calls": 2,
+          "rows": 28,
+          "captured_calls": 0,
+          "encode_cpu_ms": 0.271375,
+          "gpu_ms": 176.125166,
+          "timed_gpu_calls": 2
+        },
+        "decode": {
+          "calls": 287,
+          "rows": 597,
+          "captured_calls": 0,
+          "encode_cpu_ms": 23.709667,
+          "gpu_ms": 3039.327212,
+          "timed_gpu_calls": 287
+        }
+      },
+      "enrollments": [],
+      "returncode": 0,
+      "log_sha256": "09fd682c506291d5563cb8a9bd5e17ef233544dec76b6b61af18da83b0e2ca5a"
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 0.0,
+        "streams": 1
+      },
+      "arm": "bf16",
+      "aggregate_tps": 169.77516917461372,
+      "activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "private_counters": {
+        "step": {
+          "calls": 286,
+          "wall_ms": 3151.682917
+        },
+        "plan": {
+          "calls": 286,
+          "wall_ms": 0.399125
+        },
+        "allocation": {
+          "calls": 14,
+          "wall_ms": 23.262292
+        },
+        "reservation": {
+          "calls": 14,
+          "wall_ms": 0.154167
+        },
+        "copy": {
+          "calls": 286,
+          "wall_ms": 0.344
+        },
+        "draw": {
+          "calls": 599,
+          "wall_ms": 3.023125
+        },
+        "hold_quote": {
+          "calls": 101,
+          "wall_ms": null
+        },
+        "context_quote": {
+          "calls": 133,
+          "wall_ms": null
+        }
+      },
+      "private_holds": {
+        "passes": 1,
+        "blocks": 1,
+        "retained": 3,
+        "staged_rows": 16,
+        "encode_gpu_ms": 10.2015
+      },
+      "private_target": {
+        "prefill": {
+          "calls": 2,
+          "rows": 28,
+          "captured_calls": 1,
+          "encode_cpu_ms": 0.684,
+          "gpu_ms": 180.124959,
+          "timed_gpu_calls": 2
+        },
+        "decode": {
+          "calls": 286,
+          "rows": 597,
+          "captured_calls": 14,
+          "encode_cpu_ms": 30.519083,
+          "gpu_ms": 3029.733373,
+          "timed_gpu_calls": 286
+        }
+      },
+      "enrollments": [
+        {
+          "bits": 0,
+          "max_new": 16,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": false,
+          "remaining": 64,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": true,
+          "remaining": 63,
+          "rate0": 0.872
+        }
+      ],
+      "returncode": 0,
+      "log_sha256": "0a0254fac436330c408fd5533aa344af207c9f6c7bf85772666a1dbc33782a01"
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 0.0,
+        "streams": 1
+      },
+      "arm": "bits8",
+      "aggregate_tps": 163.3625555582809,
+      "activity": {
+        "rounds": 279,
+        "drafted": 289,
+        "accepted": 232
+      },
+      "private_counters": {
+        "step": {
+          "calls": 293,
+          "wall_ms": 3259.526583
+        },
+        "plan": {
+          "calls": 293,
+          "wall_ms": 0.049417
+        },
+        "allocation": {
+          "calls": 293,
+          "wall_ms": 15.571583
+        },
+        "reservation": {
+          "calls": 293,
+          "wall_ms": 1.013333
+        },
+        "copy": {
+          "calls": 293,
+          "wall_ms": 0.267083
+        },
+        "draw": {
+          "calls": 585,
+          "wall_ms": 0.355125
+        },
+        "hold_quote": {
+          "calls": 813,
+          "wall_ms": null
+        },
+        "context_quote": {
+          "calls": 566,
+          "wall_ms": null
+        }
+      },
+      "private_holds": {
+        "passes": 8,
+        "blocks": 8,
+        "retained": 12,
+        "staged_rows": 506,
+        "encode_gpu_ms": 50.393
+      },
+      "private_target": {
+        "prefill": {
+          "calls": 2,
+          "rows": 28,
+          "captured_calls": 2,
+          "encode_cpu_ms": 0.249333,
+          "gpu_ms": 185.455792,
+          "timed_gpu_calls": 2
+        },
+        "decode": {
+          "calls": 293,
+          "rows": 583,
+          "captured_calls": 293,
+          "encode_cpu_ms": 22.685208,
+          "gpu_ms": 3108.268583,
+          "timed_gpu_calls": 293
+        }
+      },
+      "enrollments": [
+        {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": false,
+          "remaining": 64,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": true,
+          "remaining": 64,
+          "rate0": 0.872
+        }
+      ],
+      "returncode": 0,
+      "log_sha256": "0e36eb6ccdb4c699beb8bc6ac1b89935e77a831bd19429c750de0dde96c00628"
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 1.0,
+        "streams": 8
+      },
+      "arm": "plain",
+      "aggregate_tps": 247.49027439157882,
+      "activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "private_counters": {
+        "step": {
+          "calls": 526,
+          "wall_ms": 16360.42925
+        },
+        "plan": {
+          "calls": 3859,
+          "wall_ms": 2.105875
+        },
+        "allocation": {
+          "calls": 525,
+          "wall_ms": 0.34725
+        },
+        "reservation": {
+          "calls": 0,
+          "wall_ms": 0.0
+        },
+        "copy": {
+          "calls": 3859,
+          "wall_ms": 1.86325
+        },
+        "draw": {
+          "calls": 4407,
+          "wall_ms": 330.847208
+        },
+        "hold_quote": {
+          "calls": 0,
+          "wall_ms": null
+        },
+        "context_quote": {
+          "calls": 0,
+          "wall_ms": null
+        }
+      },
+      "private_holds": null,
+      "private_target": {
+        "prefill": {
+          "calls": 16,
+          "rows": 224,
+          "captured_calls": 0,
+          "encode_cpu_ms": 3.043833,
+          "gpu_ms": 1338.898666,
+          "timed_gpu_calls": 16
+        },
+        "decode": {
+          "calls": 526,
+          "rows": 4391,
+          "captured_calls": 0,
+          "encode_cpu_ms": 56.410292,
+          "gpu_ms": 15770.246292,
+          "timed_gpu_calls": 526
+        }
+      },
+      "enrollments": [],
+      "returncode": 0,
+      "log_sha256": "ca0506678856a1ef71436e16df33eccf31bbf678b91b29acada8f0237256d142"
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 1.0,
+        "streams": 8
+      },
+      "arm": "bf16",
+      "aggregate_tps": 246.99431405020968,
+      "activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "private_counters": {
+        "step": {
+          "calls": 526,
+          "wall_ms": 16393.6515
+        },
+        "plan": {
+          "calls": 3859,
+          "wall_ms": 2.164542
+        },
+        "allocation": {
+          "calls": 525,
+          "wall_ms": 0.4045
+        },
+        "reservation": {
+          "calls": 15,
+          "wall_ms": 0.067542
+        },
+        "copy": {
+          "calls": 3859,
+          "wall_ms": 1.942875
+        },
+        "draw": {
+          "calls": 4407,
+          "wall_ms": 340.671792
+        },
+        "hold_quote": {
+          "calls": 828,
+          "wall_ms": null
+        },
+        "context_quote": {
+          "calls": 1242,
+          "wall_ms": null
+        }
+      },
+      "private_holds": {
+        "passes": 0,
+        "blocks": 0,
+        "retained": 0,
+        "staged_rows": 0,
+        "encode_gpu_ms": 0.0
+      },
+      "private_target": {
+        "prefill": {
+          "calls": 16,
+          "rows": 224,
+          "captured_calls": 1,
+          "encode_cpu_ms": 2.266667,
+          "gpu_ms": 1336.741208,
+          "timed_gpu_calls": 16
+        },
+        "decode": {
+          "calls": 526,
+          "rows": 4391,
+          "captured_calls": 15,
+          "encode_cpu_ms": 58.4445,
+          "gpu_ms": 15785.43009,
+          "timed_gpu_calls": 526
+        }
+      },
+      "enrollments": [
+        {
+          "bits": 0,
+          "max_new": 16,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": false,
+          "remaining": 64,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 16,
+          "streams": 2,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 63,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 16,
+          "streams": 3,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 62,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 16,
+          "streams": 4,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 61,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 16,
+          "streams": 5,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 60,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 16,
+          "streams": 6,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 59,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 16,
+          "streams": 7,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 58,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 16,
+          "streams": 8,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 58,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 57,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 2,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 56,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 3,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 55,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 4,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 55,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 5,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 55,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 6,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 55,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 7,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 54,
+          "rate0": 0.84
+        },
+        {
+          "bits": 0,
+          "max_new": 512,
+          "streams": 8,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 54,
+          "rate0": 0.84
+        }
+      ],
+      "returncode": 0,
+      "log_sha256": "a01136742901fc92918b0bce76ee8422dd0dda75f8b8c5a2298543804e6e00a7"
+    },
+    {
+      "case": {
+        "prompt": "code",
+        "temperature": 1.0,
+        "streams": 8
+      },
+      "arm": "bits8",
+      "aggregate_tps": 246.5348618281166,
+      "activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "private_counters": {
+        "step": {
+          "calls": 526,
+          "wall_ms": 16425.688083
+        },
+        "plan": {
+          "calls": 3859,
+          "wall_ms": 2.128375
+        },
+        "allocation": {
+          "calls": 525,
+          "wall_ms": 0.382625
+        },
+        "reservation": {
+          "calls": 15,
+          "wall_ms": 0.053625
+        },
+        "copy": {
+          "calls": 3859,
+          "wall_ms": 1.900167
+        },
+        "draw": {
+          "calls": 4407,
+          "wall_ms": 335.169917
+        },
+        "hold_quote": {
+          "calls": 792,
+          "wall_ms": null
+        },
+        "context_quote": {
+          "calls": 1188,
+          "wall_ms": null
+        }
+      },
+      "private_holds": {
+        "passes": 0,
+        "blocks": 0,
+        "retained": 0,
+        "staged_rows": 0,
+        "encode_gpu_ms": 0.0
+      },
+      "private_target": {
+        "prefill": {
+          "calls": 16,
+          "rows": 224,
+          "captured_calls": 1,
+          "encode_cpu_ms": 2.008375,
+          "gpu_ms": 1338.312417,
+          "timed_gpu_calls": 16
+        },
+        "decode": {
+          "calls": 526,
+          "rows": 4391,
+          "captured_calls": 15,
+          "encode_cpu_ms": 57.805083,
+          "gpu_ms": 15818.622205,
+          "timed_gpu_calls": 526
+        }
+      },
+      "enrollments": [
+        {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 1,
+          "heads": 1,
+          "tracked": true,
+          "observed": false,
+          "remaining": 64,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 2,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 63,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 3,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 62,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 4,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 61,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 5,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 60,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 6,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 59,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 7,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 58,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 16,
+          "streams": 8,
+          "heads": 2,
+          "tracked": false,
+          "observed": false,
+          "remaining": 57,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 1,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 56,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 2,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 55,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 3,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 54,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 4,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 53,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 5,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 52,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 6,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 51,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 7,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 50,
+          "rate0": 0.84
+        },
+        {
+          "bits": 8,
+          "max_new": 512,
+          "streams": 8,
+          "heads": 1,
+          "tracked": false,
+          "observed": false,
+          "remaining": 49,
+          "rate0": 0.84
+        }
+      ],
+      "returncode": 0,
+      "log_sha256": "f52af636ecfaea3ed85320df8e5c36d039c3ab659d99acaea5975e8353a52e15"
+    }
+  ]
+}

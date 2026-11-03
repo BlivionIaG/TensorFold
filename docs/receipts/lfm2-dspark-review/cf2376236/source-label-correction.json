@@ -1,0 +1,10 @@
+{
+  "expected_source": "cf23762368785b470b3bf7485026e2ea4837ce82",
+  "initial_input_source_label": "5bed4bd92c7c257f963046b945d83fc931dcbf29",
+  "corrected_input_source_label": "cf23762368785b470b3bf7485026e2ea4837ce82",
+  "source_archive_sha256": "5c43f984522404e10242ca25f4afc998f8bf6c4a9e505ed7a15ffbb78e564253",
+  "archive_or_production_source_changed": false,
+  "original_guard_source_constant": "cf23762368785b470b3bf7485026e2ea4837ce82",
+  "correction": "Inherited JSON label was corrected for future functional children. Preserve the parent summary unchanged if it retained the original label; accept source-bound child receipts only, otherwise rerun misbound functional stages into new output directories. No numerical or pressure-bound change.",
+  "resolution": "Both original source-labelled functional workflows were recollected unchanged into new output directories. Accepted receipts identify CF and binary7a12103904; earlier mislabeled raw records remain unmodified and are not qualification evidence."
+}

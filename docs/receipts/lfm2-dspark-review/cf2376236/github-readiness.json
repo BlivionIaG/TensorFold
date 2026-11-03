@@ -1,0 +1,62 @@
+{
+  "source_revision": "cf23762368785b470b3bf7485026e2ea4837ce82",
+  "fresh_graphql": {
+    "data": {
+      "repository": {
+        "pullRequest": {
+          "headRefOid": "cf23762368785b470b3bf7485026e2ea4837ce82",
+          "baseRefOid": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+          "mergeable": "CONFLICTING",
+          "mergeStateStatus": "DIRTY",
+          "reviewDecision": "CHANGES_REQUESTED",
+          "isDraft": false,
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "oid": "cf23762368785b470b3bf7485026e2ea4837ce82",
+                  "statusCheckRollup": null
+                }
+              }
+            ]
+          },
+          "reviewThreads": {
+            "nodes": [],
+            "pageInfo": {
+              "hasNextPage": false
+            }
+          }
+        }
+      }
+    }
+  },
+  "github_compare": {
+    "status": "ahead",
+    "ahead_by": 144,
+    "behind_by": 0,
+    "total_commits": 144,
+    "html_url": "https://github.com/BlivionIaG/TensorFold/compare/6a5048697e0770a464a4093ff6373f6a73f998b6...cf23762368785b470b3bf7485026e2ea4837ce82",
+    "base_commit": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+    "merge_base_commit": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+    "head": "cf23762368785b470b3bf7485026e2ea4837ce82"
+  },
+  "guarded_update_branch": {
+    "source_revision": "cf23762368785b470b3bf7485026e2ea4837ce82",
+    "pinned_base_revision": "6a5048697e0770a464a4093ff6373f6a73f998b6",
+    "operation": "normal update-branch with expected_head_sha; no force/rebase/PR merge",
+    "returncode": 1,
+    "stdout": "{\"message\":\"merge conflict between base and head\",\"documentation_url\":\"https://docs.github.com/rest/pulls/pulls#update-a-pull-request-branch\",\"status\":\"422\"}",
+    "stderr": "gh: merge conflict between base and head (HTTP 422)\n"
+  },
+  "maintainer_notification": "https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6602970480",
+  "local_integration_commit": {
+    "sha": "0b2e9336e2b77dad06652048a25f283e16100974",
+    "parents": [
+      "750bca95c457dc2119505568dff593e151cbeed7",
+      "6a5048697e0770a464a4093ff6373f6a73f998b6"
+    ]
+  },
+  "forced_push": false,
+  "pr_merged": false,
+  "review_requested": false
+}

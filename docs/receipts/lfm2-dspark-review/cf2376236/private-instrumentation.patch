@@ -1,0 +1,304 @@
+diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
+index 28ab1c698..22f3ea3c5 100644
+--- a/zig/src/core/lanes/engine.zig
++++ b/zig/src/core/lanes/engine.zig
+@@ -1,5 +1,6 @@
+ //! The lane round loop (Python FamilyRounds and SharedRounds): every decision and cost update in Python's order.
+ const std = @import("std");
++const diagnostic = @import("dspark_probe_private.zig");
+ const Allocator = std.mem.Allocator;
+ const Config = @import("config.zig").Config;
+ const depth = @import("depth.zig");
+@@ -56,6 +57,7 @@ pub const Engine = struct {
+     unread: std.ArrayList(Unread) = .empty, // queued draws the log reads at the step's end
+ 
+     pub fn init(gpa: Allocator, cfg: *const Config, backend: be.Backend, clock: be.Clock) Engine {
++        diagnostic.reset();
+         return .{
+             .gpa = gpa,
+             .cfg = cfg,
+@@ -82,6 +84,7 @@ pub const Engine = struct {
+     }
+ 
+     pub fn deinit(e: *Engine) void {
++        diagnostic.report();
+         e.grammar_workers.deinit(e.gpa);
+         e.live.deinit(e.gpa);
+         e.unread.deinit(e.gpa);
+@@ -117,6 +120,8 @@ pub const Engine = struct {
+ 
+     /// One round for every live stream (Python `_family_step`).
+     pub fn step(e: *Engine) !void {
++        const diagnostic_start = diagnostic.now();
++        defer diagnostic.span(.step, diagnostic_start);
+         _ = e.arena.reset(.retain_capacity);
+         const a = e.arena.allocator();
+         try trail.event(e, &.{ f("ev", str("step")), f("index", int(e.steps)) });
+diff --git a/zig/src/core/lanes/hold_price.zig b/zig/src/core/lanes/hold_price.zig
+index 91d97e203..ecc9b999d 100644
+--- a/zig/src/core/lanes/hold_price.zig
++++ b/zig/src/core/lanes/hold_price.zig
+@@ -10,6 +10,7 @@ pub const ContextCost = struct { streams: u32, rows: u32, ms: f64 };
+ 
+ /// Round both dimensions up to measured coverage; mixed debts conservatively use their largest owed row count.
+ pub fn contextMs(costs: []const ContextCost, streams: usize, max_rows: u32) f64 {
++    @import("dspark_probe_private.zig").count(.context_quote);
+     if (streams == 0 or max_rows == 0 or costs.len == 0) return 0;
+     var widest: u32 = 0;
+     var above: ?u32 = null;
+@@ -33,6 +34,7 @@ pub fn contextMs(costs: []const ContextCost, streams: usize, max_rows: u32) f64
+ 
+ /// A hold pass's ms: linear in depth at each timed stream count, then in streams (past the widest, by its slope).
+ pub fn holdMs(costs: []const HoldCost, streams: usize, depth: i64) f64 {
++    @import("dspark_probe_private.zig").count(.hold_quote);
+     var below: ?u32 = null;
+     var above: ?u32 = null;
+     for (costs) |c| {
+diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
+index 1a5bfb5f3..b09dfc7e4 100644
+--- a/zig/src/core/lanes/lanes.zig
++++ b/zig/src/core/lanes/lanes.zig
+@@ -1,5 +1,6 @@
+ //! The lane engine's host core (Python lane_engine.py); backends run forwards and draws behind `backend.Backend`.
+ const std = @import("std");
++pub const dspark_probe_private = @import("dspark_probe_private.zig");
+ 
+ pub const proposal_score = @import("proposal_score.zig");
+ pub const proposal_head = @import("proposal_head.zig");
+diff --git a/zig/src/core/lanes/proposer.zig b/zig/src/core/lanes/proposer.zig
+index 127dbe450..82c51eca6 100644
+--- a/zig/src/core/lanes/proposer.zig
++++ b/zig/src/core/lanes/proposer.zig
+@@ -157,6 +157,8 @@ pub const SuffixLookup = struct {
+ 
+     /// Match history followed by a drafted tail; only history supplies candidates and copied tokens.
+     pub fn proposeAfter(s: *SuffixLookup, history: []const u32, tail: []const u32, max_draft: i64) ![]const u32 {
++        const diagnostic_start = @import("dspark_probe_private.zig").now();
++        defer @import("dspark_probe_private.zig").span(.copy, diagnostic_start);
+         const n = s.params.ngram;
+         s.out.clearRetainingCapacity();
+         s.last_match = 0;
+diff --git a/zig/src/core/lanes/shared_drafts.zig b/zig/src/core/lanes/shared_drafts.zig
+index bec374265..e881e709a 100644
+--- a/zig/src/core/lanes/shared_drafts.zig
++++ b/zig/src/core/lanes/shared_drafts.zig
+@@ -1,5 +1,6 @@
+ //! Price next-round head rows before proposing; keep that window's owned copy decision and the last full node prices.
+ const std = @import("std");
++const diagnostic = @import("dspark_probe_private.zig");
+ const win = @import("windows.zig");
+ const alloc = @import("allocate.zig");
+ const verify_cost = @import("verify_cost.zig");
+@@ -7,6 +8,8 @@ const Engine = @import("engine.zig").Engine;
+ const depth = @import("depth.zig");
+ 
+ pub fn budgets(e: *Engine, plans: []const win.Plan, heads: []const usize, out: []i64) !void {
++    const diagnostic_start = diagnostic.now();
++    defer diagnostic.span(.reservation, diagnostic_start);
+     const a = e.arena.allocator();
+     const fixed = try a.alloc(u32, plans.len);
+     const probs = try a.alloc([]const f64, plans.len);
+diff --git a/zig/src/core/lanes/windows.zig b/zig/src/core/lanes/windows.zig
+index 6c24984e2..440dba6af 100644
+--- a/zig/src/core/lanes/windows.zig
++++ b/zig/src/core/lanes/windows.zig
+@@ -1,5 +1,6 @@
+ //! A round's windows (Python `_plan_window`, `_copy_proposal`, `_allocate`): forced, copied or drafted rows.
+ const std = @import("std");
++const diagnostic = @import("dspark_probe_private.zig");
+ const accept = @import("accept.zig");
+ const cut = @import("window_cut.zig");
+ const lone_costs = @import("lone_costs.zig");
+@@ -61,6 +62,8 @@ pub const Copy = struct {
+ 
+ /// Forced tokens first, then a copied continuation, then the head's drafts (Python `_plan_window`).
+ pub fn plan(e: *Engine, s: *Stream, copied: ?Copy) !Plan {
++    const diagnostic_start = diagnostic.now();
++    defer diagnostic.span(.plan, diagnostic_start);
+     const a = e.arena.allocator();
+     var p: Plan = .{ .stream = s, .position = s.cache_len, .kind = .none };
+     defer s.reserved_copy = null; // even an empty decision belongs to exactly this logical window
+@@ -300,6 +303,8 @@ pub fn anySampled(plans: []const Plan) bool {
+ 
+ /// Trim draft prefixes by landing probability to the shared width with the most expected tokens a ms.
+ pub fn allocate(e: *Engine, plans: []Plan) !void {
++    const diagnostic_start = diagnostic.now();
++    defer diagnostic.span(.allocation, diagnostic_start);
+     if (e.trim) |t| return trimmed(e, plans, t);
+     const a = e.arena.allocator();
+     const explicit = e.cfg.draft_confidence != null;
+diff --git a/zig/src/families/lfm2_moe/backend.zig b/zig/src/families/lfm2_moe/backend.zig
+index 465b553ed..2c9004963 100644
+--- a/zig/src/families/lfm2_moe/backend.zig
++++ b/zig/src/families/lfm2_moe/backend.zig
+@@ -432,6 +432,8 @@ pub fn value(word: u16) f64 {
+ 
+ /// The GPU has checked every logit; its flag is authoritative even when a mask hides the bad token.
+ inline fn drawRow(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.Sampling, position: u64, mask: []const u32, picked: [2]u32) !u32 {
++    const diagnostic_start = lanes.dspark_probe_private.now();
++    defer lanes.dspark_probe_private.span(.draw, diagnostic_start);
+     if (picked[1] != 0) return error.NonfiniteLfmLogits;
+     if (mask.len > 0) return draw(gpa, logits, settings, position, mask);
+     const sampling = settings orelse return picked[0];
+@@ -442,6 +444,8 @@ inline fn drawRow(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.
+ 
+ /// The unchanged top-k candidates for the shared fp64 keyed sampler; a `mask` keeps its allowed ones (-inf's draw).
+ pub fn draw(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.Sampling, position: u64, mask: []const u32) !u32 {
++    const diagnostic_start = lanes.dspark_probe_private.now();
++    defer lanes.dspark_probe_private.span(.draw, diagnostic_start);
+     if (settings) |s| if (try topk.draw(logits, s, position, mask)) |token| return token;
+     var best: ?usize = null;
+     var allowed: usize = 0;
+diff --git a/zig/src/families/lfm2_moe/dspark.zig b/zig/src/families/lfm2_moe/dspark.zig
+index 7b1fdca5c..3375627ea 100644
+--- a/zig/src/families/lfm2_moe/dspark.zig
++++ b/zig/src/families/lfm2_moe/dspark.zig
+@@ -108,6 +108,13 @@ pub const Drafter = struct {
+     pass_len: usize = 0,
+     pass_context_rows: u32 = 0, // largest actual staged debt, captured before the signalled hold clears it
+     pass_encode_cpu_ms: f64 = 0, // pending pass's CPU for EMA only; already charged to encode_cpu_ms at commit
++    diagnostic: struct {
++        passes: u64 = 0,
++        blocks: u64 = 0,
++        retained: u64 = 0,
++        staged_rows: u64 = 0,
++        encode_gpu_ms: f64 = 0,
++    } = .{},
+ 
+     pub fn init(gpa: std.mem.Allocator, io: std.Io, target: *Model, dir: []const u8, options: Options) !*Drafter {
+         const d = try gpa.create(Drafter);
+@@ -119,6 +126,7 @@ pub const Drafter = struct {
+         d.w = try dw.load(gpa, target.device, io, dir, &d.config, options.bits);
+         errdefer d.w.deinit(gpa);
+         try d.prepare();
++        d.diagnostic = .{};
+         return d;
+     }
+ 
+@@ -133,6 +141,7 @@ pub const Drafter = struct {
+ 
+     pub fn deinit(d: *Drafter) void {
+         d.settle() catch {};
++        std.debug.print("DSPARK_PRIVATE_HOLDS passes={d} blocks={d} retained={d} staged_rows={d} encode_gpu_ms={d:.6}\n", .{ d.diagnostic.passes, d.diagnostic.blocks, d.diagnostic.retained, d.diagnostic.staged_rows, d.diagnostic.encode_gpu_ms });
+         d.event.deinit();
+         var it = d.lanes.valueIterator();
+         while (it.next()) |l| d.dropLane(l.*);
+@@ -239,6 +248,7 @@ pub const Drafter = struct {
+             .context_chunk = stage_rows,
+         }, rates[0..depth]);
+         s.head_prior = if (tracked) recent.rates[0..d.config.block] else &.{};
++        std.debug.print("DSPARK_PRIVATE_ENROLL bits={d} max_new={d} streams={d} heads={d} tracked={} observed={} remaining={d} rate0={d:.6}\n", .{ d.options.bits, s.max_new, cohort.streams, cohort.heads, tracked, recent.observed, recent.remaining, recent.rates[0] });
+         return tracked;
+     }
+ 
+@@ -479,6 +489,11 @@ pub const Drafter = struct {
+ 
+     /// Reprices the clean grid with CPU-encode + GPU ms minus the matching calibrated context estimate.
+     pub fn priceHold(d: *Drafter, streams: usize, depth: u32, context_rows: u32, ms: f64) void {
++        d.diagnostic.passes += 1;
++        d.diagnostic.blocks += streams;
++        d.diagnostic.retained += streams * depth;
++        d.diagnostic.staged_rows += context_rows;
++        d.diagnostic.encode_gpu_ms += ms;
+         const timed = d.holds[0..d.holds_len];
+         if (timed.len == 0 or streams == 0 or !(ms > 0) or !std.math.isFinite(ms)) return;
+         const clean_ms = ms - lanes.hold_price.contextMs(d.contexts[0..d.contexts_len], streams, context_rows);
+diff --git a/zig/src/families/lfm2_moe/forward.zig b/zig/src/families/lfm2_moe/forward.zig
+index c24e24eff..f43e7516e 100644
+--- a/zig/src/families/lfm2_moe/forward.zig
++++ b/zig/src/families/lfm2_moe/forward.zig
+@@ -1,5 +1,6 @@
+ //! One command buffer a call: segment-local conv state and causal attention, every row's arithmetic its own.
+ const std = @import("std");
++const diagnostic = @import("lanes").dspark_probe_private;
+ const mtl = @import("metal");
+ const Model = @import("model.zig").Model;
+ const st = @import("state.zig");
+@@ -188,6 +189,7 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
+ 
+ /// `run` with held drafts copied into the rows' ids on the GPU first (after `wait`): their host ids are ignored.
+ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, held: []const Held, wait: ?Wait) !void {
++    const diagnostic_start = diagnostic.now();
+     if (tokens.len == 0 or tokens.len > s.rows or (record and tokens.len > st.batch_rows)) return error.LfmRowsExceeded;
+     var total: usize = 0;
+     var capture = false;
+@@ -259,9 +261,12 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
+         enc.groups(.{ total, 1, 1 }, .{ 1024, 1, 1 });
+     } else enc.projection(embedding, s.x, (total - 1) * c.hidden * 2, s.logits, 0, 1);
+     e.end();
++    const diagnostic_encode_ticks = diagnostic.now() - diagnostic_start;
+     cb.commit();
+     cb.wait();
+-    gpu_seconds += cb.gpuSeconds();
++    const diagnostic_gpu_seconds = cb.gpuSeconds();
++    gpu_seconds += diagnostic_gpu_seconds;
++    diagnostic.target(diagnostic_encode_ticks, diagnostic_gpu_seconds, capture and s.taps != null, record, total);
+     if (cb.failure()) |msg| {
+         std.debug.print("LFM2 forward: {s}\n", .{msg});
+         return error.GpuFailed;
+diff --git a/zig/src/core/lanes/dspark_probe_private.zig b/zig/src/core/lanes/dspark_probe_private.zig
+new file mode 100644
+index 000000000..c88933464
+--- /dev/null
++++ b/zig/src/core/lanes/dspark_probe_private.zig
+@@ -0,0 +1,60 @@
++//! Private diagnostic only: no production policy, allocation, synchronization or arithmetic changes.
++const std = @import("std");
++extern "c" fn mach_absolute_time() u64;
++const Timebase = extern struct { numer: u32, denom: u32 };
++extern "c" fn mach_timebase_info(info: *Timebase) c_int;
++
++pub const Kind = enum { step, plan, allocation, reservation, copy, draw, hold_quote, context_quote };
++const names = [_][]const u8{ "step", "plan", "allocation", "reservation", "copy", "draw", "hold_quote", "context_quote" };
++var calls: [names.len]u64 = @splat(0);
++var ticks: [names.len]u64 = @splat(0);
++const Target = struct { calls: u64 = 0, rows: u64 = 0, captured: u64 = 0, encode_ticks: u64 = 0, gpu_ms: f64 = 0, timed_gpu_calls: u64 = 0 };
++var targets: [2]Target = .{ .{}, .{} };
++
++pub fn reset() void {
++    calls = @splat(0);
++    ticks = @splat(0);
++    targets = .{ .{}, .{} };
++}
++
++pub fn now() u64 {
++    return mach_absolute_time();
++}
++
++pub fn span(kind: Kind, start: u64) void {
++    const i = @intFromEnum(kind);
++    calls[i] += 1;
++    ticks[i] += now() - start;
++}
++
++pub fn count(kind: Kind) void {
++    calls[@intFromEnum(kind)] += 1;
++}
++
++pub fn target(encode_ticks: u64, seconds: f64, captured: bool, record: bool, rows: usize) void {
++    const value = &targets[@intFromBool(record)];
++    value.calls += 1;
++    value.rows += rows;
++    value.captured += @intFromBool(captured);
++    value.encode_ticks += encode_ticks;
++    if (seconds > 0 and std.math.isFinite(seconds)) {
++        value.gpu_ms += seconds * 1000;
++        value.timed_gpu_calls += 1;
++    }
++}
++
++pub fn report() void {
++    var base: Timebase = .{ .numer = 0, .denom = 0 };
++    if (mach_timebase_info(&base) != 0 or base.denom == 0) return;
++    const to_ms = @as(f64, @floatFromInt(base.numer)) / @as(f64, @floatFromInt(base.denom)) / 1e6;
++    for (names, calls, ticks, 0..) |name, n, taken, i| {
++        if (i >= @intFromEnum(Kind.hold_quote)) {
++            std.debug.print("DSPARK_PRIVATE_COUNTER kind={s} calls={d}\n", .{ name, n });
++        } else {
++            std.debug.print("DSPARK_PRIVATE_COUNTER kind={s} calls={d} wall_ms={d:.6}\n", .{ name, n, @as(f64, @floatFromInt(taken)) * to_ms });
++        }
++    }
++    for (targets, [_][]const u8{ "prefill", "decode" }) |value, phase| {
++        std.debug.print("DSPARK_PRIVATE_TARGET phase={s} calls={d} rows={d} captured_calls={d} encode_cpu_ms={d:.6} gpu_ms={d:.6} timed_gpu_calls={d}\n", .{ phase, value.calls, value.rows, value.captured, @as(f64, @floatFromInt(value.encode_ticks)) * to_ms, value.gpu_ms, value.timed_gpu_calls });
++    }
++}
