@@ -8,7 +8,7 @@ Code PR: [ashhart/TensorFold#1394](https://github.com/ashhart/TensorFold/pull/13
 - **Integrated main snapshot:** `8e35d523b1d30c5188c830d3d6175c61afb35bcb` by normal merge.
 - **CI:** all 11 checks passed on that exact PR head; see [the saved check records](ci.json).
 - **M5 Ultra:** complete original qualification; exactness passed, strict performance failed.
-- **M4 Pro:** complete same-head matrix is running. Completed scoped correctness is reported separately below, not relabelled as a full matrix.
+- **M4 Pro:** complete same-head qualification; exactness passed, strict performance failed. Both device workflows are finished.
 
 This report/receipt branch does not change the measured PR code head. No new kernel, pricing change, force push, merge or auto-merge is hidden in this update.
 
@@ -16,12 +16,39 @@ This report/receipt branch does not change the measured PR code head. No new ker
 
 The [maintainer checklist](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6589493432) requires every drafter median to be at least the same-head plain median on both devices. The task owner subsequently requested that a regression **strictly less than 1% count as passing for review**. That is a supplementary review assessment, not a claim that the maintainer accepted a different merge requirement. Gains count as passing; decisions use unrounded values.
 
-| Device / arm | Within owner's <1% regression limit | Passes original >=plain rule |
-|---|---:|---:|
-| M5 / BF16 weights | 16/16 | 2/16 |
-| M5 / 8-bit weights | 12/16 | 6/16 |
+| Device / arm | Within owner's <1% regression limit | Outside that limit | Worst delta | Passes original >=plain rule |
+|---|---:|---:|---:|---:|
+| M4 Pro / BF16 weights | 9/16 | 7 | -4.949% | 7/16 |
+| M4 Pro / 8-bit weights | 10/16 | 6 | -7.180% | 7/16 |
+| M5 Ultra / BF16 weights | 16/16 | 0 | -0.652% | 2/16 |
+| M5 Ultra / 8-bit weights | 12/16 | 4 | -2.398% | 6/16 |
 
-Four M5 8-bit sampled cases remain outside even the owner's review limit: code widths 4, 8, 16 and chat width 4. They are visible in the complete table; none is waived. This is prepared review evidence, **not an all-performance-passing or merge-qualified claim**.
+**17 of 64 comparisons remain outside even the owner's 1% review limit:** 13 on M4 Pro and four on M5. They are visible in the complete tables; none is waived. This is published review evidence, **not an all-performance-passing or merge-qualified claim**. Requesting review with these known exceptions is a separate decision from satisfying the stated performance bar.
+
+## Complete M4 Pro matrix
+
+Binary SHA256: `1193de98ce1ec00e19a0bf4a5a11cd0a2059a17086efc5f6219dbaeecacf10e5`. Every arm used this same binary. All 144 launch cells completed; all 306 target-token oracle records passed. There were nine clean, non-forced shutdowns, with zero exactness/scenario failures. The unchanged full driver's exit code was **3: performance failure**, with 18/32 negative comparisons.
+
+| Prompt | T | Streams | Plain TPS | BF16 TPS | BF16 Δ | 8-bit TPS | 8-bit Δ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| code | 0 | 1 | 162.516 | 154.473 | -4.949% | 150.847 | -7.180% |
+| code | 0 | 4 | 279.177 | 268.020 | -3.996% | 269.646 | -3.414% |
+| code | 0 | 8 | 300.448 | 297.307 | -1.045% | 298.830 | -0.539% |
+| code | 0 | 16 | 333.154 | 330.538 | -0.785% | 328.296 | -1.458% |
+| code | 1 | 1 | 105.376 | 108.827 | +3.275% | 108.623 | +3.081% |
+| code | 1 | 4 | 180.422 | 185.270 | +2.687% | 186.809 | +3.540% |
+| code | 1 | 8 | 225.277 | 222.961 | -1.028% | 223.857 | -0.631% |
+| code | 1 | 16 | 262.802 | 269.091 | +2.393% | 271.281 | +3.226% |
+| chat | 0 | 1 | 110.629 | 111.715 | +0.982% | 109.480 | -1.039% |
+| chat | 0 | 4 | 228.389 | 229.407 | +0.446% | 232.288 | +1.707% |
+| chat | 0 | 8 | 267.688 | 259.263 | -3.147% | 266.354 | -0.498% |
+| chat | 0 | 16 | 330.061 | 314.971 | -4.572% | 321.618 | -2.558% |
+| chat | 1 | 1 | 116.012 | 110.418 | -4.822% | 111.723 | -3.697% |
+| chat | 1 | 4 | 196.973 | 197.975 | +0.508% | 200.620 | +1.851% |
+| chat | 1 | 8 | 229.894 | 236.717 | +2.968% | 235.163 | +2.292% |
+| chat | 1 | 16 | 284.554 | 284.325 | -0.080% | 298.456 | +4.886% |
+
+All 32 M4 comparisons appear above. Per-rotation samples and paired deltas remain in [the original summary](m4-pro/summary.json); differing signs between rotations are not used to waive a losing median.
 
 ## Complete M5 matrix
 
@@ -54,8 +81,9 @@ All 32 comparisons appear above: each row has BF16-versus-plain and 8-bit-versus
 - Capacity 16, context 4096, prompt cache disabled, no snapshots; original memory-pressure/admission checks retained.
 - Same-head plain retains cheap-copy speculation. Drafter flags alone select released BF16 or explicit 8-bit weights; **both use BF16 activations**.
 - Target revision `667408d494bde191c2cb9dd4f4549827816b9275`; drafter revision `e052e5b1dd103c38cdd4f8ddc068d7dea4586f55`.
-- The frozen seven-file driver, model-file hashes, compiler hash, source archive and binary hash are in [M5 bindings](m5/bindings.json). No numerical bound or original verdict code was changed.
-- [Metadata](m5/metadata.json), [cells](m5/cells.jsonl), [events](m5/events.jsonl), [summary](m5/summary.json), and [losslessly compressed original requests](m5/requests.jsonl.gz) preserve the publishable run packet. Bindings include the original uncompressed SHA256 and compressed-file SHA256. Private server/controller logs are not published.
+- The frozen seven-file driver and model-file hashes are identical across devices. Compiler, binary and original receipt hashes are in [M4 bindings](m4-pro/bindings.json) and [M5 bindings](m5/bindings.json); M5 also records the source-archive hash. No numerical bound or original verdict code was changed.
+- Both [M4 Pro](m4-pro/) and [M5](m5/) preserve metadata, cells, events, summary and losslessly compressed original requests. Bindings include original uncompressed and compressed-file SHA256 hashes. Private server/controller logs are not published.
+- Smoke proof: the unchanged frozen verdict module reproduced each complete original summary from its published metadata/cells/events, with JSON replica-key normalization only. Decompressing each requests archive reproduced its original SHA256.
 
 ## Exercised correctness and the FP32 comparison limit
 
@@ -66,7 +94,7 @@ All 32 comparisons appear above: each row has BF16-versus-plain and 8-bit-versus
 
 The actual native fixture used 63 prior-context tokens and retained nine proposals. M5's 8-bit differing pick has FP32 margin 0.075. The diagnostic's [final FP32 comparison](https://github.com/BlivionIaG/TensorFold/blob/750bca95c457dc2119505568dff593e151cbeed7/zig/tests/lfm2_dspark.zig#L548-L586) prints results but does **not** enforce final pick/confidence agreement; exit 0 is not substituted for the printed figures.
 
-Original attention and BF16 kernel contracts passed on both devices. The M5 norm/tap contract passed; M4's is part of the active workflow. Native controls exercised retained-prefix 1/3/9 byte/pick/confidence invariance, 8/16 logical cohorts, deferred/rewound context, ownership/release and planted invalid/nonfinite failures. These checks are distinct from both approximate drafter/reference agreement and full served target-token exactness.
+Original attention, BF16 and norm/tap kernel contracts passed on both devices. Native controls exercised retained-prefix 1/3/9 byte/pick/confidence invariance, 8/16 logical cohorts, deferred/rewound context, ownership/release and planted invalid/nonfinite failures. These checks are distinct from both approximate drafter/reference agreement and full served target-token exactness.
 
 ## What the code and current receipts establish
 
