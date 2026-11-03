@@ -58,6 +58,7 @@ const Encoder = struct {
     record: bool,
     /// A recorded window of several streams: their conv and attention kernels run once a layer over every row.
     plan: ?segs.Plan = null,
+    capture: bool = false, // all-uncaptured forwards take the canonical no-tap norm pipelines
 
     fn pipe(self: Encoder, comptime key: []const u8) void {
         self.e.setPipeline(self.m.kernels.get(key));
@@ -117,7 +118,7 @@ const Encoder = struct {
     /// h += the pending FFN output (or r), then the canonical norm and optional raw-state tap.
     fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize, combine: Pending, tap_layer: ?usize) void {
         var mask: u32 = 0; // the tap columns of this layer, bit i: column i
-        if (s.taps) |taps| if (tap_layer) |layer| for (taps.layers[0..taps.count], 0..) |l, i| if (l == layer) {
+        if (self.capture) if (s.taps) |taps| if (tap_layer) |layer| for (taps.layers[0..taps.count], 0..) |l, i| if (l == layer) {
             mask |= @as(u32, 1) << @intCast(i);
         };
         if (combine != .none) {
@@ -189,6 +190,7 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
 pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, held: []const Held, wait: ?Wait) !void {
     if (tokens.len == 0 or tokens.len > s.rows or (record and tokens.len > st.batch_rows)) return error.LfmRowsExceeded;
     var total: usize = 0;
+    var capture = false;
     const table_only = if (s.taps) |taps| taps.table_at == 0 else false;
     for (segments) |seg| {
         if (seg.rows == 0 or seg.cache.len + seg.rows > seg.cache.capacity) return error.LfmContextFull;
@@ -199,6 +201,7 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
             .none => {},
         };
         total += seg.rows;
+        capture = capture or (s.taps != null and seg.tap != .none);
     }
     if (total != tokens.len or (head == .all and total > st.batch_rows) or (!record and segments.len != 1)) return error.InvalidLfmSegments;
     for (tokens) |id| if (id >= c.vocab) return error.InvalidLfmToken;
@@ -210,8 +213,8 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
     const prompt = (!record and head == .last) or total >= tile_rows;
     const e = cb.compute(.serial);
     const plan = if (segs.batched(record, segments.len)) segs.prepare(e, s, segments) else null;
-    tapTable(e, s, segments);
-    const enc = Encoder{ .e = e, .m = m, .s = s, .prompt = prompt, .record = record, .plan = plan };
+    if (capture) tapTable(e, s, segments);
+    const enc = Encoder{ .e = e, .m = m, .s = s, .prompt = prompt, .record = record, .plan = plan, .capture = capture };
     if (held.len > 0) @memset(s.bad.contents()[0..4], 0);
     for (held) |h| {
         enc.pipe("lfm2_draft_ids");

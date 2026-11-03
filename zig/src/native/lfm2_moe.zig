@@ -125,6 +125,7 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
     const facts = if (h.wrap) |*w| w.facts(h.metal.facts()) else h.metal.facts();
     h.config = try lanes.Config.init(gpa, facts, q.state.window_rows, q.state.window_rows - 1);
     errdefer h.config.deinit(gpa);
+    if (h.draft) |d| d.useTargetCosts(&h.config.family_costs, &h.config.shared_costs);
     h.clock = .{ .io = io };
     h.core = lanes.Engine.init(gpa, &h.config, if (h.wrap) |*w| w.backend() else h.metal.backend(), h.clock.clock());
     errdefer h.core.deinit();

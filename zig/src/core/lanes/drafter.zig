@@ -45,6 +45,9 @@ pub const Absorb = struct {
 /// `depth` drafts after `pending` at `position`; `lanes`: a tree's ranks; `tokens`, `sampling`: the stream's, if given.
 pub const Hold = struct { stream: *Stream, pending: u32, position: u64, depth: u32, plan: ?*const @import("proposal_head.zig").Plan = null, lanes: ?*const Shape = null, tokens: []const u32 = &.{}, sampling: ?@import("sampling.zig").Sampling = null };
 
+/// All live wrapper requests, and tracked peers including the candidate, before its target prompt pass.
+pub const Enrollment = struct { streams: usize, heads: usize };
+
 pub const Drafter = struct {
     kind: []const u8 = "draft model", // descriptive only; the loader identifies the implementation it attached
     proposal_head: ?*const @import("proposal_head.zig").Service = null,
@@ -56,6 +59,10 @@ pub const Drafter = struct {
         /// The target's layers the drafter reads, in the order its features concatenate them.
         taps: *const fn (ptr: *anyopaque) []const u32,
         facts: *const fn (ptr: *anyopaque) Facts,
+        /// A request-stable choice made before the target captures any prompt features.
+        enroll: ?*const fn (*anyopaque, *Stream, Enrollment) bool = null,
+        /// Only a verified head prefix, excluding copies, grafts and grammar continuations.
+        observe_head: ?*const fn (*anyopaque, *Stream, u32, u32) void = null,
         /// A new stream: its own caches, empty.
         open: *const fn (ptr: *anyopaque, s: *Stream) anyerror!void,
         absorb: *const fn (ptr: *anyopaque, items: []const Absorb) anyerror!void,
@@ -77,6 +84,10 @@ pub const Drafter = struct {
     }
     pub fn facts(d: Drafter) Facts {
         return d.vtable.facts(d.ptr);
+    }
+    pub fn enroll(d: Drafter, s: *Stream, context: Enrollment) bool {
+        const f = d.vtable.enroll orelse return true;
+        return f(d.ptr, s, context);
     }
     pub fn open(d: Drafter, s: *Stream) !void {
         return d.vtable.open(d.ptr, s);

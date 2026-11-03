@@ -155,6 +155,8 @@ pub const Stream = struct {
     sampling: ?Sampling,
     penalties: Penalties = .{},
     drafts: bool,
+    head_context: ?bool = null, // null: legacy; false: request-stable target-only external-head route
+    head_prior: []const f64 = &.{}, // provider-owned conditional rates, cloned when the rule first needs them
     proposer: ?Proposer,
     recall: ?*Reader,
     stop_check: ?StopCheck,
@@ -243,6 +245,20 @@ pub const Stream = struct {
     verify_row_ms: ?f64 = null, // backend's live host-draw ms per row (null: unsupported or not observed)
     verify_host_ms: f64 = 0, // completed host draws in this verify, consumed once by the round
     copy_width: ?u32 = null,
+    copy_tokens: std.ArrayList(u32) = .empty, // owned across round-arena resets and queries sharing a proposer's buffer
+    reserved_copy: ?struct {
+        context: []const u32, // identity and length; commit invalidates before appending to history
+        cache_len: u64,
+        pending: ?u32,
+        rounds: u64,
+        room: i64,
+        width: ?u32,
+        alone: bool,
+        proposer: ?Proposer,
+        recall: ?*Reader,
+        recalled: bool,
+        trusted: bool,
+    } = null,
 
     pub fn init(gpa: Allocator, spec: Spec) !Stream {
         var s: Stream = .{
@@ -301,9 +317,12 @@ pub const Stream = struct {
         s.dropRoundState(gpa);
     }
 
-    /// Forget the round loop's state (Python `_release_stream_state`).
+    /// Forget round-local state; same-backend detach keeps enrollment and the provider's complete context.
     pub fn dropRoundState(s: *Stream, gpa: Allocator) void {
         if (s.depth) |*d| d.deinit(gpa);
+        s.reserved_copy = null;
+        s.copy_tokens.deinit(gpa);
+        s.copy_tokens = .empty;
         s.dropHeld(gpa);
         s.depth = null;
         s.mode = null;
@@ -328,6 +347,10 @@ pub const Stream = struct {
         s.next = null;
         if (s.lanes) |l| l.deinit(gpa);
         s.lanes = null;
+    }
+
+    pub fn headDrafts(s: *const Stream) bool {
+        return s.drafts and s.head_context != false;
     }
 
     pub fn prompt(s: *const Stream) []const u32 {
@@ -405,6 +428,7 @@ pub const Stream = struct {
     /// Begin the thinking budget's close: its first token now, the rest forced after it.
     pub fn startClose(s: *Stream, gpa: Allocator) !u32 {
         try s.force.ensureTotalCapacity(gpa, s.think_close.len - 1);
+        s.reserved_copy = null;
         s.think_open = false;
         s.force.clearRetainingCapacity();
         s.force.appendSliceAssumeCapacity(s.think_close[1..]);
@@ -455,6 +479,7 @@ pub const Stream = struct {
             }
             try s.long_loop.reserve(gpa, s.emitted().len + end);
         }
+        s.reserved_copy = null;
         var landed: usize = 0;
         for (tokens, 0..) |t, i| {
             if (s.finished) break;
@@ -514,6 +539,7 @@ pub const Stream = struct {
 
     pub fn popForce(s: *Stream) ?u32 {
         if (s.force.items.len == 0) return null;
+        s.reserved_copy = null;
         return s.force.orderedRemove(0);
     }
 };

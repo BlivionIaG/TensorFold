@@ -91,7 +91,7 @@ fn openedCommitted(e: *Engine, s: *Stream, reach: Reach, hook: ?be.Committed) !v
         s.pending = null;
         return;
     }
-    if (e.backend.first_before_draft and e.cfg.family_mtp and s.drafts) return @import("open_first.zig").opened(e, s, reach, hook);
+    if (e.backend.first_before_draft and e.cfg.family_mtp and s.headDrafts()) return @import("open_first.zig").opened(e, s, reach, hook);
     if (s.isCancelled()) { // cancelled in its last chunk: no first token
         e.backend.release(s);
         return error.Cancelled;
@@ -105,7 +105,7 @@ fn openedCommitted(e: *Engine, s: *Stream, reach: Reach, hook: ?be.Committed) !v
     var feed: Feed = .{ .handle = drawn };
     if (try e.forcedNext(s)) |t| feed = .{ .value = t };
     var asked: ?u32 = null;
-    if (e.cfg.family_mtp and s.drafts) {
+    if (e.cfg.family_mtp and s.headDrafts()) {
         // the head reads the prompt's last row and the first token, and drafts the one after it
         const wanted = try firstDepth(e, s, reach);
         const requests = try @import("root_copy.zig").prepare(e, &.{.{ .stream = s, .follow = &.{}, .first = feed, .rows = null, .start = s.prompt_len, .position = position + 1, .depth = wanted }});

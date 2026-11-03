@@ -55,6 +55,7 @@ pub const Who = struct {
     sampled: bool = false, // keyed draws: host work a row that a greedy round does not have
     row_ms: f64 = 0, // observed host verification work per row; unknown routes retain the optimistic zero model
     hold_context_rows: u32 = 0, // raw context still owed to the active drafter
+    head_prior: []const f64 = &.{}, // initial conditional rates only; no grants, probes or context state
 };
 
 /// Whether a copied continuation is ahead of a stream (the round loop proposes; Python `_copy_proposal`).
@@ -102,9 +103,10 @@ pub const Rule = struct {
 
     pub fn rates(r: *Rule, who: Who) ![]f64 {
         if (who.state.* == null) {
-            const n = @min(r.prior.len, @max(1, r.most_drafts));
+            const prior = if (who.head_prior.len > 0) who.head_prior else r.prior;
+            const n = @min(prior.len, @max(1, r.most_drafts));
             const data = try r.gpa.alloc(f64, n * @as(usize, if (r.granted_depth) 2 else 1));
-            @memcpy(data[0..n], r.prior[0..n]);
+            @memcpy(data[0..n], prior[0..n]);
             who.state.* = .{ .p = data[0..n], .observed = data[n..] };
         }
         return who.state.*.?.p;

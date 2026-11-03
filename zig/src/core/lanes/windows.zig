@@ -53,12 +53,17 @@ pub const Plan = struct {
 };
 
 /// A copied continuation and its source: the stream's own context, or Recall's record.
-pub const Copy = struct { tokens: []const u32 = &.{}, recalled: bool = false };
+pub const Copy = struct {
+    tokens: []const u32 = &.{},
+    recalled: bool = false,
+    trusted: ?bool = null, // the query's evidence, before another stream can overwrite the proposer's last match
+};
 
 /// Forced tokens first, then a copied continuation, then the head's drafts (Python `_plan_window`).
 pub fn plan(e: *Engine, s: *Stream, copied: ?Copy) !Plan {
     const a = e.arena.allocator();
     var p: Plan = .{ .stream = s, .position = s.cache_len, .kind = .none };
+    defer s.reserved_copy = null; // even an empty decision belongs to exactly this logical window
     if (e.backend.proposals() and s.proposal_depth == 0) s.dropHeld(e.gpa);
     const queued = s.next;
     s.next = null;
@@ -77,12 +82,13 @@ pub fn plan(e: *Engine, s: *Stream, copied: ?Copy) !Plan {
     } else {
         var copy: Copy = .{};
         if (copied) |c| copy = c else if (s.drafts) copy = try copyProposal(e, s);
-        const extend = !e.cfg.root_copies and e.alone and e.cfg.context_copies and !copy.recalled and queued != null and queued.?.count > 0;
+        if (copy.tokens.len > 0) p.copy_trusted = copy.trusted orelse trustedCopy(s);
+        const extend = !e.cfg.root_copies and e.alone and e.cfg.context_copies and !copy.recalled and s.headDrafts() and queued != null and queued.?.count > 0;
         if (copy.tokens.len > 0 and !extend) {
             p.kind = .copy;
             p.recalled = copy.recalled;
             p.tokens = try a.dupe(u32, copy.tokens);
-        } else if (s.drafts and queued != null) {
+        } else if (s.headDrafts() and queued != null) {
             const q = queued.?;
             if (q.tokens) |t| {
                 p.tokens = try a.dupe(u32, t);
@@ -104,7 +110,6 @@ pub fn plan(e: *Engine, s: *Stream, copied: ?Copy) !Plan {
                 try @import("context_copy.zig").extend(e, &p, copy.tokens);
                 if (!p.context_copy and e.cfg.node_probabilities) p.deferred_copy = try a.dupe(u32, copy.tokens);
             }
-            if (p.context_copy) p.copy_trusted = trustedCopy(s);
         }
     }
     if (!p.context_copy and e.cfg.fill_lanes > 0 and s.drafts and p.kind != .forced and (p.parents == null or p.lanes != null)) try fillLanes(e, s, &p);
@@ -202,20 +207,73 @@ fn headTrunk(e: *Engine, s: *Stream, p: Plan, levels: usize) !?fill.Trunk {
 
 /// A copy from the context backed by `enter_match` ids (Python `_copy_proposal`), else Recall's when it should pay.
 pub fn copyProposal(e: *Engine, s: *Stream) !Copy {
+    if (reservedCopy(e, s)) |copy| return copy;
+    return queryCopy(e, s);
+}
+
+fn queryCopy(e: *Engine, s: *Stream) !Copy {
     if (e.cfg.max_copy == 0 or s.force.items.len > 0 or (e.cfg.root_copies and s.root_copy_miss)) return .{};
     const width: u32 = if (e.alone) (s.copy_width orelse e.cfg.first_copy) else e.cfg.first_copy;
     const most = @min(@as(i64, width), s.draftRoom() - 1);
     if (s.proposer) |p| if (!e.alone or e.cfg.lone_copies) {
         // a priced proposer's drafts are as it gives them, its none too: no width, length or match gate, no Recall
-        if (p.vtable.priced) return .{ .tokens = p.propose(s.context.items, @min(@as(i64, e.cfg.max_copy), s.draftRoom() - 1)) catch &.{} };
+        if (p.vtable.priced) return .{ .tokens = p.propose(s.context.items, @min(@as(i64, e.cfg.max_copy), s.draftRoom() - 1)) catch &.{}, .trusted = trustedCopy(s) };
         const copied = p.proposeAfter(s.context.items, &.{}, most) catch &.{};
         const least: usize = if (e.alone and e.cfg.context_copies) 1 else 2;
-        if (copied.len >= least and p.lastMatch() >= e.cfg.enter_match) return .{ .tokens = copied };
+        if (copied.len >= least and p.lastMatch() >= e.cfg.enter_match) return .{ .tokens = copied, .trusted = trustedCopy(s) };
     };
     const r = s.recall orelse return .{};
     if (most < 2) return .{};
     const got = r.propose(s.context.items, @intCast(most), s.rounds);
     return if (got.len >= 2) .{ .tokens = got, .recalled = true } else .{};
+}
+
+/// Reuse only the reserved window's unchanged history and copy policy; ordinary asks still reach the proposer.
+fn reservedCopy(e: *Engine, s: *Stream) ?Copy {
+    const r = s.reserved_copy orelse return null;
+    const same_proposer = if (r.proposer) |p|
+        if (s.proposer) |now| p.ptr == now.ptr and p.vtable == now.vtable else false
+    else
+        s.proposer == null;
+    if (!s.drafts or s.finished or s.paused or s.force.items.len > 0 or
+        (e.cfg.root_copies and s.root_copy_miss) or
+        r.context.ptr != s.context.items.ptr or r.context.len != s.context.items.len or
+        r.cache_len != s.cache_len or r.pending != s.pending or r.rounds != s.rounds or
+        r.room != s.draftRoom() or r.width != s.copy_width or r.alone != e.alone or
+        !same_proposer or r.recall != s.recall)
+    {
+        s.reserved_copy = null;
+        return null;
+    }
+    return .{ .tokens = s.copy_tokens.items, .recalled = r.recalled, .trusted = r.trusted };
+}
+
+/// Price the next logical window once, retaining empty answers too. Never retain a proposer's borrowed slice.
+/// Recall's Reader is per stream: cached probes do not call it again, and graft candidates leave its source evidence intact.
+/// Commits and lifecycle resets invalidate the reservation before another history can query that Reader.
+pub fn reserveCopy(e: *Engine, s: *Stream) !Copy {
+    if (reservedCopy(e, s)) |copy| return copy;
+    const copy = try queryCopy(e, s);
+    if (!s.drafts or s.finished or s.paused or s.force.items.len > 0 or
+        e.cfg.max_copy == 0 or (s.proposer == null and s.recall == null)) return copy;
+    const trusted = copy.trusted orelse true;
+    try s.copy_tokens.ensureTotalCapacity(e.gpa, copy.tokens.len);
+    s.copy_tokens.clearRetainingCapacity();
+    s.copy_tokens.appendSliceAssumeCapacity(copy.tokens);
+    s.reserved_copy = .{
+        .context = s.context.items,
+        .cache_len = s.cache_len,
+        .pending = s.pending,
+        .rounds = s.rounds,
+        .room = s.draftRoom(),
+        .width = s.copy_width,
+        .alone = e.alone,
+        .proposer = s.proposer,
+        .recall = s.recall,
+        .recalled = copy.recalled,
+        .trusted = trusted,
+    };
+    return .{ .tokens = s.copy_tokens.items, .recalled = copy.recalled, .trusted = trusted };
 }
 
 pub fn copyAhead(ptr: *anyopaque, w: *const depth.Who) bool {
@@ -231,7 +289,7 @@ pub fn probe(e: *Engine) depth.Probe {
 }
 
 pub fn who(s: *Stream) depth.Who {
-    return .{ .state = &s.depth, .draft_room = s.draftRoom(), .finished = s.finished or s.paused, .forced = s.force.items.len > 0, .granted = s.granted, .grant_short = s.grant_short, .gain = s.grant_gain, .stream = s, .sampled = s.sampling != null, .row_ms = verify_cost.rowMs(s), .hold_context_rows = s.hold_context_rows };
+    return .{ .state = &s.depth, .draft_room = s.draftRoom(), .finished = s.finished or s.paused, .forced = s.force.items.len > 0, .granted = s.granted, .grant_short = s.grant_short, .gain = s.grant_gain, .stream = s, .sampled = s.sampling != null, .row_ms = verify_cost.rowMs(s), .hold_context_rows = s.hold_context_rows, .head_prior = s.head_prior };
 }
 
 /// Whether any of a round's streams draws keyed samples (its rows carry their host work).
@@ -255,7 +313,7 @@ pub fn allocate(e: *Engine, plans: []Plan) !void {
             pr.* = &.{};
         } else if (p.kind == .copy) {
             fx.* = 1;
-            const trusted = e.cfg.matched_copy_rates and !p.recalled and trustedCopy(p.stream);
+            const trusted = e.cfg.matched_copy_rates and !p.recalled and p.copy_trusted;
             const rate = pricedCopiedRate(e, p.stream, p.recalled, trusted);
             pr.* = try alloc.chainProbabilities(a, &.{rate}, n);
         } else {
@@ -317,7 +375,6 @@ pub fn allocate(e: *Engine, plans: []Plan) !void {
         const before = p.count();
         if (before > 0) try @import("context_copy.zig").extend(e, p, copy);
         if (p.context_copy) {
-            p.copy_trusted = trustedCopy(p.stream);
             return allocate(e, plans);
         }
     }
@@ -564,4 +621,5 @@ test "declined and grafted probabilities need only their final round buffer" {
 
 test {
     _ = @import("windows_build_test.zig");
+    _ = @import("copy_reservation_test.zig");
 }

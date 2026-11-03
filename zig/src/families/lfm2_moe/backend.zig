@@ -173,10 +173,11 @@ pub const Metal = struct {
 
     /// Where a stream's forward rows from `start` are captured, the hold it follows folded into `wait`.
     fn tapFor(self: *Metal, stream: *lanes.Stream, start: usize, rows: usize, wait: *?fwd.Wait) !fwd.Tap {
+        if (stream.head_context == false) return .none;
         const src = self.stage_source orelse return .scratch;
         if (self.scratch.taps == null) return .scratch;
         const stage = (try src.bind(src.ptr, stream, start, rows)) orelse
-            return if (stream.drafts) error.LfmTapsNotHeld else .none;
+            return if (stream.headDrafts()) error.LfmTapsNotHeld else .none;
         if (stage.wait) |w| wait.* = if (wait.*) |x| (if (x.value >= w.value) x else w) else w;
         return .{ .stage = stage.place };
     }

@@ -1,4 +1,4 @@
-//! Price next-round head rows before proposing, retaining the last full node prices through zero-grant rounds.
+//! Price next-round head rows before proposing; keep that window's owned copy decision and the last full node prices.
 const std = @import("std");
 const win = @import("windows.zig");
 const alloc = @import("allocate.zig");
@@ -20,20 +20,24 @@ pub fn budgets(e: *Engine, plans: []const win.Plan, heads: []const usize, out: [
         fx.* = @intFromBool(!s.finished and !s.paused);
         pr.* = &.{};
         head.* = false;
-        if (s.finished or s.paused) continue;
+        if (s.finished or s.paused) {
+            s.reserved_copy = null;
+            continue;
+        }
         live += 1;
         if (s.force.items.len > 0) {
+            s.reserved_copy = null;
             fx.* += if (s.drafts) @as(u32, @intCast(@min(e.cfg.base_width - 1, s.force.items.len))) else 0;
             continue;
         }
-        const copy = try win.copyProposal(e, s);
+        const copy = try win.reserveCopy(e, s);
         if (copy.tokens.len > 0) {
-            const trusted = e.cfg.matched_copy_rates and !copy.recalled and win.trustedCopy(s);
+            const trusted = e.cfg.matched_copy_rates and !copy.recalled and (copy.trusted orelse win.trustedCopy(s));
             const rate = win.pricedCopiedRate(e, s, copy.recalled, trusted);
             pr.* = try alloc.chainProbabilities(a, &.{rate}, copy.tokens.len);
             continue;
         }
-        if (!s.drafts) continue;
+        if (!s.headDrafts()) continue;
         const cap = if (e.backend.vtable.draft_capacity) |f| f(e.backend.ptr, s) else e.cfg.most_drafts;
         const most = @min(cap, e.cfg.most_drafts, if (limits) |l| l.depths[i] else e.cfg.most_drafts, @as(u32, @intCast(@max(0, s.draftRoom() - 1))));
         if (most == 0) continue;

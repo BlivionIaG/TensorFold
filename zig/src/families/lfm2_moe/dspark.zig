@@ -11,6 +11,7 @@ const snapshot = @import("snapshot.zig");
 const Model = @import("model.zig").Model;
 const backend = @import("backend.zig");
 const stage = @import("dspark_stage.zig");
+const admission = @import("dspark_admission.zig");
 
 const dr = lanes.drafter;
 const Stream = lanes.Stream;
@@ -94,6 +95,9 @@ pub const Drafter = struct {
     holds_len: usize = 0,
     contexts: [hold_grid.len * context_row_levels]lanes.hold_price.ContextCost = undefined,
     contexts_len: usize = 0,
+    target_single: ?*const lanes.table.Table = null,
+    target_shared: ?*const lanes.table.Table = null,
+    head_history: admission.History = .{},
     hold_spent_ms: f64 = 0, // GPU ms of every buffer waited on or settled; drained at round boundaries, never waits to read it
     encode_cpu_ms: f64 = 0, // native precommit CPU spans, drained with hold_spent_ms without waiting
     event: mtl.Event = undefined,
@@ -189,7 +193,59 @@ pub const Drafter = struct {
     }
 
     pub fn drafter(d: *Drafter) dr.Drafter {
-        return .{ .ptr = d, .hold_timing = .{ .ptr = d, .take = block.takeHoldMs }, .vtable = &.{ .taps = tapsFn, .facts = factsFn, .open = openFn, .absorb = stage.absorb, .hold = holdFn, .held = heldFn, .release = releaseFn, .chances = chancesFn } };
+        return .{ .ptr = d, .hold_timing = .{ .ptr = d, .take = block.takeHoldMs }, .vtable = &.{ .taps = tapsFn, .facts = factsFn, .enroll = enrollFn, .observe_head = observeHeadFn, .open = openFn, .absorb = stage.absorb, .hold = holdFn, .held = heldFn, .release = releaseFn, .chances = chancesFn } };
+    }
+
+    /// Borrow Config's stable bare-target calibration, never the engine's head-inclusive round EMA.
+    /// Unbound direct diagnostics preserve their tracked route and existing in-request recovery.
+    pub fn useTargetCosts(d: *Drafter, single: *const lanes.table.Table, shared_costs: *const lanes.table.Table) void {
+        d.target_single = single;
+        d.target_shared = shared_costs;
+    }
+
+    fn sampled(s: *const Stream) bool {
+        return if (s.sampling) |settings| !(settings.temperature <= 0) else false;
+    }
+
+    fn enrollFn(ptr: *anyopaque, s: *Stream, cohort: dr.Enrollment) bool {
+        const d = cast(ptr);
+        const recent = d.head_history.recent(sampled(s));
+        const depth: u32 = @intCast(@min(d.config.block, @max(0, s.draftRoom() - 1)));
+        var rates = recent.rates;
+        var heads: usize = 1;
+        var debt = s.prompt_len;
+        // Only actual eligible peers may fund a multi-head shape. Each candidate shape can use any
+        // subset, so pricing all peers at the weakest conditionals/deepest debt is conservative.
+        var peers = d.lanes.iterator();
+        while (peers.next()) |entry| {
+            const peer = entry.key_ptr.*;
+            if (peer == s or !peer.headDrafts() or peer.finished or peer.paused or peer.draftRoom() <= depth) continue;
+            heads += 1;
+            debt = @max(debt, entry.value_ptr.*.staged);
+            const other = d.head_history.recent(sampled(peer));
+            for (&rates, other.rates) |*rate, p| rate.* = @min(rate.*, p);
+        }
+        const tracked = recent.enroll(.{
+            .target = if (cohort.streams == 1) d.target_single else d.target_shared,
+            .holds = d.holds[0..d.holds_len],
+            .contexts = d.contexts[0..d.contexts_len],
+            .streams = cohort.streams,
+            .heads = @min(heads, cohort.heads),
+            .target_rows = if (cohort.streams == 1) st.window_rows else st.batch_rows,
+            .pass_rows = pass_rows,
+            .block_rows = d.config.block,
+            .depth = depth,
+            .context_rows = debt,
+            .context_chunk = stage_rows,
+        }, rates[0..depth]);
+        s.head_prior = if (tracked) recent.rates[0..d.config.block] else &.{};
+        return tracked;
+    }
+
+    fn observeHeadFn(ptr: *anyopaque, s: *Stream, proposed: u32, accepted: u32) void {
+        // The engine calls this only for an actual neural chain, excluding copies/grafts/grammar.
+        if (!s.headDrafts()) return;
+        cast(ptr).head_history.recent(sampled(s)).observe(proposed, accepted);
     }
 
     /// Whether holds compute the confidence head: the verify rows follow its chances, else the core's depth rule.
@@ -207,7 +263,7 @@ pub const Drafter = struct {
     }
 
     /// Acceptance a depth until a stream has its own: the card's 5.16 tokens a step at block 9 is 0.84 a depth.
-    const prior: [16]f64 = @splat(0.84);
+    const prior = admission.prior;
 
     fn factsFn(ptr: *anyopaque) dr.Facts {
         const d = cast(ptr);

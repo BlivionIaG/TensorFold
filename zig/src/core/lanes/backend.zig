@@ -118,6 +118,7 @@ pub const Backend = struct {
         prepare_draft: ?*const fn (*anyopaque, []const DraftRequest) anyerror!void = null,
         draft_capacity: ?*const fn (*anyopaque, *Stream) u32 = null, // current per-stream proposal capacity
         proposal_draft: ?*const fn (*anyopaque, []const DraftRequest) anyerror!void = null,
+        observe_head: ?*const fn (*anyopaque, *Stream, u32, u32) void = null,
         clear_proposals: ?*const fn (*anyopaque, *Stream) void = null,
         /// Undo an early speculation whose round was cut (the drafts come from a late request instead).
         unspeculate: ?*const fn (ptr: *anyopaque, s: *Stream) anyerror!void = null,

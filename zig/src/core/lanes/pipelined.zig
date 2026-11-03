@@ -21,8 +21,9 @@ pub fn round(e: *Engine, s: *Stream) !Result {
         const verifying = mode == .verify and e.cfg.family_width >= 2;
         const proposal: win.Copy = if (verifying) try win.copyProposal(e, s) else .{};
         if (proposal.tokens.len > 0) {
-            const copied = try e.arena.allocator().dupe(u32, proposal.tokens);
-            result = try e.familyRound(s, .{ .tokens = copied, .recalled = proposal.recalled });
+            var copied = proposal;
+            copied.tokens = try e.arena.allocator().dupe(u32, proposal.tokens);
+            result = try e.familyRound(s, copied);
             if (result.keep == 1 or s.force.items.len > 0) s.mode = .exit;
         } else {
             // nothing to copy: back to steps queued ahead (this one lands next round)

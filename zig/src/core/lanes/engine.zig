@@ -123,10 +123,10 @@ pub const Engine = struct {
         e.steps += 1;
         var live: std.ArrayList(*Stream) = .empty;
         for (e.live.items) |s| {
-            if (!s.finished and !s.paused) try live.append(a, s);
+            if (!s.finished and !s.paused) try live.append(a, s) else s.reserved_copy = null;
         }
         const priced = @import("hold_price.zig").priced(e);
-        if (e.cfg.family_streams and (live.items.len > 1 or (live.items.len == 1 and priced and live.items[0].drafts))) {
+        if (e.cfg.family_streams and (live.items.len > 1 or (live.items.len == 1 and priced and live.items[0].headDrafts()))) {
             // Row-allocated rounds land queued tokens before constructing their windows.
             for (live.items) |s| {
                 if (s.inflight != null) try pipelined.land(e, s);
@@ -143,7 +143,7 @@ pub const Engine = struct {
         if (!e.alone) for (live.items) |s| {
             s.shared_round = true;
         };
-        if (e.cfg.family_streams and (live.items.len > 1 or (live.items.len == 1 and priced and live.items[0].drafts))) {
+        if (e.cfg.family_streams and (live.items.len > 1 or (live.items.len == 1 and priced and live.items[0].headDrafts()))) {
             const chosen = try e.takeTurns(live.items);
             e.shared_rounds += 1;
             for (chosen) |s| s.served = e.shared_rounds;
@@ -151,7 +151,7 @@ pub const Engine = struct {
         } else {
             for (live.items) |s| {
                 // logprobs and grammars take verify windows: rows' logits are read, or bits made, before a forward
-                const windowed = (e.cfg.family_mtp and s.drafts) or !e.cfg.pipelined or s.logprobs != null or s.grammar != null;
+                const windowed = (e.cfg.family_mtp and s.headDrafts()) or !e.cfg.pipelined or s.logprobs != null or s.grammar != null;
                 const r = if (windowed) try e.familyRound(s, null) else try pipelined.round(e, s);
                 s.min_rows = if (s.min_rows == 0) r.rows else @min(s.min_rows, r.rows);
             }
@@ -201,7 +201,7 @@ pub const Engine = struct {
 
     /// One stream's round: verify pending and drafted tokens together, keep drafts to the first mismatch.
     pub fn familyRound(e: *Engine, s: *Stream, copied: ?win.Copy) !Result {
-        @import("hold_price.zig").startRound(e);
+        if (s.headDrafts()) @import("hold_price.zig").startRound(e) else e.clock.start();
         try e.late.flush(e, Engine.askDrafts);
         const priced = s.priced;
         s.priced = null;
@@ -210,7 +210,7 @@ pub const Engine = struct {
         if (plans[0].kind == .head and (e.cfg.node_probabilities or e.trim != null or lone_costs.enabled(e, plans[0]))) try win.allocate(e, &plans);
         try win.constrain(e, &plans[0]);
         const plan = plans[0];
-        const early = e.cfg.family_mtp and s.drafts and plan.kind != .forced and e.cfg.speculate_early and plan.parents == null and s.grammar == null;
+        const early = e.cfg.family_mtp and s.headDrafts() and plan.kind != .forced and e.cfg.speculate_early and plan.parents == null and s.grammar == null;
         const windows = [_]be.Window{try win.build(e, plan, early)};
         const rows = windows[0].rows();
         var out = [_]be.Verified{.{ .sampled = try a.alloc(u32, rows), .drafts = try a.alloc(u32, rows - 1), .rows = if (s.logprobs != null) try a.alloc(LogRow, rows) else &.{} }};
@@ -222,7 +222,7 @@ pub const Engine = struct {
         const o = try e.conclude(s, plan, out[0].sampled, out[0].rows, tokens, parents, windows[0].positions);
         if (o.path.len < rows or plan.parents != null) try e.backend.keep(&windows, &.{o.path});
         const held_levels = s.held_levels;
-        if (e.cfg.family_mtp and s.drafts) {
+        if (e.cfg.family_mtp and s.headDrafts()) {
             if (early and o.cut == null) {
                 var w = win.who(s);
                 const d: u32 = @intCast(try e.rule.headDepth(&w, null, win.probe(e)));
@@ -260,7 +260,9 @@ pub const Engine = struct {
 
     /// The stream windows of a shared round in one forward, then each verified, committed and drafted on its own.
     fn roundStreams(e: *Engine, entries: []*Stream) !void {
-        @import("hold_price.zig").startRound(e);
+        var has_heads = false;
+        for (entries) |s| has_heads = has_heads or s.headDrafts();
+        if (has_heads) @import("hold_price.zig").startRound(e) else e.clock.start();
         try e.late.flush(e, Engine.askDrafts);
         const a = e.arena.allocator();
         const plans = try a.alloc(Plan, entries.len);
@@ -291,7 +293,7 @@ pub const Engine = struct {
         }
         var heads: std.ArrayList(usize) = .empty;
         for (plans, 0..) |p, i| {
-            if (e.cfg.family_mtp and p.stream.drafts) try heads.append(a, i);
+            if (e.cfg.family_mtp and p.stream.headDrafts()) try heads.append(a, i);
         }
         const requests: []be.DraftRequest = if (heads.items.len > 0 and
             (e.cfg.draft_streams or e.backend.vtable.prepare_draft != null))
@@ -309,9 +311,9 @@ pub const Engine = struct {
         };
         const budgets = try a.alloc(i64, heads.items.len);
         const sampled = win.anySampled(plans);
-        if (e.cfg.allocate_shared_drafts) {
+        if (heads.items.len > 0 and e.cfg.allocate_shared_drafts) {
             try @import("shared_drafts.zig").budgets(e, plans, heads.items, budgets);
-        } else {
+        } else if (heads.items.len > 0) {
             const whos = try a.alloc(depth.Who, heads.items.len);
             for (whos, heads.items) |*w, i| w.* = win.who(plans[i].stream);
             try e.rule.budgets(whos, win.probe(e), sampled, budgets);
@@ -346,7 +348,8 @@ pub const Engine = struct {
                 0;
             const ms = e.clock.elapsedMs(.overhead) - extra;
             try trail.event(e, &.{ f("ev", str("overhead")), f("streams", int(plans.len)), f("rows", int(total)), f("ms", ev.bits(ms)) });
-            try e.rule.observeOverhead(@intCast(plans.len), total, ms - takeVerifyHostMs(windows), sampled, @import("hold_price.zig").observedHeadMs(e.backend, &e.rule, budgets));
+            const head_ms = if (has_heads) @import("hold_price.zig").observedHeadMs(e.backend, &e.rule, budgets) else 0;
+            try e.rule.observeOverhead(@intCast(plans.len), total, ms - takeVerifyHostMs(windows), sampled, head_ms);
         }
         if (e.backend.round_observer != null) e.backend.observed(paths);
     }
@@ -389,7 +392,7 @@ pub const Engine = struct {
                 for (path[1..]) |r| own_kept += @intFromBool(r < own_end);
                 const own: usize = own_end - 1;
                 if (p.kind == .copy) {
-                    const trusted = e.cfg.matched_copy_rates and !p.recalled and win.trustedCopy(s);
+                    const trusted = e.cfg.matched_copy_rates and !p.recalled and p.copy_trusted;
                     win.observePricedCopied(e, s, p.recalled, trusted, own_kept, own);
                     if (e.alone) {
                         const width = s.copy_width orelse e.cfg.first_copy;
@@ -401,7 +404,9 @@ pub const Engine = struct {
                     const chain = if (p.branch_from > 0) ds[0..p.branch_from] else ds[0..own_end];
                     var chain_kept: usize = 0;
                     for (path[1..]) |r| chain_kept += @intFromBool((p.branch_from == 0 or r < p.branch_from) and r < own_end);
-                    try e.rule.observeDepth(win.who(s), std.mem.max(u32, chain), @intCast(chain_kept));
+                    const proposed = std.mem.max(u32, chain);
+                    try e.rule.observeDepth(win.who(s), proposed, @intCast(chain_kept));
+                    if (e.backend.vtable.observe_head) |observe| observe(e.backend.ptr, s, proposed, @intCast(chain_kept));
                 }
                 var kept_branch: u64 = 0; // the context's graft rows kept, then Recall's
                 var kept_recall: u64 = 0;
