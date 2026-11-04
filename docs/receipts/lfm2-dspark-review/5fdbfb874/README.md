@@ -26,6 +26,22 @@ The remaining performance losses are not causally localized by these matrices. M
 
 There is no matched MLX-LM execution breakdown in this packet. A regression against TensorFold's own no-drafter arm does not identify the cause of an MLX-LM gap. Aggregate proposal/accept counters include cheap-copy speculation and do not prove actual neural/operator work, SIMD occupancy or bandwidth saturation. Earlier component localization remains [in the diagnosis](../diagnosis.md); none is relabelled as this source's full performance clearance.
 
+### What the completed work counters narrow down
+
+The [measured-cell counter comparison](aggregate-work-parity.json) compares each drafter arm with its same-rotation plain cell. Aggregate rounds/proposed/accepted agree in 69/96 M4 contrasts and 50/96 M5 contrasts. These include all proposal sources, not a neural-work counter.
+
+For M4's worst median cell (8-bit, greedy code, one stream):
+
+| Rotation | Plain rounds | Drafter rounds | Plain accepted | Drafter accepted | Decode change |
+|---|---:|---:|---:|---:|---:|
+| 0 | 272 | 272 | 239 | 239 | −4.8660933839% |
+| 1 | 272 | 269 | 239 | 242 | +2.7545797180% |
+| 2 | 272 | 284 | 239 | 227 | −4.9882630717% |
+
+Rotation2 really does more target rounds for the same512 output tokens; rotation0 loses with identical aggregate counters. Extra target work is therefore part of the observed problem, not a complete explanation. Equal aggregates also do not prove equal neural or operator execution.
+
+Source inspection identifies a pricing limitation to investigate: [request admission](https://github.com/BlivionIaG/TensorFold/blob/5fdbfb8749b14bc20bc9021dbe463cd56206d53a/zig/src/families/lfm2_moe/dspark_admission.zig#L59-L105) compares with `target.get(streams)`, one target row/token per stream; the [live hold planner](https://github.com/BlivionIaG/TensorFold/blob/5fdbfb8749b14bc20bc9021dbe463cd56206d53a/zig/src/core/lanes/hold_price.zig#L141-L178) can compare against a committed copy baseline with multiple expected tokens. **[INFERENCE]** Request-level admission may fund context capture that beats one-row decode but not the actual cheap-copy route. The packet does not establish how much of the observed loss this explains. Correcting that requires a directly observed copy-baseline cost, not hardcoding benchmark winners or pretending aggregate proposal counts are neural acceptance.
+
 ## Precision and reference
 
 Both drafter-weight modes retain **BF16 activations**. The independent FP32 host reference consumes the same BF16 target features widened to FP32, the released checkpoint, and original target embedding/head. It is not an FP32 target-server arm. Each Markov reference step is teacher-forced on the previous GPU pick. Numerical gates and memory admission were not relaxed.
