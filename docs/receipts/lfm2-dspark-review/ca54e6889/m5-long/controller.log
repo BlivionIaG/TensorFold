@@ -1,0 +1,11 @@
+{"event": "waiting-for-model-lock", "phase": "long"}
+{"event": "starting", "phase": "long"}
+{"event": "ready", "label": "long-context", "seconds": 5.1104729999788105}
+{"event": "long-context", "length": 4096, "equal": true}
+{"event": "long-context", "length": 16384, "equal": true}
+{"event": "long-context", "length": 65536, "equal": true}
+{"event": "long-context", "length": 130816, "equal": true}
+{"event": "long-reference-start", "length": 65536}
+{"event": "long-reference-done", "length": 65536, "exit": 0}
+{"event": "long-reference-start", "length": 130816}
+{"event": "long-reference-done", "length": 130816, "exit": 0}

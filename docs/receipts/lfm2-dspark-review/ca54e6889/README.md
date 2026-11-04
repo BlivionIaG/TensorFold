@@ -1,8 +1,10 @@
 # LFM2 DSpark #1394 — M5-only revision and predeclared A/A
 
-Source: [`ca54e6889ed8ed00400bfeb4fa1be30a3a687de5`](https://github.com/BlivionIaG/TensorFold/commit/ca54e6889ed8ed00400bfeb4fa1be30a3a687de5). Pinned upstream main: `00ff0f3b2c7ee67546e7a406f074e6d1d5c02593`.
+Measured source: [`ca54e6889ed8ed00400bfeb4fa1be30a3a687de5`](https://github.com/BlivionIaG/TensorFold/commit/ca54e6889ed8ed00400bfeb4fa1be30a3a687de5). Pinned upstream main: `00ff0f3b2c7ee67546e7a406f074e6d1d5c02593`.
 
-The protocol was [published at `634a3031d`](https://github.com/BlivionIaG/TensorFold/tree/634a3031d082eba23746b073429c944af09e0d32/docs/receipts/lfm2-dspark-review/ca54e6889) **before this revision's M5 launch**. This report responds only to [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133). M4 verification, both devices' original numerical guards, the M5 full matrix and separate A/A are complete. Every M5 contrast median meets the user's loss budget, but the original stricter gate still fails. Remaining M5 functional/long phases continue; no whole-workflow completion is claimed yet.
+Final review head: [`7414d148eeaeefd09f65f1a761380d9fc17f6678`](https://github.com/BlivionIaG/TensorFold/commit/7414d148eeaeefd09f65f1a761380d9fc17f6678). That later commit changes the restored host test, its shared fixture export and a README handle only. Model measurements below remain bound to `ca54e6889`, not relabelled as a separate final-head timing run.
+
+The protocol was [published at `634a3031d`](https://github.com/BlivionIaG/TensorFold/tree/634a3031d082eba23746b073429c944af09e0d32/docs/receipts/lfm2-dspark-review/ca54e6889) **before this revision's M5 launch**. This report addresses only #1394, including [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133) and [review6637821871](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6637821871). M4 verification and the entire original M5 guard/matrix/A/A/functional/long-context workflow are complete. Every M5 contrast median meets the user's loss budget, but the original stricter gate still fails: 11 negative contrasts, exit 3. No rerun or A/A adjustment replaces that result.
 
 ## Why this source follows the failed prerequisite
 
@@ -14,7 +16,26 @@ The [source-dc4558f5c packet](../dc4558f5c/README.md) retains both chips' origin
 - `metal_main.zig`: 637 → 547 lines, with DSpark registrations owned by the existing family suite. Cases and numerical bounds are unchanged.
 - Current main integrated, including its non-LFM2 support. Unrelated CI-dispatch and CONTRIBUTING additions removed; prior published commits preserved. No CI PR or unrelated model work.
 - Actual lean comparison: **425 head / 425 pinned-base warnings, zero new**. Formatting passed for this revision before commit.
-- Current-source upstream CI is **11/11 successful jobs** across [Zig format](https://github.com/ashhart/TensorFold/actions/runs/41874396542), [No GPU](https://github.com/ashhart/TensorFold/actions/runs/41874396528) and [App/mobile](https://github.com/ashhart/TensorFold/actions/runs/41874396523). [Head-bound raw proof](ci/upstream.json); no cancellations or reruns.
+- Measured-source upstream CI is **11/11 successful jobs** across [Zig format](https://github.com/ashhart/TensorFold/actions/runs/41874396542), [No GPU](https://github.com/ashhart/TensorFold/actions/runs/41874396528) and [App/mobile](https://github.com/ashhart/TensorFold/actions/runs/41874396523). [Head-bound raw proof](ci/upstream.json); no cancellations or reruns.
+
+## Final requested host-test and naming follow-up
+
+`7414d148e` restores main's observer-context test and keeps its pointer and observed-path assertions unchanged.
+Restoring its exact old setup first crashed because `Drafted.backend()` now reads `drafter.facts()` and
+the old fixture supplied an undefined vtable. The test now uses the existing complete `FakeDrafter`,
+exported from the lanes namespace; no production drafter implementation was changed.
+The restack README now uses `@ashhart` instead of a first name.
+
+Formatting passed; the native build and actual round-timing host target completed **63/63 steps,
+3/3 tests passed**. The rebuilt CLI's actual `--help` ran successfully.
+An inventory comparison checked all **9,855** archived source files; only the three paths in the
+[exact follow-up patch](final-head/followup.patch) differ. Runtime implementation files are unchanged.
+This is source-level comparison, **not binary identity**: the rebuilt M4 executable has a different hash.
+No final-head model timing or model-qualification run is invented.
+[Source, binary and verification bindings](final-head/source-equivalence.json);
+[raw host build](final-head/host-build.log), [actual CLI smoke](final-head/native-smoke.log).
+
+Automatic final-head CI is being watched separately; the measured-source CI above is not relabelled.
 
 ## Current-source numerical guards
 
@@ -150,6 +171,66 @@ error. It does not identify which adaptive decision caused each difference or is
 [cells](plain-aa/cells.jsonl), [events](plain-aa/events.jsonl),
 [lossless original request stream](plain-aa/requests.lossless.jsonl.gz),
 [original/published hashes](plain-aa/original-published-sha256.json).
+
+## Completed original M5 functional scope
+
+Both released-BF16 and 8-bit drafter modes retained BF16 activations and completed the original checks.
+Each resumed request reused **3,517** cached tokens and matched its fresh response exactly.
+Each mode's **29 sampled plain/drafted/replay triples** matched at widths 1/4/8/16.
+All stress wrong-response counts are zero and all error lists empty:
+
+| Drafter weights | Slots | Duration (s) | Completed | Cancelled |
+|---|---:|---:|---:|---:|
+| Released BF16 | 6 | 60 | 453 | 247 |
+| Released BF16 | 16 | 90 | 934 | 505 |
+| 8-bit | 6 | 60 | 455 | 248 |
+| 8-bit | 16 | 90 | 937 | 507 |
+
+All four cache/fresh servers shut down with return code zero and no force.
+[BF16 functional data](m5-functional-0/functional.json), [8-bit functional data](m5-functional-8/functional.json).
+Both directories retain their observed metadata, original-scope server/shutdown logs and controller output.
+
+## Completed original M5 long-context scope
+
+The original BF16 serving check used context capacity 131,072 and 64-token replies:
+
+| Prompt tokens | Reply tokens in each arm | Plain/drafted token-ID agreement |
+|---:|---:|---|
+| 4,096 | 64 | Exact |
+| 16,384 | 64 | Exact |
+| 65,536 | 64 | Exact |
+| 130,816 | 64 | Exact |
+
+The native BF16-activation/BF16-weight diagnostics also completed both original large-context sizes,
+including the eight-column target capture/staging controls, fixed nine-row queries, 8/16 logical cohorts,
+zero-row rewind and nonfinite controls. Independent FP32 head comparison is not numerically identical:
+
+| Native input size | FP32 proposal-pick agreement | Maximum absolute confidence difference | Row-0 logit cosine | Worst row-0 absolute logit difference |
+|---:|---:|---:|---:|---:|
+| 65,536 | 9/9 | 0.00625 | 0.99993 | 0.131 |
+| 130,816 | 9/9 | 0.00911 | 0.99981 | 0.152 |
+
+Those FP32 references consume captured BF16 target features; they are not FP32 target-server arms.
+Both native diagnostics completed inside the original 3,600-second-per-command limit.
+[Served responses](m5-long/long-context.json), [65,536 native log](m5-long/dspark-reference-65536.log),
+[130,816 native log](m5-long/dspark-reference-130816.log), [original controller log](m5-long/controller.log).
+The serving process shut down cleanly without force. These M5 results do not fix or waive the historical M4 OOM.
+
+## Whole-workflow completion and retained failure
+
+Every required phase ran once in the predeclared order. Return codes:
+guards **0**, full matrix **3**, A/A **0**, functional BF16 **0**, functional 8-bit **0**, original long **0**.
+The completed workflow correctly records `qualification_pass: false`, `status: failed_original_performance`,
+and exit **3**. Functional/long success does not overwrite the full matrix's strict failure.
+
+Source verification passed before and after. The original full-matrix inventory and every A/A artifact
+are byte-identical to their completed milestone snapshots. All 20 model servers across the full matrix,
+A/A, functional and long-context phases exited cleanly without forced termination.
+[Final controller state](m5-completion/pipeline-observed.json),
+[completion](m5-completion/completion.json), [events](m5-completion/pipeline-events.jsonl),
+[original result inventory](m5-completion/result-manifest.json),
+[collection verification](m5-completion/local-collection.json),
+[original/published hashes](m5-completion/original-published-sha256.json).
 
 ## Frozen M5 procedure
 

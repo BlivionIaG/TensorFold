@@ -1,0 +1,159 @@
+{
+  "schema": "lfm2-dspark-final-receipts/1",
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+  "original_result_manifest_sha256": "8523b398870c581729ad45cfeb50cb6e21e56fe384c0d90c79e65a46b04d1f60",
+  "original_gate_returncode": 3,
+  "files": {
+    "m5-functional-0/functional.json": {
+      "original_relative_path": "functional-0/functional.json",
+      "original_sha256": "132610e3c6fa2206b35bf0d582bf08cfcde2826f56f7559341561a7366dfb03d",
+      "published_sha256": "132610e3c6fa2206b35bf0d582bf08cfcde2826f56f7559341561a7366dfb03d",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-0/observed.json": {
+      "original_relative_path": "functional-0/observed.json",
+      "original_sha256": "904dc725f48988708321bc0ef84d738f11abc578b532c1e72710bec1eb303d43",
+      "published_sha256": "904dc725f48988708321bc0ef84d738f11abc578b532c1e72710bec1eb303d43",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-0/functional-cache.server.log": {
+      "original_relative_path": "functional-0/functional-cache.server.log",
+      "original_sha256": "5c71e5409673be9330ee8cdac2cff83f4113a345c35b631761aec66f9c17fd1a",
+      "published_sha256": "5c71e5409673be9330ee8cdac2cff83f4113a345c35b631761aec66f9c17fd1a",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-0/functional-cache.shutdown.json": {
+      "original_relative_path": "functional-0/functional-cache.shutdown.json",
+      "original_sha256": "4cb98cac7b3346b372fa9562b0bfac51468f5de55ce377caaa9263292e4b6ac5",
+      "published_sha256": "4cb98cac7b3346b372fa9562b0bfac51468f5de55ce377caaa9263292e4b6ac5",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-0/functional-fresh.server.log": {
+      "original_relative_path": "functional-0/functional-fresh.server.log",
+      "original_sha256": "31682836d85489747030559ca6c785a6cf84a76f2344974242d107b929de1d30",
+      "published_sha256": "31682836d85489747030559ca6c785a6cf84a76f2344974242d107b929de1d30",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-0/functional-fresh.shutdown.json": {
+      "original_relative_path": "functional-0/functional-fresh.shutdown.json",
+      "original_sha256": "326df5bd82a43aa0b24cfebf970c3cbc1a86bb9d350b4d0f6bc4a6a530a9f885",
+      "published_sha256": "326df5bd82a43aa0b24cfebf970c3cbc1a86bb9d350b4d0f6bc4a6a530a9f885",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-0/controller.log": {
+      "original_relative_path": "functional-0.controller.log",
+      "original_sha256": "07b64ee5f390462b3b05718e147f92b1a91cf496ef637794ae289e7a669c7197",
+      "published_sha256": "07b64ee5f390462b3b05718e147f92b1a91cf496ef637794ae289e7a669c7197",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-8/functional.json": {
+      "original_relative_path": "functional-8/functional.json",
+      "original_sha256": "a637f0da9522ab61cb91642dc6d494cbde742681f9a5ed3d26d2b54c9990c3d5",
+      "published_sha256": "a637f0da9522ab61cb91642dc6d494cbde742681f9a5ed3d26d2b54c9990c3d5",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-8/observed.json": {
+      "original_relative_path": "functional-8/observed.json",
+      "original_sha256": "c9550de8b52a14cd9b8b81649b0e5fe2548bc75ab3c73989857de93cee3da2da",
+      "published_sha256": "c9550de8b52a14cd9b8b81649b0e5fe2548bc75ab3c73989857de93cee3da2da",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-8/functional-cache.server.log": {
+      "original_relative_path": "functional-8/functional-cache.server.log",
+      "original_sha256": "20306e7a70041c6589b25ea13df2e8aab6607bad430b7cd027ed37e0c8257b58",
+      "published_sha256": "20306e7a70041c6589b25ea13df2e8aab6607bad430b7cd027ed37e0c8257b58",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-8/functional-cache.shutdown.json": {
+      "original_relative_path": "functional-8/functional-cache.shutdown.json",
+      "original_sha256": "15b8de3716acb0b26495db9f1c52611af421a0324cea623ac98835179e4d75ed",
+      "published_sha256": "15b8de3716acb0b26495db9f1c52611af421a0324cea623ac98835179e4d75ed",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-8/functional-fresh.server.log": {
+      "original_relative_path": "functional-8/functional-fresh.server.log",
+      "original_sha256": "7319279a5119cbe9d9357f866ce1b2a0cca50898943ed6439f191e194b5629e9",
+      "published_sha256": "7319279a5119cbe9d9357f866ce1b2a0cca50898943ed6439f191e194b5629e9",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-8/functional-fresh.shutdown.json": {
+      "original_relative_path": "functional-8/functional-fresh.shutdown.json",
+      "original_sha256": "9ec022bea128df459caa564607d81b18850e0ff9dbe196edc33ef3e00fafa4f7",
+      "published_sha256": "9ec022bea128df459caa564607d81b18850e0ff9dbe196edc33ef3e00fafa4f7",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-functional-8/controller.log": {
+      "original_relative_path": "functional-8.controller.log",
+      "original_sha256": "0deb56ff0a9829e8206e106dac8feeb6e1e43b0f35442502e51e69b0729e4ebb",
+      "published_sha256": "0deb56ff0a9829e8206e106dac8feeb6e1e43b0f35442502e51e69b0729e4ebb",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-long/long-context.json": {
+      "original_relative_path": "long-context/long-context.json",
+      "original_sha256": "7997656b2c37dc40e9de9a4b51ce91621b8889e1079baf6983296d321862624d",
+      "published_sha256": "7997656b2c37dc40e9de9a4b51ce91621b8889e1079baf6983296d321862624d",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-long/long-context.server.log": {
+      "original_relative_path": "long-context/long-context.server.log",
+      "original_sha256": "af21dc6602d3a920a7f4d9c20722bb24c1352a539cd9697ea07723a53ccec3ff",
+      "published_sha256": "af21dc6602d3a920a7f4d9c20722bb24c1352a539cd9697ea07723a53ccec3ff",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-long/long-context.shutdown.json": {
+      "original_relative_path": "long-context/long-context.shutdown.json",
+      "original_sha256": "b75e8d169d82ccd356bd0d59648ab90cc362b46e00fc154cbcf44179483cef14",
+      "published_sha256": "b75e8d169d82ccd356bd0d59648ab90cc362b46e00fc154cbcf44179483cef14",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-long/dspark-reference-65536.log": {
+      "original_relative_path": "long-context/dspark-reference-65536.log",
+      "original_sha256": "28c77ec1c837178a39b8882125a26cbc4f5045f8ba3f38a9578b809651983fe2",
+      "published_sha256": "28c77ec1c837178a39b8882125a26cbc4f5045f8ba3f38a9578b809651983fe2",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-long/dspark-reference-130816.log": {
+      "original_relative_path": "long-context/dspark-reference-130816.log",
+      "original_sha256": "979c8a7c6005a482ad26f3caf43db4407cf875c03c8fc5e3b9148038ac2e4938",
+      "published_sha256": "979c8a7c6005a482ad26f3caf43db4407cf875c03c8fc5e3b9148038ac2e4938",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-long/controller.log": {
+      "original_relative_path": "original-long.controller.log",
+      "original_sha256": "1e7aff8e9e61c5f82ee8b943cb54e84e8ffc4acd626d8dad1a26e9a15e1464f0",
+      "published_sha256": "1e7aff8e9e61c5f82ee8b943cb54e84e8ffc4acd626d8dad1a26e9a15e1464f0",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-completion/pipeline-observed.json": {
+      "original_relative_path": "pipeline-observed.json",
+      "original_sha256": "562d8e4d8997f20c0164580912c5521c84de85baf1fd58c328edbfc0744deab8",
+      "published_sha256": "4049ccc8e65244ed26a68ef82c1655e04be9f8de453f99a9c0a448caf13f63f4",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-completion/pipeline-events.jsonl": {
+      "original_relative_path": "pipeline-events.jsonl",
+      "original_sha256": "f6c55880a7f0771769cf01a23ab56aa6210e8d21739bc5daf99216c2a1a0aea5",
+      "published_sha256": "93f449b25b173e3638cc941905e59857c0a43e5ebcd83abf96d686ca9afc01fb",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-completion/completion.json": {
+      "original_relative_path": "completion.json",
+      "original_sha256": "1a69217b64b7227fee66187c2639c062481e86ad47780e44f72bed174dfae7ab",
+      "published_sha256": "1a69217b64b7227fee66187c2639c062481e86ad47780e44f72bed174dfae7ab",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-completion/result-manifest.json": {
+      "original_relative_path": "result-manifest.json",
+      "original_sha256": "8523b398870c581729ad45cfeb50cb6e21e56fe384c0d90c79e65a46b04d1f60",
+      "published_sha256": "8523b398870c581729ad45cfeb50cb6e21e56fe384c0d90c79e65a46b04d1f60",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    },
+    "m5-completion/local-collection.json": {
+      "original_relative_path": "local-collection.json",
+      "original_sha256": "f2b750c79b99ff2738bceba9f1937370583bac3bb8828ed0127663db0964cf72",
+      "published_sha256": "0c3330f75e0b1a587ded54348750669223b38adf41384cdcf9e47e6ae74a33d9",
+      "transformation": "Known private paths aliased; numerical and workload content unchanged"
+    }
+  }
+}

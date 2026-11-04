@@ -1,0 +1,20 @@
+{
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+  "remote_root": "$M5_PACKET",
+  "all_result_manifest_files_verified": true,
+  "remote_completion": {
+    "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+    "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+    "completed_unix_ns": 1793818240456144000,
+    "exit_code": 3,
+    "complete": true,
+    "qualification_pass": false,
+    "original_gate_returncode": 3,
+    "original_summary_exit_code": 3,
+    "result_manifest_sha256": "8523b398870c581729ad45cfeb50cb6e21e56fe384c0d90c79e65a46b04d1f60",
+    "status": "failed_original_performance"
+  },
+  "no_model_runs": true,
+  "original_results_relabelled": false
+}

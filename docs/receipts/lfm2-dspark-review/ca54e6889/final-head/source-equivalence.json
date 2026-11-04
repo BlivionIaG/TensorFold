@@ -1,0 +1,42 @@
+{
+  "schema": "lfm2-dspark-final-review-followup/1",
+  "measured_source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "final_pr_source_revision": "7414d148eeaeefd09f65f1a761380d9fc17f6678",
+  "pinned_main": "00ff0f3b2c7ee67546e7a406f074e6d1d5c02593",
+  "archive_files_checked": 9855,
+  "changed_paths": [
+    "docs/receipts/dspark-chain-restack/README.md",
+    "zig/qwen35_round_timing_host.zig",
+    "zig/src/core/lanes/lanes.zig"
+  ],
+  "changes": {
+    "zig/qwen35_round_timing_host.zig": "Restore main observer-context test; same observer assertions, existing valid fake drafter instead of undefined vtable",
+    "zig/src/core/lanes/lanes.zig": "Export the existing host FakeDrafter fixture for that test; no runtime implementation edit",
+    "docs/receipts/dspark-chain-restack/README.md": "Replace first-name reference with maintainer handle"
+  },
+  "other_archive_files_identical": true,
+  "production_implementation_edits": false,
+  "qualified_m4_native_sha256": "cb6fa76c0d11542ff13ffc74d7fa08c94d9b421a4f32b35173d588ef6217f542",
+  "final_m4_native_sha256": "558174925dbcd6e5655757d5495b7726f86c99e6830fe61a29f9b7562f20bb3a",
+  "qualified_m5_native_sha256": "50d52f95a58c0c62cdecda98eb97f8eedfd82798b73ae430381cbc6a708bb517",
+  "byte_identical_native_claim": false,
+  "performance_measurements_relabelled": false,
+  "final_head_separately_performance_measured": false,
+  "final_head_verification": {
+    "format_exit": 0,
+    "native_and_host_build_exit": 0,
+    "host_steps_passed": 63,
+    "host_tests_passed": 3,
+    "native_help_exit": 0
+  },
+  "initial_exact_main_test_restoration": {
+    "result": "crashed",
+    "failure": "Undefined drafter vtable read by Drafter.facts at construction",
+    "fix": "Use the existing complete FakeDrafter fixture; observer assertions unchanged"
+  },
+  "limits": [
+    "Source-level runtime implementation comparison, not binary identity or a new final-head timing campaign.",
+    "All M4/M5 model qualification numbers remain bound to source ca54e6889.",
+    "Maintainer strict performance failure and historical OOMs remain."
+  ]
+}

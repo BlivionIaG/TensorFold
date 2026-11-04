@@ -1,0 +1,68 @@
+Build Summary: 63/63 steps succeeded; 3/3 tests passed
+test-qwen35-round-timing-host success
++- run test 3 pass (3 total) 61ms MaxRSS:3M
+   +- compile test debug native success 1s MaxRSS:348M
+      +- options success
+      |  +- compile exe qwen-round-timing-probe debug native success 1s MaxRSS:384M
+      |     +- WriteFile draft_ids.txt cached
+      |     +- options cached
+      +- WriteFile draft_ids.txt (reused)
+      +- options (reused)
+native success
++- install tensorfold-native success
+   +- compile exe tensorfold-native safe native-native success 1m MaxRSS:5G
+      +- options cached
+      +- WriteFile drama_prompt.zig cached
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal cached
+      +- WriteFile drama3_core.zig cached
+      +- WriteFile exlr8_alias.zig cached
+      +- WriteFile nemotron_packed.metallib cached
+      |  +- run xcrun (nemotron_packed.metallib) cached
+      |     +- run xcrun (coop_down_1_0.air) cached
+      |     +- run xcrun (coop_down_2_0.air) cached
+      |     +- run xcrun (coop_down_2_1.air) cached
+      |     +- run xcrun (coop_draft_1_0.air) cached
+      |     +- run xcrun (coop_draft_2_0.air) cached
+      |     +- run xcrun (coop_draft_2_1.air) cached
+      |     +- run xcrun (coop_eh_1_0.air) cached
+      |     +- run xcrun (coop_eh_1_0_sk.air) cached
+      |     +- run xcrun (coop_eh_2_0.air) cached
+      |     +- run xcrun (coop_eh_2_0_sk.air) cached
+      |     +- run xcrun (coop_eh_2_1.air) cached
+      |     +- run xcrun (coop_eh_2_1_sk.air) cached
+      |     +- run xcrun (coop_head_1_0.air) cached
+      |     +- run xcrun (coop_head_2_0.air) cached
+      |     +- run xcrun (coop_head_2_1.air) cached
+      |     +- run xcrun (coop_in_1_0.air) cached
+      |     +- run xcrun (coop_in_1_0_sk.air) cached
+      |     +- run xcrun (coop_in_2_0.air) cached
+      |     +- run xcrun (coop_in_2_0_sk.air) cached
+      |     +- run xcrun (coop_in_2_1.air) cached
+      |     +- run xcrun (coop_in_2_1_sk.air) cached
+      |     +- run xcrun (coop_out_1_0.air) cached
+      |     +- run xcrun (coop_out_1_0_sk.air) cached
+      |     +- run xcrun (coop_out_2_0.air) cached
+      |     +- run xcrun (coop_out_2_0_sk.air) cached
+      |     +- run xcrun (coop_out_2_1.air) cached
+      |     +- run xcrun (coop_out_2_1_sk.air) cached
+      |     +- run xcrun (coop_qkv_1_0.air) cached
+      |     +- run xcrun (coop_qkv_2_0.air) cached
+      |     +- run xcrun (coop_qkv_2_1.air) cached
+      |     +- run xcrun (coop_up_1_0.air) cached
+      |     +- run xcrun (coop_up_2_0.air) cached
+      |     +- run xcrun (coop_up_2_1.air) cached
+      |     +- run xcrun (up_relu2_1_0.air) cached
+      |     +- run xcrun (up_relu2_2_0.air) cached
+      |     +- run xcrun (up_relu2_2_1.air) cached
+      +- WriteFile drama3.metallib cached
+         +- run xcrun (drama3.metallib) cached
+            +- run xcrun (d3_dense.air) cached
+            +- run xcrun (d3_gdn.air) cached
+            +- run xcrun (d3_attn.air) cached
+            +- run xcrun (d3_moe.air) cached
+            +- run xcrun (d3_nvfp4.air) cached
+            +- run xcrun (d3_guidance.air) cached
+            +- run xcrun (d3_sample.air) cached
+            +- run xcrun (d3_codec.air) cached
+

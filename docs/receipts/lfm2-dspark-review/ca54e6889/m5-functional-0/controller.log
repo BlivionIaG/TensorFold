@@ -1,0 +1,10 @@
+{"event": "ready", "label": "functional-cache", "seconds": 6.632984292227775}
+{"event": "stress", "slots": 6, "seconds": 60, "completed": 453, "cancelled": 247, "wrong": 0, "errors": []}
+{"event": "stress", "slots": 16, "seconds": 90, "completed": 934, "cancelled": 505, "wrong": 0, "errors": []}
+{"event": "sampled", "streams": 1, "equal": 1}
+{"event": "sampled", "streams": 4, "equal": 4}
+{"event": "sampled", "streams": 8, "equal": 8}
+{"event": "sampled", "streams": 16, "equal": 16}
+{"event": "ready", "label": "functional-fresh", "seconds": 5.104047917295247}
+{"event": "resume", "equal": true}
+{"label": "ORIGINAL_CACHE_CANCEL_SAMPLE_FUNCTIONAL_ONLY", "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5", "bits": 0, "activation_dtype": "BF16", "native_binary_sha256": "50d52f95a58c0c62cdecda98eb97f8eedfd82798b73ae430381cbc6a708bb517", "removed_environment": [], "complete": true, "elapsed_s": 193.70762604102492}

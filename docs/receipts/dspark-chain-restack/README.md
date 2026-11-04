@@ -4,7 +4,7 @@ The historical restack documented here was rebuilt on main d33dcfc767ee093393c6b
 
 The attached historical load receipt records pre-allocation-refactor BF16 startup peak 16,036,097,352 bytes versus 15,527,930,776 bytes after the refactor, a 508,166,576-byte (484.6 MiB) reduction. Both are one stream, context 4096, prompt cache zero. It retains its original source/base identifiers; it is historical evidence, not a new measurement of these rebased commits. No M5 was used for this restack.
 
-The older M5 report in PR1381 described a downstream 1–2% loss at four/eight streams despite 16-stream gains. That interpretation is superseded by [Ash's later complete-matrix measurement](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6553439454): every four-/eight-stream cell was slower in BF16 and 8-bit, with additional sampled one-/16-stream losses. The receipts below retain their original source/device scope; neither restacking nor a short replay satisfies or waives the complete no-slowdown performance requirement.
+The older M5 report in PR1381 described a downstream 1–2% loss at four/eight streams despite 16-stream gains. That interpretation is superseded by [@ashhart's later complete-matrix measurement](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6553439454): every four-/eight-stream cell was slower in BF16 and 8-bit, with additional sampled one-/16-stream losses. The receipts below retain their original source/device scope; neither restacking nor a short replay satisfies or waives the complete no-slowdown performance requirement.
 
 ## Historical M4 load comparison
 

@@ -1,0 +1,33 @@
+info: lfm2 dspark: a 1-draft clean hold takes 2.02 CPU-encode + GPU ms, a 9-draft hold 2.47 CPU-encode + GPU ms; 60 context quotes
+info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged
+info: lfm2 moe: 13.4 GiB kept wired between requests, inside 70% of 256 GiB of RAM
+info: LFM2 window ms by width: 1 3.8, 2 4.6, 4 6.3, 8 9.3, 16 17.2
+info: LFM2 shared calibration: window16 17.18 ms, shared16 17.19 ms
+info: LFM2 shared marginal prices by rows: 17 16.0, 24 21.1, 32 26.8
+info: prompt cache: 0.0 GiB from 162.6 GiB free under the 70% cap (14.6 GiB in use once loaded, 256 GiB of RAM, 2 GiB kept for prompt buffers)
+info: lfm2: DSpark drafts from --drafter, 9 a round at most, bf16 matrices as released
+[tensorfold] prompt chunks of up to 2,048 tokens, cut at replies 256+ tokens apart
+[tensorfold] open-file limit raised: soft 256 -> 65536
+warning: libtfgrammar.dylib is required for structured output and required tool calls (HTTP 400 when missing); restore the matching release archive's lib/ directory or run zig build grammar -Dxgrammar=DIR; prepare DIR with git clone --branch v0.2.8 --recurse-submodules https://github.com/mlc-ai/xgrammar
+[tensorfold] profile: stable; registered overrides: none
+[tensorfold] serving review at http://127.0.0.1:18194/v1 (sampling: temperature 0.1, top_k 50; drafts: MTP + copies; context: 131072; loaded in 4.8s)
+[tensorfold] 127.0.0.1 "GET /v1/models HTTP/1.1" 200 -
+[tensorfold] done cmpl-d1d73f6be5a905ff694975a1938df41a prompt=4096 cached=0 thinking=False effort=none tokens=64 sha=8394ececc0cc finish=length rounds=63 accepted=0/0 ttft=0.299 decode=0.247 elapsed=0.546 queued=0.000 tok/s=255.1
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-d3bcb6da2c74d883aa1660e37ec2c846 prompt=4096 cached=0 thinking=False effort=none tokens=64 sha=8394ececc0cc finish=length rounds=58 accepted=5/15 ttft=0.290 decode=0.253 elapsed=0.543 queued=0.000 tok/s=249.2
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-e061e39bf7b80e60cc545ff389bb0049 prompt=16384 cached=0 thinking=False effort=none tokens=64 sha=a2dcb347e183 finish=length rounds=63 accepted=0/0 ttft=1.279 decode=0.272 elapsed=1.551 queued=0.000 tok/s=231.5
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-0e52d9637707ec416707ac62efa9fab8 prompt=16384 cached=0 thinking=False effort=none tokens=64 sha=a2dcb347e183 finish=length rounds=57 accepted=6/10 ttft=1.279 decode=0.255 elapsed=1.535 queued=0.000 tok/s=246.8
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-dc5c58f2acb47ab01d5350eae26956ee prompt=65536 cached=0 thinking=False effort=none tokens=64 sha=c2ba0e4604c6 finish=length rounds=63 accepted=0/0 ttft=7.304 decode=0.399 elapsed=7.703 queued=0.000 tok/s=157.8
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-75ff65dc8f1916f41af76dce1dfccee4 prompt=65536 cached=0 thinking=False effort=none tokens=64 sha=c2ba0e4604c6 finish=length rounds=37 accepted=26/32 ttft=7.308 decode=0.266 elapsed=7.573 queued=0.000 tok/s=237.2
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-07a9f3deab61debf383abdf0e09587cf prompt=130816 cached=0 thinking=False effort=none tokens=64 sha=3cc988610216 finish=length rounds=63 accepted=0/0 ttft=20.539 decode=0.541 elapsed=21.081 queued=0.000 tok/s=116.4
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-2aefe9f2da7db6ead62bfb4786c060c1 prompt=130816 cached=0 thinking=False effort=none tokens=64 sha=3cc988610216 finish=length rounds=15 accepted=48/54 ttft=20.542 decode=0.189 elapsed=20.731 queued=0.000 tok/s=332.7
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] shutting down (SIGTERM): draining: new requests get 503; 0 request(s) in progress may finish within 20.0 s
+[tensorfold] shutting down: drained
+[tensorfold] shutting down: stopped

@@ -1,0 +1,19 @@
+info: lfm2 dspark: a 1-draft clean hold takes 2.01 CPU-encode + GPU ms, a 9-draft hold 2.48 CPU-encode + GPU ms; 60 context quotes
+info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged
+info: lfm2 moe: 13.4 GiB kept wired between requests, inside 70% of 256 GiB of RAM
+info: LFM2 window ms by width: 1 3.8, 2 4.7, 4 6.3, 8 9.2, 16 17.0
+info: LFM2 shared calibration: window16 17.04 ms, shared16 17.20 ms
+info: LFM2 shared marginal prices by rows: 17 15.8, 24 21.0, 32 26.4
+info: prompt cache: 0.0 GiB from 162.6 GiB free under the 70% cap (14.6 GiB in use once loaded, 256 GiB of RAM, 2 GiB kept for prompt buffers)
+info: lfm2: DSpark drafts from --drafter, 9 a round at most, bf16 matrices as released
+[tensorfold] prompt chunks of up to 2,048 tokens, cut at replies 256+ tokens apart
+[tensorfold] open-file limit raised: soft 256 -> 65536
+warning: libtfgrammar.dylib is required for structured output and required tool calls (HTTP 400 when missing); restore the matching release archive's lib/ directory or run zig build grammar -Dxgrammar=DIR; prepare DIR with git clone --branch v0.2.8 --recurse-submodules https://github.com/mlc-ai/xgrammar
+[tensorfold] profile: stable; registered overrides: none
+[tensorfold] serving review at http://127.0.0.1:18194/v1 (sampling: temperature 0.1, top_k 50; drafts: MTP + copies; context: 16384; loaded in 4.8s)
+[tensorfold] 127.0.0.1 "GET /v1/models HTTP/1.1" 200 -
+[tensorfold] done chatcmpl-155183183b042051d3b40263a902df8e prompt=3605 cached=0 thinking=False effort=none tokens=64 sha=2fed3f850c53 finish=length rounds=15 accepted=48/48 ttft=0.299 decode=0.108 elapsed=0.407 queued=0.000 tok/s=582.5
+[tensorfold] 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" 200 -
+[tensorfold] shutting down (SIGTERM): draining: new requests get 503; 0 request(s) in progress may finish within 20.0 s
+[tensorfold] shutting down: drained
+[tensorfold] shutting down: stopped
