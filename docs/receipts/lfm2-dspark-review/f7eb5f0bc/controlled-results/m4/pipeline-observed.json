@@ -1,0 +1,30 @@
+{
+  "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "native_binary_sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0",
+  "prespecification_url": "https://github.com/BlivionIaG/TensorFold/blob/9ee4a1399bf6e5f60c43b6a28dd843b9a9c7749b/docs/receipts/lfm2-dspark-review/f7eb5f0bc/controlled-study/README.md",
+  "started_unix_ns": 1793747645468429000,
+  "complete": true,
+  "records": [
+    {
+      "label": "original-full-matrix",
+      "returncode": 3,
+      "elapsed_s": 5102.557826790959,
+      "log_sha256": "ba0ec71311e20ff8bae2527ffdde3d8ec7b26f60d0f99068781c21fc117c2952"
+    },
+    {
+      "label": "prespecified-controlled-study",
+      "returncode": 0,
+      "elapsed_s": 15556.402053125203,
+      "log_sha256": "611d5a501522c13f9f47d0715477a923e9c959c60a2825812114829564898ff7"
+    },
+    {
+      "label": "prespecified-analysis",
+      "returncode": 0,
+      "elapsed_s": 0.043403916992247105,
+      "log_sha256": "de71eba56eec2fa6a77d79d1a5f4b2acae8560053c2c50d40e3e4cd5220b9201"
+    }
+  ],
+  "original_full_gate_returncode": 3,
+  "controlled_owner_one_percent_verdict": "INCONCLUSIVE",
+  "completed_unix_ns": 1793768304553405000
+}

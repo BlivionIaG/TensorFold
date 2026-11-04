@@ -1,0 +1,2 @@
+{"event": "ready", "at": "2026-11-04T01:33:13Z", "label": "r1-bits8", "arm": "bits8", "seconds": 16.3, "flags": ["--drafter", "{drafter}", "--drafter-bits", "8"], "dspark_mode": "bits8", "binary_sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0", "dspark_weights_mib": 361.4}
+{"event": "shutdown", "at": "2026-11-04T01:43:46Z", "label": "r1-bits8", "forced_kill": false, "seconds": 0.4, "returncode": 0}

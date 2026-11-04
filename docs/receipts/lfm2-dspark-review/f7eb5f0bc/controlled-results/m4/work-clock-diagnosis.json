@@ -1,0 +1,2479 @@
+{
+  "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "native_binary_sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0",
+  "protocol_sha256": "d4dea2d29b0a4e2c4d2af09222b60c89c27a8090500789e7a660a9e639f31765",
+  "scope": "POSTHOC_DIAGNOSTIC_NO_TRIMMING_NO_FROZEN_VERDICT_CHANGE",
+  "all96_aa_work_comparisons": [
+    {
+      "rotation": 0,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -3.1270495844503365,
+      "plain_before_tps": 123.28885195640085,
+      "plain_after_tps": 119.43354842362463,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4178358.246704958,
+      "before_completed_perf_s": 4178362.497423458,
+      "after_sent_perf_s": 4180296.044203333,
+      "after_completed_perf_s": 4180300.428880625
+    },
+    {
+      "rotation": 1,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": 0.009646299303422978,
+      "plain_before_tps": 119.59407173387675,
+      "plain_after_tps": 119.60560813598535,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4180938.894340375,
+      "before_completed_perf_s": 4180943.273472875,
+      "after_sent_perf_s": 4182881.813476083,
+      "after_completed_perf_s": 4182886.192136958
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -5.6158173157574875,
+      "plain_before_tps": 126.67282314948007,
+      "plain_after_tps": 119.5591088126927,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4183554.784426583,
+      "before_completed_perf_s": 4183558.926680916,
+      "after_sent_perf_s": 4185507.215805458,
+      "after_completed_perf_s": 4185511.596332916
+    },
+    {
+      "rotation": 3,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -0.06951362926245208,
+      "plain_before_tps": 119.79165979142522,
+      "plain_after_tps": 119.70838826115047,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4186150.150660708,
+      "before_completed_perf_s": 4186154.527142416,
+      "after_sent_perf_s": 4188094.065018708,
+      "after_completed_perf_s": 4188098.439970041
+    },
+    {
+      "rotation": 4,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -0.1965939011877582,
+      "plain_before_tps": 120.02428670150843,
+      "plain_after_tps": 119.78832627390915,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4188736.479722041,
+      "before_completed_perf_s": 4188740.843434708,
+      "after_sent_perf_s": 4190678.970546875,
+      "after_completed_perf_s": 4190683.342740875
+    },
+    {
+      "rotation": 5,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -0.11928313046668526,
+      "plain_before_tps": 119.44893833785925,
+      "plain_after_tps": 119.30645590490063,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4191322.10539175,
+      "before_completed_perf_s": 4191326.49108825,
+      "after_sent_perf_s": 4193265.536303791,
+      "after_completed_perf_s": 4193269.925958666
+    },
+    {
+      "rotation": 0,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -1.7919453697496035,
+      "plain_before_tps": 252.37819347858002,
+      "plain_after_tps": 247.85571412628292,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4178362.509672416,
+      "before_completed_perf_s": 4178370.715479291,
+      "after_sent_perf_s": 4180300.43762375,
+      "after_completed_perf_s": 4180308.791135458
+    },
+    {
+      "rotation": 1,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -1.7293186461336152,
+      "plain_before_tps": 251.99950893739987,
+      "plain_after_tps": 247.64163444118026,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4180943.28219075,
+      "before_completed_perf_s": 4180951.499939208,
+      "after_sent_perf_s": 4182886.201648708,
+      "after_completed_perf_s": 4182894.562108666
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -0.06228591935902861,
+      "plain_before_tps": 248.09732498318843,
+      "plain_after_tps": 247.9427952834175,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4183558.936064875,
+      "before_completed_perf_s": 4183567.280866875,
+      "after_sent_perf_s": 4185511.606075875,
+      "after_completed_perf_s": 4185519.956686583
+    },
+    {
+      "rotation": 3,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 0.05058668961603896,
+      "plain_before_tps": 247.80711841020235,
+      "plain_after_tps": 247.93247582803897,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4186154.537884666,
+      "before_completed_perf_s": 4186162.892587625,
+      "after_sent_perf_s": 4188098.450539416,
+      "after_completed_perf_s": 4188106.802387541
+    },
+    {
+      "rotation": 4,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -1.0391961677340245,
+      "plain_before_tps": 250.39427427184432,
+      "plain_after_tps": 247.7921865693859,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4188740.857763166,
+      "before_completed_perf_s": 4188749.127940958,
+      "after_sent_perf_s": 4190683.353388041,
+      "after_completed_perf_s": 4190691.708725125
+    },
+    {
+      "rotation": 5,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -0.061402739971028186,
+      "plain_before_tps": 247.52587527195476,
+      "plain_after_tps": 247.37388760240052,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4191326.501983833,
+      "before_completed_perf_s": 4191334.866962041,
+      "after_sent_perf_s": 4193269.937959958,
+      "after_completed_perf_s": 4193278.3074985
+    },
+    {
+      "rotation": 0,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -1.031338118741354,
+      "plain_before_tps": 288.72417077961825,
+      "plain_after_tps": 285.74644834834817,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4178370.724078208,
+      "before_completed_perf_s": 4178384.989767083,
+      "after_sent_perf_s": 4180308.80412625,
+      "after_completed_perf_s": 4180323.217547833
+    },
+    {
+      "rotation": 1,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -0.30741523167695517,
+      "plain_before_tps": 286.3304115586863,
+      "plain_after_tps": 285.4501882606316,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4180951.509276541,
+      "before_completed_perf_s": 4180965.893578958,
+      "after_sent_perf_s": 4182894.572016416,
+      "after_completed_perf_s": 4182908.999647875
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 2.412790069563542,
+      "plain_before_tps": 279.0861561287478,
+      "plain_after_tps": 285.8199191893488,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4183567.291786208,
+      "before_completed_perf_s": 4183582.046096791,
+      "after_sent_perf_s": 4185519.9684625,
+      "after_completed_perf_s": 4185534.37865625
+    },
+    {
+      "rotation": 3,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 0.13519054456005986,
+      "plain_before_tps": 285.6494466002821,
+      "plain_after_tps": 286.0356176426738,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4186162.90305225,
+      "before_completed_perf_s": 4186177.321824083,
+      "after_sent_perf_s": 4188106.817799916,
+      "after_completed_perf_s": 4188121.217114916
+    },
+    {
+      "rotation": 4,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -0.686316014229782,
+      "plain_before_tps": 287.49457326884766,
+      "plain_after_tps": 285.521451972462,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4188749.139551291,
+      "before_completed_perf_s": 4188763.465387583,
+      "after_sent_perf_s": 4190691.720478708,
+      "after_completed_perf_s": 4190706.144853666
+    },
+    {
+      "rotation": 5,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 0.08816761071848145,
+      "plain_before_tps": 285.31797364340866,
+      "plain_after_tps": 285.56953168372047,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 4088,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4191334.879082625,
+      "before_completed_perf_s": 4191349.313798375,
+      "after_sent_perf_s": 4193278.320499958,
+      "after_completed_perf_s": 4193292.742251916
+    },
+    {
+      "rotation": 0,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.4055756118949927,
+      "plain_before_tps": 346.37009833300857,
+      "plain_after_tps": 344.9653056872732,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4178385.001511833,
+      "before_completed_perf_s": 4178408.713362208,
+      "after_sent_perf_s": 4180323.228577583,
+      "after_completed_perf_s": 4180347.037051791
+    },
+    {
+      "rotation": 1,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.01643514034312954,
+      "plain_before_tps": 345.2796975247811,
+      "plain_after_tps": 345.2229503219166,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4180965.905296541,
+      "before_completed_perf_s": 4180989.69163075,
+      "after_sent_perf_s": 4182909.014278,
+      "after_completed_perf_s": 4182932.804623666
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": 1.1230469151527034,
+      "plain_before_tps": 341.00628702085714,
+      "plain_after_tps": 344.83594760772166,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4183582.05804075,
+      "before_completed_perf_s": 4183606.144502416,
+      "after_sent_perf_s": 4185534.39598275,
+      "after_completed_perf_s": 4185558.21282475
+    },
+    {
+      "rotation": 3,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": 0.07111465403388806,
+      "plain_before_tps": 344.88565407625197,
+      "plain_after_tps": 345.1309183159608,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4186177.334684166,
+      "before_completed_perf_s": 4186201.14853325,
+      "after_sent_perf_s": 4188121.229996125,
+      "after_completed_perf_s": 4188145.026503375
+    },
+    {
+      "rotation": 4,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.17784624858890874,
+      "plain_before_tps": 345.6104270118364,
+      "plain_after_tps": 344.99577183266376,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4188763.478627625,
+      "before_completed_perf_s": 4188787.242314583,
+      "after_sent_perf_s": 4190706.158560125,
+      "after_completed_perf_s": 4190729.965079791
+    },
+    {
+      "rotation": 5,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.02371029507838296,
+      "plain_before_tps": 344.9946666783225,
+      "plain_after_tps": 344.9128674248484,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4191349.328308625,
+      "before_completed_perf_s": 4191373.134067416,
+      "after_sent_perf_s": 4193292.759006958,
+      "after_completed_perf_s": 4193316.571478708
+    },
+    {
+      "rotation": 0,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -4.188197565926388,
+      "plain_before_tps": 123.7301267825256,
+      "plain_after_tps": 118.54806462430223,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4178408.727930541,
+      "before_completed_perf_s": 4178412.963955,
+      "after_sent_perf_s": 4180347.0504765,
+      "after_completed_perf_s": 4180351.467196958
+    },
+    {
+      "rotation": 1,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": 1.6897186334684733,
+      "plain_before_tps": 118.42933156954388,
+      "plain_after_tps": 120.43045405256663,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4180989.706057416,
+      "before_completed_perf_s": 4180994.12694425,
+      "after_sent_perf_s": 4182932.820425791,
+      "after_completed_perf_s": 4182937.169449791
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -3.8736463809639354,
+      "plain_before_tps": 123.42326499966346,
+      "plain_after_tps": 118.64228416173647,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4183606.163865666,
+      "before_completed_perf_s": 4183610.410239291,
+      "after_sent_perf_s": 4185558.227848291,
+      "after_completed_perf_s": 4185562.641234
+    },
+    {
+      "rotation": 3,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": 0.10050874998634995,
+      "plain_before_tps": 118.2573221456241,
+      "plain_after_tps": 118.37618110188001,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4186201.16341675,
+      "before_completed_perf_s": 4186205.59084,
+      "after_sent_perf_s": 4188145.04213225,
+      "after_completed_perf_s": 4188149.46513025
+    },
+    {
+      "rotation": 4,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -0.6519395082169366,
+      "plain_before_tps": 118.98806817876013,
+      "plain_after_tps": 118.21233795223868,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4188787.257923416,
+      "before_completed_perf_s": 4188791.658684375,
+      "after_sent_perf_s": 4190729.981544708,
+      "after_completed_perf_s": 4190734.4103765
+    },
+    {
+      "rotation": 5,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": 0.17885974986437958,
+      "plain_before_tps": 118.41029887403087,
+      "plain_after_tps": 118.62208723841063,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4191373.150438541,
+      "before_completed_perf_s": 4191377.572281708,
+      "after_sent_perf_s": 4193316.588342125,
+      "after_completed_perf_s": 4193321.002349083
+    },
+    {
+      "rotation": 0,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -1.1284691972675565,
+      "plain_before_tps": 219.13248416105156,
+      "plain_after_tps": 216.6596415760869,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4178412.971860041,
+      "before_completed_perf_s": 4178422.405793541,
+      "after_sent_perf_s": 4180351.477713583,
+      "after_completed_perf_s": 4180361.018357583
+    },
+    {
+      "rotation": 1,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -0.10243649026168145,
+      "plain_before_tps": 216.65793449694934,
+      "plain_after_tps": 216.4359977129772,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4180994.135879291,
+      "before_completed_perf_s": 4181003.677243666,
+      "after_sent_perf_s": 4182937.181518458,
+      "after_completed_perf_s": 4182946.732216458
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 3.4416471047957087,
+      "plain_before_tps": 209.22895367541224,
+      "plain_after_tps": 216.4298759019764,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4183610.423580541,
+      "before_completed_perf_s": 4183620.3007295,
+      "after_sent_perf_s": 4185562.650499666,
+      "after_completed_perf_s": 4185572.202211666
+    },
+    {
+      "rotation": 3,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -0.024674297766713593,
+      "plain_before_tps": 216.50568152835888,
+      "plain_after_tps": 216.45226027181673,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4186205.600879833,
+      "before_completed_perf_s": 4186215.148293166,
+      "after_sent_perf_s": 4188149.475336791,
+      "after_completed_perf_s": 4188159.025167125
+    },
+    {
+      "rotation": 4,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 0.013634293849817958,
+      "plain_before_tps": 216.57203126768366,
+      "plain_after_tps": 216.6015593348232,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4188791.670131458,
+      "before_completed_perf_s": 4188801.214968291,
+      "after_sent_perf_s": 4190734.42184525,
+      "after_completed_perf_s": 4190743.964989791
+    },
+    {
+      "rotation": 5,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 0.06784974516491626,
+      "plain_before_tps": 216.19912489932236,
+      "plain_after_tps": 216.34581545461535,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 2044,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4191377.583224416,
+      "before_completed_perf_s": 4191387.144083,
+      "after_sent_perf_s": 4193321.014618625,
+      "after_completed_perf_s": 4193330.5688285
+    },
+    {
+      "rotation": 0,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -0.15657738545470368,
+      "plain_before_tps": 260.26006786160184,
+      "plain_after_tps": 259.8525594519615,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 4087,
+        "drafted": 6,
+        "accepted": 1
+      },
+      "after_activity": {
+        "rounds": 4087,
+        "drafted": 4,
+        "accepted": 1
+      },
+      "before_sent_perf_s": 4178422.415058708,
+      "before_completed_perf_s": 4178438.229649416,
+      "after_sent_perf_s": 4180361.02809275,
+      "after_completed_perf_s": 4180376.867471166
+    },
+    {
+      "rotation": 1,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -0.05564530354763564,
+      "plain_before_tps": 259.72626236439294,
+      "plain_after_tps": 259.58173689730734,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4087,
+        "drafted": 6,
+        "accepted": 1
+      },
+      "after_activity": {
+        "rounds": 4087,
+        "drafted": 6,
+        "accepted": 1
+      },
+      "before_sent_perf_s": 4181003.686510375,
+      "before_completed_perf_s": 4181019.532971625,
+      "after_sent_perf_s": 4182946.741834583,
+      "after_completed_perf_s": 4182962.596939375
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 5.482320027625742,
+      "plain_before_tps": 246.33812199413202,
+      "plain_after_tps": 259.84316619189343,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4087,
+        "drafted": 5,
+        "accepted": 1
+      },
+      "after_activity": {
+        "rounds": 4087,
+        "drafted": 5,
+        "accepted": 1
+      },
+      "before_sent_perf_s": 4183620.314154,
+      "before_completed_perf_s": 4183637.024095083,
+      "after_sent_perf_s": 4185572.213163708,
+      "after_completed_perf_s": 4185588.052508708
+    },
+    {
+      "rotation": 3,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -0.014156082324112695,
+      "plain_before_tps": 259.8350968709483,
+      "plain_after_tps": 259.7983144007283,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4087,
+        "drafted": 6,
+        "accepted": 1
+      },
+      "after_activity": {
+        "rounds": 4087,
+        "drafted": 6,
+        "accepted": 1
+      },
+      "before_sent_perf_s": 4186215.158985833,
+      "before_completed_perf_s": 4186230.998378791,
+      "after_sent_perf_s": 4188159.03663025,
+      "after_completed_perf_s": 4188174.878392041
+    },
+    {
+      "rotation": 4,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 0.05971158360966733,
+      "plain_before_tps": 259.70419911063306,
+      "plain_after_tps": 259.85927260062283,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 4087,
+        "drafted": 4,
+        "accepted": 1
+      },
+      "after_activity": {
+        "rounds": 4087,
+        "drafted": 6,
+        "accepted": 1
+      },
+      "before_sent_perf_s": 4188801.227678875,
+      "before_completed_perf_s": 4188817.075847958,
+      "after_sent_perf_s": 4190743.9769395,
+      "after_completed_perf_s": 4190759.815267541
+    },
+    {
+      "rotation": 5,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 0.045327034480191486,
+      "plain_before_tps": 259.6655782030443,
+      "plain_after_tps": 259.7832769092096,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 4087,
+        "drafted": 4,
+        "accepted": 1
+      },
+      "after_activity": {
+        "rounds": 4087,
+        "drafted": 6,
+        "accepted": 1
+      },
+      "before_sent_perf_s": 4191387.156338625,
+      "before_completed_perf_s": 4191403.006429625,
+      "after_sent_perf_s": 4193330.581390458,
+      "after_completed_perf_s": 4193346.424047
+    },
+    {
+      "rotation": 0,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.3965305983054779,
+      "plain_before_tps": 317.0681485909989,
+      "plain_after_tps": 315.8108763643549,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4178438.240355583,
+      "before_completed_perf_s": 4178464.134113083,
+      "after_sent_perf_s": 4180376.878273125,
+      "after_completed_perf_s": 4180402.874592625
+    },
+    {
+      "rotation": 1,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.011453743498301971,
+      "plain_before_tps": 316.0023777086326,
+      "plain_after_tps": 315.9661836068413,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4181019.544544083,
+      "before_completed_perf_s": 4181045.524944,
+      "after_sent_perf_s": 4182962.60891775,
+      "after_completed_perf_s": 4182988.593116
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": 3.3129029524933795,
+      "plain_before_tps": 305.4641454112605,
+      "plain_after_tps": 315.58387610339884,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4183637.042082458,
+      "before_completed_perf_s": 4183663.920500166,
+      "after_sent_perf_s": 4185588.0648715,
+      "after_completed_perf_s": 4185614.079555458
+    },
+    {
+      "rotation": 3,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.06423046971515411,
+      "plain_before_tps": 315.8735067070096,
+      "plain_after_tps": 315.67061966994595,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4186231.010626416,
+      "before_completed_perf_s": 4186257.001750958,
+      "after_sent_perf_s": 4188174.892681625,
+      "after_completed_perf_s": 4188200.900555458
+    },
+    {
+      "rotation": 4,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.08525882243169969,
+      "plain_before_tps": 316.2940988193118,
+      "plain_after_tps": 316.02443019523747,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4188817.0917905,
+      "before_completed_perf_s": 4188843.048615458,
+      "after_sent_perf_s": 4190759.829016958,
+      "after_completed_perf_s": 4190785.807630583
+    },
+    {
+      "rotation": 5,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.2242696207454986,
+      "plain_before_tps": 316.2345984494524,
+      "plain_after_tps": 315.52538031484374,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 8176,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4191403.020194458,
+      "before_completed_perf_s": 4191428.981660791,
+      "after_sent_perf_s": 4193346.438520083,
+      "after_completed_perf_s": 4193372.4576145
+    },
+    {
+      "rotation": 0,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -0.23283615753741937,
+      "plain_before_tps": 169.8433917754376,
+      "plain_after_tps": 169.44793494819643,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "after_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "before_sent_perf_s": 4178254.526344666,
+      "before_completed_perf_s": 4178257.619819583,
+      "after_sent_perf_s": 4180191.967665208,
+      "after_completed_perf_s": 4180195.068558375
+    },
+    {
+      "rotation": 1,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": 0.14955384315289422,
+      "plain_before_tps": 169.77431135046797,
+      "plain_after_tps": 170.02821535777895,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "after_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "before_sent_perf_s": 4180834.87581675,
+      "before_completed_perf_s": 4180837.97064975,
+      "after_sent_perf_s": 4182777.721866958,
+      "after_completed_perf_s": 4182780.812032583
+    },
+    {
+      "rotation": 2,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -1.3498239568979886,
+      "plain_before_tps": 171.92019488675362,
+      "plain_after_tps": 169.5995749094265,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "after_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "before_sent_perf_s": 4183443.648422333,
+      "before_completed_perf_s": 4183446.711099458,
+      "after_sent_perf_s": 4185403.112973916,
+      "after_completed_perf_s": 4185406.21088775
+    },
+    {
+      "rotation": 3,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -0.5771410054119741,
+      "plain_before_tps": 170.2203968612387,
+      "plain_after_tps": 169.2379851513775,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "after_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "before_sent_perf_s": 4186046.026667833,
+      "before_completed_perf_s": 4186049.113486583,
+      "after_sent_perf_s": 4187990.069080375,
+      "after_completed_perf_s": 4187993.173494458
+    },
+    {
+      "rotation": 4,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -0.3977183936956452,
+      "plain_before_tps": 170.11421913762797,
+      "plain_after_tps": 169.4376435978259,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "after_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "before_sent_perf_s": 4188632.621916958,
+      "before_completed_perf_s": 4188635.71055025,
+      "after_sent_perf_s": 4190574.93353025,
+      "after_completed_perf_s": 4190578.034293708
+    },
+    {
+      "rotation": 5,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": 0.8969392307922375,
+      "plain_before_tps": 170.02368476452435,
+      "plain_after_tps": 171.5486938948159,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "after_activity": {
+        "rounds": 272,
+        "drafted": 310,
+        "accepted": 239
+      },
+      "before_sent_perf_s": 4191217.988836583,
+      "before_completed_perf_s": 4191221.079011708,
+      "after_sent_perf_s": 4193161.589235333,
+      "after_completed_perf_s": 4193164.652905416
+    },
+    {
+      "rotation": 0,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 0.16611941914663753,
+      "plain_before_tps": 291.80706166111895,
+      "plain_after_tps": 292.2918098569793,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "after_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "before_sent_perf_s": 4178257.628789708,
+      "before_completed_perf_s": 4178264.718353916,
+      "after_sent_perf_s": 4180195.076634916,
+      "after_completed_perf_s": 4180202.154855583
+    },
+    {
+      "rotation": 1,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -0.07518679785046833,
+      "plain_before_tps": 292.2193053722429,
+      "plain_after_tps": 291.99959503383263,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "after_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "before_sent_perf_s": 4180837.97868075,
+      "before_completed_perf_s": 4180845.058555541,
+      "after_sent_perf_s": 4182780.823859625,
+      "after_completed_perf_s": 4182787.909761166
+    },
+    {
+      "rotation": 2,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 59.23416957293368,
+      "plain_before_tps": 183.4887524907417,
+      "plain_after_tps": 292.1767912883682,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 1204,
+        "drafted": 932,
+        "accepted": 840
+      },
+      "after_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "before_sent_perf_s": 4183446.723143916,
+      "before_completed_perf_s": 4183457.953665708,
+      "after_sent_perf_s": 4185406.219912333,
+      "after_completed_perf_s": 4185413.300595916
+    },
+    {
+      "rotation": 3,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -0.0701921140015882,
+      "plain_before_tps": 292.2887673820725,
+      "plain_after_tps": 292.0836037172578,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "after_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "before_sent_perf_s": 4186049.122460958,
+      "before_completed_perf_s": 4186056.201219291,
+      "after_sent_perf_s": 4187993.1829925,
+      "after_completed_perf_s": 4188000.267031875
+    },
+    {
+      "rotation": 4,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -1.1189011464665888,
+      "plain_before_tps": 295.48083279872816,
+      "plain_after_tps": 292.17469437295415,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "after_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "before_sent_perf_s": 4188635.72093925,
+      "before_completed_perf_s": 4188642.724505625,
+      "after_sent_perf_s": 4190578.044743083,
+      "after_completed_perf_s": 4190585.12644925
+    },
+    {
+      "rotation": 5,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 0.8696602823880628,
+      "plain_before_tps": 291.78542133739916,
+      "plain_after_tps": 294.3229632565692,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "after_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "before_sent_perf_s": 4191221.089706708,
+      "before_completed_perf_s": 4191228.18043025,
+      "after_sent_perf_s": 4193164.665150916,
+      "after_completed_perf_s": 4193171.695726208
+    },
+    {
+      "rotation": 0,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 0.0001573143361355278,
+      "plain_before_tps": 322.90834999754884,
+      "plain_after_tps": 322.90885797867594,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 2576,
+        "drafted": 1664,
+        "accepted": 1512
+      },
+      "after_activity": {
+        "rounds": 2568,
+        "drafted": 1672,
+        "accepted": 1520
+      },
+      "before_sent_perf_s": 4178264.726262125,
+      "before_completed_perf_s": 4178277.472079083,
+      "after_sent_perf_s": 4180202.166937458,
+      "after_completed_perf_s": 4180214.912445
+    },
+    {
+      "rotation": 1,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 0.009657081177927296,
+      "plain_before_tps": 323.008786831153,
+      "plain_after_tps": 323.0399800519091,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2568,
+        "drafted": 1672,
+        "accepted": 1520
+      },
+      "after_activity": {
+        "rounds": 2568,
+        "drafted": 1672,
+        "accepted": 1520
+      },
+      "before_sent_perf_s": 4180845.067476875,
+      "before_completed_perf_s": 4180857.808681125,
+      "after_sent_perf_s": 4182787.919342166,
+      "after_completed_perf_s": 4182800.659370541
+    },
+    {
+      "rotation": 2,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 5.347371815483282,
+      "plain_before_tps": 306.3221992532508,
+      "plain_after_tps": 322.70238620068767,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 2568,
+        "drafted": 1672,
+        "accepted": 1520
+      },
+      "after_activity": {
+        "rounds": 2576,
+        "drafted": 1664,
+        "accepted": 1512
+      },
+      "before_sent_perf_s": 4183457.96529625,
+      "before_completed_perf_s": 4183471.401707791,
+      "after_sent_perf_s": 4185413.310315958,
+      "after_completed_perf_s": 4185426.063533541
+    },
+    {
+      "rotation": 3,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 1.134983897154429,
+      "plain_before_tps": 322.58164000843874,
+      "plain_after_tps": 326.2428896777112,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 2576,
+        "drafted": 1664,
+        "accepted": 1512
+      },
+      "after_activity": {
+        "rounds": 2580,
+        "drafted": 1658,
+        "accepted": 1508
+      },
+      "before_sent_perf_s": 4186056.211249458,
+      "before_completed_perf_s": 4186068.969359125,
+      "after_sent_perf_s": 4188000.277184916,
+      "after_completed_perf_s": 4188012.892887083
+    },
+    {
+      "rotation": 4,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -0.9123128476121733,
+      "plain_before_tps": 325.86541810185037,
+      "plain_after_tps": 322.89250602658205,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 2580,
+        "drafted": 1658,
+        "accepted": 1508
+      },
+      "after_activity": {
+        "rounds": 2576,
+        "drafted": 1664,
+        "accepted": 1512
+      },
+      "before_sent_perf_s": 4188642.735695208,
+      "before_completed_perf_s": 4188655.366109916,
+      "after_sent_perf_s": 4190585.138586083,
+      "after_completed_perf_s": 4190597.88430575
+    },
+    {
+      "rotation": 5,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 1.0921033119430712,
+      "plain_before_tps": 322.7102110712846,
+      "plain_after_tps": 326.2345399743726,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 2576,
+        "drafted": 1664,
+        "accepted": 1512
+      },
+      "after_activity": {
+        "rounds": 2580,
+        "drafted": 1658,
+        "accepted": 1508
+      },
+      "before_sent_perf_s": 4191228.191722375,
+      "before_completed_perf_s": 4191240.94418775,
+      "after_sent_perf_s": 4193171.7078045,
+      "after_completed_perf_s": 4193184.323874583
+    },
+    {
+      "rotation": 0,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.30194571837187656,
+      "plain_before_tps": 360.51539039894635,
+      "plain_after_tps": 359.4268296135651,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "after_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "before_sent_perf_s": 4178277.481532041,
+      "before_completed_perf_s": 4178300.245969333,
+      "after_sent_perf_s": 4180214.922768,
+      "after_completed_perf_s": 4180237.755360625
+    },
+    {
+      "rotation": 1,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.12345340176569408,
+      "plain_before_tps": 359.8622534359721,
+      "plain_after_tps": 359.4179912424347,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "after_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "before_sent_perf_s": 4180857.818965,
+      "before_completed_perf_s": 4180880.624483708,
+      "after_sent_perf_s": 4182800.669792,
+      "after_completed_perf_s": 4182823.503573041
+    },
+    {
+      "rotation": 2,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": 2.7680317148973455,
+      "plain_before_tps": 349.5060347111842,
+      "plain_after_tps": 359.18047259746993,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "after_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "before_sent_perf_s": 4183471.414759833,
+      "before_completed_perf_s": 4183494.898955375,
+      "after_sent_perf_s": 4185426.075073458,
+      "after_completed_perf_s": 4185448.923578041
+    },
+    {
+      "rotation": 3,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": 0.03719406431008654,
+      "plain_before_tps": 359.2732821238472,
+      "plain_after_tps": 359.4069104594493,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "after_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "before_sent_perf_s": 4186068.981149916,
+      "before_completed_perf_s": 4186091.823450208,
+      "after_sent_perf_s": 4188012.905245708,
+      "after_completed_perf_s": 4188035.739130666
+    },
+    {
+      "rotation": 4,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.07599502123128987,
+      "plain_before_tps": 359.6517173827245,
+      "plain_after_tps": 359.3783999837408,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "after_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "before_sent_perf_s": 4188655.379580208,
+      "before_completed_perf_s": 4188678.199028416,
+      "after_sent_perf_s": 4190597.897080625,
+      "after_completed_perf_s": 4190620.733010875
+    },
+    {
+      "rotation": 5,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": 0.01142906037618907,
+      "plain_before_tps": 359.3819292402066,
+      "plain_after_tps": 359.4230032178806,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "after_activity": {
+        "rounds": 6160,
+        "drafted": 2128,
+        "accepted": 2016
+      },
+      "before_sent_perf_s": 4191240.957514041,
+      "before_completed_perf_s": 4191263.792920541,
+      "after_sent_perf_s": 4193184.343087166,
+      "after_completed_perf_s": 4193207.176149583
+    },
+    {
+      "rotation": 0,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -2.5173447951453376,
+      "plain_before_tps": 118.7014364670462,
+      "plain_after_tps": 115.71331203438025,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "after_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "before_sent_perf_s": 4178300.258111458,
+      "before_completed_perf_s": 4178304.647330833,
+      "after_sent_perf_s": 4180237.767952583,
+      "after_completed_perf_s": 4180242.268931458
+    },
+    {
+      "rotation": 1,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -2.300017576604574,
+      "plain_before_tps": 118.39972233268178,
+      "plain_after_tps": 115.67650790837908,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "after_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "before_sent_perf_s": 4180880.637966791,
+      "before_completed_perf_s": 4180885.038356,
+      "after_sent_perf_s": 4182823.5170755,
+      "after_completed_perf_s": 4182828.019272541
+    },
+    {
+      "rotation": 2,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -5.195127599807215,
+      "plain_before_tps": 121.96336314073952,
+      "plain_after_tps": 115.62721080056185,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "after_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "before_sent_perf_s": 4183494.91359275,
+      "before_completed_perf_s": 4183499.188117833,
+      "after_sent_perf_s": 4185448.937167,
+      "after_completed_perf_s": 4185453.441248333
+    },
+    {
+      "rotation": 3,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": 0.09579507864516668,
+      "plain_before_tps": 115.49160116771426,
+      "plain_after_tps": 115.60223643788144,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "after_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "before_sent_perf_s": 4186091.837556375,
+      "before_completed_perf_s": 4186096.34692225,
+      "after_sent_perf_s": 4188035.753114916,
+      "after_completed_perf_s": 4188040.258232083
+    },
+    {
+      "rotation": 4,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -0.0062592667847138905,
+      "plain_before_tps": 115.75466481523361,
+      "plain_after_tps": 115.74741942194707,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "after_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "before_sent_perf_s": 4188678.213539291,
+      "before_completed_perf_s": 4188682.712617833,
+      "after_sent_perf_s": 4190620.747696375,
+      "after_completed_perf_s": 4190625.247184583
+    },
+    {
+      "rotation": 5,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -0.2876822851599625,
+      "plain_before_tps": 115.6225135263403,
+      "plain_after_tps": 115.28988803726834,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "after_activity": {
+        "rounds": 504,
+        "drafted": 66,
+        "accepted": 7
+      },
+      "before_sent_perf_s": 4191263.808734666,
+      "before_completed_perf_s": 4191268.313160791,
+      "after_sent_perf_s": 4193207.19182925,
+      "after_completed_perf_s": 4193211.708770041
+    },
+    {
+      "rotation": 0,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -0.750331655921399,
+      "plain_before_tps": 207.51453902653992,
+      "plain_after_tps": 205.95749174958442,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "after_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "before_sent_perf_s": 4178304.654693708,
+      "before_completed_perf_s": 4178314.58943025,
+      "after_sent_perf_s": 4180242.277839333,
+      "after_completed_perf_s": 4180252.287083041
+    },
+    {
+      "rotation": 1,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -0.04981961323274886,
+      "plain_before_tps": 205.6475083279051,
+      "plain_after_tps": 205.54505553463335,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "after_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "before_sent_perf_s": 4180885.047867625,
+      "before_completed_perf_s": 4180895.0720375,
+      "after_sent_perf_s": 4182828.02855875,
+      "after_completed_perf_s": 4182838.057774625
+    },
+    {
+      "rotation": 2,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 2.107323097684999,
+      "plain_before_tps": 201.5011341566924,
+      "plain_after_tps": 205.7474140988736,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "after_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "before_sent_perf_s": 4183499.198374958,
+      "before_completed_perf_s": 4183509.429157708,
+      "after_sent_perf_s": 4185453.4510625,
+      "after_completed_perf_s": 4185463.470439625
+    },
+    {
+      "rotation": 3,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 0.028781152776091723,
+      "plain_before_tps": 205.65645725918404,
+      "plain_after_tps": 205.7156475583417,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "after_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "before_sent_perf_s": 4186096.357419833,
+      "before_completed_perf_s": 4186106.381238208,
+      "after_sent_perf_s": 4188040.267629625,
+      "after_completed_perf_s": 4188050.2887145
+    },
+    {
+      "rotation": 4,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": -0.25905902205084486,
+      "plain_before_tps": 206.46631312646025,
+      "plain_after_tps": 205.9314435148104,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "after_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "before_sent_perf_s": 4188682.722864791,
+      "before_completed_perf_s": 4188692.70775075,
+      "after_sent_perf_s": 4190625.258867916,
+      "after_completed_perf_s": 4190635.269420208
+    },
+    {
+      "rotation": 5,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 0.12244905908176396,
+      "plain_before_tps": 205.53250291689397,
+      "plain_after_tps": 205.7841755328229,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "after_activity": {
+        "rounds": 2006,
+        "drafted": 138,
+        "accepted": 38
+      },
+      "before_sent_perf_s": 4191268.324336166,
+      "before_completed_perf_s": 4191278.354302875,
+      "after_sent_perf_s": 4193211.722456833,
+      "after_completed_perf_s": 4193221.740110291
+    },
+    {
+      "rotation": 0,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -0.12564859705656017,
+      "plain_before_tps": 247.7204990038927,
+      "plain_after_tps": 247.4092416722728,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "after_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "before_sent_perf_s": 4178314.59830425,
+      "before_completed_perf_s": 4178331.185674041,
+      "after_sent_perf_s": 4180252.297563,
+      "after_completed_perf_s": 4180268.905821958
+    },
+    {
+      "rotation": 1,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -0.09748448803168497,
+      "plain_before_tps": 247.53035351014927,
+      "plain_after_tps": 247.28904981230687,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "after_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "before_sent_perf_s": 4180895.081661208,
+      "before_completed_perf_s": 4180911.681717125,
+      "after_sent_perf_s": 4182838.068253416,
+      "after_completed_perf_s": 4182854.684631125
+    },
+    {
+      "rotation": 2,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 4.097449244542739,
+      "plain_before_tps": 237.44566891422292,
+      "plain_after_tps": 247.1748846813482,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 3738,
+        "drafted": 533,
+        "accepted": 350
+      },
+      "after_activity": {
+        "rounds": 3741,
+        "drafted": 530,
+        "accepted": 347
+      },
+      "before_sent_perf_s": 4183509.440657666,
+      "before_completed_perf_s": 4183526.748503583,
+      "after_sent_perf_s": 4185463.481376666,
+      "after_completed_perf_s": 4185480.105216375
+    },
+    {
+      "rotation": 3,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 0.009867236018989978,
+      "plain_before_tps": 247.3865034957244,
+      "plain_after_tps": 247.41091370590345,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "after_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "before_sent_perf_s": 4186106.392393875,
+      "before_completed_perf_s": 4186123.002159083,
+      "after_sent_perf_s": 4188050.300029958,
+      "after_completed_perf_s": 4188066.90825525
+    },
+    {
+      "rotation": 4,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 0.054319710580741365,
+      "plain_before_tps": 247.4229668000697,
+      "plain_after_tps": 247.5573662395458,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "after_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "before_sent_perf_s": 4188692.723176666,
+      "before_completed_perf_s": 4188709.331058833,
+      "after_sent_perf_s": 4190635.281468833,
+      "after_completed_perf_s": 4190651.880018166
+    },
+    {
+      "rotation": 5,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": -0.04127116708846357,
+      "plain_before_tps": 247.38886825322157,
+      "plain_after_tps": 247.28676798004653,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "after_activity": {
+        "rounds": 3739,
+        "drafted": 532,
+        "accepted": 349
+      },
+      "before_sent_perf_s": 4191278.366136333,
+      "before_completed_perf_s": 4191294.976091708,
+      "after_sent_perf_s": 4193221.759533166,
+      "after_completed_perf_s": 4193238.376017333
+    },
+    {
+      "rotation": 0,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.2895216434072645,
+      "plain_before_tps": 303.3758804127715,
+      "plain_after_tps": 302.4975415780992,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 7487,
+        "drafted": 825,
+        "accepted": 689
+      },
+      "after_activity": {
+        "rounds": 7460,
+        "drafted": 861,
+        "accepted": 716
+      },
+      "before_sent_perf_s": 4178331.196930666,
+      "before_completed_perf_s": 4178358.232831625,
+      "after_sent_perf_s": 4180268.916764333,
+      "after_completed_perf_s": 4180296.030898
+    },
+    {
+      "rotation": 1,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": 0.30584329610992,
+      "plain_before_tps": 301.6924755080104,
+      "plain_after_tps": 302.61518171921966,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 7437,
+        "drafted": 867,
+        "accepted": 739
+      },
+      "after_activity": {
+        "rounds": 7450,
+        "drafted": 858,
+        "accepted": 726
+      },
+      "before_sent_perf_s": 4180911.694632166,
+      "before_completed_perf_s": 4180938.880718833,
+      "after_sent_perf_s": 4182854.696029666,
+      "after_completed_perf_s": 4182881.798967666
+    },
+    {
+      "rotation": 2,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": 3.425069750871823,
+      "plain_before_tps": 292.87888070109705,
+      "plain_after_tps": 302.9101866506823,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 7440,
+        "drafted": 890,
+        "accepted": 736
+      },
+      "after_activity": {
+        "rounds": 7518,
+        "drafted": 806,
+        "accepted": 658
+      },
+      "before_sent_perf_s": 4183526.761317208,
+      "before_completed_perf_s": 4183554.7651545,
+      "after_sent_perf_s": 4185480.117955,
+      "after_completed_perf_s": 4185507.200736375
+    },
+    {
+      "rotation": 3,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.03262176893180646,
+      "plain_before_tps": 302.4659012502718,
+      "plain_after_tps": 302.36723152286845,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 7481,
+        "drafted": 832,
+        "accepted": 695
+      },
+      "after_activity": {
+        "rounds": 7513,
+        "drafted": 837,
+        "accepted": 663
+      },
+      "before_sent_perf_s": 4186123.016546416,
+      "before_completed_perf_s": 4186150.133765583,
+      "after_sent_perf_s": 4188066.923207958,
+      "after_completed_perf_s": 4188094.04892525
+    },
+    {
+      "rotation": 4,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": 0.2216497848074983,
+      "plain_before_tps": 302.42928328560237,
+      "plain_after_tps": 303.09961714119976,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 7460,
+        "drafted": 871,
+        "accepted": 716
+      },
+      "after_activity": {
+        "rounds": 7461,
+        "drafted": 851,
+        "accepted": 715
+      },
+      "before_sent_perf_s": 4188709.343969625,
+      "before_completed_perf_s": 4188736.46415,
+      "after_sent_perf_s": 4190651.893608916,
+      "after_completed_perf_s": 4190678.954288958
+    },
+    {
+      "rotation": 5,
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "plain_after_vs_before_percent": -0.11373419061222467,
+      "plain_before_tps": 302.6698985220597,
+      "plain_after_tps": 302.3256593627488,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 7463,
+        "drafted": 855,
+        "accepted": 713
+      },
+      "after_activity": {
+        "rounds": 7493,
+        "drafted": 834,
+        "accepted": 683
+      },
+      "before_sent_perf_s": 4191294.990253125,
+      "before_completed_perf_s": 4191322.088981666,
+      "after_sent_perf_s": 4193238.390252458,
+      "after_completed_perf_s": 4193265.519385583
+    }
+  ],
+  "equal_aggregate_counter_pairs": 80,
+  "global_clock_summary": {
+    "records": 15466,
+    "duration_seconds": 15555.939736517,
+    "global_gpu_busy_percent": 99.12046574060228,
+    "max_reported_dvfm_frequency": 1578,
+    "busy_time_at_max_dvfm_percent": 95.88805839929255,
+    "active_time_weighted_raw_frequency": 1572.2287423638152,
+    "thermal_pressure_record_counts": {
+      "Nominal": 6733,
+      "Moderate": 7769,
+      "Heavy": 964
+    }
+  },
+  "largest_plain_aa_changes_with_global_clocks": [
+    {
+      "rotation": 2,
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "plain_after_vs_before_percent": 59.23416957293368,
+      "plain_before_tps": 183.4887524907417,
+      "plain_after_tps": 292.1767912883682,
+      "aggregate_work_equal": false,
+      "before_activity": {
+        "rounds": 1204,
+        "drafted": 932,
+        "accepted": 840
+      },
+      "after_activity": {
+        "rounds": 1284,
+        "drafted": 836,
+        "accepted": 760
+      },
+      "before_sent_perf_s": 4183446.723143916,
+      "before_completed_perf_s": 4183457.953665708,
+      "after_sent_perf_s": 4185406.219912333,
+      "after_completed_perf_s": 4185413.300595916,
+      "before_global_clocks": {
+        "records": 12,
+        "duration_seconds": 12.07383216,
+        "global_gpu_busy_percent": 99.75169539617964,
+        "max_reported_dvfm_frequency": 1578,
+        "busy_time_at_max_dvfm_percent": 36.44698930289362,
+        "active_time_weighted_raw_frequency": 1488.1711413687974,
+        "thermal_pressure_record_counts": {
+          "Heavy": 12
+        }
+      },
+      "after_global_clocks": {
+        "records": 7,
+        "duration_seconds": 7.041005789,
+        "global_gpu_busy_percent": 99.84169426417587,
+        "max_reported_dvfm_frequency": 1578,
+        "busy_time_at_max_dvfm_percent": 99.99725221313712,
+        "active_time_weighted_raw_frequency": 1577.9659274429002,
+        "thermal_pressure_record_counts": {
+          "Nominal": 7
+        }
+      }
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "plain_after_vs_before_percent": -5.6158173157574875,
+      "plain_before_tps": 126.67282314948007,
+      "plain_after_tps": 119.5591088126927,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "after_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "before_sent_perf_s": 4183554.784426583,
+      "before_completed_perf_s": 4183558.926680916,
+      "after_sent_perf_s": 4185507.215805458,
+      "after_completed_perf_s": 4185511.596332916,
+      "before_global_clocks": {
+        "records": 5,
+        "duration_seconds": 5.031852081,
+        "global_gpu_busy_percent": 99.2402079657137,
+        "max_reported_dvfm_frequency": 1578,
+        "busy_time_at_max_dvfm_percent": 96.37514498430663,
+        "active_time_weighted_raw_frequency": 1573.814900815001,
+        "thermal_pressure_record_counts": {
+          "Heavy": 5
+        }
+      },
+      "after_global_clocks": {
+        "records": 4,
+        "duration_seconds": 4.023852831,
+        "global_gpu_busy_percent": 99.58603943535633,
+        "max_reported_dvfm_frequency": 1578,
+        "busy_time_at_max_dvfm_percent": 99.98736632294565,
+        "active_time_weighted_raw_frequency": 1577.843342404526,
+        "thermal_pressure_record_counts": {
+          "Nominal": 1,
+          "Moderate": 3
+        }
+      }
+    },
+    {
+      "rotation": 2,
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "plain_after_vs_before_percent": 5.482320027625742,
+      "plain_before_tps": 246.33812199413202,
+      "plain_after_tps": 259.84316619189343,
+      "aggregate_work_equal": true,
+      "before_activity": {
+        "rounds": 4087,
+        "drafted": 5,
+        "accepted": 1
+      },
+      "after_activity": {
+        "rounds": 4087,
+        "drafted": 5,
+        "accepted": 1
+      },
+      "before_sent_perf_s": 4183620.314154,
+      "before_completed_perf_s": 4183637.024095083,
+      "after_sent_perf_s": 4185572.213163708,
+      "after_completed_perf_s": 4185588.052508708,
+      "before_global_clocks": {
+        "records": 17,
+        "duration_seconds": 17.108892994,
+        "global_gpu_busy_percent": 99.7009776973828,
+        "max_reported_dvfm_frequency": 1578,
+        "busy_time_at_max_dvfm_percent": 4.464626940113717,
+        "active_time_weighted_raw_frequency": 1465.9998564584769,
+        "thermal_pressure_record_counts": {
+          "Moderate": 17
+        }
+      },
+      "after_global_clocks": {
+        "records": 16,
+        "duration_seconds": 16.093040202,
+        "global_gpu_busy_percent": 99.88476070882943,
+        "max_reported_dvfm_frequency": 1578,
+        "busy_time_at_max_dvfm_percent": 99.9965317864853,
+        "active_time_weighted_raw_frequency": 1577.9569941524178,
+        "thermal_pressure_record_counts": {
+          "Moderate": 3,
+          "Nominal": 13
+        }
+      }
+    }
+  ],
+  "clock_alignment": {
+    "method": "sample timestamp wall clock inside request perf_counter interval,using controller-start wall/perf offset; first/last anchors retained",
+    "offset_change_over_whole_controller_seconds": 0.037962913513183594,
+    "limit": "Sampler timestamps have one-second granularity; these are approximate global intervals,not per-process/per-kernel frequency,occupancy or bandwidth."
+  },
+  "limits": [
+    "All96 paired baseline observations retained; choosing largest examples is descriptive only.",
+    "Aggregate counter equality is not proof of identical padded GPU work.",
+    "Plain-before/after load no neural drafter; their instability cannot be attributed solely to neural-head compute.",
+    "Some plain pairs differ in proposal work; device clocks alone do not explain planner/admission changes."
+  ]
+}

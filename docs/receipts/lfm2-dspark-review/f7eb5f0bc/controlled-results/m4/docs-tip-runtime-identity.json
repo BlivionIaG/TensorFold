@@ -1,0 +1,18 @@
+{
+  "published_pr_head": "51dce745143d72dd52231c44a31989632107af4a",
+  "qualification_runtime_source": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "qualification_native_sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0",
+  "changed_files": [
+    "docs/receipts/lfm2-dspark-review/diagnosis.md"
+  ],
+  "change": "Remove exactly one extra blank line at EOF; original desktop security/runtime and typecheck steps passed, only final patch whitespace failed.",
+  "runtime_source_object_ids_identical": {
+    "zig": "dc425cce7d4bb20d2e623cc08439966a64d67f35",
+    "build.zig": "cd4e87a234349b3d37dd8651c3dad3d3f6f2e9cc",
+    "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+  },
+  "actual_full_pr_whitespace_command": "git diff --check 2c8422a0c49d04a1867cffec081a1a42b65c857f",
+  "actual_full_pr_whitespace_returncode": 0,
+  "qualification_restarted_or_relabelled": false,
+  "native_build_version_explicit": "1.2.0"
+}

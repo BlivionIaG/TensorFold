@@ -1,0 +1,2 @@
+{"event": "ready", "at": "2026-11-04T03:10:56Z", "label": "r3-bf16", "arm": "bf16", "seconds": 17.8, "flags": ["--drafter", "{drafter}"], "dspark_mode": "bf16", "binary_sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0", "dspark_weights_mib": 625.1}
+{"event": "shutdown", "at": "2026-11-04T03:21:30Z", "label": "r3-bf16", "forced_kill": false, "seconds": 0.5, "returncode": 0}

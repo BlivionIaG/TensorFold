@@ -1,0 +1,440 @@
+{
+  "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "native_binary_sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0",
+  "protocol_sha256": "d4dea2d29b0a4e2c4d2af09222b60c89c27a8090500789e7a660a9e639f31765",
+  "source_archive_sha256": "3ca340ec39493b7d32ba23902e2087111e54def1184c1665331b4ada1cbe7b12",
+  "prespecification_url": "https://github.com/BlivionIaG/TensorFold/blob/9ee4a1399bf6e5f60c43b6a28dd843b9a9c7749b/docs/receipts/lfm2-dspark-review/f7eb5f0bc/controlled-study/README.md",
+  "collector_sha256": "adeafdca7ab48a8a6e7e3bc7ef253f072316f9fbcfc8d320be66e4406ccb3f95",
+  "analyzer_sha256": "2e8d63b86037d72817ae706cd5cdc73f7108009c87238160af17dcdad8016bff",
+  "clock_wrapper_sha256": "50027d5f7893a4dad5ed55a91fdb3338fd8169e6d9af09332516f54692a27c97",
+  "original_oracle_cells_sha256": "a89a1690adddccac6f28c42463976738d820663913e8e3d5c7f07c3456bdab2b",
+  "actual_request_records": 8352,
+  "complete_clock_records": 15466,
+  "lossless_raw_request_and_complete_parsed_clock_files": {
+    "launches/r0-plain_before/requests.jsonl.gz": {
+      "original_sha256": "76fb040349bca9eee9712d18b94e2016ef6e1d215e1b7f524fe8b4d8f7dfa327",
+      "original_bytes": 7373432,
+      "compressed_sha256": "bbe5f399bc479dfddff00c826ec9738e1cbf7d86f2a941a631846135a493fe82",
+      "compressed_bytes": 2520637,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r0-bf16/requests.jsonl.gz": {
+      "original_sha256": "6c6bf21522bd6ca3aa5e9baf331e2a1fa818f2e8b92f46f37878506b24bb887d",
+      "original_bytes": 7371302,
+      "compressed_sha256": "362e2d3df5d7b45a093c01888af3fa58caba60e4715d32a06e2f18f0d99b03bd",
+      "compressed_bytes": 2522647,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r0-bits8/requests.jsonl.gz": {
+      "original_sha256": "b62688a7b1e03538b1a202dabfc2589794579687ce1e5f98870cf0b4386ac803",
+      "original_bytes": 7369235,
+      "compressed_sha256": "af41f057e0b8be49a925036e4d520a4eb20e49705bdcb62945365545c5ec87a7",
+      "compressed_bytes": 2522017,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r0-plain_after/requests.jsonl.gz": {
+      "original_sha256": "1fd648f79e85b7fbf7abc4afc267ead503fbca1c682d0caa5ffaa7758e43e3a6",
+      "original_bytes": 7370298,
+      "compressed_sha256": "2d1ad459a0b170933f0531901797d058d68bb51d1a477ee2c17c2caf3c4c9936",
+      "compressed_bytes": 2520503,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r1-plain_before/requests.jsonl.gz": {
+      "original_sha256": "3ef248c9c338c9e0f106663d81da246e3496765e2412334cf9a0a6af4aca802b",
+      "original_bytes": 7368755,
+      "compressed_sha256": "0b6d128454735cf4a51bbc856e77ef6a0eac04ec7c839e0582bdc041ec2e1706",
+      "compressed_bytes": 2519373,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r1-bits8/requests.jsonl.gz": {
+      "original_sha256": "28f56daa89bfbf51c9500363f3133ceee6708b1bbd563c3544ba64cfad10574c",
+      "original_bytes": 7368921,
+      "compressed_sha256": "78b6388187f7470f78826da75df40dfaddaa71ba5f521795ae41c0e06de73f7f",
+      "compressed_bytes": 2519593,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r1-bf16/requests.jsonl.gz": {
+      "original_sha256": "a79174a8d498e432e9a12998d5ea15925c2056037156d7568f05a1ee17775985",
+      "original_bytes": 7371660,
+      "compressed_sha256": "cab106a8efc9fd6524c1dc66627988e0d4cfc95750fd8d5fffb6ffb1aa61f1e3",
+      "compressed_bytes": 2522890,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r1-plain_after/requests.jsonl.gz": {
+      "original_sha256": "dcde8aaa8e35895453a9565db5e7f4731430d317fb96dd6a45eae889091fbabe",
+      "original_bytes": 7369852,
+      "compressed_sha256": "ca6b8c9782a2808bdd799f82abfa4a01ed7b82335db26d0b2f39124cc1908f7a",
+      "compressed_bytes": 2518986,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r2-plain_before/requests.jsonl.gz": {
+      "original_sha256": "c54295d5eedfb3dc5a3eade50c9e1638d723957fce641e6c7aeeb9b6588fdc06",
+      "original_bytes": 7366623,
+      "compressed_sha256": "8f7229b4f46ceae58a687ae8ab08f3713cb14559eea23b7c76cf2a5bf3c5ba4e",
+      "compressed_bytes": 2531304,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r2-bf16/requests.jsonl.gz": {
+      "original_sha256": "4ee84e981e0e71dd1724b721da47bebe9effe2e97d1d34274fc86e3385b9918a",
+      "original_bytes": 7487005,
+      "compressed_sha256": "b18e5347d28e34fb63196b5f1ac17dcafcc347cc711009aa1fe3e762ad7a20c9",
+      "compressed_bytes": 2568585,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r2-bits8/requests.jsonl.gz": {
+      "original_sha256": "a4f64f12a9f8f6557da9e5b2b2b6c5df3e8c231ac31f38e1490f314ca494023a",
+      "original_bytes": 7373536,
+      "compressed_sha256": "e34ce59908a6bf274916ef4b7730768e463e9234cb4f998086950d1857aaf561",
+      "compressed_bytes": 2522350,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r2-plain_after/requests.jsonl.gz": {
+      "original_sha256": "db4c51d3a415775e4268b9d49c2abad5b1bb41be66cd250e068e28b6691f858a",
+      "original_bytes": 7378203,
+      "compressed_sha256": "28768bee92827d80ada366780ea7ed82778b234d077157850eb4084b47708c35",
+      "compressed_bytes": 2521465,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r3-plain_before/requests.jsonl.gz": {
+      "original_sha256": "796c2a74f76b162fd506034433013108ee6161128d9c202d3f3ef8cd88730351",
+      "original_bytes": 7374407,
+      "compressed_sha256": "ebc06ab195468ed37b79e6695dbddffb9f8e8e73b04782e9371399ea0db98499",
+      "compressed_bytes": 2520907,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r3-bits8/requests.jsonl.gz": {
+      "original_sha256": "f5fdcec1eb948c5e243a69924ef5c8654da1fddfb1ffc7372960fc9b7c131ea4",
+      "original_bytes": 7367845,
+      "compressed_sha256": "905d4652278f402d8153a4b170c9cc92fe2596730e4de0dbbcfb25e8855cb123",
+      "compressed_bytes": 2519582,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r3-bf16/requests.jsonl.gz": {
+      "original_sha256": "db77b671e8c9aa5f49c1b0a9c01a20427f1d008d4d6d2e0a2da947c57c95ed65",
+      "original_bytes": 7368029,
+      "compressed_sha256": "155c42916734ed4f653ac2ff0597f310a4ff3e4c1e8aa9a4f4645a660d0bb8e3",
+      "compressed_bytes": 2519671,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r3-plain_after/requests.jsonl.gz": {
+      "original_sha256": "3375f4c7308f275d6618de14fb9867f19e07c7009995cc99222e9c3534667b15",
+      "original_bytes": 7379688,
+      "compressed_sha256": "45388e568a5f2e5bf637b6e97ae6dd586c6b3e518c097ff702bde0f8dcf66650",
+      "compressed_bytes": 2524287,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r4-plain_before/requests.jsonl.gz": {
+      "original_sha256": "e1ed5e3513d133348e403e35fe89236da955fcf17579b284de18e094ca74d8e9",
+      "original_bytes": 7372215,
+      "compressed_sha256": "91c3e076c88f0896db7d5befdf40133c99318334d8a159f40942668955b43487",
+      "compressed_bytes": 2522183,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r4-bf16/requests.jsonl.gz": {
+      "original_sha256": "dba30207215bee2e114c56c4255ca28ef08ba1e6779c6c271bded631dcb7e10e",
+      "original_bytes": 7368580,
+      "compressed_sha256": "5d62a45beea0677f7b47ccdfdae742c2b52600163194b536b6c28b1c5ffcbe8f",
+      "compressed_bytes": 2519752,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r4-bits8/requests.jsonl.gz": {
+      "original_sha256": "741997ad09a434cadbf11b0ce1b3a7dc07780f2f9fb037edda81405a6d5802b9",
+      "original_bytes": 7372860,
+      "compressed_sha256": "c5d5b85c11dff8f1c2a05c77cb3dd718812da01114802ad53c60b530a3a8a364",
+      "compressed_bytes": 2521715,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r4-plain_after/requests.jsonl.gz": {
+      "original_sha256": "791b121796fe229bd7ea2e4b559187b44fcc07affa21dc0dbf192c59d49b0942",
+      "original_bytes": 7370909,
+      "compressed_sha256": "217a99ee3efb8ee673e6421102969d609325ba920dab886547b0ed58664098c7",
+      "compressed_bytes": 2519535,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r5-plain_before/requests.jsonl.gz": {
+      "original_sha256": "b2887268f2d28d7af763ddbdeec2b4b36ce556e4d68c8f6de7cca04ae492fe2e",
+      "original_bytes": 7372584,
+      "compressed_sha256": "d406ff75fc10b7b21546a25d573a86bded36065a036e2c466eaa78e40bcc3f32",
+      "compressed_bytes": 2521062,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r5-bits8/requests.jsonl.gz": {
+      "original_sha256": "3304b169c8cae350bf97068b02b4182b9be10478f98d5685094ebafd9262f407",
+      "original_bytes": 7373248,
+      "compressed_sha256": "07b4091b5406e7b1dbb78eeeceef046a2a4288796fafe7d5e0ee94cb36eed055",
+      "compressed_bytes": 2522767,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r5-bf16/requests.jsonl.gz": {
+      "original_sha256": "ee3968e8b663e9433a9f1f0b1788a19865546e775b5cf6d10f2c541260fa56bb",
+      "original_bytes": 7375106,
+      "compressed_sha256": "c86cf9ede2eb67d70633765e988a4f7acc12cc1842db6ae3fcdc053640138dde",
+      "compressed_bytes": 2521642,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "launches/r5-plain_after/requests.jsonl.gz": {
+      "original_sha256": "e5f44cd9ae24d0f757294c6c8f67b6238c723bd019b214672c5c6697a4ada611",
+      "original_bytes": 7376055,
+      "compressed_sha256": "8f77957cf33c5d10faed877f4451d865c5fb2f3ab007191cd1cbc3a320a77e3b",
+      "compressed_bytes": 2523386,
+      "decoded_sha256_matches_original": true,
+      "request_records": 348,
+      "phase_records": {
+        "warmup_0": 116,
+        "warmup_1": 116,
+        "measured": 116
+      },
+      "all_original_token_oracles_equal": true,
+      "all_requests_512_complete_tokens": true,
+      "all_cached_tokens_zero": true,
+      "privacy_scan_passed": true
+    },
+    "clock-samples.jsonl.gz": {
+      "original_sha256": "bc5294b6f39c41c9b4315e586d5c527facbac085e204b911f5607cce3b17f6f2",
+      "original_bytes": 43988407,
+      "compressed_sha256": "4817fab0938d234d867dfc9555d213827be18609f8612c559c270a30923897f1",
+      "compressed_bytes": 1479769,
+      "decoded_sha256_matches_original": true
+    }
+  },
+  "private_original_powermetrics": {
+    "sha256": "f6155c3df0fd52791c8f94a1d91dbf010edbcd7acf774d29e4edb7894fa5e170",
+    "bytes": 105920718,
+    "retained_complete_locally": true,
+    "published": false,
+    "reason": "Original collector labels raw system samples private; all15466 complete selected GPU/thermal clock records are published without discarding any."
+  },
+  "native_logs_private": true,
+  "original_frozen_verdicts_replaced": false,
+  "rerun_for_favorable_sign": false
+}

@@ -1,0 +1,101 @@
+{
+  "label": "PRIVATE_COMPLETE_GLOBAL_GPU_CLOCK_COVERAGE_NOT_QUALIFICATION",
+  "runtime_source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "published_docs_descendant": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "controller_command": [
+    "/opt/homebrew/bin/python3",
+    "/tmp/tf-dspark-perf/r35-review-ready/run-controlled-study.py",
+    "--driver",
+    "/tmp/tf-dspark-perf/hold-gain-frozen-driver",
+    "--binary",
+    "/tmp/tf-dspark-perf/r35-review-ready/runtime/tensorfold-native",
+    "--target",
+    "/tmp/tf-dspark-models-r15/target",
+    "--drafter",
+    "/tmp/tf-dspark-models-r15/drafter",
+    "--output",
+    "/tmp/tf-dspark-perf/r35-review-ready/m4-controlled/study",
+    "--binding",
+    "/tmp/tf-dspark-perf/r35-review-ready/study-binding.json",
+    "--protocol",
+    "/tmp/tf-dspark-perf/r35-review-ready/protocol.json",
+    "--oracle-cells",
+    "/tmp/tf-dspark-diagnose-r20/docs/receipts/lfm2-dspark-review/afe8bda62/qualification/m4/cells.jsonl",
+    "--lock-inode",
+    "68270044",
+    "--atc-session",
+    "79180525526211",
+    "--coordination-root",
+    "/tmp/tf-dspark-calibration-r30"
+  ],
+  "raw_samples_private": true,
+  "limitations": "Global GPU clocks, not process GPU attribution or occupancy. Raw freq_hz units are preserved without assuming SI Hz. No power or frequency override.",
+  "start": {
+    "wall_ns": 1793752748106122000,
+    "perf_counter_ns": 4177816946954708,
+    "monotonic_ns": 4177816946955083
+  },
+  "power_command": [
+    "sudo",
+    "-n",
+    "/usr/bin/powermetrics",
+    "--samplers",
+    "gpu_power,thermal",
+    "--format",
+    "plist",
+    "--buffer-size",
+    "0",
+    "--sample-rate",
+    "1000"
+  ],
+  "owned_sampler_pid": 34835,
+  "controller_start": {
+    "wall_ns": 1793752750455029000,
+    "perf_counter_ns": 4177819295841291,
+    "monotonic_ns": 4177819295841666
+  },
+  "controller_returncode": 0,
+  "controller_end": {
+    "wall_ns": 1793768304393479000,
+    "perf_counter_ns": 4193373196328375,
+    "monotonic_ns": 4193373196328708
+  },
+  "sampler_ended_before_controller_cleanup": false,
+  "owned_power_pids": [
+    34836
+  ],
+  "owned_sampler_stop_results": [
+    {
+      "pid": 34836,
+      "returncode": 0
+    }
+  ],
+  "sampler_returncode": 0,
+  "reader_stopped": true,
+  "samples": {
+    "complete_records": 15466,
+    "parse_errors": [],
+    "incomplete_tail_bytes": 0,
+    "first_complete_timestamp": "2026-11-04T00:39:09+00:00",
+    "last_complete_timestamp": "2026-11-04T04:58:24+00:00",
+    "max_timestamp_gap_seconds": 2.0
+  },
+  "end": {
+    "wall_ns": 1793768304441498000,
+    "perf_counter_ns": 4193373244346791,
+    "monotonic_ns": 4193373244346833
+  },
+  "sha256": {
+    "powermetrics.pliststream": "f6155c3df0fd52791c8f94a1d91dbf010edbcd7acf774d29e4edb7894fa5e170",
+    "powermetrics.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "clock-samples.jsonl": "bc5294b6f39c41c9b4315e586d5c527facbac085e204b911f5607cce3b17f6f2",
+    "controller.log": "31b7b49b82ab7d6821e616c55e77bff0e60b61d810f0a3cb3f6e0040fba167bf"
+  },
+  "clock_time_coverage": {
+    "first_sample_end_wall_ns": 1793752749000000000,
+    "last_sample_end_wall_ns": 1793768304000000000,
+    "began_before_controller": true,
+    "ended_within_two_samples_of_controller": true,
+    "no_gap_over_two_and_half_samples": true
+  }
+}

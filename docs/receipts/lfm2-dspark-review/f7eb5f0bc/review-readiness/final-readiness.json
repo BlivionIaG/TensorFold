@@ -1,0 +1,148 @@
+{
+  "observed_at_utc": "2026-11-04T05:09:41.109657+00:00",
+  "published_pr_head": "51dce745143d72dd52231c44a31989632107af4a",
+  "qualified_runtime_source": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "runtime_identity_unchanged": true,
+  "all11_current_head_pr_attached_checks_succeeded": true,
+  "checks": [
+    {
+      "name": "mobile",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150911/job/126275966811"
+    },
+    {
+      "name": "appimage-linux",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150911/job/126275966604"
+    },
+    {
+      "name": "desktop",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150911/job/126275966591"
+    },
+    {
+      "name": "desktop-linux",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150911/job/126275966243"
+    },
+    {
+      "name": "benchmark-clients (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275966003"
+    },
+    {
+      "name": "zig-windows",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965785"
+    },
+    {
+      "name": "zig-macos-dev-tools",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965727"
+    },
+    {
+      "name": "benchmark-clients (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965699"
+    },
+    {
+      "name": "zig",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965686"
+    },
+    {
+      "name": "release-paths (ubuntu-24.04)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965306"
+    },
+    {
+      "name": "fmt",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150909/job/126275964796"
+    }
+  ],
+  "rest_base_field_not_actual_current_main": "2c8422a0c49d04a1867cffec081a1a42b65c857f",
+  "mergeable": false,
+  "mergeable_state": "dirty",
+  "graphql_mergeable": "CONFLICTING",
+  "review_decision": "CHANGES_REQUESTED",
+  "unresolved_review_threads": [],
+  "review_thread_has_next_page": false,
+  "m4_original": {
+    "cells": 144,
+    "oracle_seeds": 306,
+    "owner_observed_budget_pass": 2,
+    "owner_observed_budget_fail": 30,
+    "worst_loss_percent": 8.714872782967864,
+    "literal_zero_tolerance": "FAIL",
+    "original_exit_code": 3,
+    "byte_identical_saved_data_replay": true
+  },
+  "m5_original": {
+    "cells": 144,
+    "oracle_seeds": 306,
+    "owner_observed_budget_pass": 32,
+    "owner_observed_budget_fail": 0,
+    "worst_loss_percent": 0.3288897679541436,
+    "literal_zero_tolerance": "FAIL",
+    "original_exit_code": 3,
+    "byte_identical_saved_data_replay": true
+  },
+  "m4_controlled": {
+    "verdict": "INCONCLUSIVE",
+    "actual_clean_nonforced_exits": 24,
+    "measured_cells": 384,
+    "fixed_warmup_cells": 768,
+    "raw_request_records": 8352,
+    "all_original_oracles_equal": true,
+    "zero_cached_tokens": true,
+    "complete_gpu_thermal_records": 15466,
+    "aa_valid_cells": 2,
+    "aa_cells": 16,
+    "candidate_medians_inside_margin": 31,
+    "candidate_lower_bounds_inside_margin": 23,
+    "candidate_comparisons": 32,
+    "worst_paired_median_percent": -1.0123281247791605,
+    "original_frozen_verdict_replaced": false
+  },
+  "actual_conflict_snapshot": {
+    "qualified_runtime_source": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+    "published_docs_tip": "51dce745143d72dd52231c44a31989632107af4a",
+    "qualification_base": "2c8422a0c49d04a1867cffec081a1a42b65c857f",
+    "actual_upstream_main_ref": "a897e165bb271f8cc7a6530bbfc5235abf270341",
+    "actual_pr_head_ref": "51dce745143d72dd52231c44a31989632107af4a",
+    "actual_pr_merge_ref": "7fdd716099a24fd13d1f8b342472815862bba5b8",
+    "rest_reported_base_sha": "2c8422a0c49d04a1867cffec081a1a42b65c857f",
+    "rest_mergeable": false,
+    "rest_mergeable_state": "dirty",
+    "current_head_all11_pr_checks_success": true,
+    "qualification_source_or_binary_changed": false,
+    "action": "Read-only exact-main merge-tree diagnosis; no merge/rebase/source change or qualification restart.",
+    "read_only_merge_tree": "3419f01bb15c450fac0b2a9d194a0a5bc5812325",
+    "merge_tree_exit": 1,
+    "conflicts": [
+      "zig/src/native/metal.zig",
+      "zig/tests/contract/metal_main.zig"
+    ],
+    "qualification_continues_unchanged": true,
+    "source_changes_applied": false
+  },
+  "fully_ready": false,
+  "blocking_facts": [
+    "M4 original matrix fails the owner observed1% budget; completed prespecified controlled study is INCONCLUSIVE,not a clearance.",
+    "Read-only exact-ref merge-tree proves two new moved-main source conflicts; no further main-chasing source change was made.",
+    "Literal maintainer zero-negative policy is not met and existing CHANGES_REQUESTED review remains; zero unresolved code threads is not approval."
+  ],
+  "assistant_pr_merge_force_push_auto_merge_extra_pr_repeat_review_request_waiver_or_lucky_retry": false
+}

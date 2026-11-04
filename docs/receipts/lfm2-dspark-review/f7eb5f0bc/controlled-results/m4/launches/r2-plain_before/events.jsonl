@@ -1,0 +1,2 @@
+{"event": "ready", "at": "2026-11-04T02:05:29Z", "label": "r2-plain_before", "arm": "plain", "seconds": 9.6, "flags": [], "dspark_mode": null, "binary_sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0", "dspark_weights_mib": null}
+{"event": "shutdown", "at": "2026-11-04T02:16:35Z", "label": "r2-plain_before", "forced_kill": false, "seconds": 0.6, "returncode": 0}

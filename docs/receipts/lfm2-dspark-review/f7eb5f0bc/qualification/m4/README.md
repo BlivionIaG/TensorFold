@@ -58,3 +58,7 @@ Original native/GPU/model guards:82/82 steps;767 tests passed,8 skipped. Kernel 
 The original unchanged CLI `summarize` ran only on copied saved inputs—**no model launch**—and returned3. The replayed summary is byte-identical to the original SHA256 `37cdd6ac3e439b5f63504e6884ca3244ce7eb7d76c23c776e5dade8dc2157d3b`. `verdict-replay-proof.json` records the proof. No original qualification file or verdict was modified.
 
 The M5 result is separate:[all32 observed comparisons inside the owner budget](../m5/README.md),with its own raw zero-tolerance FAIL preserved. A pass on M5 does not clear this M4 result. Current integration/CI status is [source-labelled here](../../review-readiness/README.md).
+
+## Subsequently completed controlled study
+
+The separate [prespecified M4 A/A study](../../controlled-results/m4/README.md) subsequently completed in full and returned **INCONCLUSIVE** under its published criteria. It does not replace this original matrix, change its medians or clear its performance failure. The completed report retains every candidate bound, A/A observation, warmup request and parsed clock record.

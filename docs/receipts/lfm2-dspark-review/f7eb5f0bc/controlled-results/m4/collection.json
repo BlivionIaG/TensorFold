@@ -1,0 +1,8 @@
+{
+  "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "complete": true,
+  "measured_cells": 384,
+  "fixed_warmup_cells": 768,
+  "actual_clean_nonforced_exits": 24,
+  "verdict": "INCONCLUSIVE"
+}

@@ -1,0 +1,243 @@
+{
+  "qualified_runtime_source": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "native_sha256_by_device": {
+    "m4": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0",
+    "m5": "0ada11bcd2ac70eee71afd0fc0cfaf418983c2c29975c47979e8444a54ef6f43"
+  },
+  "scope": "Completed original full-matrix startup logs only. These are rounded best-after-warm calibration CPU-encode+GPU times,not serving operator attribution or uncertainty bounds. No current controlled result read.",
+  "logs": [
+    {
+      "device": "m4",
+      "rep": 0,
+      "arm": "plain",
+      "original_full_private_log_sha256": "ab8ef7922477c1dd5e62e6ddef6ad0e74ace8263609fcae71f673a780232a6db",
+      "selected_public_safe_lines": [
+        "info: LFM2 window ms by width: 1 8.3, 2 10.7, 4 16.2, 8 26.6, 16 43.5",
+        "info: LFM2 shared calibration: window16 43.48 ms, shared16 43.28 ms",
+        "info: LFM2 shared marginal prices by rows: 17 49.2, 24 63.4, 32 80.6"
+      ]
+    },
+    {
+      "device": "m4",
+      "rep": 0,
+      "arm": "bf16",
+      "original_full_private_log_sha256": "bac70214690e88830c4fe33a43ba93af8f665b8950df402d4b3fd53cffae3aef",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 7.93 CPU-encode + GPU ms, a 9-draft hold 10.12 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 8.2, 2 10.3, 4 16.3, 8 26.8, 16 43.6",
+        "info: LFM2 shared calibration: window16 43.56 ms, shared16 43.44 ms",
+        "info: LFM2 shared marginal prices by rows: 17 49.1, 24 63.3, 32 80.2"
+      ]
+    },
+    {
+      "device": "m4",
+      "rep": 0,
+      "arm": "bits8",
+      "original_full_private_log_sha256": "ea11ad374e934c2bee4ca30ec93c3a96844235ee5111a4a0e46be8fd4acde11b",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 5.11 CPU-encode + GPU ms, a 9-draft hold 6.42 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 361.4 MiB, scratch 93.5 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 8.7, 2 10.9, 4 17.1, 8 28.3, 16 45.1",
+        "info: LFM2 shared calibration: window16 45.13 ms, shared16 46.37 ms",
+        "info: LFM2 shared marginal prices by rows: 17 50.5, 24 65.3, 32 84.0"
+      ]
+    },
+    {
+      "device": "m4",
+      "rep": 1,
+      "arm": "plain",
+      "original_full_private_log_sha256": "7780016279ab399a7f8ab8d630f88e7d970159ad3f8d5a433051665b7826dbfd",
+      "selected_public_safe_lines": [
+        "info: LFM2 window ms by width: 1 8.2, 2 10.7, 4 16.3, 8 27.0, 16 43.3",
+        "info: LFM2 shared calibration: window16 43.27 ms, shared16 43.16 ms",
+        "info: LFM2 shared marginal prices by rows: 17 48.9, 24 63.1, 32 80.6"
+      ]
+    },
+    {
+      "device": "m4",
+      "rep": 1,
+      "arm": "bf16",
+      "original_full_private_log_sha256": "fb70e5b397c14611ef2a441e2010bec7691ee8ebcd4bf9e9e938394fb91392ff",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 8.02 CPU-encode + GPU ms, a 9-draft hold 10.39 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 8.0, 2 10.5, 4 16.3, 8 28.0, 16 45.5",
+        "info: LFM2 shared calibration: window16 45.50 ms, shared16 45.64 ms",
+        "info: LFM2 shared marginal prices by rows: 17 51.6, 24 67.2, 32 85.0"
+      ]
+    },
+    {
+      "device": "m4",
+      "rep": 1,
+      "arm": "bits8",
+      "original_full_private_log_sha256": "5f43c2941d69690944a0facfffc939db2ebe4f3aeed60b2c05104e8fd52d8258",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 5.16 CPU-encode + GPU ms, a 9-draft hold 6.42 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 361.4 MiB, scratch 93.5 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 8.4, 2 10.9, 4 16.6, 8 28.4, 16 45.3",
+        "info: LFM2 shared calibration: window16 45.30 ms, shared16 46.33 ms",
+        "info: LFM2 shared marginal prices by rows: 17 50.1, 24 65.5, 32 85.9"
+      ]
+    },
+    {
+      "device": "m4",
+      "rep": 2,
+      "arm": "plain",
+      "original_full_private_log_sha256": "d2f3449a1a8d9e21b3342a24997134136426174af4c97d655327f94960257322",
+      "selected_public_safe_lines": [
+        "info: LFM2 window ms by width: 1 8.9, 2 11.5, 4 18.4, 8 27.6, 16 46.2",
+        "info: LFM2 shared calibration: window16 46.23 ms, shared16 45.92 ms",
+        "info: LFM2 shared marginal prices by rows: 17 51.2, 24 67.0, 32 84.3"
+      ]
+    },
+    {
+      "device": "m4",
+      "rep": 2,
+      "arm": "bf16",
+      "original_full_private_log_sha256": "2abbfc46e2ce3633115c1d90908221b9e01afa9dba61d996cbdec803756e6565",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 8.39 CPU-encode + GPU ms, a 9-draft hold 10.58 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 8.4, 2 11.3, 4 16.3, 8 28.8, 16 46.5",
+        "info: LFM2 shared calibration: window16 46.46 ms, shared16 45.26 ms",
+        "info: LFM2 shared marginal prices by rows: 17 51.8, 24 66.5, 32 84.5"
+      ]
+    },
+    {
+      "device": "m4",
+      "rep": 2,
+      "arm": "bits8",
+      "original_full_private_log_sha256": "c3efc3be7e047ef78a70db0e733beefaf1feb8034dcc08509f4bc0a9c98829d5",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 5.05 CPU-encode + GPU ms, a 9-draft hold 6.43 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 361.4 MiB, scratch 93.5 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 8.4, 2 10.9, 4 16.7, 8 27.5, 16 45.7",
+        "info: LFM2 shared calibration: window16 45.66 ms, shared16 46.67 ms",
+        "info: LFM2 shared marginal prices by rows: 17 50.9, 24 66.8, 32 84.2"
+      ]
+    },
+    {
+      "device": "m5",
+      "rep": 0,
+      "arm": "plain",
+      "original_full_private_log_sha256": "e6f4c39c8613df3e30e1c7664237714aa5155e4da3ca78f8a0aaba9d680cb800",
+      "selected_public_safe_lines": [
+        "info: LFM2 window ms by width: 1 3.8, 2 4.7, 4 6.2, 8 9.2, 16 17.2",
+        "info: LFM2 shared calibration: window16 17.16 ms, shared16 17.29 ms",
+        "info: LFM2 shared marginal prices by rows: 17 15.8, 24 21.0, 32 26.7"
+      ]
+    },
+    {
+      "device": "m5",
+      "rep": 0,
+      "arm": "bf16",
+      "original_full_private_log_sha256": "05fb4472f2e1dc4fe591ef49eca3a6583080b8195b75994da8b1e4e564c88872",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 2.35 CPU-encode + GPU ms, a 9-draft hold 2.45 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 3.8, 2 4.6, 4 6.2, 8 9.2, 16 17.2",
+        "info: LFM2 shared calibration: window16 17.17 ms, shared16 17.24 ms",
+        "info: LFM2 shared marginal prices by rows: 17 15.9, 24 21.0, 32 26.7"
+      ]
+    },
+    {
+      "device": "m5",
+      "rep": 0,
+      "arm": "bits8",
+      "original_full_private_log_sha256": "80e5453ae21ae4b34ac7a4c50873386d8bad74bad84dd6fa79e013796ad98988",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 2.27 CPU-encode + GPU ms, a 9-draft hold 1.54 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 361.4 MiB, scratch 93.5 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 3.8, 2 4.7, 4 6.2, 8 9.3, 16 17.2",
+        "info: LFM2 shared calibration: window16 17.21 ms, shared16 17.28 ms",
+        "info: LFM2 shared marginal prices by rows: 17 16.0, 24 21.0, 32 26.5"
+      ]
+    },
+    {
+      "device": "m5",
+      "rep": 1,
+      "arm": "plain",
+      "original_full_private_log_sha256": "2803a604227e212ffc51acd7031c862b8920d0d2364abd794a2a3efeec5d1c9e",
+      "selected_public_safe_lines": [
+        "info: LFM2 window ms by width: 1 3.8, 2 4.6, 4 6.2, 8 9.3, 16 17.2",
+        "info: LFM2 shared calibration: window16 17.17 ms, shared16 17.26 ms",
+        "info: LFM2 shared marginal prices by rows: 17 15.9, 24 21.0, 32 26.6"
+      ]
+    },
+    {
+      "device": "m5",
+      "rep": 1,
+      "arm": "bf16",
+      "original_full_private_log_sha256": "2079fc25cb9f1a9cc860bf5d8ed06406111765fc40a48192b2454ffbccafd1be",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 2.20 CPU-encode + GPU ms, a 9-draft hold 2.47 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 3.8, 2 4.7, 4 6.2, 8 9.3, 16 17.2",
+        "info: LFM2 shared calibration: window16 17.20 ms, shared16 17.31 ms",
+        "info: LFM2 shared marginal prices by rows: 17 15.9, 24 21.0, 32 26.5"
+      ]
+    },
+    {
+      "device": "m5",
+      "rep": 1,
+      "arm": "bits8",
+      "original_full_private_log_sha256": "f54425e91213f497a1ee29d2e62dfcb2d33ff9af6b30d2c8c1e0307eed75e748",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 2.26 CPU-encode + GPU ms, a 9-draft hold 1.54 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 361.4 MiB, scratch 93.5 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 3.8, 2 4.6, 4 6.2, 8 9.2, 16 17.2",
+        "info: LFM2 shared calibration: window16 17.18 ms, shared16 17.27 ms",
+        "info: LFM2 shared marginal prices by rows: 17 15.9, 24 21.1, 32 26.7"
+      ]
+    },
+    {
+      "device": "m5",
+      "rep": 2,
+      "arm": "plain",
+      "original_full_private_log_sha256": "9e43dee47117d94fe1564700d13bb22c2260980d6a9a82c53f8cea5c0704664e",
+      "selected_public_safe_lines": [
+        "info: LFM2 window ms by width: 1 3.8, 2 4.7, 4 6.2, 8 9.2, 16 17.2",
+        "info: LFM2 shared calibration: window16 17.16 ms, shared16 17.27 ms",
+        "info: LFM2 shared marginal prices by rows: 17 15.9, 24 21.0, 32 26.6"
+      ]
+    },
+    {
+      "device": "m5",
+      "rep": 2,
+      "arm": "bf16",
+      "original_full_private_log_sha256": "c10ef427c1421b9431cc0f2cc81f5ff5e43269fdcb403ad58c32291b6e9e26a3",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 2.05 CPU-encode + GPU ms, a 9-draft hold 2.48 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 3.8, 2 4.7, 4 6.2, 8 9.2, 16 17.2",
+        "info: LFM2 shared calibration: window16 17.21 ms, shared16 17.27 ms",
+        "info: LFM2 shared marginal prices by rows: 17 15.9, 24 21.0, 32 26.7"
+      ]
+    },
+    {
+      "device": "m5",
+      "rep": 2,
+      "arm": "bits8",
+      "original_full_private_log_sha256": "6b37c179f96b2824be7639b8dc0da2d4013e568d1304dbebc8a553142d3efb43",
+      "selected_public_safe_lines": [
+        "info: lfm2 dspark: a 1-draft clean hold takes 2.27 CPU-encode + GPU ms, a 9-draft hold 1.56 CPU-encode + GPU ms; 60 context quotes",
+        "info: lfm2 dspark: weights 361.4 MiB, scratch 93.5 MiB, a stream 10 KiB a position and up to 40960 KiB staged",
+        "info: LFM2 window ms by width: 1 3.8, 2 4.7, 4 6.3, 8 9.3, 16 17.2",
+        "info: LFM2 shared calibration: window16 17.25 ms, shared16 17.33 ms",
+        "info: LFM2 shared marginal prices by rows: 17 15.9, 24 21.0, 32 26.7"
+      ]
+    }
+  ],
+  "source_dispatch": {
+    "tensor_gate": "kernels.zig:75-83,111-113: optional tensor pipelines only on device.tensorUnits(). Actual guards: M4 false, M5 true.",
+    "bf16": "dspark_bf16.zig:10-35: tensor rows8 for outputs>hidden/16 otherwise; M4 falls back to BF16 rows or MMA,retaining BF16 activation storage.",
+    "bits8": "dspark_block.zig:33-43,72-101: tensor head cut5 rows,other cuts9/33; non-tensor path selects twin window from9 rows,at most32 rows. core/tile_qmm.zig:182-201 binds the same BF16 inputs; no fp16 narrowing.",
+    "query_geometry": "dspark_block.zig:389-391,428-459: configured query block stays9,including embedding/logit projection; retained depth changes Markov/confidence work,not the bidirectional query mask."
+  },
+  "limits": [
+    "Static dispatch difference and startup cost difference do not prove current full-matrix loss causation.",
+    "No SIMD occupancy,memory bandwidth or current MLX-LM comparison was measured.",
+    "Empty-context startup hold calibration and context-only projection grids are separately priced; runtime EMA exists. Whether that adequately predicts full-context serving requires observed hold/target attribution,not a threshold tweak."
+  ]
+}
