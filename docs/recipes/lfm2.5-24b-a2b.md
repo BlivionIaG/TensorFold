@@ -219,6 +219,10 @@ record the constructed timing cases and source hashes; they are not device-throu
 `tf-lfm2-dspark` also prints the confidence
 head against its fp32 reference and times shared holds of 2 to 16 streams.
 
+Independent target-control caches are released after their last forward. The main tap buffer and comparison
+cache are created after capture controls finish; independent stage buffers do not overlap. Context lengths,
+capture layouts, the FP32 reference and numerical bounds are unchanged. Serving cache lifetimes are unaffected.
+
 The loader reads the checkpoint one matrix at a time and keeps the released bf16 matrices by default, or the
 8-bit codes with `--drafter-bits 8`; a stream's drafter lane is one
 Metal buffer (its layers' keys and values, then its staged rows), and its bytes join the streams the load limit

@@ -48,6 +48,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - LFM2 DSpark prices request-level neural-context enrollment before prefill. Target-only requests keep cheap copies and canonical no-tap forwards; enrolled requests retain zero-grant context and in-request recovery. Only complete, paying serving quotes fund enrollment or cold trials: unknown prices and unpaid quotes cannot spend recovery probes even if hypothetical perfect acceptance would pay. Fully unbound direct diagnostics remain available. Recent head-only rates seed fresh request state without a stream-count cutoff. This is not a throughput-qualification claim.
 
+- LFM2 DSpark's native diagnostic releases independent target-control caches after their last forward, creates the main tap buffer and comparison cache after capture controls, and separates independent stage buffers. Context lengths, capture layouts, FP32 references and numerical bounds are unchanged; serving code is unaffected.
+
 - Lane reservations retain the next window's copy decision, including silence and source evidence, until verification consumes it. Planning no longer advances suffix-lookup backoff twice, and shared borrowed proposals survive another stream's lookup.
 
 - LFM2 DSpark retains the configured bidirectional query block when the scheduler asks for a shorter proposal prefix. Physical packing, clean calibration, context funding and the FP32 reference use the same fixed query width; larger logical cohorts still run as bounded passes. This corrects grant-dependent model inputs, not a claim of higher acceptance or throughput.

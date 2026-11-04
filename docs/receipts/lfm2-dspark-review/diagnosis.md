@@ -59,7 +59,7 @@ are linked from #1394; neither these counts nor the private probe establish the 
 
 We have been optimizing drafter kernels before establishing how much **additional useful progress** the neural drafter buys over the existing cheap speculation. Numerical correctness and faster component kernels do not establish that adding the drafter reduces work per emitted token.
 
-The last complete serving evidence proves a regression against TensorFold's own no-drafter arm on that frozen source, not on the newer correctness fixes. It does **not** establish the cause of a gap against MLX-LM: a matched MLX-LM execution breakdown has not been supplied by this investigation. Those are distinct questions.
+The earlier complete serving evidence proves a regression against TensorFold's own no-drafter arm on that frozen source, not on the newer correctness fixes. It does **not** establish the cause of a gap against MLX-LM: a matched MLX-LM execution breakdown has not been supplied by this investigation. Those are distinct questions.
 
 ## 1. The baseline already gets speculative tokens
 
@@ -73,7 +73,7 @@ One concrete example from frozen source `7eb317eda495891a5b6d1525e566d746bd24993
 | BF16 neural drafter | 2048 | 1654 | 390 | 795 |
 | 8-bit-weight neural drafter | 2048 | 1656 | 388 | 806 |
 
-BF16 buys just six additional accepted tokens in this example; 8-bit buys four. Both still pay neural-model overhead. These counters combine proposal sources; they do not isolate neural acceptance. Summed per-request rounds are not a count of physical batched GPU command buffers. This example diagnoses incremental usefulness, not every workload or the full speed gate.
+The BF16 arm records six additional accepted tokens in this example; the 8-bit arm records four. These counters combine proposal sources; they do not isolate neural acceptance or prove actual neural execution. Summed per-request rounds are not a count of physical batched GPU command buffers. This example bounds incremental aggregate progress, not every workload or the full speed gate.
 
 The immediate question is why the neural path contributes so little beyond the cheap path: poor proposal quality, incorrect model inputs, conservative or inaccurate pricing, or work spent on recovery trials. The available aggregate counters do not yet distinguish these causes. Disabling copies to make neural acceptance look better would answer the wrong question.
 
@@ -252,7 +252,7 @@ drafter-reference results, not permission to tolerate different final target tok
 
 ## Source and publication provenance
 
-- Last complete serving evidence: `7eb317eda495891a5b6d1525e566d746bd249937`; all token checks passed, but 21 of 32 speed comparisons failed. This report does not relabel that evidence to newer heads.
+- Earlier complete serving evidence: `7eb317eda495891a5b6d1525e566d746bd249937`; all token checks passed, but 21 of 32 speed comparisons failed. This report does not relabel that evidence to newer heads.
 - Initial execution-path inspection: `8fb1c35c417ffc1011ad62220ad6b23a4141accb`. Fixed-query implementation and M4/M5 checks belong to `e06ce30116c0a77017136ebacc4e8f15ce671def`; subsequent documentation or comment-only changes do not inherit a different source label.
 - Maximum-context before/after: `a6164114c3e5cc57cbfa83fa7a072eb9d295732b` → `174a74681920cbaefc3d3e65a9cd18c5e0f15a5a`. The before M4 log SHA-256 is `27d50388cf2fe6fa8b7f16e39015758879acace88c55df8a6a08119357dc02c6`; the after M4 build/units log is `54418ea32f23fd47d695095bac21fac8bf406476ad495780667d2cee228f0bf8`, and the M5 build/units log is `6f6079c30e6f82c7f7f67d3a3a99017f9b0b0394533450d72d624b931c01a5ec`. Original numerical bounds and controls were not relaxed.
 - #1391: `caf9282b8c1f85d4a8dd7f66c09feaf89053d977`; #1392: `5d81437d0f16c9c52ed60f095e4c26a16c498592`; #1393: `5e7ae48da075f4e318c4d137aa8d3f53cd80f707`. All three were fast-forward pushed after their own 76/76 scoped build/check steps (251 passed, five platform skips), original attention/BF16 contracts and actual M4 BF16/8-bit native scenarios. Each mode matched 9/9 FP32 picks and passed prefix/split/lifecycle controls; the depth-only stage does not claim confidence coverage. Their code-parent CPU suites passed 341/366/365 respectively, each with one skip.
@@ -380,5 +380,37 @@ explicitly available; their availability no longer makes missing serving calibra
 
 This trades unpaid exploration for conservative stand-aside. It does not change BF16 activations, stored
 weight modes, target arithmetic, the pricing margin, memory admission or the original qualification protocol.
-The frozen packet above remains labelled with its original source and binaries; this policy change requires
-its own native correctness and full performance evidence before any new performance claim.
+The [new frozen packet](https://github.com/BlivionIaG/TensorFold/blob/9bb1c385d5d663ef800ad2dd231c3dfe43ed1e9c/docs/receipts/lfm2-dspark-review/5fdbfb874/README.md)
+records the completed qualification workflow for runtime source `5fdbfb8749b14bc20bc9021dbe463cd56206d53a`, after integrating pinned main
+`7eae7dc008ca8f280b3557596e7f8d425693b12d` and moving raw JSON to the evidence branch.
+Both chips completed all 144 cells and 306 token oracles, with no token/scenario failures.
+All 11 CI checks passed on that source; neither matrix passed the original speed gate.
+
+| Device | Negative comparisons | Inside the owner's observed <1% loss budget | Worst median loss |
+|---|---:|---:|---:|
+| M4 Pro | 13/32 | 20/32 | 4.489518% |
+| M5 Ultra | 10/32 | 32/32 | 0.445179% |
+
+The owner's budget is not the maintainer's zero-regression rule. Recorded variability is not a measured
+noise floor. The packet preserves all 64 comparisons, raw requests, byte-identical verdict replays and failures.
+Both chips passed cached/fresh equality, all 58 sampled-hash triples and served contexts through 130,816.
+Stress completed 820 requests and 465 cancellations on M4, 2,776 and 1,506 on M5, without wrong replies/errors.
+The original M4 native 130,816 diagnostic failed GPU OOM before the FP32 comparison; its 65,536 case
+and both M5 native long cases passed. This is not a serving long-context failure or a numerical pass.
+
+### Native diagnostic cache lifetimes
+
+The native diagnostic retained independent target caches after their last forward, overlapping later
+capture/stage controls and the main comparison cache. Diagnostic-only source
+`763c8678cc680a89ff0104cde4bb8b59cd9fa766` releases those controls' caches earlier and creates the main
+cache after capture controls. It preserves every row count, capture layout, comparison and numerical bound.
+Source763's short BF16 and 8-bit runs each match 9/9 FP32 picks, with worst confidence differences
+0.00085 and 0.00152, but its unchanged maximum-context case still failed GPU OOM after 2,097.326 seconds.
+Follow-up diagnostic source `b57b839119a10eedfd1cb0909c1e660d4a5abffe` also defers the main tap buffer
+until controls finish and completes table-only stage controls before allocating the other stage buffer.
+It retains the complete fixture and labels the active control. Both short weight-mode cases exit 0,
+match 9/9 FP32 picks and retain the same confidence differences. The unchanged maximum-context case
+still fails GPU OOM after 2,341.274 seconds, at the first full eight-column staged forward in twin mode.
+The full-length bare target, five/three-column controls and eight-column table-only control finish first.
+The FP32 drafter comparison is not reached. Production sources and the actual M4 production binary remain
+identical to the full-matrix runtime; no full diagnostic pass or measured peak-memory reduction is claimed.
