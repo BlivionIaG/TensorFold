@@ -18,7 +18,7 @@ The user's <1% allowance and the maintainer's every-cell-at-least-plain rule are
 1. **Unfunded request enrollment.** Missing serving quotes enrolled a neural context, and unpaid recent histories could buy a recovery probe on hypothetical perfect acceptance. Enrollment now requires a complete quote that pays at the existing conservative rates and unchanged 1.05 margin. Cold paid trials keep their bounded cadence; fully unbound direct diagnostics remain available. Declined serving requests keep cheap-copy speculation without a neural lane or taps. This is a real economic-policy correction, not evidence that all remaining timing losses are fixed.
 2. **Main integration needed a semantic union.** The requested main snapshot moved drafter refusal into a centralized check and admitted Llama there. Integration retains upstream Llama and LFM2 DSpark rather than choosing either conflicting branch wholesale. Both independent Metal contract registrations remain. The admission regression covers accepted and refused families.
 3. **Review branch carried raw results.** Fourteen JSON files / 96,536 lines were removed from the landing branch. [The relocation ledger](../receipt-relocation.json) binds the original files; eleven were already preserved byte-for-byte, three anonymize personal paths only. Historical source labels, measurements and failures are retained.
-4. **A separate native-diagnostic memory lifetime defect was found.** The maximum-context check constructed its main target cache before independent tap controls needed it, and retained independent plain/captured caches past their last forwards. Diagnostic-only correction `763c8678cc680a89ff0104cde4bb8b59cd9fa766` scopes those lifetimes without changing input length, tap layouts, arithmetic, reference checks or budgets. Its `zig/src` tree is identical to the qualified runtime. Its unchanged 130,816-token native case is being qualified separately; no pass is claimed before its result. Original source5f OOM remains retained.
+4. **The native diagnostic retained avoidable overlapping allocations.** Source `763c8678cc680a89ff0104cde4bb8b59cd9fa766` shortens independent target-cache lifetimes; its short BF16/8-bit cases pass but its unchanged 130,816 case still fails GPU OOM. Follow-up `b57b839119a10eedfd1cb0909c1e660d4a5abffe` also defers the main tap buffer and separates independent stage buffers. Both changes affect diagnostic tests only; production sources are unchanged. The source-bound follow-up is running separately, not relabelled as full performance clearance. Both prior OOMs remain retained.
 
 ## What is still not established
 
@@ -125,11 +125,25 @@ Both modes on both chips passed cached=fresh with 3,517 reused tokens and all 29
 
 Served long-context plain=drafted passed 4/4 on each chip at 4,096/16,384/65,536/130,816 input tokens, 64 complete output tokens per reply. These are correctness, not speed qualifications.
 
-M5's native 65,536 and 130,816 references both passed 9/9 FP32 picks, with worst confidence differences0.00625 and0.00911. M4's 65,536 native reference passed 9/9, confidence difference0.01050. M4's original 130,816 native diagnostic failed **before the FP32 comparison**: `LFM2 forward: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)` then `GpuFailed`; exit1, not a timeout or token mismatch. The served path at that length passed; it does not clear this separate failure.
+M5's native 65,536 and 130,816 references both passed 9/9 FP32 picks, with worst confidence differences 0.00625 and 0.00911. M4's 65,536 native reference passed 9/9, confidence difference 0.01050. M4's original 130,816 native diagnostic failed **before the FP32 comparison**: `LFM2 forward: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)` then `GpuFailed`; exit 1, not a timeout or token mismatch. The served path at that length passed; it does not clear this separate failure.
 
 Original long native references use BF16 weights and BF16 activations. No 8-bit long FP32-reference run is claimed.
 
-The native helper reserves full-prompt scratch, unlike serving's chunked working set. Static formulas give a scratch lower bound15.5068GiB and scratch+two independent target KV caches+original taps lower bound22.9937GiB, before target weights, drafter buffers, transient resources and OS use. These are static lower bounds, **not a measured allocation peak**. Actual M4 physical RAM is51,539,607,552bytes and Metal's recommended working set40,200,896,512bytes. No budget, input length or oracle was changed to make the failure disappear.
+The native helper reserves full-prompt scratch, unlike serving's chunked working set. Static formulas give a scratch lower bound of 15.5068 GiB and scratch+two independent target KV caches+original taps lower bound of 22.9937 GiB, before target weights, drafter buffers, transient resources and OS use. These are static lower bounds, **not a measured allocation peak**. Actual M4 physical RAM is 51,539,607,552 bytes and Metal's recommended working set is 40,200,896,512 bytes. No budget, input length or oracle was changed to make the failure disappear.
+
+### Diagnostic-only lifetime follow-up
+
+[Source763's complete record](diagnostic-lifetimes/763c8678cc680a89ff0104cde4bb8b59cd9fa766/observed.json) and [original/published hashes](diagnostic-lifetimes/763c8678cc680a89ff0104cde4bb8b59cd9fa766/bindings.json) preserve the first lifetime correction's outcome:
+
+| Native case | Exit | FP32 picks | Worst confidence difference |
+|---|---:|---:|---:|
+| 64 rows, BF16 weights | 0 | 9/9 | 0.00085 |
+| 64 rows, 8-bit weights | 0 | 9/9 | 0.00152 |
+| 130,816 rows, BF16 weights | 1 | Not reached: GPU OOM | Not reached |
+
+The failed long case took 2,097.326 seconds, below its original 3,600-second deadline. Its [failure log](diagnostic-lifetimes/763c8678cc680a89ff0104cde4bb8b59cd9fa766/native-130816-bits0.log) remains byte-identical. The sealed diagnostic SHA-256 is `3a5c97b40cec5818ab8227f60d73078adeeaaf536e27110ba536d16ddab70a2a`; the production binary remains byte-identical to the full-matrix M4 binary `ee8f3451f5264f11bc9dea24af7ba5b0b6e00d5004e496d0f8a7d7f18bc92d02`.
+
+The next diagnostic-only source, `b57b839119a10eedfd1cb0909c1e660d4a5abffe`, removes two further overlaps: the original full-prompt tap destination is not allocated until independent controls finish, and table-only stage controls finish before the other stage buffer is allocated. The same row counts, three column layouts, twin/fallback modes, byte comparisons, guards and independent reference remain. Phase labels identify the active control if the GPU fails. The unchanged maximum-context case is running once on that changed source, with the original deadline and resource settings. No success or measured peak-memory reduction is claimed yet.
 
 M5's collector disconnected after persisting successful functional8, retaining `BrokenPipeError`. Only the never-started long phase was continued once; no completed model phase or full matrix was rerun. [Completion accounting](qualification/m5/completion-accounting.json) keeps that failure and every actual exit separate from model correctness/performance.
 

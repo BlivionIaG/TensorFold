@@ -1,0 +1,65 @@
+info: lfm2 dspark: a 1-draft clean hold takes 6.22 CPU-encode + GPU ms, a 9-draft hold 6.38 CPU-encode + GPU ms; 60 context quotes
+info: lfm2 dspark: weights 361.4 MiB, scratch 93.5 MiB, a stream 10 KiB a position and up to 40960 KiB staged
+PASS Markov producer 8bit bits 0x0: waited refused false, held target refused false, held host refused false (expected false)
+PASS Markov producer 8bit bits 0x7f80: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer 8bit bits 0xff80: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer 8bit bits 0x7fc0: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer 8bit bits 0x0: waited refused false, held target refused false, held host refused false (expected false)
+target taps: 1 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 4 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 8 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 16 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 64 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 1 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 4 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 8 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 16 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 64 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+the owned stage: 63 rows staged in uneven absorbs, absorbed as one 63-row piece like the direct absorbs' (> 32-row regime): keys, values and picks equal
+fixed query block: 9 rows; retained prefixes 1/3/9 preserve all first-row base-logit bytes, first proposal and confidence
+release-settled hold of 2 streams, depth 9, max debt 32: CPU-encode 0.085 ms taken at launch, GPU 9.778 ms taken after release, total 9.863 ms; pending CPU cleared, not recharged
+a synchronous hold of one block: CPU-encode 0.065 ms + GPU 6.285 ms = 6.350 ms taken once, one-block passes repriced; standalone absorb CPU-encode 0.013 ms + GPU 0.191 ms = 0.204 ms priced none
+split hold, 8 logical lanes: configured 9-row query blocks in bounded synchronous passes; 0.199 ms CPU-encode + 25.519 ms GPU = 25.718 ms taken once (26.624 ms wall); requested picks equal independent same-regime references
+split hold, 16 logical lanes: configured 9-row query blocks in bounded synchronous passes; 0.405 ms CPU-encode + 46.901 ms GPU = 47.306 ms taken once (49.272 ms wall); requested picks equal independent same-regime references
+absorb of 1 rows: 0.36 ms (best of 5)
+absorb of 4 rows: 0.43 ms (best of 5)
+absorb of 16 rows: 0.90 ms (best of 5)
+clean hold of 1 stream at depth 1: wall best 5.303 ms; best paired cost CPU-encode 0.061 ms + GPU 5.032 ms = 5.093 ms (5 attempts)
+clean hold of 1 stream at depth 3: wall best 5.621 ms; best paired cost CPU-encode 0.066 ms + GPU 5.364 ms = 5.430 ms (5 attempts)
+clean hold of 1 stream at depth 9: wall best 6.567 ms; best paired cost CPU-encode 0.058 ms + GPU 6.320 ms = 6.378 ms (5 attempts)
+clean hold of 2 streams at depth 1: synchronous wall best 7.694 ms; signalled best paired cost CPU-encode 0.072 ms + GPU 7.419 ms = 7.491 ms (5 attempts each)
+clean hold of 2 streams at depth 2: synchronous wall best 7.889 ms; signalled best paired cost CPU-encode 0.071 ms + GPU 7.596 ms = 7.667 ms (5 attempts each)
+clean hold of 2 streams at depth 3: synchronous wall best 8.113 ms; signalled best paired cost CPU-encode 0.062 ms + GPU 7.856 ms = 7.918 ms (5 attempts each)
+clean hold of 2 streams at depth 4: synchronous wall best 8.314 ms; signalled best paired cost CPU-encode 0.064 ms + GPU 8.052 ms = 8.116 ms (5 attempts each)
+clean hold of 2 streams at depth 8: synchronous wall best 9.109 ms; signalled best paired cost CPU-encode 0.075 ms + GPU 8.808 ms = 8.883 ms (5 attempts each)
+clean hold of 3 streams at depth 1: synchronous wall best 8.153 ms; signalled best paired cost CPU-encode 0.067 ms + GPU 7.880 ms = 7.947 ms (5 attempts each)
+clean hold of 3 streams at depth 2: synchronous wall best 8.442 ms; signalled best paired cost CPU-encode 0.068 ms + GPU 8.174 ms = 8.242 ms (5 attempts each)
+clean hold of 3 streams at depth 3: synchronous wall best 8.744 ms; signalled best paired cost CPU-encode 0.060 ms + GPU 8.498 ms = 8.558 ms (5 attempts each)
+clean hold of 3 streams at depth 4: synchronous wall best 9.029 ms; signalled best paired cost CPU-encode 0.073 ms + GPU 8.773 ms = 8.846 ms (5 attempts each)
+clean hold of 3 streams at depth 8: synchronous wall best 10.179 ms; signalled best paired cost CPU-encode 0.080 ms + GPU 9.942 ms = 10.022 ms (5 attempts each)
+steady rounds: 20 rounds of hold, chances, held and a verified absorb: 0 host allocations, 0 resizes, 20 unwaited holds
+deferred hold of 1 stream, depth 3, debt 95: CPU-encode 0.081 ms taken at launch, GPU 6.848 ms taken at settle, total 6.929 ms; pending CPU retained only for EMA
+deferred context: 2081 zero-grant rows, 29 overwritten pending rows, 2144 complete context rows and 3 later drafts match the independent replay
+zero-row rewind: context end 2143, no encode or GPU work; 3 later drafts match the retained-prefix replay
+row 0 base logits: cosine 0.99990, worst difference 0.385
+step 0: reference 13444 (margin 2.901, second 30447), GPU 13444 equal
+step 0: confidence reference 0.0814, GPU 0.0813
+step 1: reference 26956 (margin 0.846, second 2119), GPU 26956 equal
+step 1: confidence reference 0.0671, GPU 0.0669
+step 2: reference 1283 (margin 0.126, second 207), GPU 1283 equal
+step 2: confidence reference 0.1365, GPU 0.1353
+step 3: reference 63956 (margin 1.913, second 90032), GPU 63956 equal
+step 3: confidence reference 0.4004, GPU 0.3990
+step 4: reference 2083 (margin 0.128, second 3711), GPU 2083 equal
+step 4: confidence reference 0.1429, GPU 0.1418
+step 5: reference 1094 (margin 3.702, second 5515), GPU 1094 equal
+step 5: confidence reference 0.1626, GPU 0.1630
+step 6: reference 310 (margin 2.785, second 1300), GPU 310 equal
+step 6: confidence reference 0.2010, GPU 0.2025
+step 7: reference 3498 (margin 0.238, second 20506), GPU 3498 equal
+step 7: confidence reference 0.0551, GPU 0.0543
+step 8: reference 34 (margin 1.664, second 278), GPU 34 equal
+step 8: confidence reference 0.0738, GPU 0.0739
+the reference's largest margin over a different GPU pick: 0.000
+the confidences' worst difference from the fp32 reference: 0.00152
+9 of 9 drafts equal the fp32 reference's picks on the same chain (63-token context)

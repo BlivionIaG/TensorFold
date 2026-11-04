@@ -1,0 +1,32 @@
+{
+  "source_revision": "763c8678cc680a89ff0104cde4bb8b59cd9fa766",
+  "production_source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "scope": "Path-only public redactions; original OOM retained",
+  "files": {
+    "observed.json": {
+      "original_sha256": "2ed9b83fe59f88e8a2ec7f7a35dce527fed903a765635507432fd8c1aa7e3f94",
+      "published_sha256": "4f3fb55acea6d7ab0abf25ee13420c9bc347d4165e4632e501bc15efba375428",
+      "transformation": "local path prefixes only"
+    },
+    "build.log": {
+      "original_sha256": "3b2b785c2f9d6c8c17352a01d5b32bb81c39b664189e4002a9fb5197dbcb50ce",
+      "published_sha256": "3b2b785c2f9d6c8c17352a01d5b32bb81c39b664189e4002a9fb5197dbcb50ce",
+      "transformation": "byte-identical"
+    },
+    "native-64-bits0.log": {
+      "original_sha256": "ceb4d140de8074067d50ad32cedf086022e4e59c098ea43924f5c548b67695c7",
+      "published_sha256": "ceb4d140de8074067d50ad32cedf086022e4e59c098ea43924f5c548b67695c7",
+      "transformation": "byte-identical"
+    },
+    "native-64-bits8.log": {
+      "original_sha256": "9d515a91899304cb3c766cd1e09e2d9f517a719b4e4090b1c840390a3f46fb84",
+      "published_sha256": "9d515a91899304cb3c766cd1e09e2d9f517a719b4e4090b1c840390a3f46fb84",
+      "transformation": "byte-identical"
+    },
+    "native-130816-bits0.log": {
+      "original_sha256": "961f39c25ef1c270ff3d0e346998903c1d896f60e32e31a112f803ddd4a1fe72",
+      "published_sha256": "961f39c25ef1c270ff3d0e346998903c1d896f60e32e31a112f803ddd4a1fe72",
+      "transformation": "byte-identical"
+    }
+  }
+}
