@@ -2,7 +2,7 @@
 
 Source: [`ca54e6889ed8ed00400bfeb4fa1be30a3a687de5`](https://github.com/BlivionIaG/TensorFold/commit/ca54e6889ed8ed00400bfeb4fa1be30a3a687de5). Pinned upstream main: `00ff0f3b2c7ee67546e7a406f074e6d1d5c02593`.
 
-The protocol was [published at `634a3031d`](https://github.com/BlivionIaG/TensorFold/tree/634a3031d082eba23746b073429c944af09e0d32/docs/receipts/lfm2-dspark-review/ca54e6889) **before this revision's M5 launch**. This report responds only to [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133). M4 verification, both devices' original numerical guards and the M5 full matrix are complete. Every M5 contrast meets the user's loss budget, but the original stricter gate still fails. Separate A/A and the remaining M5 correctness phases continue; no whole-workflow completion is claimed yet.
+The protocol was [published at `634a3031d`](https://github.com/BlivionIaG/TensorFold/tree/634a3031d082eba23746b073429c944af09e0d32/docs/receipts/lfm2-dspark-review/ca54e6889) **before this revision's M5 launch**. This report responds only to [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133). M4 verification, both devices' original numerical guards, the M5 full matrix and separate A/A are complete. Every M5 contrast median meets the user's loss budget, but the original stricter gate still fails. Remaining M5 functional/long phases continue; no whole-workflow completion is claimed yet.
 
 ## Why this source follows the failed prerequisite
 
@@ -79,26 +79,28 @@ Source and native binary identities match the completed guard receipt.
 | Original exit | **3**, preserved before A/A |
 | Original full-matrix servers | 9/9 clean exits, no forced kill |
 
-Median aggregate decode tokens/s across the original three rotations; deltas are relative to each plain median:
+Median aggregate decode tokens/s across the original three rotations. Neural deltas use the matrix's plain
+median. A/A median delta is median B / median A − 1 from a **separate later experiment**; its paired range
+contains the three same-repetition B/A deltas. It is not a confidence interval, correction or acceptance band.
 
-| Prompt | T | Streams | Plain t/s | BF16 t/s | BF16 delta | 8-bit t/s | 8-bit delta |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| code | 0 | 1 | 285.441 | 289.272 | +1.34218% | 289.993 | +1.59468% |
-| code | 0 | 4 | 641.352 | 638.255 | −0.482927% | 645.995 | +0.723975% |
-| code | 0 | 8 | 853.441 | 854.530 | +0.127536% | 853.523 | +0.00961988% |
-| code | 0 | 16 | 873.740 | 872.941 | −0.0914648% | 887.631 | +1.58978% |
-| code | 1 | 1 | 271.721 | 272.037 | +0.116139% | 274.045 | +0.855061% |
-| code | 1 | 4 | 550.835 | 552.574 | +0.315656% | 550.585 | −0.0454163% |
-| code | 1 | 8 | 713.359 | 714.059 | +0.0980673% | 714.963 | +0.224819% |
-| code | 1 | 16 | 879.739 | 877.623 | −0.240449% | 877.651 | −0.237362% |
-| chat | 0 | 1 | 264.912 | 265.219 | +0.11586% | 265.560 | +0.244467% |
-| chat | 0 | 4 | 624.653 | 624.317 | −0.0536707% | 624.876 | +0.0357964% |
-| chat | 0 | 8 | 821.379 | 820.754 | −0.0761216% | 821.523 | +0.0175538% |
-| chat | 0 | 16 | 811.253 | 811.495 | +0.0298579% | 813.005 | +0.215991% |
-| chat | 1 | 1 | 259.296 | 259.699 | +0.155542% | 260.414 | +0.431135% |
-| chat | 1 | 4 | 560.857 | 562.742 | +0.336128% | 559.997 | −0.153416% |
-| chat | 1 | 8 | 720.257 | 720.850 | +0.0824292% | 720.255 | −0.000254007% |
-| chat | 1 | 16 | 885.140 | 884.359 | −0.0882655% | 884.136 | −0.113501% |
+|Prompt|T|Streams|Plain t/s|BF16 t/s|BF16 delta|8-bit t/s|8-bit delta|A/A median delta|A/A paired min … max|
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+|code|0|1|285.441|289.272|+1.34218%|289.993|+1.59468%|+0.0578759%|−0.193911% … +0.189508%|
+|code|0|4|641.352|638.255|−0.482927%|645.995|+0.723975%|+1.49108%|−1.36345% … +2.65541%|
+|code|0|8|853.441|854.530|+0.127536%|853.523|+0.00961988%|+0.186102%|−0.00449644% … +1.25458%|
+|code|0|16|873.740|872.941|−0.0914648%|887.631|+1.58978%|−0.0325917%|−0.131306% … +0.027598%|
+|code|1|1|271.721|272.037|+0.116139%|274.045|+0.855061%|+0.0455318%|−0.0256741% … +0.253963%|
+|code|1|4|550.835|552.574|+0.315656%|550.585|−0.0454163%|+0.11878%|−0.0387426% … +0.403952%|
+|code|1|8|713.359|714.059|+0.0980673%|714.963|+0.224819%|−0.0047786%|−0.168455% … +0.431514%|
+|code|1|16|879.739|877.623|−0.240449%|877.651|−0.237362%|+0.147763%|+0.000682134% … +0.27727%|
+|chat|0|1|264.912|265.219|+0.11586%|265.560|+0.244467%|+0.0156555%|−0.0778486% … +0.509043%|
+|chat|0|4|624.653|624.317|−0.0536707%|624.876|+0.0357964%|+0.000149004%|−0.166473% … +0.113241%|
+|chat|0|8|821.379|820.754|−0.0761216%|821.523|+0.0175538%|−0.0111414%|−0.0761356% … +0.067551%|
+|chat|0|16|811.253|811.495|+0.0298579%|813.005|+0.215991%|−0.0941669%|−0.335212% … −0.0748647%|
+|chat|1|1|259.296|259.699|+0.155542%|260.414|+0.431135%|+0.0799%|−0.301833% … +0.469466%|
+|chat|1|4|560.857|562.742|+0.336128%|559.997|−0.153416%|+0.111171%|+0.0447644% … +0.271452%|
+|chat|1|8|720.257|720.850|+0.0824292%|720.255|−0.000254007%|+0.204233%|+0.0123437% … +0.210589%|
+|chat|1|16|885.140|884.359|−0.0882655%|884.136|−0.113501%|−0.0375983%|−0.0668745% … −0.0375983%|
 
 The frozen summary's `failures_total` counts exactness/scenario/startup failures, **not performance
 negatives**. Its zero does not mean zero performance failures or zero floating-point error. Even the
@@ -110,6 +112,9 @@ work in all three pairs, including two extra target rounds in repetition 1. Thes
 copies and are **not neural-execution counters**. Neither count parity nor sign changes establish a
 measurement-error floor or attribute all losses. [Complete work observations](m5-full/aggregate-work-parity.json).
 
+The user's budget comparison uses those original **cell medians**, not every individual repetition.
+The 96 paired neural-arm repetitions range from −1.3575969500% to +7.5224191217%; one loses at least 1%.
+
 [Metadata](m5-full/metadata.json), [cells](m5-full/cells.jsonl), [events](m5-full/events.jsonl),
 [original summary](m5-full/summary.json), [original phase result](m5-full/full-matrix.controller.log),
 [hash/redaction ledger](m5-full/original-published-sha256.json). The
@@ -117,6 +122,34 @@ measurement-error floor or attribute all losses. [Complete work observations](m5
 request JSONL; private server logs stay private. The [frozen driver](protocol/frozen-driver/) is included
 byte-identically. Independent historical model-input/backbone/dispatch findings and their limits remain
 in [the code diagnosis](https://github.com/BlivionIaG/TensorFold/blob/ca54e6889ed8ed00400bfeb4fa1be30a3a687de5/docs/receipts/lfm2-dspark-review/diagnosis.md).
+
+## Completed plain/plain A/A
+
+All 96/96 cells and 204/204 oracle seed pairs are present, with equal token/output hashes across both arms
+and repetitions. Six servers exited cleanly. Both arms used the same native binary and argv with no
+drafter flags; all six startup events show `arm: plain`, `dspark_mode: null`, `flags: []`.
+The original A/A analysis was replayed in an isolated copy and reproduced exactly.
+
+| Observed A/A statistic | Minimum | Maximum |
+|---|---:|---:|
+| Per-cell median B/A delta | −0.0941669329% | +1.4910788868% |
+| Same-repetition paired B/A delta | −1.3634494429% | +2.6554127479% |
+
+These are observations from three rotations, not an error-floor estimate. The declared first-position
+imbalance is 2:1; A/A ran after the full matrix, not interleaved with it. Some neural contrasts lie outside
+their cell's observed A/A range. **Do not pool the global range into a per-cell waiver or subtract A/A
+from the original deltas.** The original 11 negative contrasts and exit 3 remain.
+
+Moreover, 20/48 A/A pairs differ in reported rounds/drafted/accepted counts despite identical plain argv
+and equal outputs. Thus the control includes internal proposal/round variation, not solely clock-reading
+error. It does not identify which adaptive decision caused each difference or isolate neural overhead.
+[Complete control work observations](plain-aa/aggregate-work-parity.json).
+
+[Every arm's three values, median and min/max](plain-aa/all-values.md);
+[original A/A summary](plain-aa/summary.json), [metadata](plain-aa/metadata.json),
+[cells](plain-aa/cells.jsonl), [events](plain-aa/events.jsonl),
+[lossless original request stream](plain-aa/requests.lossless.jsonl.gz),
+[original/published hashes](plain-aa/original-published-sha256.json).
 
 ## Frozen M5 procedure
 

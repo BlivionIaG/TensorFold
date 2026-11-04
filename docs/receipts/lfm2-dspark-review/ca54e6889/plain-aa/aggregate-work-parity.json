@@ -1,0 +1,825 @@
+{
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "paired_comparisons": 48,
+  "same_aggregate_work": 28,
+  "different_aggregate_work": 20,
+  "interpretation": "Both arms are plain and have no loaded neural drafter. Work variation in this control is real internal proposal/round variation, not solely clock measurement error. This does not attribute the cause or waive the original performance gate.",
+  "rows": [
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 410,
+        "drafted": 315,
+        "accepted": 101
+      },
+      "plain_b_activity": {
+        "rounds": 410,
+        "drafted": 315,
+        "accepted": 101
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 410,
+        "drafted": 315,
+        "accepted": 101
+      },
+      "plain_b_activity": {
+        "rounds": 410,
+        "drafted": 315,
+        "accepted": 101
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 410,
+        "drafted": 315,
+        "accepted": 101
+      },
+      "plain_b_activity": {
+        "rounds": 410,
+        "drafted": 315,
+        "accepted": 101
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 1662,
+        "drafted": 775,
+        "accepted": 382
+      },
+      "plain_b_activity": {
+        "rounds": 1662,
+        "drafted": 707,
+        "accepted": 382
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 1662,
+        "drafted": 693,
+        "accepted": 382
+      },
+      "plain_b_activity": {
+        "rounds": 1660,
+        "drafted": 779,
+        "accepted": 384
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 1662,
+        "drafted": 775,
+        "accepted": 382
+      },
+      "plain_b_activity": {
+        "rounds": 1660,
+        "drafted": 786,
+        "accepted": 384
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 3392,
+        "drafted": 1072,
+        "accepted": 696
+      },
+      "plain_b_activity": {
+        "rounds": 3392,
+        "drafted": 1066,
+        "accepted": 696
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 3392,
+        "drafted": 1066,
+        "accepted": 696
+      },
+      "plain_b_activity": {
+        "rounds": 3392,
+        "drafted": 1066,
+        "accepted": 696
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 3394,
+        "drafted": 1057,
+        "accepted": 694
+      },
+      "plain_b_activity": {
+        "rounds": 3392,
+        "drafted": 1066,
+        "accepted": 696
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 7298,
+        "drafted": 1211,
+        "accepted": 878
+      },
+      "plain_b_activity": {
+        "rounds": 7298,
+        "drafted": 1232,
+        "accepted": 878
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 7298,
+        "drafted": 1232,
+        "accepted": 878
+      },
+      "plain_b_activity": {
+        "rounds": 7298,
+        "drafted": 1232,
+        "accepted": 878
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 7298,
+        "drafted": 1211,
+        "accepted": 878
+      },
+      "plain_b_activity": {
+        "rounds": 7298,
+        "drafted": 1218,
+        "accepted": 878
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 459,
+        "drafted": 135,
+        "accepted": 52
+      },
+      "plain_b_activity": {
+        "rounds": 459,
+        "drafted": 135,
+        "accepted": 52
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 459,
+        "drafted": 135,
+        "accepted": 52
+      },
+      "plain_b_activity": {
+        "rounds": 459,
+        "drafted": 135,
+        "accepted": 52
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 459,
+        "drafted": 135,
+        "accepted": 52
+      },
+      "plain_b_activity": {
+        "rounds": 459,
+        "drafted": 135,
+        "accepted": 52
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 1925,
+        "drafted": 194,
+        "accepted": 119
+      },
+      "plain_b_activity": {
+        "rounds": 1925,
+        "drafted": 187,
+        "accepted": 119
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 1925,
+        "drafted": 187,
+        "accepted": 119
+      },
+      "plain_b_activity": {
+        "rounds": 1925,
+        "drafted": 194,
+        "accepted": 119
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 1925,
+        "drafted": 194,
+        "accepted": 119
+      },
+      "plain_b_activity": {
+        "rounds": 1925,
+        "drafted": 194,
+        "accepted": 119
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 3793,
+        "drafted": 428,
+        "accepted": 295
+      },
+      "plain_b_activity": {
+        "rounds": 3793,
+        "drafted": 420,
+        "accepted": 295
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 3793,
+        "drafted": 422,
+        "accepted": 295
+      },
+      "plain_b_activity": {
+        "rounds": 3791,
+        "drafted": 422,
+        "accepted": 297
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 3791,
+        "drafted": 410,
+        "accepted": 297
+      },
+      "plain_b_activity": {
+        "rounds": 3793,
+        "drafted": 420,
+        "accepted": 295
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 7223,
+        "drafted": 1227,
+        "accepted": 953
+      },
+      "plain_b_activity": {
+        "rounds": 7231,
+        "drafted": 1188,
+        "accepted": 945
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 7228,
+        "drafted": 1231,
+        "accepted": 948
+      },
+      "plain_b_activity": {
+        "rounds": 7224,
+        "drafted": 1206,
+        "accepted": 952
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 7228,
+        "drafted": 1186,
+        "accepted": 948
+      },
+      "plain_b_activity": {
+        "rounds": 7232,
+        "drafted": 1182,
+        "accepted": 944
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 506,
+        "drafted": 10,
+        "accepted": 5
+      },
+      "plain_b_activity": {
+        "rounds": 506,
+        "drafted": 10,
+        "accepted": 5
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 506,
+        "drafted": 10,
+        "accepted": 5
+      },
+      "plain_b_activity": {
+        "rounds": 506,
+        "drafted": 10,
+        "accepted": 5
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 506,
+        "drafted": 10,
+        "accepted": 5
+      },
+      "plain_b_activity": {
+        "rounds": 506,
+        "drafted": 10,
+        "accepted": 5
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 2024,
+        "drafted": 25,
+        "accepted": 20
+      },
+      "plain_b_activity": {
+        "rounds": 2024,
+        "drafted": 26,
+        "accepted": 20
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 2024,
+        "drafted": 26,
+        "accepted": 20
+      },
+      "plain_b_activity": {
+        "rounds": 2024,
+        "drafted": 26,
+        "accepted": 20
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 2024,
+        "drafted": 25,
+        "accepted": 20
+      },
+      "plain_b_activity": {
+        "rounds": 2024,
+        "drafted": 26,
+        "accepted": 20
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 4056,
+        "drafted": 44,
+        "accepted": 32
+      },
+      "plain_b_activity": {
+        "rounds": 4056,
+        "drafted": 44,
+        "accepted": 32
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 4056,
+        "drafted": 44,
+        "accepted": 32
+      },
+      "plain_b_activity": {
+        "rounds": 4056,
+        "drafted": 44,
+        "accepted": 32
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 4056,
+        "drafted": 42,
+        "accepted": 32
+      },
+      "plain_b_activity": {
+        "rounds": 4056,
+        "drafted": 44,
+        "accepted": 32
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 8130,
+        "drafted": 55,
+        "accepted": 46
+      },
+      "plain_b_activity": {
+        "rounds": 8130,
+        "drafted": 56,
+        "accepted": 46
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 8130,
+        "drafted": 56,
+        "accepted": 46
+      },
+      "plain_b_activity": {
+        "rounds": 8130,
+        "drafted": 56,
+        "accepted": 46
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 8130,
+        "drafted": 55,
+        "accepted": 46
+      },
+      "plain_b_activity": {
+        "rounds": 8130,
+        "drafted": 56,
+        "accepted": 46
+      },
+      "same_aggregate_work": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "plain_b_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "plain_b_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "plain_b_activity": {
+        "rounds": 511,
+        "drafted": 0,
+        "accepted": 0
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 2043,
+        "drafted": 10,
+        "accepted": 1
+      },
+      "plain_b_activity": {
+        "rounds": 2043,
+        "drafted": 10,
+        "accepted": 1
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 2043,
+        "drafted": 10,
+        "accepted": 1
+      },
+      "plain_b_activity": {
+        "rounds": 2043,
+        "drafted": 10,
+        "accepted": 1
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 2043,
+        "drafted": 10,
+        "accepted": 1
+      },
+      "plain_b_activity": {
+        "rounds": 2043,
+        "drafted": 10,
+        "accepted": 1
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 4083,
+        "drafted": 14,
+        "accepted": 5
+      },
+      "plain_b_activity": {
+        "rounds": 4083,
+        "drafted": 14,
+        "accepted": 5
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 4083,
+        "drafted": 14,
+        "accepted": 5
+      },
+      "plain_b_activity": {
+        "rounds": 4083,
+        "drafted": 14,
+        "accepted": 5
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 4083,
+        "drafted": 14,
+        "accepted": 5
+      },
+      "plain_b_activity": {
+        "rounds": 4083,
+        "drafted": 14,
+        "accepted": 5
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "rep": 0,
+      "plain_a_activity": {
+        "rounds": 8171,
+        "drafted": 12,
+        "accepted": 5
+      },
+      "plain_b_activity": {
+        "rounds": 8171,
+        "drafted": 12,
+        "accepted": 5
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "rep": 1,
+      "plain_a_activity": {
+        "rounds": 8171,
+        "drafted": 12,
+        "accepted": 5
+      },
+      "plain_b_activity": {
+        "rounds": 8171,
+        "drafted": 12,
+        "accepted": 5
+      },
+      "same_aggregate_work": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "rep": 2,
+      "plain_a_activity": {
+        "rounds": 8171,
+        "drafted": 12,
+        "accepted": 5
+      },
+      "plain_b_activity": {
+        "rounds": 8171,
+        "drafted": 12,
+        "accepted": 5
+      },
+      "same_aggregate_work": true
+    }
+  ]
+}

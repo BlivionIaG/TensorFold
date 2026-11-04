@@ -1,0 +1,60 @@
+{
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+  "analysis_replayed_exactly": true,
+  "no_performance_gate_or_waiver": true,
+  "private_logs_not_published": true,
+  "files": [
+    {
+      "source_path": "metadata.json",
+      "published_path": "metadata.json",
+      "original_sha256": "334c9c8c258f53c19e2b7431b3d7aaa011be544724b0923cb01a0def605f47d1",
+      "published_sha256": "a6bf1cd59e8bf9eedd970a7e97ce62d8cbaee7a18a00241d47fdc241350c4e0f",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "cells.jsonl",
+      "published_path": "cells.jsonl",
+      "original_sha256": "a75ea45fe5d271c6c853fd86fcb70b0ceea6a9293b7080a318d11c9bf2d0c9f2",
+      "published_sha256": "a75ea45fe5d271c6c853fd86fcb70b0ceea6a9293b7080a318d11c9bf2d0c9f2",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "events.jsonl",
+      "published_path": "events.jsonl",
+      "original_sha256": "67d34d1f23a3b4bcb5f2aa2c44a8a5a1e50e90d01576997d603c2d5d64f0e294",
+      "published_sha256": "67d34d1f23a3b4bcb5f2aa2c44a8a5a1e50e90d01576997d603c2d5d64f0e294",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "summary.json",
+      "published_path": "summary.json",
+      "original_sha256": "dd9724797c532859527a2359427f7c35f804b3885ef1e08fb1bfa06621c118b3",
+      "published_sha256": "dd9724797c532859527a2359427f7c35f804b3885ef1e08fb1bfa06621c118b3",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "requests.jsonl",
+      "published_path": "requests.lossless.jsonl.gz",
+      "original_sha256": "e3db8adef608f8d51055991109be0a4d959334d4c273600e1d463e130048b9b5",
+      "published_uncompressed_sha256": "e3db8adef608f8d51055991109be0a4d959334d4c273600e1d463e130048b9b5",
+      "published_gzip_sha256": "0efb39837aa1d56897a970a8adae62530dbef03c9a1ca2aee75c3d35dee33d57",
+      "gzip_roundtrip_verified": true,
+      "published_uncompressed_byte_identical_to_original": true
+    },
+    {
+      "source_path": "plain-aa.controller.log",
+      "published_path": "plain-aa.controller.log",
+      "original_sha256": "67d34d1f23a3b4bcb5f2aa2c44a8a5a1e50e90d01576997d603c2d5d64f0e294",
+      "published_sha256": "67d34d1f23a3b4bcb5f2aa2c44a8a5a1e50e90d01576997d603c2d5d64f0e294",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "pipeline-observed.snapshot.json",
+      "published_path": "pipeline-observed.snapshot.json",
+      "original_sha256": "37abe0bbd8da83bac2e025a6408fdda0a4b276fc704402c7b36115eae21893a7",
+      "published_sha256": "da3dc8ec0d55178b774b9d5a7d6c6485d8f6c1fa5763750d631eeb9f88347395",
+      "path_redactions_only": true
+    }
+  ]
+}

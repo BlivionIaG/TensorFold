@@ -1,0 +1,253 @@
+{
+  "schema": "lfm2-dspark-plain-aa/1",
+  "label": "PREDECLARED_PLAIN_VERSUS_PLAIN_VARIABILITY_ONLY",
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+  "binary_sha256": "50d52f95a58c0c62cdecda98eb97f8eedfd82798b73ae430381cbc6a708bb517",
+  "binding": {
+    "driver_sha256": {
+      "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+      "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+      "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+      "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+      "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+      "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+      "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+    },
+    "frozen_driver": "$M5_PACKET/frozen-driver",
+    "shared_lock": "/tmp/tensorfold-model.lock",
+    "shared_lock_inode_observed": 3719605,
+    "model_sha256": {
+      "target": {
+        "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+        "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+        "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+        "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+        "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+        "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+        "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+        "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+        "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+      },
+      "drafter": {
+        "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+        "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+      }
+    },
+    "remote_target": "$TARGET",
+    "remote_drafter": "$DRAFTER",
+    "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+    "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+    "remote_zig": "$HOME/tf-lfm2-test/r16-source-unit-9348e8306/zig-0.17.0/zig",
+    "zig_binary_sha256": "1c5f706db0ed6d55451940f31dc05a6177d05696bc1fa5d853696d04c718b523",
+    "source_root": "$M5_PACKET/source",
+    "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+    "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+    "source_tree_ids": {
+      "zig": "7748b5f103e4da00f9155b499d09c49cb615d87c",
+      "build.zig": "241e316fbebe9c77220066b47eb43e74e80bffda",
+      "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+    },
+    "base_revision": "00ff0f3b2c7ee67546e7a406f074e6d1d5c02593"
+  },
+  "protocol": {
+    "schema": "lfm2-dspark-r38-qualification/1",
+    "declaration": "Prepared before freezing or measuring the new source; seal this file in packet-manifest.json before launch.",
+    "scope": "LFM2 DSpark PR1394 latest review only; original qualification plus separate variability evidence",
+    "phase_order": [
+      "original-guards",
+      "full-matrix",
+      "plain-aa",
+      "functional-0",
+      "functional-8",
+      "original-long"
+    ],
+    "timing_relationship": "The complete original full matrix runs once before A/A. A/A starts at the next phase boundary, after identity and lock checks only. No intentional cooldown, conditioning, warmup beyond original per-scenario/per-cell warmups, clock manipulation, retry or outcome-based reordering. Correctness phases follow A/A irrespective of original performance exit 3.",
+    "full_matrix": {
+      "driver_unmodified": true,
+      "verdict_unmodified": true,
+      "arms": [
+        "plain",
+        "bf16",
+        "bits8"
+      ],
+      "rotations": [
+        [
+          "plain",
+          "bf16",
+          "bits8"
+        ],
+        [
+          "bf16",
+          "bits8",
+          "plain"
+        ],
+        [
+          "bits8",
+          "plain",
+          "bf16"
+        ]
+      ],
+      "cells": 144,
+      "oracle_seeds": 306,
+      "invocations": 1,
+      "exit_3": "Original performance failure, always retained as failure; does not abort later required phases."
+    },
+    "aa": {
+      "label": "PREDECLARED_PLAIN_VERSUS_PLAIN_VARIABILITY_ONLY",
+      "arms": [
+        "plain_a",
+        "plain_b"
+      ],
+      "native_arm_for_both": "plain",
+      "rotations": [
+        [
+          "plain_a",
+          "plain_b"
+        ],
+        [
+          "plain_b",
+          "plain_a"
+        ],
+        [
+          "plain_a",
+          "plain_b"
+        ]
+      ],
+      "rotation_note": "Exactly three fixed rotations. With two arms and three rotations, first-launch counts are necessarily 2:1; do not claim position-balanced design.",
+      "cells": 96,
+      "oracle_seeds": 204,
+      "reps": 3,
+      "prompts": [
+        "code",
+        "chat"
+      ],
+      "temperatures": [
+        0,
+        1
+      ],
+      "widths": [
+        1,
+        4,
+        8,
+        16
+      ],
+      "tokens": 512,
+      "seed": 1234,
+      "seed_rule": "Original seeds_for: seed 1234 for every greedy stream; 1234+i for sampled stream i.",
+      "cell_order": "Within each launch: code then chat; within prompt greedy T0 then sampled T1; within scenario widths 1,4,8,16.",
+      "warmup_and_oracle_order": "Call the unmodified original scenario API: one width-1 16-token scenario warmup; each distinct seed's 512-token solo then draft:false oracle; then for each width one 16-token warmup followed immediately by its 512-token measured cell. No other requests or warmups.",
+      "oracle_note": "draft:false is used only for the original serial oracle. Both measured arms retain the same normal cheap-copy behavior, no copies-disabled flags or environment overrides.",
+      "context": 4096,
+      "parallel": 16,
+      "port": 18194,
+      "startup_timeout": 900,
+      "http_timeout": 1800,
+      "shutdown_grace": 90,
+      "serve_flags": [
+        "--name",
+        "dspark-qual",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "18194",
+        "--parallel",
+        "16",
+        "--context",
+        "4096",
+        "--prompt-cache-gib",
+        "0",
+        "--snapshot-dir",
+        "none",
+        "--max-snapshots",
+        "0",
+        "--no-update-check"
+      ],
+      "drafter_flags": [],
+      "analysis": "Keep every raw request/cell/event/metadata record; compare token/output hashes in both arms and all reps; report each prompt/temperature/width arm's three values, median and min/max, B-A median delta and percentage, each rotation's paired delta and observed delta ranges. No speed acceptance threshold and no tolerance/noise-floor waiver. Never change the original full-matrix verdict."
+    },
+    "correctness": {
+      "functional_modes": [
+        0,
+        8
+      ],
+      "implementation": "Byte-identical original functional wrapper and source qualification.py, with original eight public prompts; cache/resume/fresh equality, 6-stream 60s and 16-stream 90s cancellation stress, sampled widths 1/4/8/16.",
+      "served_long_lengths": [
+        4096,
+        16384,
+        65536,
+        130816
+      ],
+      "served_long_context": 131072,
+      "served_long_parallel": 1,
+      "served_long_tokens": 64,
+      "native_long_lengths": [
+        65536,
+        130816
+      ],
+      "native_long_timeout": 3600,
+      "long_scope": "One unchanged original qualification.py long invocation, serving BF16 then original native references; no new long variants."
+    },
+    "invariants": {
+      "model_lock": "/tmp/tensorfold-model.lock",
+      "lock_inode": 3719605,
+      "never_unlink_or_replace_lock": true,
+      "pressure_or_admission_overrides": false,
+      "model_retries": 0,
+      "new_source_required": true,
+      "historical_results_remain_historical": true,
+      "model_stdout": "Always remote regular files, never SSH or collector pipes",
+      "collector_loss": "Detached session and file-backed supervisor/phase/server logs continue without a collector. A lost collector does not authorize a relaunch."
+    }
+  },
+  "protocol_sha256": "92e210a9980310422712ffa4a976620a9d6c6408c5c94ec2e01ca67a91354633",
+  "controller_sha256": "c13695fa77165939d9cacf95409ed93abc1d89a8ba3f32ddabdb456616b809cf",
+  "started_unix_ns": 1793815262815340000,
+  "environment": {
+    "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "os_build": "26A428",
+    "machine": "arm64",
+    "hw_model": "Mac17,15",
+    "cpu": "Apple M5 Ultra",
+    "memory_bytes": "274877906944",
+    "python": "3.13.15"
+  },
+  "removed_environment": [],
+  "prompts": [
+    {
+      "name": "code",
+      "kind": "completion",
+      "prompt": "Write a short Python function that computes the Fibonacci sequence and explain it."
+    },
+    {
+      "name": "chat",
+      "kind": "chat",
+      "prompt": "Explain how matrix multiplication uses a GPU in plain English, then give a small numerical example."
+    }
+  ],
+  "same_native_argv_for_both_arms": [
+    "$M5_PACKET/runtime/tensorfold-native",
+    "serve",
+    "$TARGET",
+    "--name",
+    "dspark-qual",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "18194",
+    "--parallel",
+    "16",
+    "--context",
+    "4096",
+    "--prompt-cache-gib",
+    "0",
+    "--snapshot-dir",
+    "none",
+    "--max-snapshots",
+    "0",
+    "--no-update-check"
+  ],
+  "original_driver_and_verdict_unmodified": true,
+  "full_matrix_evidence_separate": true,
+  "copy_behavior": "Unchanged plain command; no drafter and no disabling copies"
+}
