@@ -32,6 +32,9 @@ test "draft sources: Metal Qwen2B and LFM2 MoE follow qualified verification wid
 test "draft sources: Metal Qwen27 copies and DFlash2 use actual slot and head facts" {
     const q = @import("qwen27_lanes.zig");
     var runner: tf.qwen27.decode_round.Runner = undefined;
+    var model: @typeInfo(@TypeOf(runner.model)).pointer.child = undefined;
+    model.config.experts = 0;
+    runner.model = &model;
     var b: q.Metal = undefined;
     b.runner = &runner;
     b.draft = null;
@@ -120,6 +123,9 @@ test "qwen27 window: native facts expose device width, node budget and hybrid co
     const q = @import("qwen27_lanes.zig");
     const policy = @import("qwen27_window.zig");
     var runner: tf.qwen27.decode_round.Runner = undefined;
+    var model: @typeInfo(@TypeOf(runner.model)).pointer.child = undefined;
+    model.config.experts = 0;
+    runner.model = &model;
     var b: q.Metal = undefined;
     b.runner = &runner;
     b.draft = present(@TypeOf(b.draft.?));
@@ -153,6 +159,9 @@ test "qwen27 window: measured shared row cliffs retain the lone window's exact p
     const native = @import("qwen27_lanes.zig");
     const lanes = @import("lanes");
     var runner: tf.qwen27.decode_round.Runner = undefined;
+    var model: @typeInfo(@TypeOf(runner.model)).pointer.child = undefined;
+    model.config.experts = 0;
+    runner.model = &model;
     runner.slots = 4;
     var b: native.Metal = undefined;
     b.runner = &runner;
