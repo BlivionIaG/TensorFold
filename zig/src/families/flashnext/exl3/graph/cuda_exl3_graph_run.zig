@@ -19,7 +19,7 @@ const Pending = gpending.Pending;
 
 /// The key's capture or instantiation failed: it backs off, and this round runs eagerly (nothing else is affected).
 fn fellBack(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
-    gfall.record(gfall.hashOf(1, key), gcache.clock);
+    gfall.record(key.owner, gfall.hashOf(1, key), gcache.clock);
     hub.stats.eager_dplan += 1;
     glog.note(key, .eager);
     pass.prepared = true;
@@ -47,7 +47,7 @@ pub fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         return e.exec.?.launchOn(pass.stream);
     }
     if (try grebind.tryRebind(key, pass)) return;
-    if (gcache.sighting(key) < gcache.afterKey(key) or gfall.blocked(gfall.hashOf(1, key), gcache.clock)) {
+    if (gcache.sighting(key) < gcache.afterKey(key) or gfall.blocked(key.owner, gfall.hashOf(1, key), gcache.clock)) {
         hub.stats.eager_dplan += 1;
         glog.note(key, .eager);
         pass.prepared = true;

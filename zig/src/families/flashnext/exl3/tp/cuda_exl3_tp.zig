@@ -246,7 +246,7 @@ pub fn reservedBytes(t: *const Scratch) usize {
     return n;
 }
 
-/// cuda_exl3_pass.moe for a layer whose experts carry a rank: its slots into y, one all-reduce, the one-rank sum.
+/// A ranked layer's masked slots feed canonical subtrees; exchange gathers them and finishes the fixed tree.
 pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
     const r = x.tp orelse return error.UnexpectedTensor;
     const s = p.s;

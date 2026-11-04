@@ -508,11 +508,9 @@ pub const State = struct {
     mtp_pool: ?*pool_.Pool = null,
 };
 
-/// TF_FLASHNEXT_EXL3_DPLAN: 1 plans decode rounds on the device (implied by TF_FLASHNEXT_EXL3_GRAPH=1).
+/// GRAPH=eager plans decode rounds on the device; GRAPH=1 also replays graphs.
 pub fn enabled() bool {
-    if (@import("../graph/cuda_exl3_graph.zig").force) |f| return f != .off;
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_DPLAN")) |v| return std.mem.eql(u8, std.mem.span(v), "1");
-    return @import("../graph/cuda_exl3_graph.zig").enabled();
+    return @import("../graph/cuda_exl3_graph.zig").mode() != .off;
 }
 
 /// The engine's device planner over its decoder layers' pools, made once; null when a layer has no pool.

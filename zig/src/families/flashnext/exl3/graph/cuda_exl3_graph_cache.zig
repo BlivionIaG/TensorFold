@@ -160,6 +160,7 @@ pub fn releaseFor(owner: *@import("../../cuda_prompt.zig").Engine) void {
     for (&seen) |*entry| if (entry.*) |held| if (held.key.owner == id) {
         entry.* = null;
     };
+    @import("cuda_exl3_graph_fallback.zig").clearFor(id);
     gprefill.clearRuntime(@intFromPtr(&owner.exl3_prefill));
 }
 

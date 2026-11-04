@@ -190,6 +190,7 @@ fn release(runtime: *Runtime, s: *State) void {
         dropEntry(x);
         en.* = null;
     };
+    graph.fallback.clearFor(s.head);
     s.cond.lib.close();
     s.side.deinit();
     s.alive_host.free();
@@ -434,7 +435,7 @@ fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch
         try x.exec.launchOn(p.stream);
         return true;
     };
-    if (graph.fallback.blocked(graph.fallback.hashOf(3, key), clock)) return false;
+    if (graph.fallback.blocked(key.head, graph.fallback.hashOf(3, key), clock)) return false;
     try p.stream.synchronize();
     const admission = graph.reserveMemory(p.stream, .chain, 0) catch |err| {
         if (graph.fallback.admissionDenied(err)) return failed(key);
@@ -502,7 +503,7 @@ fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch
 
 /// The chain's capture or instantiation failed: its key backs off and this chain runs as upstream's loop does.
 fn failed(key: Key) bool {
-    graph.fallback.record(graph.fallback.hashOf(3, key), clock);
+    graph.fallback.record(key.head, graph.fallback.hashOf(3, key), clock);
     return false;
 }
 

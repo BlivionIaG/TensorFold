@@ -122,6 +122,7 @@ pub fn clearRuntime(owner: u64) void {
     for (&pseen) |*entry| if (entry.*) |held| if (held.key.owner == owner) {
         entry.* = null;
     };
+    gfall.clearFor(owner);
 }
 
 /// Before a layer's sub-blocks:
@@ -161,7 +162,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         try x.exec.launchOn(p.stream);
         return .replayed;
     };
-    if (psighting(key) < prefillAfter() or gfall.blocked(gfall.hashOf(2, pshape(key)), gcache.clock)) {
+    if (psighting(key) < prefillAfter() or gfall.blocked(key.owner, gfall.hashOf(2, pshape(key)), gcache.clock)) {
         hub.prefill_stats.eager += 1;
         return .eager;
     }
@@ -245,7 +246,7 @@ pub fn prefillEnd(p: anytype, how: Prefill) !bool {
 }
 
 fn unusable(key: PKey) bool {
-    gfall.record(gfall.hashOf(2, pshape(key)), gcache.clock);
+    gfall.record(key.owner, gfall.hashOf(2, pshape(key)), gcache.clock);
     hub.prefill_stats.eager += 1;
     return false;
 }
@@ -270,7 +271,7 @@ pub fn prefillAbort(p: anytype, how: Prefill) void {
     if (how != .capturing) return;
     hub.capturing = false;
     if (pcur) |key| {
-        gfall.record(gfall.hashOf(2, pshape(key)), gcache.clock);
+        gfall.record(key.owner, gfall.hashOf(2, pshape(key)), gcache.clock);
         hub.prefill_stats.eager += 1;
     }
     pcur = null;

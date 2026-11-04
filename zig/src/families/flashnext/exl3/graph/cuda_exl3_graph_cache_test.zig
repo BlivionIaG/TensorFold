@@ -10,6 +10,7 @@ const gtogether = @import("cuda_exl3_graph_together.zig");
 const gprefill = @import("cuda_exl3_graph_prefill.zig");
 const gkey = @import("cuda_exl3_graph_key.zig");
 const gdriver = @import("cuda_exl3_graph_test_driver.zig");
+const gfall = @import("cuda_exl3_graph_fallback.zig");
 const Key = gkey.Key;
 const Entry = gcache.Entry;
 const Pending = gpending.Pending;
@@ -138,11 +139,30 @@ test "exl3: a decode round captures on its second sighting and a window on its t
 test "exl3: engine retirement drops only that owner's graphs and prevents cross-owner updates" {
     gcache.clear();
     defer gcache.clear();
+    gfall.clear();
+    defer gfall.clear();
+    const before = @import("cuda_exl3_graph.zig").stats.capture_failures;
+    defer @import("cuda_exl3_graph.zig").stats.capture_failures = before;
     const Engine = @import("../../cuda_prompt.zig").Engine;
     var first: Engine = undefined;
     var second: Engine = undefined;
     var driver = GraphTestDriver.driver();
     GraphTestDriver.exec_drops = 0;
+    GraphTestDriver.launches = 0;
+    const Observed = struct {
+        var last_drop: usize = 0;
+        var last_launch: usize = 0;
+        fn drop(exec: cuda.abi.GraphExec) callconv(.c) c_int {
+            last_drop = @intFromPtr(exec.?);
+            return GraphTestDriver.dropExec(exec);
+        }
+        fn launch(exec: cuda.abi.GraphExec, stream: cuda.abi.Stream) callconv(.c) c_int {
+            last_launch = @intFromPtr(exec.?);
+            return GraphTestDriver.launch(exec, stream);
+        }
+    };
+    driver.api.cuGraphExecDestroy = Observed.drop;
+    driver.api.cuGraphLaunch = Observed.launch;
     const a: Key = .{ .owner = @intFromPtr(&first), .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 };
     var b = a;
     b.owner = @intFromPtr(&second);
@@ -151,10 +171,31 @@ test "exl3: engine retirement drops only that owner's graphs and prevents cross-
     gcache.entries[1] = .{ .key = b, .exec = .{ .d = &driver, .handle = @ptrFromInt(2) }, .used = 2 };
     gcache.seen[0] = .{ .key = a, .n = 2, .used = 1 };
     gcache.seen[1] = .{ .key = b, .n = 3, .used = 2 };
+    const ah = gfall.hashOf(1, a);
+    const bh = gfall.hashOf(1, b);
+    const ap = gfall.hashOf(2, @intFromPtr(&first.exl3_prefill));
+    const bp = gfall.hashOf(2, @intFromPtr(&second.exl3_prefill));
+    for (0..gfall.max_failures + 1) |_| {
+        gfall.record(a.owner, ah, 1);
+        gfall.record(b.owner, bh, 1);
+        gfall.record(@intFromPtr(&first.exl3_prefill), ap, 1);
+        gfall.record(@intFromPtr(&second.exl3_prefill), bp, 1);
+    }
     gcache.releaseFor(&first);
     try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.exec_drops);
+    try std.testing.expectEqual(@as(usize, 1), Observed.last_drop);
     try std.testing.expect(gcache.entries[0] == null and gcache.seen[0] == null);
     try std.testing.expect(gcache.entries[1] != null and gcache.seen[1] != null);
+    try gcache.entries[1].?.exec.?.launchOn(.{ .d = &driver, .handle = null });
+    try std.testing.expectEqual(@as(usize, 2), Observed.last_launch);
+    try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.launches);
+    try std.testing.expectEqual(@as(u8, 0), gfall.failures(a.owner, ah));
+    try std.testing.expectEqual(@as(u8, 0), gfall.failures(@intFromPtr(&first.exl3_prefill), ap));
+    try std.testing.expect(!gfall.blocked(a.owner, ah, 1_000_000));
+    try std.testing.expect(gfall.blocked(b.owner, bh, 1_000_000) and gfall.blocked(@intFromPtr(&second.exl3_prefill), bp, 1_000_000));
     gcache.releaseFor(&second);
     try std.testing.expectEqual(@as(usize, 2), GraphTestDriver.exec_drops);
+    try std.testing.expectEqual(@as(usize, 2), Observed.last_drop);
+    try std.testing.expectEqual(@as(u8, 0), gfall.failures(b.owner, bh));
+    try std.testing.expectEqual(@as(u8, 0), gfall.failures(@intFromPtr(&second.exl3_prefill), bp));
 }

@@ -12,11 +12,17 @@ const gprefill = @import("cuda_exl3_graph_prefill.zig");
 
 pub const memory = @import("cuda_exl3_graph_memory.zig");
 
-/// TF_FLASHNEXT_EXL3_GRAPH=1: decode rounds and verify windows replay captured graphs.
+/// GRAPH=0 keeps the host planner, eager uses the device planner, and 1 also enables graph replay.
+pub fn mode() Mode {
+    if (force) |f| return f;
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH") orelse return .off;
+    const text = std.mem.span(v);
+    if (std.mem.eql(u8, text, "1")) return .graph;
+    return if (std.mem.eql(u8, text, "eager")) .dplan else .off;
+}
+
 pub fn enabled() bool {
-    if (force) |f| return f == .graph;
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH") orelse return false;
-    return std.mem.eql(u8, std.mem.span(v), "1");
+    return mode() == .graph;
 }
 
 /// A test's override of the environment: the host cut, the device plan launched eagerly, or graphs.
@@ -64,7 +70,7 @@ pub const Stats = struct {
     rebinds: u64 = 0,
     rebind_failures: u64 = 0,
     rebind_declined: u64 = 0,
-    /// Steps on the device plan launched one by one (TF_FLASHNEXT_EXL3_DPLAN=1 without graphs).
+    /// Steps on the device plan launched one by one (TF_FLASHNEXT_EXL3_GRAPH=eager).
     eager_dplan: u64 = 0,
     /// Steps that left for the host cut (too many rows, media, no pools).
     declined: u64 = 0,

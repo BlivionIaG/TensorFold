@@ -34,8 +34,8 @@ pub fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []co
     const fail_hash = gfall.hashOf(1, key);
     var vote = if (entry != null) graphVote(entry, c.graphTimeoutMs()) else collective.GraphVote{
         .state = if (grebind.stateRequest(key, pass)) |request|
-            if (grebind.rebindCandidate(key, request, true) != null) .capture else if (gcache.sighting(key) < gcache.afterKey(key) or gfall.blocked(fail_hash, gcache.clock)) .eager else .capture
-        else if (gcache.sighting(key) < gcache.afterKey(key) or gfall.blocked(fail_hash, gcache.clock)) .eager else .capture,
+            if (grebind.rebindCandidate(key, request, true) != null) .capture else if (gcache.sighting(key) < gcache.afterKey(key) or gfall.blocked(key.owner, fail_hash, gcache.clock)) .eager else .capture
+        else if (gcache.sighting(key) < gcache.afterKey(key) or gfall.blocked(key.owner, fail_hash, gcache.clock)) .eager else .capture,
     };
     // this rank's instantiation failed: it votes eager (the peer's graph stays), the key backs off, both run eagerly
     const instantiation_failed = vote.state == .failed;
@@ -44,7 +44,7 @@ pub fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []co
     if (instantiation_failed) {
         gcache.forget(entry.?);
         entry = null;
-        gfall.record(fail_hash, gcache.clock);
+        gfall.record(key.owner, fail_hash, gcache.clock);
     }
     switch (decision.choice) {
         .eager => {
@@ -65,7 +65,7 @@ pub fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []co
     try pass.stream.synchronize();
     const admission = gbudget.reserveTogether(c, pass.stream, signature, decision.cohort) catch |err| {
         if (!gfall.admissionDenied(err)) return err;
-        gfall.record(fail_hash, gcache.clock);
+        gfall.record(key.owner, fail_hash, gcache.clock);
         hub.stats.eager_dplan += 1;
         glog.note(key, .eager);
         pass.prepared = true;
@@ -84,7 +84,7 @@ pub fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []co
     };
     // both ranks hold a capture or neither does: a failure on either rank sends both to the eager round
     var graph = (try gfall.agreedCapture(c, signature, decision.cohort, Attempt{ .pass = pass, .ids = ids, .pos0 = pos0 })) orelse {
-        gfall.record(fail_hash, gcache.clock);
+        gfall.record(key.owner, fail_hash, gcache.clock);
         hub.stats.eager_dplan += 1;
         glog.note(key, .eager);
         pass.prepared = true;
@@ -175,7 +175,7 @@ pub fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []co
         if (updated) hub.stats.updates += 1;
         glog.note(key, if (updated) .updated else .instantiated);
         hub.stats.capture_ns += @intCast(std.Io.Clock.awake.now(pass.io).toNanoseconds() - started);
-    } else gfall.record(fail_hash, gcache.clock);
+    } else gfall.record(key.owner, fail_hash, gcache.clock);
     // a failed local instantiation votes eager: the peer's ready graph stays, and both run this round eagerly
     const installed = try c.graphAgree(signature ^ 0x696e7374616c6c, if (install_failed) .{ .state = .eager } else graphVote(entry, c.graphTimeoutMs()));
     switch (installed.choice) {

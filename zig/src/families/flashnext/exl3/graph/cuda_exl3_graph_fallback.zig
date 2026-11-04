@@ -12,13 +12,13 @@ pub fn admissionDenied(err: anyerror) bool {
     };
 }
 
-/// Failures a key tolerates; the one after the last stays eager for the process.
+/// Failures a key tolerates; the one after the last stays eager while its failure entry is retained.
 pub const max_failures: u8 = 3;
-/// Rounds the first failure waits before the key is captured again; each further failure doubles the wait.
+/// Backoff base: failure n waits this times 2^n graph-cache ticks.
 pub const first_backoff: u64 = 32;
 const slots = 64;
 
-pub const Failure = struct { hash: u64, failures: u8, retry_at: u64 };
+pub const Failure = struct { owner: u64, hash: u64, failures: u8, retry_at: u64 };
 var table: [slots]?Failure = @splat(null);
 var next_slot: usize = 0;
 
@@ -29,30 +29,36 @@ pub fn hashOf(salt: u64, key: anytype) u64 {
 }
 
 /// True while `hash` waits out a backoff (`now`: the graph cache's clock) or has used its retries.
-pub fn blocked(hash: u64, now: u64) bool {
-    for (table) |slot| if (slot) |f| if (f.hash == hash) return f.failures > max_failures or now < f.retry_at;
+pub fn blocked(owner: u64, hash: u64, now: u64) bool {
+    for (&table) |*slot| if (slot.*) |*f| if (f.owner == owner and f.hash == hash) return f.failures > max_failures or now < f.retry_at;
     return false;
 }
 
 /// A capture or instantiation of `hash` failed: its next attempt waits `first_backoff << failures` rounds.
-pub fn record(hash: u64, now: u64) void {
+pub fn record(owner: u64, hash: u64, now: u64) void {
     hub.stats.capture_failures += 1;
-    for (&table) |*slot| if (slot.*) |*f| if (f.hash == hash) {
+    for (&table) |*slot| if (slot.*) |*f| if (f.owner == owner and f.hash == hash) {
         f.failures +|= 1;
         f.retry_at = now +| (first_backoff << @intCast(@min(f.failures, 8)));
         return;
     };
     for (&table) |*slot| if (slot.* == null) {
-        slot.* = .{ .hash = hash, .failures = 1, .retry_at = now +| (first_backoff << 1) };
+        slot.* = .{ .owner = owner, .hash = hash, .failures = 1, .retry_at = now +| (first_backoff << 1) };
         return;
     };
-    table[next_slot % slots] = .{ .hash = hash, .failures = 1, .retry_at = now +| (first_backoff << 1) };
+    table[next_slot % slots] = .{ .owner = owner, .hash = hash, .failures = 1, .retry_at = now +| (first_backoff << 1) };
     next_slot += 1;
 }
 
-pub fn failures(hash: u64) u8 {
-    for (table) |slot| if (slot) |f| if (f.hash == hash) return f.failures;
+pub fn failures(owner: u64, hash: u64) u8 {
+    for (&table) |*slot| if (slot.*) |*f| if (f.owner == owner and f.hash == hash) return f.failures;
     return 0;
+}
+
+pub fn clearFor(owner: u64) void {
+    for (&table) |*slot| if (slot.*) |*f| if (f.owner == owner) {
+        slot.* = null;
+    };
 }
 
 /// A test's reset of every key's failures.
@@ -112,30 +118,44 @@ test "exl3: a failed key backs off, retries a bounded number of times and then s
     clear();
     defer clear();
     const h: u64 = 0x1234;
-    try std.testing.expect(!blocked(h, 0));
+    try std.testing.expect(!blocked(1, h, 0));
     var now: u64 = 100;
     var tries: u32 = 0;
     // a key that always fails: every attempt waits longer, and the attempts stop
     while (tries < 20) : (tries += 1) {
-        while (blocked(h, now) and now < 100_000) now += 1;
-        if (blocked(h, now)) break;
-        record(h, now);
+        while (blocked(1, h, now) and now < 100_000) now += 1;
+        if (blocked(1, h, now)) break;
+        record(1, h, now);
     }
-    try std.testing.expectEqual(@as(u8, max_failures + 1), failures(h));
-    try std.testing.expect(blocked(h, now + 1_000_000));
+    try std.testing.expectEqual(@as(u8, max_failures + 1), failures(1, h));
+    try std.testing.expect(blocked(1, h, now + 1_000_000));
     // other keys are untouched
-    try std.testing.expect(!blocked(h +% 1, now));
+    try std.testing.expect(!blocked(1, h +% 1, now));
     clear();
-    try std.testing.expect(!blocked(h, now));
+    try std.testing.expect(!blocked(1, h, now));
 }
 
 test "exl3: retry waits double with each failure" {
     clear();
     defer clear();
-    record(7, 0);
-    try std.testing.expect(blocked(7, first_backoff * 2 - 1));
-    try std.testing.expect(!blocked(7, first_backoff * 2));
-    record(7, first_backoff * 2);
-    try std.testing.expect(blocked(7, first_backoff * 2 + first_backoff * 4 - 1));
-    try std.testing.expect(!blocked(7, first_backoff * 2 + first_backoff * 4));
+    record(1, 7, 0);
+    try std.testing.expect(blocked(1, 7, first_backoff * 2 - 1));
+    try std.testing.expect(!blocked(1, 7, first_backoff * 2));
+    record(1, 7, first_backoff * 2);
+    try std.testing.expect(blocked(1, 7, first_backoff * 2 + first_backoff * 4 - 1));
+    try std.testing.expect(!blocked(1, 7, first_backoff * 2 + first_backoff * 4));
+}
+
+test "exl3: equal failure hashes in different owners cannot share retry state" {
+    clear();
+    defer clear();
+    const before = hub.stats.capture_failures;
+    defer hub.stats.capture_failures = before;
+    record(11, 7, 0);
+    try std.testing.expect(!blocked(22, 7, 0));
+    try std.testing.expectEqual(@as(u8, 0), failures(22, 7));
+    record(22, 7, 0);
+    clearFor(11);
+    try std.testing.expectEqual(@as(u8, 0), failures(11, 7));
+    try std.testing.expect(blocked(22, 7, 0));
 }

@@ -57,8 +57,8 @@ const Ranks = struct {
 
 // -- one decoder layer, stepped -------------------------------------------------------------------------------------
 
-/// What one call of a layer leaves: the output streams (bf16), and the MoE's picks, weights and per-slot y.
-const Out = struct { h: []u16, picks: []i32, wts: []f32, y: []f32 };
+/// A layer's output streams, routing and canonical fp32 branch (slot scratch is rank-local).
+const Out = struct { h: []u16, picks: []i32, wts: []f32, branch: []f32 };
 
 fn grab(comptime E: type, a: std.mem.Allocator, gpu: Gpu, p: *T.Pass, ptr: u64, n: usize) ![]E {
     const got = try T.download(E, gpu, p.stream, ptr, n);
@@ -84,7 +84,7 @@ fn step(gpu: Gpu, a: std.mem.Allocator, p: *T.Pass, lw: *const pl.Layer, l: usiz
     var o: Out = undefined;
     o.picks = try grab(i32, a, gpu, p, s.picks, n * slots);
     o.wts = try grab(f32, a, gpu, p, s.wts, n * slots);
-    o.y = try grab(f32, a, gpu, p, s.y, n * slots * dims);
+    o.branch = try grab(f32, a, gpu, p, s.moe_f32, n * dims);
     p.pending = l;
     try p.writeback(0, n);
     o.h = try grab(u16, a, gpu, p, s.h, n * wide);
@@ -121,7 +121,7 @@ fn hashOf(o: Out) u64 {
     h.update(std.mem.sliceAsBytes(o.h));
     h.update(std.mem.sliceAsBytes(o.picks));
     h.update(std.mem.sliceAsBytes(o.wts));
-    h.update(std.mem.sliceAsBytes(o.y));
+    h.update(std.mem.sliceAsBytes(o.branch));
     return h.final();
 }
 
@@ -171,38 +171,33 @@ fn layerMode(gpu: Gpu, rk: *Ranks, dir: []const u8, which: []const usize) !void 
         if (rank == 1) {
             check.pass("rank 1 layer {d}: tp=2 mirrored the 5 calls in {d:.0} ms", .{ l, tp_ms });
         } else {
-            try check.expect(same_ranks, "layer {d}: the ranks' outputs or sums differ in bits", .{l});
+            try check.expect(same_ranks, "layer {d}: the ranks' outputs or routing differ in bits", .{l});
             var picks_equal = true;
             var wts_equal = true;
-            var y_equal: usize = 0;
-            var y_total: usize = 0;
+            var branch_equal = true;
             var h_equal: usize = 0;
             var h_total: usize = 0;
             for (ref, got) |want, have| {
                 picks_equal = picks_equal and std.mem.eql(i32, want.picks, have.picks);
                 wts_equal = wts_equal and std.mem.eql(u8, std.mem.sliceAsBytes(want.wts), std.mem.sliceAsBytes(have.wts));
-                // every slot's fp32 row, bit for bit (the canonical tree adds in one order on one rank and on two)
-                for (want.y, have.y) |u, v| {
-                    y_equal += @intFromBool(@as(u32, @bitCast(u)) == @as(u32, @bitCast(v)));
-                    y_total += 1;
-                }
+                branch_equal = branch_equal and std.mem.eql(u8, std.mem.sliceAsBytes(want.branch), std.mem.sliceAsBytes(have.branch));
                 for (want.h, have.h) |u, v| {
                     h_equal += @intFromBool(u == v);
                     h_total += 1;
                 }
             }
-            std.debug.print("  tp=2 ({d:.0} ms for the 5 calls): picks {s}, weights {s}; per-slot fp32 MoE rows equal tp=1's on {d}/{d} values; layer output bf16 equal {d}/{d}\n", .{ tp_ms, if (picks_equal) "equal" else "DIFFER", if (wts_equal) "equal" else "DIFFER", y_equal, y_total, h_equal, h_total });
+            std.debug.print("  tp=2 ({d:.0} ms for the 5 calls): picks {s}, weights {s}, canonical fp32 branch {s}; layer output bf16 equal {d}/{d}\n", .{ tp_ms, if (picks_equal) "equal" else "DIFFER", if (wts_equal) "equal" else "DIFFER", if (branch_equal) "equal" else "DIFFER", h_equal, h_total });
             var ok = true;
             check.expect(picks_equal and wts_equal, "layer {d}: tp=2 router picks or weights differ from tp=1", .{l}) catch {
                 ok = false;
             };
-            check.expect(y_equal == y_total, "layer {d}: tp=2's per-slot MoE rows are not tp=1's bits ({d}/{d})", .{ l, y_equal, y_total }) catch {
+            check.expect(branch_equal, "layer {d}: tp=2's canonical fp32 branch differs from tp=1", .{l}) catch {
                 ok = false;
             };
             check.expect(h_equal == h_total, "layer {d}: tp=2's layer output is not tp=1's bits ({d}/{d})", .{ l, h_equal, h_total }) catch {
                 ok = false;
             };
-            if (ok) check.pass("layer {d} tp=2 vs tp=1: picks, weights, every per-slot MoE row and the layer output bit-identical ({d}/{d} values, {d}/{d} outputs); ranks bit-identical", .{ l, y_equal, y_total, h_equal, h_total }) else failed += 1;
+            if (ok) check.pass("layer {d} tp=2 vs tp=1: picks, weights, canonical branch and layer output bit-identical ({d}/{d} outputs); ranks bit-identical", .{ l, h_equal, h_total }) else failed += 1;
         }
         // tp=2 against float64 (T.layerCheck on rank 0; rank 1 mirrors its device calls)
         _ = try rk.swap(1);
