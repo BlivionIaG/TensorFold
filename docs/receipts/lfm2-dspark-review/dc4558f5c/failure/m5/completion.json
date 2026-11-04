@@ -1,0 +1,12 @@
+{
+  "source_revision": "dc4558f5ce640bfcd161f8db8efa33d71be6369c",
+  "source_archive_sha256": "47f0bd5f6bceca887b3be997fa33c26ba8e80d1e07b40e4cc3ee54c92ebb1697",
+  "completed_unix_ns": 1793811124309512000,
+  "exit_code": 1,
+  "complete": false,
+  "qualification_pass": false,
+  "original_gate_returncode": null,
+  "original_summary_exit_code": null,
+  "result_manifest_sha256": "b9d41bb48096fa16897d03efc8beed7c62135de34ee97e7a23424440e9b9d770",
+  "status": "failed_or_interrupted"
+}

@@ -1,0 +1,97 @@
+{
+  "source_revision": "dc4558f5ce640bfcd161f8db8efa33d71be6369c",
+  "matrix_and_aa_started": false,
+  "original_failures_retained": true,
+  "files": [
+    {
+      "path": "m5/completion.json",
+      "original_sha256": "524aae6726311209563e8310804fd703cbaa4ae6f5a4ac2f86291e04b212ed18",
+      "published_sha256": "524aae6726311209563e8310804fd703cbaa4ae6f5a4ac2f86291e04b212ed18",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5/result-manifest.json",
+      "original_sha256": "b9d41bb48096fa16897d03efc8beed7c62135de34ee97e7a23424440e9b9d770",
+      "published_sha256": "b9d41bb48096fa16897d03efc8beed7c62135de34ee97e7a23424440e9b9d770",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5/packet-manifest.json",
+      "original_sha256": "2da79f6033b4ecc64b23712d7227d63e3817d0b0b33a7ebb0dbf63c8ff6aac6e",
+      "published_sha256": "196881d176c6d69c165b2b61a51bd65d088e23625ae62bd1162096c4cd7b0a16",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5/pipeline-observed.json",
+      "original_sha256": "5249c189b4817a7bdf91c8990afe3dffc3d6f1d8081a74ef288564c429f8c609",
+      "published_sha256": "feb9a2f95fb414922d8869e8fedd25ee56373b0e22d80da84628736ad0d70fb2",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5/original-guards.controller.log",
+      "original_sha256": "03f9f9a6150cf14b0e421d085c2a0ae1b727200ea85f9d0fd86d30aeb38640e9",
+      "published_sha256": "12f18ce6b953866e95571153e66d401f9c1625b524a0b21daa2c5a31cc91d9b0",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5/build.log",
+      "original_sha256": "25cd5a9e953066d1a2c3a211527614b107c110e8933205f822d7e05e8031d475",
+      "published_sha256": "25cd5a9e953066d1a2c3a211527614b107c110e8933205f822d7e05e8031d475",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5/binding.json",
+      "original_sha256": "1ae56c89a529b2422df7e3f2535d674a6cc11a63ddf51c85566cc1bf3c440220",
+      "published_sha256": "a8007375084fe7aebb5c82a3817ad77927b6b205eb63eb47c7a517954bf4b13c",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5/run-guards.py",
+      "original_sha256": "70acdacacab8c7bff7c424701fa2a0c5451265f65a9768dae7a6ad7522ef977a",
+      "published_sha256": "70acdacacab8c7bff7c424701fa2a0c5451265f65a9768dae7a6ad7522ef977a",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m4/pipeline-observed.json",
+      "original_sha256": "b506c5e96a39d214996f1f5c5a6dd2c1ec1ebd16bfc14578dc224eb1f1476647",
+      "published_sha256": "432a07f045c4032271101b68f89acf35a740015f572a63fb4539ce43b9290a0a",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m4/original-guards.controller.log",
+      "original_sha256": "9fe49b4261bd6fe86654d6624fdc1c1a269fb56140582dfbea19ba22f61a125a",
+      "published_sha256": "911e190db4da41d3ee500ec9c6808455effeb19b6c319720ec95089186b9f9d6",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m4/build.log",
+      "original_sha256": "084ac0379f7355736ea68bac62e382fb908f7d3587ee5da75c79d8b9b3191386",
+      "published_sha256": "084ac0379f7355736ea68bac62e382fb908f7d3587ee5da75c79d8b9b3191386",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m4/binding.json",
+      "original_sha256": "25f4bb17311a46055182c21aebce9ac57777b52f808848eb1ba597a575c89c4f",
+      "published_sha256": "1f7e44c5930646ff0a4323ea832a387a46461fe6015d187f452154fe80c1e118",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m4/guard-adaptation.json",
+      "original_sha256": "d90f8b312cb8219c1a6f35a167427d8bf77327fc734b6809ec2a18760ee04b1a",
+      "published_sha256": "d90f8b312cb8219c1a6f35a167427d8bf77327fc734b6809ec2a18760ee04b1a",
+      "path_redactions_only": true
+    },
+    {
+      "path": "observer/repair.json",
+      "original_sha256": "f2b043022a14db02f66f6e3549d97dbffa4051b0c4a5bc6e33f877d1d7568a64",
+      "published_sha256": "f2b043022a14db02f66f6e3549d97dbffa4051b0c4a5bc6e33f877d1d7568a64",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5/local-collection.json",
+      "original_sha256": "fac1f7bf9e137e5d67211a49e676d9d0b3a4f01a7cde12f64e5a6085d2913be9",
+      "published_sha256": "f1e58373614c462a8366aff9d68c899b6d80cf91f0e248cf63471dbca15bafaa",
+      "path_redactions_only": true
+    }
+  ]
+}

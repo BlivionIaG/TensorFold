@@ -4,6 +4,28 @@ Source: [`dc4558f5ce640bfcd161f8db8efa33d71be6369c`](https://github.com/BlivionI
 
 This protocol is published **before any M5 model execution on this revision**. It responds only to [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133). It is not a completed qualification or a performance-pass claim.
 
+## Outcome: original prerequisite failed; no matrix or A/A started
+
+Both devices stopped in the unchanged 82-step build/test guard. The same shared native host test,
+`draft sources: Metal Qwen27 copies and DFlash2 use actual slot and head facts`, terminated with SEGV.
+
+| Chip | Build steps succeeded | Tests passed | Skipped | Crash reports | Guard exit |
+|---|---:|---:|---:|---:|---:|
+| M4 Pro | 78/82 | 779 | 8 | 2 | 1 |
+| M5 Ultra | 78/82 | 783 | 4 | 2 | 1 |
+
+Both duplicate crash reports are the same test included by two build targets. The original guard exit is 1.
+Standalone contract/FP32 tools, functional scopes, matrix, A/A and long scopes did not start.
+
+The source-level cause is a stale fixture: current main's `qwen27_lanes.Metal.facts()` reads
+`runner.model.config.moe()`, but the host fixtures left `runner.model` undefined. The successor
+[`ca54e6889`](../ca54e6889/README.md) initializes the dense model fact in four fixtures without changing
+production Qwen/LFM2 code, assertions, test selection, numerical bounds or workload sizes. This packet
+remains failed; it is not relabelled as the successor.
+
+[`failure/`](failure/) retains both original failures, source bindings and a path-redaction hash ledger.
+The failed passive observer and its isolated repair are recorded separately; no measured phase was rerun.
+
 ## Code already pushed
 
 - Pre-M5 and unrecognized Metal device names stand aside before LFM2 neural allocation/calibration. Ordinary target forwarding and cheap copies remain; M5+ remains subject to normal funded admission. CLI path validation still applies.

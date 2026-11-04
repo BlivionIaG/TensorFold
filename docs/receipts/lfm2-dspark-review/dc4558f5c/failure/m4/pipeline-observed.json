@@ -1,0 +1,35 @@
+{
+  "source_revision": "dc4558f5ce640bfcd161f8db8efa33d71be6369c",
+  "source_archive_sha256": "47f0bd5f6bceca887b3be997fa33c26ba8e80d1e07b40e4cc3ee54c92ebb1697",
+  "scope": "M4_PRE_M5_STAND_ASIDE_ORIGINAL_NUMERICAL_AND_FUNCTIONAL_SCOPES",
+  "not_performance_qualification": true,
+  "no_new_long_context_invocation": true,
+  "complete": false,
+  "records": [
+    {
+      "label": "original-guards",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "$TMP/tf-pr-review-r38/m4-final/guards/run-guards.py"
+      ],
+      "status": "exited",
+      "started_unix_ns": 1793811251267124000,
+      "pid": 88863,
+      "returncode": 1,
+      "elapsed_s": 172.401640124619,
+      "log_sha256": "9fe49b4261bd6fe86654d6624fdc1c1a269fb56140582dfbea19ba22f61a125a",
+      "completed_unix_ns": 1793811423669938000
+    }
+  ],
+  "route_observations": [],
+  "started_unix_ns": 1793811250909124000,
+  "source_verified_before": true,
+  "python_executable": "/opt/homebrew/opt/python@3.14/bin/python3.14",
+  "python_version": "3.14.7 (main, Aug  5 2026, 10:29:49) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "python_sha256": "87d4df53fd91304be5bac391fb204643c36b7df2023c04a0953bcbc7d4fdf634",
+  "zig_sha256": "1c5f706db0ed6d55451940f31dc05a6177d05696bc1fa5d853696d04c718b523",
+  "error_type": "RuntimeError",
+  "error": "original-guards failed; original failure retained, no retry",
+  "completed_unix_ns": 1793811423670230000,
+  "exit_code": 1
+}

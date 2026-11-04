@@ -1,0 +1,8 @@
+{
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "base_revision": "00ff0f3b2c7ee67546e7a406f074e6d1d5c02593",
+  "delta_stdout": "lean: 425 problems, 425 on the base, 0 new\n",
+  "returncode": 0,
+  "base_full_log_sha256": "43e89f11d1e666ead754098921c2670c0977c1a896b9d8e23b74aaedd48270a0",
+  "head_full_log_sha256": "236820ab8ea122b62868e560365814de04b78acc13e5a7f7c639c0a7c3623302"
+}

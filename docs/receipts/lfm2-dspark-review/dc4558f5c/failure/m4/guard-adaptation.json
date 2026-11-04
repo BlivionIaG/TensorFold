@@ -1,0 +1,11 @@
+{
+  "source_revision": "dc4558f5ce640bfcd161f8db8efa33d71be6369c",
+  "original_guard_sha256": "70acdacacab8c7bff7c424701fa2a0c5451265f65a9768dae7a6ad7522ef977a",
+  "adapted_guard_sha256": "599748370b4b275130745f581d1a9b56361006cf0c4a45032f42823600870292",
+  "changes": [
+    "Two hardcoded M5 lock inode literals changed to existing M4 inode 68270044",
+    "Result scope label changed M5 to M4; binding remote_zig points at original local compiler"
+  ],
+  "numeric_cases_bounds_fixtures_and_deadlines_changed": false,
+  "functional_wrapper_byte_identical": true
+}

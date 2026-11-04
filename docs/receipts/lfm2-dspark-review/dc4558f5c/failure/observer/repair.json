@@ -1,0 +1,17 @@
+{
+  "source_revision": "dc4558f5ce640bfcd161f8db8efa33d71be6369c",
+  "scope": "PASSIVE_OBSERVER_ONLY_NO_MODEL_INVOCATIONS",
+  "failed_original_jobs": [
+    "bg_787",
+    "bg_788",
+    "bg_789",
+    "bg_790"
+  ],
+  "error": "TypeError: 'select.kqueue' object does not support the context manager protocol",
+  "original_observer_sha256": "666f5dbb71e0c9880d771ec939869c4c7a3705b3f7b12c87db42649c4dfbf379",
+  "replacement_observer_sha256": "dd164c25b9b1e808273b817b54dc2acda89951878b3b310bfc21698c925f74c3",
+  "repair": "contextlib.closing(select.kqueue()); two-line working-copy fix, deployed outside frozen packet",
+  "frozen_packet_modified": false,
+  "measurement_retries": 0,
+  "actual_local_directory_event_smoke": true
+}

@@ -1,0 +1,60 @@
+{
+  "schema": "lfm2-dspark-r38-pipeline/1",
+  "controller_pid": 39667,
+  "source_revision": "dc4558f5ce640bfcd161f8db8efa33d71be6369c",
+  "source_archive_sha256": "47f0bd5f6bceca887b3be997fa33c26ba8e80d1e07b40e4cc3ee54c92ebb1697",
+  "manifest_sha256": "2da79f6033b4ecc64b23712d7227d63e3817d0b0b33a7ebb0dbf63c8ff6aac6e",
+  "started_unix_ns": 1793810849929120000,
+  "complete": false,
+  "qualification_pass": false,
+  "status": "failed_or_interrupted",
+  "records": [
+    {
+      "label": "original-guards",
+      "command": [
+        "$PYTHON",
+        "$M5_PACKET/m5-guards/run-guards.py"
+      ],
+      "source_revision": "dc4558f5ce640bfcd161f8db8efa33d71be6369c",
+      "source_archive_sha256": "47f0bd5f6bceca887b3be997fa33c26ba8e80d1e07b40e4cc3ee54c92ebb1697",
+      "started_unix_ns": 1793810851409613000,
+      "status": "exited",
+      "pid": 39687,
+      "returncode": 1,
+      "log_sha256": "03f9f9a6150cf14b0e421d085c2a0ae1b727200ea85f9d0fd86d30aeb38640e9",
+      "completed_unix_ns": 1793811124307397000,
+      "elapsed_s": 272.8966350420378
+    }
+  ],
+  "lock_observations": [
+    {
+      "before": "original-guards",
+      "inode": 3719605,
+      "wait_seconds": 0.029746875166893005,
+      "unix_ns": 1793810851445497000
+    }
+  ],
+  "python": {
+    "executable": "$PYTHON",
+    "version": "3.13.15 (main, Sep  1 2026, 14:05:45) [Clang 22.1.3 ]",
+    "sha256": "2fb4683f9ab944ee39c46ff4184c985cd00b3431610440cf60b9fb8e2d1c8528"
+  },
+  "source_verified_before": true,
+  "source_tree": "5c32ffa17a3cb17a56e99895e04a5a21accc375f",
+  "source_tree_ids": {
+    "zig": "8cde2a459552256e62ec780ef7fb7c459119b7ac",
+    "build.zig": "241e316fbebe9c77220066b47eb43e74e80bffda",
+    "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+  },
+  "removed_environment": [
+    "TENSORFOLD_BENCHMARK_TOKEN"
+  ],
+  "active_phase": null,
+  "error": {
+    "type": "RuntimeError",
+    "message": "Original guard/build/reference phase failed; no binary qualification and no rerun",
+    "traceback": "Traceback (most recent call last):\n  File \"$M5_PACKET/remote_controller.py\", line 132, in main\n    require(run('original-guards', [sys.executable, str(p / 'm5-guards/run-guards.py')]) == 0,\n    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n            'Original guard/build/reference phase failed; no binary qualification and no rerun')\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"$M5_PACKET/qual_common.py\", line 38, in require\n    raise RuntimeError(message)\nRuntimeError: Original guard/build/reference phase failed; no binary qualification and no rerun\n"
+  },
+  "exit_code": 1,
+  "completed_unix_ns": 1793811124309512000
+}
