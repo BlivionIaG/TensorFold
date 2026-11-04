@@ -72,6 +72,28 @@ pub const Rig = struct {
     }
 };
 
+fn rejectsShape(host_len: usize, frames: usize, bytes: u64) !void {
+    var host: [8]u8 = undefined;
+    var tier: Tier = undefined;
+    try std.testing.expectError(error.BadTierShape, tier.init(std.testing.failing_allocator, host[0..host_len], frames, bytes));
+}
+
+test "host tier rejects zero page bytes before allocation" {
+    try rejectsShape(8, 1, 0);
+}
+
+test "host tier rejects an incomplete host page before allocation" {
+    try rejectsShape(7, 1, 8);
+}
+
+test "host tier rejects zero frames before allocation" {
+    try rejectsShape(8, 0, 8);
+}
+
+test "host tier rejects zero host pages before allocation" {
+    try rejectsShape(0, 1, 8);
+}
+
 test "two currencies: a promise that fits one and not the other takes nothing, and finishing returns both" {
     var r: Rig = undefined;
     try r.open(8, 3);
