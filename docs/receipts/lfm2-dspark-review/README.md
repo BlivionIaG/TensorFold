@@ -4,8 +4,12 @@
 superseded, with their history retained. The [complete two-device `750bca95c` snapshot](https://github.com/BlivionIaG/TensorFold/blob/0cece53cc7be9fa67c9c792945ae3b2f17fbc6bf/docs/receipts/lfm2-dspark-review/750bca95c/README.md)
 contains every original performance cell and its failing zero-tolerance verdict; it is not a result for later fixes.
 [Request-enrollment diagnosis](diagnosis.md#request-enrollment-and-copy-backoff-findings) and its
-[source-bound data](enrollment-diagnosis.json) cover the subsequent causal work and correctness checks.
+[source-bound data](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/enrollment-diagnosis.json) cover the subsequent causal work and correctness checks.
 The component receipts below remain historical, each with its original source and device scope.
+Raw receipt JSON lives on the [evidence branch](https://github.com/BlivionIaG/TensorFold/tree/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts).
+The [relocation ledger](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/receipt-relocation.json)
+binds all 14 removed files (96,536 lines) to their original hashes; local paths in three records are anonymized.
+No source labels, numerical results or failed verdicts were changed.
 
 
 ## Shared-reservation performance candidate `62bd342d3`
@@ -29,7 +33,7 @@ Current correctness proof is on **Apple M4 Pro, 48 GiB**, not a new M5 measureme
   29 pending rows, then matches all 2144 context rows' KV bytes and three later drafts against independently
   retained history. Twenty steady rounds still make zero host allocations/resizes.
 
-[Exact source/binary/model provenance and raw correctness output](context-proof-62bd342d3.json).
+[Exact source/binary/model provenance and raw correctness output](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/context-proof-62bd342d3.json).
 Reproduce with `tf-kernel-contract --only 'norm tap'` and `tf-lfm2-dspark MODEL DRAFTER 64 3 BITS`
 (`BITS=0` and `8`), after building those targets with Zig 0.17.0 and `-Dcpu=apple_m1 -Dversion=1.2.0`.
 
@@ -99,7 +103,7 @@ python3 tools/bench_concurrent.py http://127.0.0.1:18194 review \
 Each precision mode passed all 12 cells: eight same-prompt cells (code and chat)
 and four distinct-prompt cells. Concurrent replies equal solo replies and drafted
 solo replies equal `"draft": false` token hashes. Zero unequal replies and zero
-failed requests. [Equality evidence](equality-and-load.json) retains per-request
+failed requests. [Equality evidence](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/equality-and-load.json) retains per-request
 concurrent, solo and plain token hashes.
 
 These are short correctness checks, with one repetition, while builds were also
@@ -123,7 +127,7 @@ main; it is not an isolated comparison of #1393's commit on the same base.
 
 Source `2dbbc0e8f`, main baseline `d0c9dc9fb`. Additional device: Apple M5 Ultra,
 256 GiB RAM, macOS 27.0, Metal compiler 32023.921.6, Zig 0.17.0.
-[Extended evidence](extended-qualification.json) retains request hashes, counters,
+[Extended evidence](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/extended-qualification.json) retains request hashes, counters,
 per-round throughput and latency. Generated text and token arrays are omitted.
 [Reproduction harness](qualification.py) supports `functional`, `long`,
 `performance`, `performance qwen`, and `cold`; set `TF_QUAL_MAIN`,
@@ -186,7 +190,7 @@ measured prices. The hold-price unit test covers a nonlinear timing curve.
 Qwen/DFlash2 dispatch and scheduling are unchanged; only LFM2 supplies this hold
 price table.
 
-`performance-investigation.json` retains all 64 M4 comparison cells, their output
+[Performance-investigation evidence](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/performance-investigation.json) retains all 64 M4 comparison cells, their output
 hashes, source hashes and actual arm order. Four-round median changes against
 the published PR are +1.06%, +0.55%, effectively flat and +0.57% for code at
 1/4/8/16 streams; prose changes are +0.27%, +0.75%, +0.41% and +0.42%.
@@ -223,7 +227,7 @@ contexts of 65,536 and 130,816 tokens (drafted/undrafted and four concurrent/sol
 all pass. Cancellation stress completes 423 requests with 234 cancellations at
 six slots and 827 with 445 cancellations at sixteen slots, zero wrong replies
 or request errors. All servers shut down gracefully. Hashes and counters are in
-`performance-investigation.json`. This extends, rather than replaces, the
+[the performance-investigation record](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/performance-investigation.json). This extends, rather than replaces, the
 historical full forward/cache and qualification receipts above.
 
 After that qualification, main `dd0a9cc5e` was merged to resolve a new CLI
@@ -245,7 +249,7 @@ also reuses its first copy-proposer decision: asking again can mutate the
 proposer's silence state and change that same decision. A stateful regression
 reproduces the duplicate-query bug. Qwen/DFlash2's policy is unchanged.
 
-`wide-calibration-candidate.json` retains the exact source and executable hashes,
+[Wide-calibration candidate evidence](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/wide-calibration-candidate.json) retains the exact source and executable hashes,
 checkpoint/tokenizer identities, rendered prompt IDs, all 128 cells, request
 SSE timing spans, output hashes and counters. Four Latin rotations compare main
 `dd0a9cc5e`, published head `68c7435b0`, candidate without the drafter, and
@@ -284,7 +288,7 @@ load peaks are 15,709,645,744 bytes for published and 15,733,451,768 for candida
 (+22.7 MiB, one run each). Hot startup increases by roughly one second. Other
 chips/backends and the full cross-family operator gate were not rerun.
 
-`wide-calibration-ablations.json` retains 765 M5 diagnostic cells and 35 interrupted,
+[Wide-calibration ablation evidence](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/wide-calibration-ablations.json) retains 765 M5 diagnostic cells and 35 interrupted,
 contended M4 cells. Interrupted runs are marked; they are not qualification
 passes. Larger staging, changed copy-rate policies, confidence fallbacks and
 uniform late-hold budgeting were discarded rather than included in this patch.

@@ -179,7 +179,7 @@ the normal serving residency and loaded head buffers in place, but before prepar
 Temporary calibration caches follow that residency; its existing idle-flush callback commits pending
 head and cache buffers before timing. Cache teardown removes those buffers before their owner leaves.
 The original deterministic history, warmup, per-width timing trials and target arithmetic are unchanged.
-The [source-bound original-contract proof](../receipts/lfm2-dspark-review/serving-calibration.json)
+The [source-bound original-contract proof](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/serving-calibration.json)
 records actual cache, sampled and cancellation workflows on both devices; it is not a performance pass.
 
 Before prefill, the lane host snapshots admitted and already queued requests under its existing mutex,
@@ -188,7 +188,7 @@ that cohort and the drafter's registered streams. This matters for LFM2: whole-p
 inside admission, before queued peers reach the drafter's stream map. Direct engine callers without
 a host hint retain their registered-stream estimate. No request is delayed to await future arrivals,
 and declining neural context does not disable copies or user-provided drafts.
-The [scheduled-cohort receipt](../receipts/lfm2-dspark-review/scheduled-cohort.json) records actual
+The [scheduled-cohort receipt](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/lfm2-dspark-review/scheduled-cohort.json) records actual
 queued serving and its limits: correctly declining a known cohort is not a complete performance pass.
 
 The no-confidence depth fallback stages newly committed context before choosing a lone head depth.
@@ -213,7 +213,7 @@ host work in residual overhead rather than publishing a reusable quote. Unknown 
 existing exploration path; confidence-only controls and complete measured lone-round prices do not add
 this surcharge. These accounting changes still require the complete throughput qualification above.
 
-[Controller regression and native API receipts](../receipts/dspark-chain-restack/hold-value-controller.json)
+[Controller regression and native API receipts](https://github.com/BlivionIaG/TensorFold/blob/1b968d6039af141acc4876fc9c81a5fdd48dde69/docs/receipts/dspark-chain-restack/hold-value-controller.json)
 record the constructed timing cases and source hashes; they are not device-throughput qualification.
 
 `tf-lfm2-dspark` also prints the confidence
