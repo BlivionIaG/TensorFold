@@ -144,10 +144,11 @@ fn allocate(gpa: std.mem.Allocator, driver: *const cuda.Driver, n: usize, at: us
 pub fn restore(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, snap: *const Snap) !void {
     if (snap.at > seq.cap) return error.SequenceTooShort;
     if (d) |h| if (!snap.head or snap.at > h.cap) return error.NoHeadState;
+    if (seq.sel) |t| try t.checkRestore();
     // a state with the head's rows serves a stream without drafts too: those rows stay in the buffer
     try move(stream, seq, d, snap.buf.ptr, snap.at, .restore);
     try stream.synchronize();
-    if (seq.sel) |t| t.restored();
+    if (seq.sel) |t| try t.restored();
     seq.history = snap.history;
     seq.fed = snap.at;
     if (d) |h| {

@@ -218,16 +218,30 @@ pub const LaneSel = struct {
         for (0..last) |q| if (q < head_pages or q >= s.flushed) try s.ensure(stream, q);
     }
 
+    /// A snapshot may replace canonical rows only when this lane can release every resident frame.
+    pub fn checkRestore(s: *const LaneSel) error{ NotPinned, Pinned }!void {
+        const t = &s.host.tier;
+        for (s.tl.pages.ids.items, 0..) |id, p| {
+            const owns = p < s.fids.items.len and s.fids.items[p] != none;
+            const ticket = t.resident(id) orelse {
+                if (owns) return error.NotPinned;
+                continue;
+            };
+            if (owns and (s.fids.items[p] != ticket.frame or std.mem.indexOfScalar(u32, s.tl.pins.items, id) == null)) return error.NotPinned;
+            if (t.pinned[ticket.frame] != @intFromBool(owns)) return error.Pinned;
+        }
+    }
+
     /// The snapshot restored the stream's K/V rows into the host store: no page keeps a frame, the window starts over.
-    pub fn restored(s: *LaneSel) void {
+    pub fn restored(s: *LaneSel) !void {
         const t = &s.host.tier;
         for (s.tl.pages.ids.items, 0..) |id, p| {
             if (p < s.fids.items.len and s.fids.items[p] != none) {
                 t.sync(id);
-                t.unpin(s.tl, id) catch {};
+                try t.unpin(s.tl, id);
                 s.fids.items[p] = none;
             }
-            t.invalidate(id) catch {};
+            try t.invalidate(id);
         }
         s.reset_pending = true;
     }

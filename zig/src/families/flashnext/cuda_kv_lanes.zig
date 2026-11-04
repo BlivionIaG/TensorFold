@@ -185,13 +185,14 @@ pub const Pool = struct {
         const page_bytes = try std.math.mul(usize, @intCast(l.token_bytes), l.page_tokens);
         if (page_bytes == 0) return error.BadFlashNextKvPages;
         _ = try std.math.add(u64, l.run_bytes, page_bytes - 1);
+        const mib = try host_tier.hostMiB();
+        if (mib > 0 and e.scratch_format != .exl3) return error.FlashNextKvHostNeedsExl3;
         const p = try gpa.create(Pool);
         errdefer gpa.destroy(p);
         const layers = wt.attn_n + @intFromBool(head != null);
         const kv_page = pages.kvPageBytes(l.page_tokens, layers);
         const ix_page = pages.indexPageBytes(l.page_tokens, layers);
         // a host tier: `logical` pages in host RAM, `frames` of them on the device at once; else every page is a frame
-        const mib = try host_tier.hostMiB();
         if (el != null and mib > 0) return error.BadFlashNextKvElastic; // a tier's frames and logical pages are not mapped by page count
         const slot_frames = if (mib > 0) try kvt.slotFrames() else 0;
         const per_stream = kvt.framesFor(l.runPages(), slot_frames);
@@ -218,6 +219,7 @@ pub const Pool = struct {
         p.planes = mib > 0;
         if (mib > 0) {
             p.host = try host_tier.Host.create(gpa, e.driver, logical, frames, kv_page);
+            errdefer p.host.?.destroy(gpa);
             p.kern = try kvt.Kernels.load(e.driver, slot_frames * 64);
             p.slot_frames = slot_frames;
             std.log.info("flashnext: host tier: {d} logical pages ({d} MiB pinned), {d} frames on the device", .{ logical, logical * kv_page >> 20, frames });

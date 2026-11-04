@@ -6,6 +6,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - The core K/V host tier refuses a zero page size, partial host pages and zero frame or page counts before allocating, instead of dividing by zero or accepting a truncated backing store.
 
+- Flash Next's opt-in host K/V tier releases its pinned store if tier kernels fail to load, refuses non-EXL3 scratch before allocation and refuses a snapshot restore before copying while another lease pins its pages. Restore no longer ignores pin or invalidation errors.
+
 - GLM tool calls stream their arguments as the model writes them, as Qwen-style XML calls already do, and the joined pieces equal the whole reply's arguments (#2050). Thanks to @devopsfortunato.
 
 - Kolibri-1 on CUDA keeps its full layers' caches in pages of the core KV pool, the same way, with identical tokens when the store is off (#1620, part of #1657). Thanks to @jschmied.

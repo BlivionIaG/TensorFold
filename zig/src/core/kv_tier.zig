@@ -73,7 +73,6 @@ pub const Tier = struct {
     fault: Fault = .none,
 
     /// In place (the pool's release hook points here): `host.len / page_bytes` logical pages, `frames` frames.
-    /// BadTierShape refuses empty frames/pages or a partial host page before allocating.
     pub fn init(t: *Tier, gpa: Allocator, host: []u8, frames: usize, page_bytes: u64) !void {
         if (page_bytes == 0 or host.len == 0 or frames == 0 or host.len % page_bytes != 0) return error.BadTierShape;
         const npages: usize = @intCast(host.len / page_bytes);

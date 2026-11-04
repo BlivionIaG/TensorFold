@@ -138,7 +138,7 @@ starts a rank. These switches tune it:
 | `TF_FLASHNEXT_PROFILE` | `0` | Diagnostics only: `1` times the ranks' combine, all-reduce and place of a deep chunk, with a wait each. |
 | `TF_FLASHNEXT_KV_PAGES` | unset | `n`: streams beside the first take their attention caches from one pool of `n`-position pages. |
 | `TF_FLASHNEXT_KV_PAGES_ALL` | unset | Diagnostics only: `1` puts every request on pool pages, including single-stream checks; without it the first stream keeps contiguous caches. |
-| `TF_FLASHNEXT_KV_HOST` | unset | With `TF_FLASHNEXT_KV_PAGES`: MiB of pinned host RAM holding the K/V plane of every page; `0` is no host tier. |
+| `TF_FLASHNEXT_KV_HOST` | unset | With `TF_FLASHNEXT_KV_PAGES`: MiB of pinned host RAM holding the K/V plane of every page; `0` is no host tier. Nonzero requires EXL3 scratch; other formats refuse before allocation with `FlashNextKvHostNeedsExl3`. |
 | `TF_FLASHNEXT_KV_FRAMES` | paged streams times their frame working set | With the host tier: cap the device frames of the K/V plane; fewer than one stream's required working set is refused. |
 | `TF_FLASHNEXT_KV_SLOTS` | 128 | With the host tier: frames lent to a stream, 64 four-row slots a frame for each attention layer. |
 | `TF_FLASHNEXT_EXL3_UNIFORM_LINES` | unset | Any value: with `TF_FLASHNEXT_EXPERT_LINES`, every rank holds exactly that many lines instead of using spare room. |
@@ -153,6 +153,10 @@ Host-tier admission promises logical pages for the request separately from its b
 pages, the current call and drafted window, the state run and the slot frames. It does not require the entire logical context
 to be device-resident. A request waits when its logical pages, frame promise or pool lane cannot fit; released leases restore
 admission. Leave `TF_FLASHNEXT_KV_FRAMES` unset for the backend's computed budget rather than guessing below that minimum.
+
+A failed tier-kernel load releases the pinned store and its tier metadata. Snapshot restore checks every resident page's
+pins before copying canonical rows: another lease's pin refuses the restore with `Pinned`, leaving rows and sequence state
+unchanged. After a successful copy, releasing pins and invalidating old frames must succeed; errors are not ignored.
 
 ## What the core runs and what the family runs
 

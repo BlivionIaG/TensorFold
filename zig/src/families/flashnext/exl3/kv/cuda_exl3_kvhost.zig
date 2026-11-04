@@ -68,7 +68,7 @@ fn exchange(e: anytype, c: anytype, mine: [kv.tier.Lockstep.len]f32) ![2][kv.tie
     var b = try cuda.DeviceBuffer.alloc(e.driver, 256);
     defer b.free();
     var v: [2][n]f32 = .{ @splat(0), @splat(0) };
-    v[e.layers[0].exl3.?.tp.?.rank] = mine;
+    v[c.rank] = mine;
     try st.synchronize();
     try b.upload(0, std.mem.asBytes(&v));
     try c.sum(st, b.ptr, 2 * n);
