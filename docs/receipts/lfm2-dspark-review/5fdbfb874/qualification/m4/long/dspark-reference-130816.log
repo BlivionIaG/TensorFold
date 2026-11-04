@@ -1,0 +1,13 @@
+info: lfm2 dspark: a 1-draft clean hold takes 7.96 CPU-encode + GPU ms, a 9-draft hold 10.06 CPU-encode + GPU ms; 60 context quotes
+info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged
+PASS Markov producer bf16 bits 0x0: waited refused false, held target refused false, held host refused false (expected false)
+PASS Markov producer bf16 bits 0x7f80: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer bf16 bits 0xff80: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer bf16 bits 0x7fc0: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer bf16 bits 0x0: waited refused false, held target refused false, held host refused false (expected false)
+target taps: 1 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 4 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 8 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target taps: 16 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+LFM2 forward: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)
+error: GpuFailed
