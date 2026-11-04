@@ -1,0 +1,147 @@
+{
+  "scope": "HistoricalReceiptRelocation;NotNewQualification",
+  "original_code_head": "14be7eb48c627b934f594f1a4060b5808afd80b5",
+  "previous_evidence_commit": "f615b6d2fc611550952651fec1d24541b06968bf",
+  "files": [
+    {
+      "path": "docs/receipts/lfm2-dspark-review/serving-calibration.json",
+      "bytes": 54011,
+      "lines": 1179,
+      "sha256": "fd99a2cd2a15f026de0e4af669c7be2e4ba73f6acb910e7279c12a2091d20249",
+      "git_blob": "3bdfb53919c4ab8323277e327cd3f4c65a491965",
+      "already_preserved": false,
+      "published_sha256": "7a0b58cb1cbee34602c75a8ddc07c63a80ebb88c977fd0acc7f24efa5efac056",
+      "transform": "Local absolute paths anonymized; source labels, metrics, thresholds, failures and original hashes unchanged"
+    },
+    {
+      "path": "docs/receipts/lfm2-dspark-review/scheduled-cohort.json",
+      "bytes": 103738,
+      "lines": 4167,
+      "sha256": "ab4e439874aff814059337acc6cc432dd3a9133c1e81ee56f5fd7005efd753a9",
+      "git_blob": "208f111276b2bc6e91f0fb4d2fab4a128c7aa217",
+      "already_preserved": false,
+      "published_sha256": "4ab809b3985ce268754431601e9f66c5cfa446279b53f43ae6a75612fcb7f5d2",
+      "transform": "Local absolute paths anonymized; source labels, metrics, thresholds, failures and original hashes unchanged"
+    },
+    {
+      "path": "docs/receipts/lfm2-dspark-review/enrollment-diagnosis.json",
+      "bytes": 34021,
+      "lines": 822,
+      "sha256": "2500bd837171480025211d2ba790768b4147fc69e04d6efdef29194692c82715",
+      "git_blob": "5e8d9b31a77878cb008042638dd1e958fc5db0b3",
+      "already_preserved": false,
+      "published_sha256": "2c47978f28dd86e3de4630e2d65fd451c471c6fd732c3fbc8ea30696969abd52",
+      "transform": "Local absolute paths anonymized; source labels, metrics, thresholds, failures and original hashes unchanged"
+    },
+    {
+      "path": "docs/receipts/lfm2-dspark-review/wide-calibration-candidate.json",
+      "bytes": 483077,
+      "lines": 16059,
+      "sha256": "d8b28b7b310c7b6ad1a793abfc175fa9ba8da376dbec9f7ee3765f5e4877ee2f",
+      "git_blob": "2f75052526599da692ab19d6fe6a76ec867f9a81",
+      "already_preserved": true,
+      "published_sha256": "d8b28b7b310c7b6ad1a793abfc175fa9ba8da376dbec9f7ee3765f5e4877ee2f",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/lfm2-dspark-review/wide-calibration-ablations.json",
+      "bytes": 191935,
+      "lines": 6480,
+      "sha256": "6b683314dbd99366c75ec016c062b07c9f13b8f7dac4df73eab3d6b77bd4fb50",
+      "git_blob": "020ae3fc71a5704e877a2d611acdf98fdb039519",
+      "already_preserved": true,
+      "published_sha256": "6b683314dbd99366c75ec016c062b07c9f13b8f7dac4df73eab3d6b77bd4fb50",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/lfm2-dspark-review/extended-qualification.json",
+      "bytes": 1929303,
+      "lines": 53517,
+      "sha256": "5b9112ab9f657b6e6326531f2d75c8397e13e551c4ee48db815c823efa2bbc7c",
+      "git_blob": "db8d93df99417c7da6aed397679ecf93afcfd6b2",
+      "already_preserved": true,
+      "published_sha256": "5b9112ab9f657b6e6326531f2d75c8397e13e551c4ee48db815c823efa2bbc7c",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/lfm2-dspark-review/performance-investigation.json",
+      "bytes": 54962,
+      "lines": 1517,
+      "sha256": "f5062aa4984dfd18342d9709e961925577bb92a7cce53655ecc618735d838a70",
+      "git_blob": "6bc04e9b0a052b3906acd733a42c0950978dcc8c",
+      "already_preserved": true,
+      "published_sha256": "f5062aa4984dfd18342d9709e961925577bb92a7cce53655ecc618735d838a70",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/lfm2-dspark-review/context-proof-62bd342d3.json",
+      "bytes": 98162,
+      "lines": 72,
+      "sha256": "f20f2409fee934e049dd53ac142ec45b374e0bf12ade33fe1e8afbc1018a98d9",
+      "git_blob": "7cdd45827da0bc2b964787e6d9703b554496dd32",
+      "already_preserved": true,
+      "published_sha256": "f20f2409fee934e049dd53ac142ec45b374e0bf12ade33fe1e8afbc1018a98d9",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/lfm2-dspark-review/equality-and-load.json",
+      "bytes": 175578,
+      "lines": 4517,
+      "sha256": "d97d33af7b2c9d6cbf7d65b058a335725aaa26772f2246d0655e16bb991cfcd0",
+      "git_blob": "f66ec3b0d43b70ff5229c5d5a6500880b713085a",
+      "already_preserved": true,
+      "published_sha256": "d97d33af7b2c9d6cbf7d65b058a335725aaa26772f2246d0655e16bb991cfcd0",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/dspark-chain-restack/hold-value-controller.json",
+      "bytes": 64574,
+      "lines": 249,
+      "sha256": "509251944c23d3e3ff00043cd342513f1a14461d20a8d879821efe1eaf225628",
+      "git_blob": "1dafacbccab1df6acf3a2f2181d2d9d370fc2690",
+      "already_preserved": true,
+      "published_sha256": "509251944c23d3e3ff00043cd342513f1a14461d20a8d879821efe1eaf225628",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/dspark-chain-restack/host-checks.json",
+      "bytes": 1246,
+      "lines": 33,
+      "sha256": "f2f486c5c9dd233fa79cf23fd370ad990ba8e7ead4085572e60f6aa363122da9",
+      "git_blob": "c35c137da36e404368517f69e240d0704badfd58",
+      "already_preserved": true,
+      "published_sha256": "f2f486c5c9dd233fa79cf23fd370ad990ba8e7ead4085572e60f6aa363122da9",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/dspark-chain-restack/m4-load-peaks.json",
+      "bytes": 2486,
+      "lines": 87,
+      "sha256": "f0465d3d5aa04fe49c8b03847874332195d59642d6f530357c40fc81de403e47",
+      "git_blob": "133f31be9bef2ea331e3a00035327fadf830f2b1",
+      "already_preserved": true,
+      "published_sha256": "f0465d3d5aa04fe49c8b03847874332195d59642d6f530357c40fc81de403e47",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/dspark-chain-restack/m4-validation.json",
+      "bytes": 162059,
+      "lines": 3320,
+      "sha256": "7b77ea7114d1a73d32606513c7d109449f62f70ec6b4b6f625c82fea5ed64b62",
+      "git_blob": "e0d541b6615edbb0f5d2ca9df5b5448fa0cbcbec",
+      "already_preserved": true,
+      "published_sha256": "7b77ea7114d1a73d32606513c7d109449f62f70ec6b4b6f625c82fea5ed64b62",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    },
+    {
+      "path": "docs/receipts/dspark-chain-restack/historical-equality-and-load.json",
+      "bytes": 175578,
+      "lines": 4517,
+      "sha256": "d97d33af7b2c9d6cbf7d65b058a335725aaa26772f2246d0655e16bb991cfcd0",
+      "git_blob": "f66ec3b0d43b70ff5229c5d5a6500880b713085a",
+      "already_preserved": true,
+      "published_sha256": "d97d33af7b2c9d6cbf7d65b058a335725aaa26772f2246d0655e16bb991cfcd0",
+      "transform": "Already preserved byte-for-byte at previous evidence commit"
+    }
+  ]
+}
