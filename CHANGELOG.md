@@ -57,6 +57,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - Dory on CUDA takes its RoPE tables from core's exact helper, so they match transformers' words (they moved by up to 5 ulp) (#2035, part of #1852).
 - fabric/mcdma: ConnectX (RoCE v2) links (#1957, step 1 of #1594). Thanks to @ThinkOffApp.
 
+- LFM2 DSpark stands aside on pre-M5 or unrecognized Metal device names before neural loading, calibration and admission charges. Those requests retain the canonical target-only path and cheap copies; recognized M5-or-newer names keep the funded neural path. Independent native FP32 diagnostics and other families' drafters are unchanged.
+
 - LFM2 DSpark prices request-level neural-context enrollment before prefill. Target-only requests keep cheap copies and canonical no-tap forwards; enrolled requests retain zero-grant context and in-request recovery. Only complete, paying serving quotes fund enrollment or cold trials: unknown prices and unpaid quotes cannot spend recovery probes even if hypothetical perfect acceptance would pay. Fully unbound direct diagnostics remain available. Recent head-only rates seed fresh request state without a stream-count cutoff. This is not a throughput-qualification claim.
 
 - LFM2 DSpark's native diagnostic releases independent target-control caches after their last forward, creates the main tap buffer and comparison cache after capture controls, and separates independent stage buffers. Context lengths, capture layouts, FP32 references and numerical bounds are unchanged; serving code is unaffected.

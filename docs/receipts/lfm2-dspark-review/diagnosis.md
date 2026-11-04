@@ -8,6 +8,16 @@ Neither the corrected model input nor a component timing establishes the full ML
 
 Historical causal findings below retain their original source bindings. This is not a release or performance-qualification claim.
 
+## Serving policy after the M5-only review
+
+Following [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133),
+serving keeps neural DSpark only for recognized Apple M5-or-newer device names. Pre-M5 and unknown names
+stand aside before the LFM2 family allocates or calibrates a head; canonical target forwarding and cheap
+copies remain. Other families and independent FP32 diagnostics are unchanged. Normal CLI path validation
+still applies. The neural-enabled M4 matrices below remain historical failures, not new-policy clearance.
+The eligible M5 path requires a full source-bound matrix with a separately declared plain/plain A/A;
+[the PR](https://github.com/ashhart/TensorFold/pull/1394) links those results without relabelling older packets.
+
 ## Request-enrollment and copy-backoff findings
 
 The [complete `750bca95c` qualification](https://github.com/BlivionIaG/TensorFold/blob/0cece53cc7be9fa67c9c792945ae3b2f17fbc6bf/docs/receipts/lfm2-dspark-review/750bca95c/README.md)

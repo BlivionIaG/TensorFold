@@ -54,6 +54,13 @@ at revision `e052e5b1dd103c38cdd4f8ddc068d7dea4586f55` (327.7M bf16 parameters, 
 [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM2.5-24B-A2B-DSpark/blob/e052e5b1dd103c38cdd4f8ddc068d7dea4586f55/LICENSE);
 TensorFold does not ship them, so read the license before use.
 
+Neural DSpark serving is eligible only on recognized Apple M5 or newer Metal device names. Earlier or unknown
+names log that DSpark is standing aside and take the ordinary target-only path before neural weight loading,
+calibration, taps or admission charges. Cheap copies and canonical target arithmetic remain enabled. Normal
+CLI drafter-path resolution and validation still apply; omit `--drafter` on older devices.
+Independent `tf-lfm2-dspark` FP32 diagnostics remain available there, but are not serving qualification.
+Use the following drafter setup on an eligible M5-or-newer device:
+
 ```bash
 hf download LiquidAI/LFM2.5-24B-A2B-DSpark --revision e052e5b1dd103c38cdd4f8ddc068d7dea4586f55 \
   config.json model.safetensors LICENSE README.md --local-dir "$HOME/models/LFM2.5-24B-A2B-DSpark"
@@ -291,7 +298,7 @@ four-stream tradeoff does not establish the current no-slowdown gate.
 
 ### Requalifying the drafter
 
-Run the complete matrix from one frozen native binary, with its source commit and pinned model revisions:
+On an eligible M5-or-newer device, run the complete matrix from one frozen native binary, with its source commit and pinned model revisions:
 
 ```sh
 python3 tools/bench_lfm2_dspark.py run \
@@ -308,6 +315,12 @@ copies. Each launch verifies the binary hash and drafter mode. Every solo, `draf
 hash must match across arms; each cell's median aggregate decode throughput must be at least its plain cell's.
 Negative cells fail individually, without a tolerance or pooled average. Reduced runs require `--smoke` and
 never establish qualification.
+
+For a plain/plain A/A control, use the same plain binary, model, ordinary copy behavior, workloads, seeds,
+lengths and warmups in both arms; predeclare the ordering and publish its separate raw data. A/A observations
+do not alter the original performance verdict or establish a tolerance. Source-bound protocols and results
+are linked from [the DSpark PR](https://github.com/ashhart/TensorFold/pull/1394). Pre-M5 stand-aside checks are
+not an active-drafter matrix: the frozen driver requires active DSpark startup for its neural arms.
 
 The driver requires and records those revisions for qualification. Keep the source commit/patch with the binary hash.
 Publish the metadata, raw request and cell records,
