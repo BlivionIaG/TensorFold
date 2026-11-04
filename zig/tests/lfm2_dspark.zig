@@ -281,12 +281,12 @@ pub fn main(init: std.process.Init) !void {
     var taps: st.Taps = .{ .count = cfg.tap_count, .buf = tap_buf, .gpu_base = tap_buf.gpuAddress(), .table_at = length * width * 2 };
     @memcpy(taps.layers[0..cfg.tap_count], cfg.taps[0..cfg.tap_count]);
     scratch.taps = taps;
-    var cache = try st.Cache.init(gpa, m.device, &m.config.attention, length + 16);
-    defer cache.deinit();
     const ids = try gpa.alloc(u32, length);
     defer gpa.free(ids);
     for (ids, 0..) |*id, i| id.* = @intCast((i * 7919 + 13) % 120000);
     try controls.targetTaps(gpa, m, &scratch, ids);
+    var cache = try st.Cache.init(gpa, m.device, &m.config.attention, length + 16);
+    defer cache.deinit();
     try q.forward.run(m, &scratch, &.{.{ .cache = &cache, .rows = length }}, ids, false, .last);
     // Repeated target layers are legal: every requested column must receive the same hidden row.
     const tapped = taps.buf.slice(u16, length * width);

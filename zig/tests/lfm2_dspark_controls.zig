@@ -163,10 +163,12 @@ fn targetTapMode(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids:
     for ([_]usize{ 1, 4, 8, 16, ids.len }, 0..) |n, shape| {
         if (n > ids.len or (shape == 4 and (n == 1 or n == 4 or n == 8 or n == 16))) continue;
         scratch.taps = null;
-        var plain = try st.Cache.init(gpa, m.device, &m.config.attention, n + 16);
-        defer plain.deinit();
         const record = n <= st.batch_rows;
-        try q.forward.run(m, scratch, &.{.{ .cache = &plain, .rows = n }}, ids[0..n], record, .last);
+        {
+            var plain = try st.Cache.init(gpa, m.device, &m.config.attention, n + 16);
+            defer plain.deinit();
+            try q.forward.run(m, scratch, &.{.{ .cache = &plain, .rows = n }}, ids[0..n], record, .last);
+        }
         const x = try gpa.dupe(u8, scratch.x.contents()[0 .. n * c.hidden * 2]);
         defer gpa.free(x);
         const logits = try gpa.dupe(u8, scratch.logits.contents()[0 .. c.vocab * 2]);
@@ -188,9 +190,11 @@ fn targetTapMode(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids:
                 taps.buf.deinit();
             }
             scratch.taps = taps;
-            var captured = try st.Cache.init(gpa, m.device, &m.config.attention, n + 16);
-            defer captured.deinit();
-            try q.forward.run(m, scratch, &.{.{ .cache = &captured, .rows = n }}, ids[0..n], record, .last);
+            {
+                var captured = try st.Cache.init(gpa, m.device, &m.config.attention, n + 16);
+                defer captured.deinit();
+                try q.forward.run(m, scratch, &.{.{ .cache = &captured, .rows = n }}, ids[0..n], record, .last);
+            }
             if (!std.mem.eql(u8, x, scratch.x.contents()[0..x.len]) or !std.mem.eql(u8, logits, scratch.logits.contents()[0..logits.len])) return error.TargetTapOutputMismatch;
             const data = taps.buf.slice(u16, n * taps.count * c.hidden);
             for (taps.layers[0..taps.count], 0..) |layer, i| for (taps.layers[0..i], 0..) |other, j| {
