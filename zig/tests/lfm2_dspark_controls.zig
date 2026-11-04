@@ -112,6 +112,9 @@ fn stageTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []c
     const row_words = taps.count * c.hidden;
     const want = try gpa.dupe(u16, taps.buf.slice(u16, n * row_words));
     defer gpa.free(want);
+    // The independent table-only stage must not overlap this control's stage.
+    std.debug.print("target tap control: {d} rows, {d} columns, table-only stage\n", .{ n, taps.count });
+    try tableOnlyTaps(gpa, m, scratch, ids, record, want, x, logits);
     const stage = try m.device.buffer((n + 2) * row_words * 2, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
     defer stage.deinit();
     const got = stage.slice(u16, (n + 2) * row_words);
@@ -122,6 +125,7 @@ fn stageTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []c
         @memset(scratch_taps, 0x7fc0);
         var cache = try st.Cache.init(gpa, m.device, &m.config.attention, n + 16);
         defer cache.deinit();
+        std.debug.print("target tap control: {d} rows, {d} columns, stage mode {d}\n", .{ n, taps.count, mode });
         try q.forward.run(m, scratch, &.{.{ .cache = &cache, .rows = n, .tap = tap }}, ids, record, .last);
         if (!std.mem.eql(u8, x, scratch.x.contents()[0..x.len]) or !std.mem.eql(u8, logits, scratch.logits.contents()[0..logits.len])) return error.TargetTapOutputMismatch;
         if (!untouched(scratch_taps)) return error.StagedForwardWroteScratchTaps;
@@ -131,7 +135,6 @@ fn stageTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []c
         }
         if (!std.mem.eql(u16, want, got[row_words..][0 .. n * row_words]) or !untouched(got[0..row_words]) or !untouched(got[(n + 1) * row_words ..])) return error.StagedTapsDiffer;
     }
-    try tableOnlyTaps(gpa, m, scratch, ids, record, want, x, logits);
     if (2 * n > st.batch_rows or 2 * n > scratch.rows) return;
     // two streams in one recorded call: the first captured into the stage, the second nowhere
     @memset(got, 0x7fc0);
@@ -147,18 +150,18 @@ fn stageTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []c
 }
 
 /// Untapped target outputs versus capture/restore, including duplicate final taps and every admitted column.
-pub fn targetTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []const u32) !void {
+pub fn targetTaps(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []const u32, layers: []const u32) !void {
     const twin = m.kernels.twin;
     defer m.kernels.twin = twin;
-    try targetTapMode(gpa, m, scratch, ids);
+    try targetTapMode(gpa, m, scratch, ids, layers);
     if (twin) {
         m.kernels.twin = false;
-        try targetTapMode(gpa, m, scratch, ids);
+        try targetTapMode(gpa, m, scratch, ids, layers);
     }
 }
 
-fn targetTapMode(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []const u32) !void {
-    const original = scratch.taps.?;
+fn targetTapMode(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids: []const u32, layers: []const u32) !void {
+    const original = scratch.taps;
     defer scratch.taps = original;
     for ([_]usize{ 1, 4, 8, 16, ids.len }, 0..) |n, shape| {
         if (n > ids.len or (shape == 4 and (n == 1 or n == 4 or n == 8 or n == 16))) continue;
@@ -167,6 +170,7 @@ fn targetTapMode(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids:
         {
             var plain = try st.Cache.init(gpa, m.device, &m.config.attention, n + 16);
             defer plain.deinit();
+            std.debug.print("target tap control: {d} rows, twin {}, no capture\n", .{ n, m.kernels.twin });
             try q.forward.run(m, scratch, &.{.{ .cache = &plain, .rows = n }}, ids[0..n], record, .last);
         }
         const x = try gpa.dupe(u8, scratch.x.contents()[0 .. n * c.hidden * 2]);
@@ -174,17 +178,19 @@ fn targetTapMode(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids:
         const logits = try gpa.dupe(u8, scratch.logits.contents()[0 .. c.vocab * 2]);
         defer gpa.free(logits);
         for (0..3) |layout| {
-            var taps = original;
+            var count: u32 = @intCast(layers.len);
+            var tap_layers: [st.max_taps]u32 = @splat(0);
+            @memcpy(tap_layers[0..layers.len], layers);
             if (layout == 1) {
-                taps.count = 3;
-                taps.layers[0..3].* = .{ 0, c.layers - 1, c.layers - 1 };
+                count = 3;
+                tap_layers[0..3].* = .{ 0, c.layers - 1, c.layers - 1 };
             } else if (layout == 2) {
-                taps.count = st.max_taps;
-                for (0..st.max_taps) |i| taps.layers[i] = @intCast(if (i >= st.max_taps - 2) c.layers - 1 else i);
+                count = st.max_taps;
+                for (0..st.max_taps) |i| tap_layers[i] = @intCast(if (i >= st.max_taps - 2) c.layers - 1 else i);
             }
-            taps.table_at = n * taps.count * c.hidden * 2;
-            taps.buf = try m.device.buffer(taps.table_at + scratch.rows * @sizeOf(u64), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
-            taps.gpu_base = taps.buf.gpuAddress();
+            const table_at = n * count * c.hidden * 2;
+            const buf = try m.device.buffer(table_at + scratch.rows * @sizeOf(u64), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+            const taps: st.Taps = .{ .layers = tap_layers, .count = count, .buf = buf, .gpu_base = buf.gpuAddress(), .table_at = table_at };
             defer {
                 scratch.taps = null;
                 taps.buf.deinit();
@@ -193,6 +199,7 @@ fn targetTapMode(gpa: std.mem.Allocator, m: *q.Model, scratch: *st.Scratch, ids:
             {
                 var captured = try st.Cache.init(gpa, m.device, &m.config.attention, n + 16);
                 defer captured.deinit();
+                std.debug.print("target tap control: {d} rows, twin {}, {d} columns, scratch capture\n", .{ n, m.kernels.twin, count });
                 try q.forward.run(m, scratch, &.{.{ .cache = &captured, .rows = n }}, ids[0..n], record, .last);
             }
             if (!std.mem.eql(u8, x, scratch.x.contents()[0..x.len]) or !std.mem.eql(u8, logits, scratch.logits.contents()[0..logits.len])) return error.TargetTapOutputMismatch;
