@@ -1,0 +1,22 @@
+{
+  "qualified_runtime_source": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "published_docs_tip": "51dce745143d72dd52231c44a31989632107af4a",
+  "qualification_base": "2c8422a0c49d04a1867cffec081a1a42b65c857f",
+  "actual_upstream_main_ref": "a897e165bb271f8cc7a6530bbfc5235abf270341",
+  "actual_pr_head_ref": "51dce745143d72dd52231c44a31989632107af4a",
+  "actual_pr_merge_ref": "7fdd716099a24fd13d1f8b342472815862bba5b8",
+  "rest_reported_base_sha": "2c8422a0c49d04a1867cffec081a1a42b65c857f",
+  "rest_mergeable": false,
+  "rest_mergeable_state": "dirty",
+  "current_head_all11_pr_checks_success": true,
+  "qualification_source_or_binary_changed": false,
+  "action": "Read-only exact-main merge-tree diagnosis; no merge/rebase/source change or qualification restart.",
+  "read_only_merge_tree": "3419f01bb15c450fac0b2a9d194a0a5bc5812325",
+  "merge_tree_exit": 1,
+  "conflicts": [
+    "zig/src/native/metal.zig",
+    "zig/tests/contract/metal_main.zig"
+  ],
+  "qualification_continues_unchanged": true,
+  "source_changes_applied": false
+}

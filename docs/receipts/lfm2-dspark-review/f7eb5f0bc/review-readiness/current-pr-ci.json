@@ -1,0 +1,73 @@
+{
+  "published_pr_head": "51dce745143d72dd52231c44a31989632107af4a",
+  "qualification_runtime_source": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "all11_pr_attached_checks_succeeded": true,
+  "checks": [
+    {
+      "name": "mobile",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150911/job/126275966811"
+    },
+    {
+      "name": "appimage-linux",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150911/job/126275966604"
+    },
+    {
+      "name": "desktop",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150911/job/126275966591"
+    },
+    {
+      "name": "desktop-linux",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150911/job/126275966243"
+    },
+    {
+      "name": "benchmark-clients (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275966003"
+    },
+    {
+      "name": "zig-windows",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965785"
+    },
+    {
+      "name": "zig-macos-dev-tools",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965727"
+    },
+    {
+      "name": "benchmark-clients (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965699"
+    },
+    {
+      "name": "zig",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965686"
+    },
+    {
+      "name": "release-paths (ubuntu-24.04)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150965/job/126275965306"
+    },
+    {
+      "name": "fmt",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/ashhart/TensorFold/actions/runs/41739150909/job/126275964796"
+    }
+  ]
+}
