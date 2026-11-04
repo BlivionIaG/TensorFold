@@ -89,8 +89,6 @@ pub fn Namespace(comptime Tri: type) type {
             /// Every stream allocates its own sequence; none rides on the engine's.
             free_streams: u32 = 0,
             host_snaps: bool = false,
-            /// The prefill step when the prompt arithmetic depends on the chunk cuts (EXL3): states keep on its starts
-            snap_grid: u32 = 0,
             ctx: *anyopaque,
             deinit: *const fn (*anyopaque) void,
             lone: ?LoneRun = null,

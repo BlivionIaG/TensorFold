@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- Flash Next EXL3 keeps prompt-cache states at arbitrary rows instead of restricting them to prefill-chunk starts. The obsolete snapshot-grid option and loaded-grid plumbing are removed; other CUDA families retain their declared grids.
+
 - The core K/V host tier refuses a zero page size, partial host pages and zero frame or page counts before allocating, instead of dividing by zero or accepting a truncated backing store.
 
 - Flash Next's opt-in host K/V tier releases its pinned store if tier kernels fail to load, refuses non-EXL3 scratch before allocation and refuses a snapshot restore before copying while another lease pins its pages. Restore no longer ignores pin or invalidation errors.

@@ -15,22 +15,13 @@ pub fn cacheRules(comptime F: type) api.prompt_cache.Rules {
     return rules;
 }
 
-/// Native CUDA families own their grid; a loaded `snap_grid` (the prefill step) keeps states on chunk starts only.
-pub fn passRules(comptime F: type, prompt_rows: u32, snap_grid: u32) api.prompt_cache.Rules {
+/// Each family owns its snapshot grid; the loaded prompt size only sets the serving pass's chunk.
+pub fn passRules(comptime F: type, prompt_rows: u32) api.prompt_cache.Rules {
     var rules = cacheRules(F);
     rules.chunk = prompt_rows;
     if (@hasDecl(F, "snap_repeat_min")) rules.repeat_min = if (std.c.getenv("TF_FLASHNEXT_REPEAT_CACHE")) |v| (if (std.mem.eql(u8, std.mem.span(v), "0")) 0 else F.snap_repeat_min) else F.snap_repeat_min;
     rules.chunk_starts = false;
-    if (snap_grid > 0) {
-        rules.planned = true;
-        rules.grid = snap_grid;
-    }
     return rules;
-}
-
-/// The grid a loaded family declares (0: any row).
-pub fn loadedGrid(loaded: anytype) u32 {
-    return if (@hasField(@TypeOf(loaded), "snap_grid")) loaded.snap_grid else 0;
 }
 
 /// The cache's bytes less what the family sets aside for its states (`snap_ready`, as Nemotron's spare buffers).
@@ -101,7 +92,7 @@ test {
     _ = @import("cuda_snaps_test.zig");
 }
 
-test "a family that names its prefill step keeps marks on chunk starts, so a resumed pass cuts as a fresh one" {
+test "a cache without a family grid retains an off-step history mark" {
     const Exl3 = struct {};
     const Stub = struct {
         fn bytes(_: *anyopaque, _: u32) u64 {
@@ -121,13 +112,8 @@ test "a family that names its prefill step keeps marks on chunk starts, so a res
     const vtable: api.prompt_cache.Snapshots.VTable = .{ .bytes = Stub.bytes, .save = Stub.save, .restore = Stub.restore, .drop = Stub.drop };
     const copies: api.prompt_cache.Snapshots = .{ .ptr = &unused, .vtable = &vtable };
     // any row: the history mark cuts the cold pass's last chunk to 7 rows, a different kernel path than the fresh pass
-    var any = api.prompt_cache.Store.init(std.testing.allocator, copies, passRules(Exl3, 4096, 0), 1 << 30);
+    var any = api.prompt_cache.Store.init(std.testing.allocator, copies, passRules(Exl3, 4096), 1 << 30);
     defer any.deinit();
     const loose = try any.marks(arena.allocator(), prompt, 0, 12773, &.{}, &.{}, &.{});
     try std.testing.expect(std.mem.indexOfScalar(u32, loose, 12773) != null);
-    var grid = api.prompt_cache.Store.init(std.testing.allocator, copies, passRules(Exl3, 4096, 4096), 1 << 30);
-    defer grid.deinit();
-    const exact = try grid.marks(arena.allocator(), prompt, 0, 12773, &.{}, &.{}, &.{});
-    try std.testing.expect(exact.len > 0);
-    for (exact) |m| try std.testing.expectEqual(@as(u32, 0), m % 4096);
 }

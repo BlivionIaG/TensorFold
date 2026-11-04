@@ -45,8 +45,6 @@ pub const Options = struct {
     reseed: bool = false,
     reduced_branch: bool = false,
     two_chunk: bool = false,
-    /// The prompt cache keeps states on the serving step's starts only; false: at any row (a test of resume = fresh).
-    snap_grid: bool = true,
 };
 
 pub fn optionsFromEnv() Options {
@@ -60,7 +58,6 @@ pub fn optionsFromEnv() Options {
     o.two_chunk = window_.enabled(if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK")) |value| std.mem.span(value) else null);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING")) |v| o.ring = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD")) |v| o.ring_ahead = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_ahead;
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_SNAP_GRID")) |v| o.snap_grid = !std.mem.eql(u8, std.mem.span(v), "0");
     return o;
 }
 

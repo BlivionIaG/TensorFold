@@ -114,7 +114,8 @@ tensorfold-native serve /path/to/checkpoint --temperature 0
 
 An EXL3 pack (see [EXL3 weights](exl3.md)) serves on one sm_120 rank, or on two with expert parallel (`--tp 2`), with
 its routed experts in pinned host memory and a pool of expert lines a layer on the device. `tools/exl3_serve_tp2.sh`
-starts a rank. These switches tune it:
+starts a rank. Prompt-cache states may be kept and resumed at any row, including a history mark between prefill chunks;
+the exact prompt path does not require a snapshot grid. These switches tune it:
 
 | Name | Default | Effect |
 | --- | --- | --- |
@@ -134,7 +135,6 @@ starts a rank. These switches tune it:
 | `TF_FLASHNEXT_EXL3_PREFILL_OVERLAP` | on | `0` (two ranks) stops overlapping the all-reduce with a chunk's compute. |
 | `TF_FLASHNEXT_EXL3_PREFILL_REDUCED_BRANCH` | `0` | Experimental: `1` (two ranks) reduces the weighted branch in fp32, written back with unit weights. |
 | `TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK` | `0` | Experimental: `1` (two ranks, ring) runs a second deep chunk beside the first when memory admits it. |
-| `TF_FLASHNEXT_EXL3_PREFILL_SNAP_GRID` | on | Diagnostics only: `0` keeps prompt-cache states at any row instead of on the serving step's starts, to test that a resumed prompt equals a fresh one. |
 | `TF_FLASHNEXT_PROFILE` | `0` | Diagnostics only: `1` times the ranks' combine, all-reduce and place of a deep chunk, with a wait each. |
 | `TF_FLASHNEXT_KV_PAGES` | unset | `n`: streams beside the first take their attention caches from one pool of `n`-position pages. |
 | `TF_FLASHNEXT_KV_PAGES_ALL` | unset | Diagnostics only: `1` puts every request on pool pages, including single-stream checks; without it the first stream keeps contiguous caches. |
