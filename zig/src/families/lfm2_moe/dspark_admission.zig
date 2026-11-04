@@ -135,21 +135,14 @@ pub const Recent = struct {
         r.observed = true;
     }
 
-    /// Cold or unprofitable histories get at most one probe per growing 64..1024-request interval.
+    /// Only a complete, paying quote funds enrollment; cold paid trials retain their bounded request cadence.
     pub fn enroll(r: *Recent, p: Prices, conservative_rates: []const f64) bool {
-        // Unknown prices preserve direct diagnostics; calibration omits staging/host noise and future acceptance.
-        const priced = quote(p, conservative_rates) orelse return true;
-        const pays = priced.pays();
-        if (r.observed and pays) {
+        const priced = quote(p, conservative_rates) orelse return false;
+        if (!priced.pays()) return false;
+        if (r.observed) {
             r.remaining = 64;
             r.interval = 64;
             return true;
-        }
-        if (!pays) {
-            // Even perfect acceptance must pay before spending a recovery probe.
-            const perfect: [max_depth]f64 = @splat(1);
-            const possible = quote(p, perfect[0..@min(max_depth, p.depth)]) orelse return true;
-            if (!possible.pays()) return false;
         }
         if (r.remaining != 0) {
             r.remaining -= 1;

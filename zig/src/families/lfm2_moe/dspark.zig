@@ -145,6 +145,10 @@ pub const Drafter = struct {
     fn enrollFn(ptr: *anyopaque, s: *Stream, cohort: dr.Enrollment) bool {
         const d = cast(ptr);
         const recent = d.head_history.recent(sampled(s));
+        if (d.target_single == null and d.target_shared == null) {
+            s.head_prior = recent.rates[0..d.config.block];
+            return true; // Direct diagnostics have no serving calibration bound.
+        }
         const depth: u32 = @intCast(@min(d.config.block, @max(0, s.draftRoom() - 1)));
         var rates = recent.rates;
         var heads: usize = 1;

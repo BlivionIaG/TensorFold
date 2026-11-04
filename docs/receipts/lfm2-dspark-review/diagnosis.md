@@ -355,5 +355,30 @@ target tokens. Serial encoder fences are intrusive; invalid command-buffer stopw
 Neither GPU occupancy, bandwidth saturation nor a matched MLX-LM comparison is established.
 
 Correcting the measurement context and passing native correctness do not establish the zero-regression
-gate. The complete CF matrices above remain the last full qualification until a newer same-head
-matrix is completed. No tolerance, resource override or re-review is implied.
+gate. The later frozen full qualification is the
+[`f7eb5f0bc` packet](https://github.com/BlivionIaG/TensorFold/tree/f615b6d2fc611550952651fec1d24541b06968bf/docs/receipts/lfm2-dspark-review/f7eb5f0bc),
+not the earlier CF matrix. Both devices completed all 144 cells and 306 original oracle checks, but both
+original performance summaries still exited 3 (`FAIL`). M4 put 2/32 comparisons inside the owner's observed
+less-than-1% budget, with a worst median loss of 8.7149%; M5 put 32/32 inside it, with a worst loss of 0.3289%.
+These are not zero-regression passes under the maintainer's rule.
+
+The predeclared controlled M4 study completed all 24 launches and 8,352 requests. Its observed medians put
+31/32 comparisons inside that budget, but only 2/16 A/A intervals established the prescribed quiet baseline;
+the conclusion remains **INCONCLUSIVE**. Neither extra warmups nor a point median replace the frozen failures.
+
+## Unpaid-admission follow-up
+
+The financial admission path still allowed two unfunded routes: an unknown quote enrolled the serving
+request, and an unpaid recent history could spend a recovery probe when perfect acceptance would pay.
+That is a policy defect, not a claim that the remaining timing differences are measurement error.
+
+Serving enrollment now requires a complete quote that pays at the existing conservative acceptance rates
+and unchanged margin. Cold paid trials retain their bounded request cadence; unknown or unpaid requests
+keep the target-only route without a neural lane or taps. A later price change or funded head observation
+must actually repay the work before enrollment resumes. Fully unbound direct diagnostic callers remain
+explicitly available; their availability no longer makes missing serving calibration free.
+
+This trades unpaid exploration for conservative stand-aside. It does not change BF16 activations, stored
+weight modes, target arithmetic, the pricing margin, memory admission or the original qualification protocol.
+The frozen packet above remains labelled with its original source and binaries; this policy change requires
+its own native correctness and full performance evidence before any new performance claim.

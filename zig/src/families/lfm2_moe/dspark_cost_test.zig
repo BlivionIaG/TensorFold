@@ -152,7 +152,7 @@ test "lfm2 dspark: admission initial prompt overflow is paid rather than amortiz
     try std.testing.expect(admission.quote(prices, &.{0.9}) == null);
 }
 
-test "lfm2 dspark: admission missing and invalid prices preserve tracked diagnostics, never free gain" {
+test "lfm2 dspark: serving admission refuses missing and invalid prices without spending a paid trial" {
     var slots: [17]?f64 = @splat(11);
     slots[1] = 10;
     const target: lanes.table.Table = .{ .slots = &slots };
@@ -161,19 +161,19 @@ test "lfm2 dspark: admission missing and invalid prices preserve tracked diagnos
     var prices = good;
     prices.target = null;
     try std.testing.expect(admission.quote(prices, &recent.rates) == null);
-    try std.testing.expect(recent.enroll(prices, &recent.rates));
+    try std.testing.expect(!recent.enroll(prices, &recent.rates));
     prices = good;
     prices.holds = &.{};
     try std.testing.expect(admission.quote(prices, &recent.rates) == null);
-    try std.testing.expect(recent.enroll(prices, &recent.rates));
+    try std.testing.expect(!recent.enroll(prices, &recent.rates));
     prices = good;
     prices.contexts = &.{};
     try std.testing.expect(admission.quote(prices, &recent.rates) == null);
-    try std.testing.expect(recent.enroll(prices, &recent.rates));
+    try std.testing.expect(!recent.enroll(prices, &recent.rates));
     for ([_]f64{ 0, -1, std.math.inf(f64), std.math.nan(f64) }) |bad| {
         slots[2] = bad;
         try std.testing.expect(admission.quote(good, &recent.rates) == null);
-        try std.testing.expect(recent.enroll(good, &recent.rates));
+        try std.testing.expect(!recent.enroll(good, &recent.rates));
     }
     slots[2] = 11;
     var bad_holds = admission_holds;
@@ -183,12 +183,15 @@ test "lfm2 dspark: admission missing and invalid prices preserve tracked diagnos
         bad_holds[0].ms = bad;
         prices.holds = &bad_holds;
         try std.testing.expect(admission.quote(prices, &recent.rates) == null);
+        try std.testing.expect(!recent.enroll(prices, &recent.rates));
         prices = good;
         bad_contexts[0].ms = bad;
         prices.contexts = &bad_contexts;
         try std.testing.expect(admission.quote(prices, &recent.rates) == null);
+        try std.testing.expect(!recent.enroll(prices, &recent.rates));
     }
     try std.testing.expect(!recent.observed);
+    try std.testing.expect(recent.enroll(good, &recent.rates));
 }
 
 test "lfm2 dspark: admission conditional history stops at the first rejection and separates sampled draws" {
@@ -240,7 +243,7 @@ test "lfm2 dspark: admission zero-hold cold requests consume bounded probes with
     }
 }
 
-test "lfm2 dspark: admission rejection stands aside until a later request probe can recover" {
+test "lfm2 dspark: unpaid requests never spend recovery probes and later paying history can enroll" {
     var slots: [17]?f64 = @splat(11);
     slots[1] = 10;
     const target: lanes.table.Table = .{ .slots = &slots };
@@ -249,9 +252,9 @@ test "lfm2 dspark: admission rejection stands aside until a later request probe 
     try std.testing.expect(recent.enroll(prices, &recent.rates));
     for (0..96) |_| recent.observe(9, 0);
     try std.testing.expect(!recent.enroll(prices, &recent.rates));
-    var skipped: usize = 0;
-    while (skipped < 1024 and !recent.enroll(prices, &recent.rates)) : (skipped += 1) {}
-    try std.testing.expect(skipped > 0 and skipped < 1024);
+    const perfect: [admission.max_depth]f64 = @splat(1);
+    try std.testing.expect(admission.quote(prices, &perfect).?.pays());
+    for (0..2048) |_| try std.testing.expect(!recent.enroll(prices, &recent.rates));
     for (0..128) |_| recent.observe(9, 9);
     // Paying real outcomes immediately remove the request backoff; no in-request probe state moved.
     try std.testing.expect(recent.enroll(prices, &recent.rates));

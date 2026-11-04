@@ -18,7 +18,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - The No GPU and Zig format checks can run manually on a selected branch; No GPU takes an explicit baseline commit for the unchanged lean comparison, so branch checks do not depend on a pull request merge ref being available (#1394).
 
-- LFM2 DSpark prices request-level neural-context enrollment before prefill. Target-only requests keep cheap copies and canonical no-tap forwards; enrolled requests retain zero-grant context and recovery. Sparse lone target calibration considers only priced prefixes instead of silently enrolling on the first unmeasured width. Recent head-only rates seed fresh request state, with bounded cold/recovery admissions and no stream-count cutoff. This is not a throughput-qualification claim.
+- LFM2 DSpark prices request-level neural-context enrollment before prefill. Target-only requests keep cheap copies and canonical no-tap forwards; enrolled requests retain zero-grant context and in-request recovery. Only complete, paying serving quotes fund enrollment or cold trials: unknown prices and unpaid quotes cannot spend recovery probes even if hypothetical perfect acceptance would pay. Fully unbound direct diagnostics remain available. Recent head-only rates seed fresh request state without a stream-count cutoff. This is not a throughput-qualification claim.
 
 - Lane reservations retain the next window's copy decision, including silence and source evidence, until verification consumes it. Planning no longer advances suffix-lookup backoff twice, and shared borrowed proposals survive another stream's lookup.
 

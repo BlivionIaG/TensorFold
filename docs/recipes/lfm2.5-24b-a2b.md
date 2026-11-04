@@ -99,8 +99,10 @@ using recent head-only acceptance for this model and weight mode, separately for
 Only calibrated lone target widths are candidates; an unmeasured prefix does not invalidate other priced shapes.
 A target-only request retains cheap copies but owns no drafter lane or taps. Its route stays fixed until release.
 Tracked requests receive only an initial conditional-rate seed; grants, confidence, probe clocks and context are fresh.
-Cold and recovery admissions are bounded experiments, backing off across 64 to 1,024 skipped requests when
-perfect acceptance could still pay. Missing whole calibration preserves the tracked diagnostic route.
+Cold admissions use the same complete, paying quote and retain the 64-to-1,024-request backoff if no head
+outcome is observed. Unknown serving prices or an unpaid quote stand aside: hypothetical perfect acceptance
+does not fund a recovery probe. Later measured prices or head observations must actually fund enrollment.
+Only fully unbound direct diagnostics preserve the tracked route without serving calibration.
 Other providers retain their legacy feature-prefill lifecycle unless they offer the enrollment capability.
 
 
