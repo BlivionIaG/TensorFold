@@ -1,0 +1,1738 @@
+{
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "paired_contrasts": 96,
+  "same_aggregate_work": 44,
+  "sign_changes_across_three_reps": 21,
+  "comparisons": 32,
+  "warning": "Aggregate activity includes ordinary copies and does not measure external neural work. Identical counts are not proof of an inactive neural drafter or a noise floor.",
+  "rows": [
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bf16",
+      "median_delta_pct": 1.3421807693928534,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 410,
+            "drafted": 315,
+            "accepted": 101
+          },
+          "neural_arm_activity": {
+            "rounds": 406,
+            "drafted": 280,
+            "accepted": 105
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.4216055605761335
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 410,
+            "drafted": 315,
+            "accepted": 101
+          },
+          "neural_arm_activity": {
+            "rounds": 406,
+            "drafted": 280,
+            "accepted": 105
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.8833530585409255
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 410,
+            "drafted": 315,
+            "accepted": 101
+          },
+          "neural_arm_activity": {
+            "rounds": 406,
+            "drafted": 280,
+            "accepted": 105
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.4489453578640399
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bits8",
+      "median_delta_pct": 1.5946837284118498,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 410,
+            "drafted": 315,
+            "accepted": 101
+          },
+          "neural_arm_activity": {
+            "rounds": 404,
+            "drafted": 283,
+            "accepted": 107
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.8964598678665956
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 410,
+            "drafted": 315,
+            "accepted": 101
+          },
+          "neural_arm_activity": {
+            "rounds": 404,
+            "drafted": 283,
+            "accepted": 107
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.4722208359563727
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 410,
+            "drafted": 315,
+            "accepted": 101
+          },
+          "neural_arm_activity": {
+            "rounds": 404,
+            "drafted": 283,
+            "accepted": 107
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.7017143302479054
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bf16",
+      "median_delta_pct": -0.48292733479428085,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 1662,
+            "drafted": 775,
+            "accepted": 382
+          },
+          "neural_arm_activity": {
+            "rounds": 1660,
+            "drafted": 786,
+            "accepted": 384
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.6217702183851213
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 1660,
+            "drafted": 786,
+            "accepted": 384
+          },
+          "neural_arm_activity": {
+            "rounds": 1662,
+            "drafted": 775,
+            "accepted": 382
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -1.3575969499659668
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 1662,
+            "drafted": 739,
+            "accepted": 382
+          },
+          "neural_arm_activity": {
+            "rounds": 1662,
+            "drafted": 775,
+            "accepted": 382
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.48292733479428085
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bits8",
+      "median_delta_pct": 0.7239752532946175,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 1662,
+            "drafted": 775,
+            "accepted": 382
+          },
+          "neural_arm_activity": {
+            "rounds": 1660,
+            "drafted": 786,
+            "accepted": 384
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.7245891454797269
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 1660,
+            "drafted": 786,
+            "accepted": 384
+          },
+          "neural_arm_activity": {
+            "rounds": 1660,
+            "drafted": 786,
+            "accepted": 384
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.012878677265559801
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 1662,
+            "drafted": 739,
+            "accepted": 382
+          },
+          "neural_arm_activity": {
+            "rounds": 1660,
+            "drafted": 786,
+            "accepted": 384
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.7239752532946175
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bf16",
+      "median_delta_pct": 0.12753582991558154,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 3396,
+            "drafted": 1155,
+            "accepted": 692
+          },
+          "neural_arm_activity": {
+            "rounds": 3392,
+            "drafted": 1066,
+            "accepted": 696
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 2.5755259828323496
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 3392,
+            "drafted": 1066,
+            "accepted": 696
+          },
+          "neural_arm_activity": {
+            "rounds": 3392,
+            "drafted": 1046,
+            "accepted": 696
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.11914969147004406
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 3392,
+            "drafted": 1051,
+            "accepted": 696
+          },
+          "neural_arm_activity": {
+            "rounds": 3392,
+            "drafted": 1056,
+            "accepted": 696
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.033371356694478216
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bits8",
+      "median_delta_pct": 0.009619884290024139,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 3396,
+            "drafted": 1155,
+            "accepted": 692
+          },
+          "neural_arm_activity": {
+            "rounds": 3392,
+            "drafted": 1066,
+            "accepted": 696
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 2.734665371652989
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 3392,
+            "drafted": 1066,
+            "accepted": 696
+          },
+          "neural_arm_activity": {
+            "rounds": 3392,
+            "drafted": 1066,
+            "accepted": 696
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.08619354600457596
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 3392,
+            "drafted": 1051,
+            "accepted": 696
+          },
+          "neural_arm_activity": {
+            "rounds": 3392,
+            "drafted": 1066,
+            "accepted": 696
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.08443369543100765
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bf16",
+      "median_delta_pct": -0.09146476955594895,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 7298,
+            "drafted": 1211,
+            "accepted": 878
+          },
+          "neural_arm_activity": {
+            "rounds": 7298,
+            "drafted": 1216,
+            "accepted": 878
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.07765510267438991
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 7298,
+            "drafted": 1218,
+            "accepted": 878
+          },
+          "neural_arm_activity": {
+            "rounds": 7298,
+            "drafted": 1211,
+            "accepted": 878
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.0655533308841938
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 7298,
+            "drafted": 1187,
+            "accepted": 878
+          },
+          "neural_arm_activity": {
+            "rounds": 7298,
+            "drafted": 1211,
+            "accepted": 878
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.14071215764052125
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bits8",
+      "median_delta_pct": 1.5897812884307472,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 7298,
+            "drafted": 1211,
+            "accepted": 878
+          },
+          "neural_arm_activity": {
+            "rounds": 7172,
+            "drafted": 1455,
+            "accepted": 1004
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.5897812884307472
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 7298,
+            "drafted": 1218,
+            "accepted": 878
+          },
+          "neural_arm_activity": {
+            "rounds": 6674,
+            "drafted": 2345,
+            "accepted": 1502
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 7.5224191216838765
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 7298,
+            "drafted": 1187,
+            "accepted": 878
+          },
+          "neural_arm_activity": {
+            "rounds": 7298,
+            "drafted": 1217,
+            "accepted": 878
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.06895007565296263
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bf16",
+      "median_delta_pct": 0.1161391911758125,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 459,
+            "drafted": 135,
+            "accepted": 52
+          },
+          "neural_arm_activity": {
+            "rounds": 459,
+            "drafted": 135,
+            "accepted": 52
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.3390148344547317
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 459,
+            "drafted": 135,
+            "accepted": 52
+          },
+          "neural_arm_activity": {
+            "rounds": 459,
+            "drafted": 135,
+            "accepted": 52
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.13850307982016252
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 459,
+            "drafted": 135,
+            "accepted": 52
+          },
+          "neural_arm_activity": {
+            "rounds": 459,
+            "drafted": 135,
+            "accepted": 52
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.14767273632541045
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bits8",
+      "median_delta_pct": 0.8550606086067836,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 459,
+            "drafted": 135,
+            "accepted": 52
+          },
+          "neural_arm_activity": {
+            "rounds": 456,
+            "drafted": 108,
+            "accepted": 55
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.0795812172986086
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 459,
+            "drafted": 135,
+            "accepted": 52
+          },
+          "neural_arm_activity": {
+            "rounds": 456,
+            "drafted": 106,
+            "accepted": 55
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.903989160482177
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 459,
+            "drafted": 135,
+            "accepted": 52
+          },
+          "neural_arm_activity": {
+            "rounds": 456,
+            "drafted": 108,
+            "accepted": 55
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.7961731850262055
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bf16",
+      "median_delta_pct": 0.3156563343239549,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "neural_arm_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.5059408450733605
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "neural_arm_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.04121439419517703
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "neural_arm_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.03763635498421625
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bits8",
+      "median_delta_pct": -0.045416296767475384,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "neural_arm_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.6240119099222063
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "neural_arm_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.5190661692013765
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "neural_arm_activity": {
+            "rounds": 1925,
+            "drafted": 194,
+            "accepted": 119
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.004800328815290911
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bf16",
+      "median_delta_pct": 0.09806730690082865,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 3791,
+            "drafted": 425,
+            "accepted": 297
+          },
+          "neural_arm_activity": {
+            "rounds": 3793,
+            "drafted": 417,
+            "accepted": 295
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.2982797242126134
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 3793,
+            "drafted": 412,
+            "accepted": 295
+          },
+          "neural_arm_activity": {
+            "rounds": 3793,
+            "drafted": 415,
+            "accepted": 295
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.00494976265543734
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 3793,
+            "drafted": 430,
+            "accepted": 295
+          },
+          "neural_arm_activity": {
+            "rounds": 3791,
+            "drafted": 413,
+            "accepted": 297
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.28841886786972193
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bits8",
+      "median_delta_pct": 0.2248191532096211,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 3791,
+            "drafted": 425,
+            "accepted": 297
+          },
+          "neural_arm_activity": {
+            "rounds": 3793,
+            "drafted": 420,
+            "accepted": 295
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.28224841549906454
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 3793,
+            "drafted": 412,
+            "accepted": 295
+          },
+          "neural_arm_activity": {
+            "rounds": 3793,
+            "drafted": 409,
+            "accepted": 295
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.2248191532096211
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 3793,
+            "drafted": 430,
+            "accepted": 295
+          },
+          "neural_arm_activity": {
+            "rounds": 3793,
+            "drafted": 416,
+            "accepted": 295
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.3436251903898846
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bf16",
+      "median_delta_pct": -0.24044925679974627,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 7228,
+            "drafted": 1186,
+            "accepted": 948
+          },
+          "neural_arm_activity": {
+            "rounds": 7231,
+            "drafted": 1180,
+            "accepted": 945
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.018096487075314194
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 7230,
+            "drafted": 1173,
+            "accepted": 946
+          },
+          "neural_arm_activity": {
+            "rounds": 7225,
+            "drafted": 1197,
+            "accepted": 951
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.2504551923013576
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 7228,
+            "drafted": 1226,
+            "accepted": 948
+          },
+          "neural_arm_activity": {
+            "rounds": 7226,
+            "drafted": 1222,
+            "accepted": 950
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.15449651710475187
+        }
+      ]
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bits8",
+      "median_delta_pct": -0.2373624853049927,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 7228,
+            "drafted": 1186,
+            "accepted": 948
+          },
+          "neural_arm_activity": {
+            "rounds": 7230,
+            "drafted": 1200,
+            "accepted": 946
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.2807154520262922
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 7230,
+            "drafted": 1173,
+            "accepted": 946
+          },
+          "neural_arm_activity": {
+            "rounds": 7226,
+            "drafted": 1209,
+            "accepted": 950
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.42527245907820754
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 7228,
+            "drafted": 1226,
+            "accepted": 948
+          },
+          "neural_arm_activity": {
+            "rounds": 7226,
+            "drafted": 1197,
+            "accepted": 950
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.3063555633664672
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bf16",
+      "median_delta_pct": 0.11586046819385132,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 506,
+            "drafted": 10,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 506,
+            "drafted": 10,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.0899012253496867
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 506,
+            "drafted": 10,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 506,
+            "drafted": 10,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.4077826915144689
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 506,
+            "drafted": 10,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 506,
+            "drafted": 10,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.26362980780660905
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bits8",
+      "median_delta_pct": 0.24446717179582578,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 506,
+            "drafted": 10,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 495,
+            "drafted": 36,
+            "accepted": 16
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.08133915109869161
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 506,
+            "drafted": 10,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 489,
+            "drafted": 45,
+            "accepted": 22
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.727636265141185
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 506,
+            "drafted": 10,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 495,
+            "drafted": 31,
+            "accepted": 16
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.39242633275728966
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bf16",
+      "median_delta_pct": -0.053670741324418625,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 2024,
+            "drafted": 25,
+            "accepted": 20
+          },
+          "neural_arm_activity": {
+            "rounds": 2024,
+            "drafted": 26,
+            "accepted": 20
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.0854245099094042
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 2024,
+            "drafted": 26,
+            "accepted": 20
+          },
+          "neural_arm_activity": {
+            "rounds": 2024,
+            "drafted": 25,
+            "accepted": 20
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.024647685405343456
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 2024,
+            "drafted": 25,
+            "accepted": 20
+          },
+          "neural_arm_activity": {
+            "rounds": 2024,
+            "drafted": 25,
+            "accepted": 20
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.1287217782545369
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bits8",
+      "median_delta_pct": 0.035796384484942934,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 2024,
+            "drafted": 25,
+            "accepted": 20
+          },
+          "neural_arm_activity": {
+            "rounds": 2024,
+            "drafted": 26,
+            "accepted": 20
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.035796384484942934
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 2024,
+            "drafted": 26,
+            "accepted": 20
+          },
+          "neural_arm_activity": {
+            "rounds": 2024,
+            "drafted": 26,
+            "accepted": 20
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.06798110183743322
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 2024,
+            "drafted": 25,
+            "accepted": 20
+          },
+          "neural_arm_activity": {
+            "rounds": 2024,
+            "drafted": 26,
+            "accepted": 20
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.008596093642254665
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bf16",
+      "median_delta_pct": -0.07612164038461877,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "neural_arm_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.10391013461488185
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "neural_arm_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.11512741832073736
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "neural_arm_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.07612164038461877
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bits8",
+      "median_delta_pct": 0.01755382465193911,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "neural_arm_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.08623704656007813
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "neural_arm_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.17111672012012358
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "neural_arm_activity": {
+            "rounds": 4056,
+            "drafted": 44,
+            "accepted": 32
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.01755382465193911
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bf16",
+      "median_delta_pct": 0.029857884709905136,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 8130,
+            "drafted": 55,
+            "accepted": 46
+          },
+          "neural_arm_activity": {
+            "rounds": 8130,
+            "drafted": 56,
+            "accepted": 46
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.029857884709905136
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 8130,
+            "drafted": 56,
+            "accepted": 46
+          },
+          "neural_arm_activity": {
+            "rounds": 8130,
+            "drafted": 55,
+            "accepted": 46
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.013648711429015137
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 8130,
+            "drafted": 55,
+            "accepted": 46
+          },
+          "neural_arm_activity": {
+            "rounds": 8130,
+            "drafted": 55,
+            "accepted": 46
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.14568688130629504
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bits8",
+      "median_delta_pct": 0.21599056427361596,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 8130,
+            "drafted": 55,
+            "accepted": 46
+          },
+          "neural_arm_activity": {
+            "rounds": 8079,
+            "drafted": 120,
+            "accepted": 97
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 1.117049753994137
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 8130,
+            "drafted": 56,
+            "accepted": 46
+          },
+          "neural_arm_activity": {
+            "rounds": 8130,
+            "drafted": 56,
+            "accepted": 46
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.1895632475554354
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 8130,
+            "drafted": 55,
+            "accepted": 46
+          },
+          "neural_arm_activity": {
+            "rounds": 8130,
+            "drafted": 56,
+            "accepted": 46
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.23410236824232822
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bf16",
+      "median_delta_pct": 0.1555419691112503,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "neural_arm_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.1895457506948306
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "neural_arm_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.06219152264819172
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "neural_arm_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.1555419691112503
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bits8",
+      "median_delta_pct": 0.4311348086038169,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "neural_arm_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.12396391975796339
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "neural_arm_activity": {
+            "rounds": 495,
+            "drafted": 30,
+            "accepted": 16
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.30753405221786156
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 511,
+            "drafted": 0,
+            "accepted": 0
+          },
+          "neural_arm_activity": {
+            "rounds": 495,
+            "drafted": 30,
+            "accepted": 16
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.4311348086038169
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bf16",
+      "median_delta_pct": 0.3361278334536033,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "neural_arm_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.3698173481190281
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "neural_arm_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.1994950505559867
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "neural_arm_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.02995922729713829
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bits8",
+      "median_delta_pct": -0.15341577898559944,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "neural_arm_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.4046301878483094
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "neural_arm_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.49559228070663597
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "neural_arm_activity": {
+            "rounds": 2043,
+            "drafted": 10,
+            "accepted": 1
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.048410688166211635
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bf16",
+      "median_delta_pct": 0.08242918213017258,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 4083,
+            "drafted": 14,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 4083,
+            "drafted": 14,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.3179515850061154
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 4083,
+            "drafted": 13,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 4083,
+            "drafted": 14,
+            "accepted": 5
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": -0.07561536796294455
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 4083,
+            "drafted": 14,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 4083,
+            "drafted": 14,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.044718026795020904
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bits8",
+      "median_delta_pct": -0.00025400736225478227,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 4083,
+            "drafted": 14,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 4083,
+            "drafted": 14,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.18158032890918108
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 4083,
+            "drafted": 13,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 4083,
+            "drafted": 13,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.2935059356176217
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 4083,
+            "drafted": 14,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 4083,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "same_aggregate_work": false,
+          "paired_delta_pct": 0.027909559395822292
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bf16",
+      "median_delta_pct": -0.08826554000005427,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": 0.05120470444237579
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.1438804539015348
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.14223188478930116
+        }
+      ]
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bits8",
+      "median_delta_pct": -0.11350111847004962,
+      "reps": [
+        {
+          "rep": 0,
+          "plain_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.11350111847004962
+        },
+        {
+          "rep": 1,
+          "plain_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.28056196593501115
+        },
+        {
+          "rep": 2,
+          "plain_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "neural_arm_activity": {
+            "rounds": 8171,
+            "drafted": 12,
+            "accepted": 5
+          },
+          "same_aggregate_work": true,
+          "paired_delta_pct": -0.1256971063322232
+        }
+      ]
+    }
+  ]
+}

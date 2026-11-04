@@ -2,7 +2,7 @@
 
 Source: [`ca54e6889ed8ed00400bfeb4fa1be30a3a687de5`](https://github.com/BlivionIaG/TensorFold/commit/ca54e6889ed8ed00400bfeb4fa1be30a3a687de5). Pinned upstream main: `00ff0f3b2c7ee67546e7a406f074e6d1d5c02593`.
 
-The protocol was [published at `634a3031d`](https://github.com/BlivionIaG/TensorFold/tree/634a3031d082eba23746b073429c944af09e0d32/docs/receipts/lfm2-dspark-review/ca54e6889) **before this revision's M5 launch**. This report responds only to [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133). M4 verification and both devices' original numerical guards are complete; the M5 full matrix is running. **No full performance result or pass claimed yet.**
+The protocol was [published at `634a3031d`](https://github.com/BlivionIaG/TensorFold/tree/634a3031d082eba23746b073429c944af09e0d32/docs/receipts/lfm2-dspark-review/ca54e6889) **before this revision's M5 launch**. This report responds only to [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133). M4 verification, both devices' original numerical guards and the M5 full matrix are complete. Every M5 contrast meets the user's loss budget, but the original stricter gate still fails. Separate A/A and the remaining M5 correctness phases continue; no whole-workflow completion is claimed yet.
 
 ## Why this source follows the failed prerequisite
 
@@ -14,6 +14,7 @@ The [source-dc4558f5c packet](../dc4558f5c/README.md) retains both chips' origin
 - `metal_main.zig`: 637 → 547 lines, with DSpark registrations owned by the existing family suite. Cases and numerical bounds are unchanged.
 - Current main integrated, including its non-LFM2 support. Unrelated CI-dispatch and CONTRIBUTING additions removed; prior published commits preserved. No CI PR or unrelated model work.
 - Actual lean comparison: **425 head / 425 pinned-base warnings, zero new**. Formatting passed for this revision before commit.
+- Current-source upstream CI is **11/11 successful jobs** across [Zig format](https://github.com/ashhart/TensorFold/actions/runs/41874396542), [No GPU](https://github.com/ashhart/TensorFold/actions/runs/41874396528) and [App/mobile](https://github.com/ashhart/TensorFold/actions/runs/41874396523). [Head-bound raw proof](ci/upstream.json); no cancellations or reruns.
 
 ## Current-source numerical guards
 
@@ -61,6 +62,61 @@ Independent head diagnostics above remain enabled on M4; they are not neural ser
 This is not a new active-drafter M4 performance matrix: M4 is now ineligible. No new M4 long invocation
 was made; prior long receipts and the independent maximum-context diagnostic OOM retain their original
 source bindings. The earlier routing-only smoke is retained in the immutable predeclaration.
+
+## Completed original M5 matrix
+
+The original frozen verdict was replayed from the raw records and exactly reproduced the stored summary.
+Source and native binary identities match the completed guard receipt.
+
+| Check | Result |
+|---|---|
+| Measured cells | 144/144 complete and valid |
+| Oracle seed pairs | 306/306 valid |
+| Exactness / scenario failures | 0 / 0 |
+| User's observed loss budget, less than 1% | **32/32 within budget**, none losing at least 1% |
+| Maintainer's every-cell-at-least-plain rule | **FAIL: 11/32 negative contrasts** |
+| Worst median delta | **−0.4829273348%**, BF16, greedy code, four streams |
+| Original exit | **3**, preserved before A/A |
+| Original full-matrix servers | 9/9 clean exits, no forced kill |
+
+Median aggregate decode tokens/s across the original three rotations; deltas are relative to each plain median:
+
+| Prompt | T | Streams | Plain t/s | BF16 t/s | BF16 delta | 8-bit t/s | 8-bit delta |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| code | 0 | 1 | 285.441 | 289.272 | +1.34218% | 289.993 | +1.59468% |
+| code | 0 | 4 | 641.352 | 638.255 | −0.482927% | 645.995 | +0.723975% |
+| code | 0 | 8 | 853.441 | 854.530 | +0.127536% | 853.523 | +0.00961988% |
+| code | 0 | 16 | 873.740 | 872.941 | −0.0914648% | 887.631 | +1.58978% |
+| code | 1 | 1 | 271.721 | 272.037 | +0.116139% | 274.045 | +0.855061% |
+| code | 1 | 4 | 550.835 | 552.574 | +0.315656% | 550.585 | −0.0454163% |
+| code | 1 | 8 | 713.359 | 714.059 | +0.0980673% | 714.963 | +0.224819% |
+| code | 1 | 16 | 879.739 | 877.623 | −0.240449% | 877.651 | −0.237362% |
+| chat | 0 | 1 | 264.912 | 265.219 | +0.11586% | 265.560 | +0.244467% |
+| chat | 0 | 4 | 624.653 | 624.317 | −0.0536707% | 624.876 | +0.0357964% |
+| chat | 0 | 8 | 821.379 | 820.754 | −0.0761216% | 821.523 | +0.0175538% |
+| chat | 0 | 16 | 811.253 | 811.495 | +0.0298579% | 813.005 | +0.215991% |
+| chat | 1 | 1 | 259.296 | 259.699 | +0.155542% | 260.414 | +0.431135% |
+| chat | 1 | 4 | 560.857 | 562.742 | +0.336128% | 559.997 | −0.153416% |
+| chat | 1 | 8 | 720.257 | 720.850 | +0.0824292% | 720.255 | −0.000254007% |
+| chat | 1 | 16 | 885.140 | 884.359 | −0.0882655% | 884.136 | −0.113501% |
+
+The frozen summary's `failures_total` counts exactness/scenario/startup failures, **not performance
+negatives**. Its zero does not mean zero performance failures or zero floating-point error. Even the
+−0.000254007% contrast above remains negative under the unchanged original rule. A/A will not rewrite it.
+
+Across paired repetitions, 44/96 comparisons have identical aggregate rounds/drafted/accepted counts;
+21/32 contrasts change sign across the three repetitions. The worst-median case has different aggregate
+work in all three pairs, including two extra target rounds in repetition 1. These counts include ordinary
+copies and are **not neural-execution counters**. Neither count parity nor sign changes establish a
+measurement-error floor or attribute all losses. [Complete work observations](m5-full/aggregate-work-parity.json).
+
+[Metadata](m5-full/metadata.json), [cells](m5-full/cells.jsonl), [events](m5-full/events.jsonl),
+[original summary](m5-full/summary.json), [original phase result](m5-full/full-matrix.controller.log),
+[hash/redaction ledger](m5-full/original-published-sha256.json). The
+[lossless request stream](m5-full/requests.lossless.jsonl.gz) decompresses byte-identically to the original
+request JSONL; private server logs stay private. The [frozen driver](protocol/frozen-driver/) is included
+byte-identically. Independent historical model-input/backbone/dispatch findings and their limits remain
+in [the code diagnosis](https://github.com/BlivionIaG/TensorFold/blob/ca54e6889ed8ed00400bfeb4fa1be30a3a687de5/docs/receipts/lfm2-dspark-review/diagnosis.md).
 
 ## Frozen M5 procedure
 

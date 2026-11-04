@@ -1,0 +1,26 @@
+{
+  "expected_cells": 144,
+  "recorded_cells": 144,
+  "ok_cells": 144,
+  "oracle_seeds": 306,
+  "oracle_ok": 306,
+  "exactness": {
+    "failures": 0
+  },
+  "scenario": {
+    "failures": 0
+  },
+  "failures_total_excludes_performance": 0,
+  "original_exit_code": 3,
+  "original_performance_verdict": "fail",
+  "negative_contrasts": 11,
+  "contrasts": 32,
+  "losing_at_least_one_percent": 0,
+  "worst": {
+    "prompt": "code",
+    "temperature": 0.0,
+    "streams": 4,
+    "arm": "bf16",
+    "delta_pct": -0.48292733479428085
+  }
+}

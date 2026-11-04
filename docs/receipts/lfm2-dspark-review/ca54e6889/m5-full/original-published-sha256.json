@@ -1,0 +1,60 @@
+{
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+  "original_verdict_replayed_exactly": true,
+  "original_exit_code": 3,
+  "private_logs_not_published": true,
+  "files": [
+    {
+      "source_path": "metadata.json",
+      "published_path": "metadata.json",
+      "original_sha256": "42084b6bee047285ea7719b67e37988b83602ddea4b58c6be4c8f40505a6e155",
+      "published_sha256": "42084b6bee047285ea7719b67e37988b83602ddea4b58c6be4c8f40505a6e155",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "cells.jsonl",
+      "published_path": "cells.jsonl",
+      "original_sha256": "a1073c3d4b1a80d1dea8499ed7cd407c7af4ea28761821a0309fd6d06818c1a1",
+      "published_sha256": "a1073c3d4b1a80d1dea8499ed7cd407c7af4ea28761821a0309fd6d06818c1a1",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "events.jsonl",
+      "published_path": "events.jsonl",
+      "original_sha256": "46020540eeaa46f6e2b45b275925748bb452d833344ea16d0e9ea8d2b8116e2b",
+      "published_sha256": "46020540eeaa46f6e2b45b275925748bb452d833344ea16d0e9ea8d2b8116e2b",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "summary.json",
+      "published_path": "summary.json",
+      "original_sha256": "5c8dc453410a51b8d8c93977a45aace80f257422123eb509f8ff75afe26950b2",
+      "published_sha256": "5c8dc453410a51b8d8c93977a45aace80f257422123eb509f8ff75afe26950b2",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "requests.jsonl",
+      "published_path": "requests.lossless.jsonl.gz",
+      "original_sha256": "397b553ff930dfa89fdd90e4853d001c11187e82aaa2d13bc91f1bc1f4c4fad0",
+      "published_uncompressed_sha256": "397b553ff930dfa89fdd90e4853d001c11187e82aaa2d13bc91f1bc1f4c4fad0",
+      "published_gzip_sha256": "4ae15c3b329ff16744f92f124975ec12b343365cb6a9bd61b7cdb7ba72bb4ee9",
+      "gzip_roundtrip_verified": true,
+      "published_uncompressed_byte_identical_to_original": true
+    },
+    {
+      "source_path": "full-matrix.controller.log",
+      "published_path": "full-matrix.controller.log",
+      "original_sha256": "01e22a7a759e1e55f3295bfbb3c0e4eaec4f34087c3ed3f24d789b3d9ac5898e",
+      "published_sha256": "025d2e24e95e0fc1a8c0cbfbae65dc1291349ec29758587e2bef7a3aabd56a3a",
+      "path_redactions_only": true
+    },
+    {
+      "source_path": "pipeline-observed.snapshot.json",
+      "published_path": "pipeline-observed.snapshot.json",
+      "original_sha256": "1b3466d79032cb507039e55ede391c8aa1774c60b52eef83274c1bd6e86d2574",
+      "published_sha256": "f70decbdb23e66c800ac23865514e7cf4164299a4541e0b8938337c7fed1f36b",
+      "path_redactions_only": true
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "schema": "lfm2-dspark-r38-pipeline/1",
+  "controller_pid": 40014,
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+  "manifest_sha256": "c31e0764a7e6b2bda58fe206733c701539bf4b244580a648422ed2e929f7b71a",
+  "started_unix_ns": 1793812852300522000,
+  "complete": false,
+  "qualification_pass": false,
+  "status": "running",
+  "records": [
+    {
+      "label": "original-guards",
+      "command": [
+        "$PYTHON",
+        "$M5_PACKET/m5-guards/run-guards.py"
+      ],
+      "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+      "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+      "started_unix_ns": 1793812853810836000,
+      "status": "exited",
+      "pid": 40051,
+      "returncode": 0,
+      "log_sha256": "b4458b6349b11f1cc0fb3470a6542a014217f622f01671e9e859998ef513eea1",
+      "completed_unix_ns": 1793813247665440000,
+      "elapsed_s": 393.85297124972567
+    },
+    {
+      "label": "full-matrix",
+      "command": [
+        "$PYTHON",
+        "$M5_PACKET/run-full-matrix.py",
+        "--binding",
+        "$M5_PACKET/m5-guards/binding.json",
+        "--guard-proof",
+        "$M5_PACKET/m5-guards/observed.json",
+        "--binary",
+        "$M5_PACKET/runtime/tensorfold-native",
+        "--output",
+        "$M5_PACKET/m5-full"
+      ],
+      "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+      "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+      "started_unix_ns": 1793813247678191000,
+      "status": "exited",
+      "pid": 40267,
+      "returncode": 3,
+      "log_sha256": "01e22a7a759e1e55f3295bfbb3c0e4eaec4f34087c3ed3f24d789b3d9ac5898e",
+      "completed_unix_ns": 1793815262711028000,
+      "elapsed_s": 2015.0352451666258
+    },
+    {
+      "label": "plain-aa",
+      "command": [
+        "$PYTHON",
+        "$M5_PACKET/run_plain_aa.py",
+        "--binding",
+        "$M5_PACKET/m5-guards/binding.json",
+        "--guard-proof",
+        "$M5_PACKET/m5-guards/observed.json",
+        "--binary",
+        "$M5_PACKET/runtime/tensorfold-native",
+        "--protocol",
+        "$M5_PACKET/protocol/study.json",
+        "--protocol-sha256",
+        "92e210a9980310422712ffa4a976620a9d6c6408c5c94ec2e01ca67a91354633",
+        "--source-revision",
+        "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+        "--source-sha256",
+        "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+        "--output",
+        "$M5_PACKET/plain-aa"
+      ],
+      "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+      "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+      "started_unix_ns": 1793815262727003000,
+      "status": "running",
+      "pid": 40726
+    }
+  ],
+  "lock_observations": [
+    {
+      "before": "original-guards",
+      "inode": 3719605,
+      "wait_seconds": 0.029112874995917082,
+      "unix_ns": 1793812853846308000
+    },
+    {
+      "before": "full-matrix",
+      "inode": 3719605,
+      "wait_seconds": 0.023112125229090452,
+      "unix_ns": 1793813247707712000
+    },
+    {
+      "before": "plain-aa",
+      "inode": 3719605,
+      "wait_seconds": 0.023274207953363657,
+      "unix_ns": 1793815262756706000
+    }
+  ],
+  "python": {
+    "executable": "$PYTHON",
+    "version": "3.13.15 (main, Sep  1 2026, 14:05:45) [Clang 22.1.3 ]",
+    "sha256": "2fb4683f9ab944ee39c46ff4184c985cd00b3431610440cf60b9fb8e2d1c8528"
+  },
+  "source_verified_before": true,
+  "source_tree": "b1240ee49b313843e46e33b07e50522d378de988",
+  "source_tree_ids": {
+    "zig": "7748b5f103e4da00f9155b499d09c49cb615d87c",
+    "build.zig": "241e316fbebe9c77220066b47eb43e74e80bffda",
+    "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+  },
+  "removed_environment": [
+    "TENSORFOLD_BENCHMARK_TOKEN"
+  ],
+  "active_phase": "plain-aa",
+  "native_binary_sha256": "50d52f95a58c0c62cdecda98eb97f8eedfd82798b73ae430381cbc6a708bb517",
+  "native_tools_sha256": {
+    "tf-kernel-contract": "630fc7a688b6abba90c2e05f36eb9800b8f6347d32d26052d59480637386f346",
+    "tf-lfm2-dspark": "a717296c420c2d6d3b6214138483e6d090e7af8201429d49b7897224ccc30f28"
+  },
+  "original_gate_returncode": 3,
+  "original_evidence_sha256_before_aa": {
+    "cells.jsonl": "a1073c3d4b1a80d1dea8499ed7cd407c7af4ea28761821a0309fd6d06818c1a1",
+    "events.jsonl": "46020540eeaa46f6e2b45b275925748bb452d833344ea16d0e9ea8d2b8116e2b",
+    "metadata.json": "42084b6bee047285ea7719b67e37988b83602ddea4b58c6be4c8f40505a6e155",
+    "private-logs/r0-bf16.server.log": "9b07953bf1433115e2fd1ada1358d19383236fe8c1acc110bcb39cdd9525350d",
+    "private-logs/r0-bits8.server.log": "8d3d09870f7cb56220915d9789e2cec048aa191358935d28b7cf578fabb62a87",
+    "private-logs/r0-plain.server.log": "451296898d9a04e7f1cef8d9a5bd59591ad1d66b34d19dc766d0d1f2fbdb0b3d",
+    "private-logs/r1-bf16.server.log": "eb3d80d79e208888d12ad1359439139b23f36b120fd7608fd25d838b13c47096",
+    "private-logs/r1-bits8.server.log": "4e453b033ccf330df8b76d8452ba6d10d89a5406c604384a7dbab3cf822eb04a",
+    "private-logs/r1-plain.server.log": "4dead000c5df59a95cccd07af89b8728b8b5bd4aaad26b61bc1e0b9f8cad4df2",
+    "private-logs/r2-bf16.server.log": "1bf6cab0c44823e29369dcf2e80f21a9d4e6ce333fb80a96bfd306691b08caa7",
+    "private-logs/r2-bits8.server.log": "039f1add9b5bfdb56aa009cae24a62998740a3612f547c6dba42a58591bb7bd8",
+    "private-logs/r2-plain.server.log": "904d520f4b4556600953501f7555d5d41a0d11d98678c7edfed22f1bbdea96c7",
+    "requests.jsonl": "397b553ff930dfa89fdd90e4853d001c11187e82aaa2d13bc91f1bc1f4c4fad0",
+    "summary.json": "5c8dc453410a51b8d8c93977a45aace80f257422123eb509f8ff75afe26950b2"
+  }
+}
