@@ -27,6 +27,7 @@ test {
     _ = @import("vision_markers_test.zig");
     _ = @import("embedding_protocol_test.zig");
     _ = @import("embedding_service_test.zig");
+    _ = @import("readout_service_test.zig");
     _ = @import("http_limits_test.zig");
     _ = @import("done_times_test.zig");
     _ = @import("drain_test.zig");
@@ -120,6 +121,7 @@ test {
     _ = @import("rerank_test.zig");
     _ = @import("rerank_ids_test.zig");
     _ = @import("rerank_cut_test.zig");
+    _ = @import("rerank_decide_test.zig");
     _ = @import("slide_context_test.zig");
     // both run over Unix socket pairs
     if (comptime @import("builtin").os.tag != .windows) {

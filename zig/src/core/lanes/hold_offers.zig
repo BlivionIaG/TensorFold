@@ -95,7 +95,7 @@ fn offerFor(rule: anytype, who: anytype, index: usize, wanted: i64, base: price.
             .shortened = false,
             .pays = false,
         };
-        if (rule.shared_costs.get(@as(i64, base.rows) + @as(i64, @intFromFloat(held.rows)))) |verify| {
+        if (base.forwardMs(rule.shared_costs, @as(i64, base.rows) + @as(i64, @intFromFloat(held.rows)))) |verify| {
             held.pays = (base.tokens + held.gain) / (verify + fixed + base.host_ms + held.rows * who.row_ms + price.holdMs(rule.k.hold_costs, 1, held.depth) + context_ms) > plain;
         }
         break :legacy held;
@@ -106,7 +106,7 @@ fn offerFor(rule: anytype, who: anytype, index: usize, wanted: i64, base: price.
 /// All rows already owed to non-head work remain in `base`; only reserved head prefixes are optional.
 pub fn pay(rule: anytype, whos: anytype, sampled: bool, out: []i64, base: price.Base) !void {
     if (whos.len > rule.batch_rows) return error.BadHoldStreamCount;
-    const forward = rule.shared_costs.get(base.rows) orelse {
+    const forward = base.forwardMs(rule.shared_costs, base.rows) orelse {
         var blocks: usize = 0;
         var deepest: i64 = 0;
         var context_rows: u32 = 0;
@@ -205,7 +205,7 @@ pub fn pay(rule: anytype, whos: anytype, sampled: bool, out: []i64, base: price.
     if (normal == 0) return;
     const order = rule.hold_order[0..normal];
     std.mem.sort(Offer, order, {}, Offer.less);
-    const starting_forward = rule.shared_costs.get(@intFromFloat(@ceil(rows))) orelse return;
+    const starting_forward = base.forwardMs(rule.shared_costs, @intFromFloat(@ceil(rows))) orelse return;
     for (order) |item| out[item.index] = 0;
     const probe_ms = passCost(rule, whos, out, probes, deepest, context_rows);
     var best = tokens / (starting_forward + fixed + host_ms + probe_ms);
@@ -225,7 +225,7 @@ pub fn pay(rule: anytype, whos: anytype, sampled: bool, out: []i64, base: price.
             current_host_ms += item.rows * item.row_ms;
             current_deepest = @max(current_deepest, item.depth);
             current_context_rows = @max(current_context_rows, item.hold_context_rows);
-            const verify = rule.shared_costs.get(@intFromFloat(@ceil(current_rows))) orelse break;
+            const verify = base.forwardMs(rule.shared_costs, @intFromFloat(@ceil(current_rows))) orelse break;
             out[item.index] = item.depth;
             const now = current_tokens / (verify + fixed + current_host_ms + passCost(rule, whos, out, count + probes, current_deepest, current_context_rows));
             if (now > best) {
@@ -327,7 +327,7 @@ fn contextAllowsProbe(rule: anytype, whos: anytype, depths: []const i64, base: p
             host_ms += @as(f64, @floatFromInt(count)) * whos[i].row_ms;
         }
         if (base.rows + extra > rule.batch_rows) break;
-        const verify = rule.shared_costs.get(base.rows + extra) orelse return true;
+        const verify = base.forwardMs(rule.shared_costs, base.rows + extra) orelse return true;
         const clean_ms = price.rowsMs(rule.k.hold_costs, &.{}, rule.k.hold_rows, rule.k.hold_block_rows, view);
         if ((base.tokens + @as(f64, @floatFromInt(extra))) / (verify + fixed + host_ms + clean_ms + context_ms) > plain)
             return true;

@@ -4,7 +4,24 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- GLM-5.3-Flash on a Mac without tensor units learns what a shared round's row costs on that chip instead of pricing it from an M5 Ultra's table, so an M3 Ultra stops over-drafting with several requests at once: about 14% more at four streams when drafts land often, with the same tokens (measured on 40 of the 45 layers).
+
+- LFM2 DSpark keeps context and host-draw prices separate from learned shared-row costs when integrated with current main. CLI GPU admission tests live in their own module to keep the shared CLI test file below 600 lines.
+
+- LFM3-1.7B runs on Intel GPUs through XPU, Iris Xe first. Thanks @jschmied.
+
+- Qwen3.5 decode on HIP reads the BF16 router rows the model already holds, with the same tokens. Thanks @AbrahamCete.
+
+- Qwen3.5 prompts on HIP run the residual add and post-mixer norm in one launch, with the same bytes. Thanks @AbrahamCete.
+
+- GLM-5.3-Flash on CUDA loads block 32's image only for a `csf0_v1` checkpoint, and refuses a row past 0x7E by name on every rank. Thanks @Bizuayeu.
+
+- Qwen3.5-MoE's prompt sorts its experts' rows in one threadgroup, a thread an expert, with the same order as the serial sort (#1799). Thanks to @BobClawblaw.
+- The lane core takes readout requests for decision prompts, read in pinned 1,024-row pieces, and a batched embedding request no longer hangs on a backend that prefills many prompts at once (#2047). Thanks to @laudney.
+
 - XPU's dense 27B takes its kernel sizes from one shared `shape.h`, with 8-head prompt attention, and its SPIR-V images stay byte-identical (#1425, thanks @tolewis).
+
+- PNG pictures with a `tRNS` key past 255, or a 16-bit key, now decode with Pillow's transparency: grayscale and RGB keys compare their low byte with the decoded sample. Pictures without such a key decode as before, and 1-bit grayscale keeps its whole-key rule.
 
 - GLM on CUDA at TP>1: the DFlash2 drafter reads complete prompt taps on every rank (it read stale residual rows under the split prompt reduce), so acceptance is back to the gathered level with every reply unchanged (#1623, thanks @BadAd84).
 
@@ -104,6 +121,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - DeepSeek-V4.1 on CUDA reads `--prompt-cache-gib` as the kept states' resident limit on every rank (0: none resident in RAM; with `TF_DSV41_SESSION_DISK` an evicted chat is parked on disk): with TP > 1 rank 0 sends its limit to the other ranks at startup. A set `TF_DSV41_SESSION_RESIDENT_GIB` wins on rank 0; set on another rank, it must equal rank 0's limit or every rank refuses to start (#1625).
 - On RDNA4 (gfx12), Qwen3-8B's BF16 projections run on a new WMMA tile under the default `matrix=auto`: Qwen3-Embedding-8B embeds 100 short inputs in 0.99 s instead of 2.47 s and Qwen3-Reranker-8B ranks 16 documents in 1.39 s instead of 3.22 s on a Radeon AI PRO R9700. The tile's fp32 sums are less precise than the dot2 chain's (8 to 41 times further from float64 per projection); the BF16 projections the engine writes are as close, and both models pass their oracles. `--policy matrix=off` keeps the dot2 tile and its bits, and other chips are unchanged (part of #1977). Thanks to @laudney.
 - On RDNA4 (gfx12), Qwen3-8B's BF16 projections can run on a new WMMA tile, opt-in with `--policy matrix=on`: Qwen3-Embedding-8B embeds 100 short inputs in 0.99 s instead of 2.47 s and Qwen3-Reranker-8B ranks 16 documents in 1.39 s instead of 3.22 s on a Radeon AI PRO R9700. The tile's fp32 sums are less precise than the dot2 chain's (8 to 41 times further from float64 per projection), so the default `matrix=auto` keeps the dot2 tile and its bits; the BF16 projections WMMA writes are as close, and both models pass their oracles on it. Other chips are unchanged, and gfx1200 is unmeasured (part of #1977). Thanks to @laudney.
+- `/v1/rerank` sends a request's documents to the engine as one decision, and Qwen3-Reranker-8B on HIP packs them into as few prompt passes as fit instead of one pass a document, with the same responses byte for byte: 16 documents of about 260 tokens take 2.69 s instead of 3.22 s on the dot2 tile and 1.00 s instead of 1.39 s with the gfx12 WMMA tile of #2034, on a Radeon AI PRO R9700. The lane host carries `Engine.decide` for a backend that gives it; no other family changes (part of #1977). Thanks to @laudney.
+- `/v1/rerank` sends a request's documents to the engine as one decision, and Qwen3-Reranker-8B on HIP packs them into as few prompt passes as fit instead of one pass a document, with the same responses byte for byte: 16 documents of about 260 tokens take 2.69 s instead of 3.22 s on the dot2 tile and 1.00 s instead of 1.39 s with the gfx12 WMMA tile of #2034 (opt-in, `--policy matrix=on`), on a Radeon AI PRO R9700. The lane host carries `Engine.decide` for a backend that gives it; no other family changes (part of #1977). Thanks to @laudney.
 
 - The native HIP engine serves `Qwen/Qwen3-Embedding-8B` as Qwen publishes it (BF16) through `/v1/embeddings` on a Radeon AI PRO R9700 (gfx1201): BF16 dense weights stay BF16 on a new dot2 GEMM tile, inputs of up to 32,768 tokens batch to the same vectors as alone, and `dimensions` takes any MRL width from 32 to 4,096. Every family's `/v1/embeddings` now refuses a whitespace-only text as SGLang does, and names an input longer than the context with its token count (`context_length_exceeded`) before the batch limit; see [the API notes](docs/api.md#embeddings) (#1978, part of #1977). Thanks to @laudney.
 
@@ -214,7 +233,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - On Ryzen AI Max (RDNA 3.5) GPUs, one- and two-row decode launches use narrower stream tiles, so Qwen3.6-35B-A3B chat decodes about 18% faster with drafts on, and Qwen3.8-27B about 5% faster, with the same tokens (#1855). Thanks to @AbrahamCete.
 
-- Flash Next on RDNA 3.5 iGPUs (gfx1150 to gfx1153) fills prompts in 4,096-row chunks by default on one GPU, falling back to 1,024 when the larger chunk would admit fewer streams. Tokens are unchanged (#1651, fixes #1649). Thanks to @gilby.
+- Flash Next on RDNA 3.5 iGPUs (gfx1150 to gfx1153) fills prompts in 4,096-row chunks by default on one GPU, falling back to 1,024 when the larger chunk would admit fewer streams. Tokens are unchanged. The larger chunk's scratch holds about 4.6 GiB more device memory; `--policy prefill_step=1024` gives it back (#1651, fixes #1649). Thanks to @gilby.
 
 - CUDA's Qwen DFlash2 drafters must declare sliding attention on every layer (`use_sliding_window` and one `sliding_attention` per layer), which the kernels run, so a drafter declaring a full-attention layer is refused before loading instead of running through the sliding ring (#1946, part of #1863). Thanks to @garvrao80.
 

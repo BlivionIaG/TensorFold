@@ -144,6 +144,12 @@ pub const Base = struct {
     rows: u32,
     tokens: f64,
     host_ms: f64 = 0, // committed rows' host work, including copies and forced rows
+    row_ms: f64 = 0, // learned shared-forward excess; quoted host work remains separate
+
+    pub fn forwardMs(b: Base, costs: *const Table, rows: i64) ?f64 {
+        const forward = costs.get(rows) orelse return null;
+        return forward + b.row_ms * @as(f64, @floatFromInt(@max(0, rows - @as(i64, @intCast(b.streams)))));
+    }
 
     /// Every stream awaits one row and keeps one token (a round no reservation has touched).
     pub fn pending(streams: usize) Base {
@@ -174,7 +180,7 @@ pub const ProbeCache = struct {
 pub fn prefix(costs: *const Table, holds: []const HoldCost, context_ms: f64, base: Base, fixed: f64, row_ms: f64, probabilities: []const f64, observed: []const f64, tried: usize, wanted: i64) ?Prefix {
     if (holds.len == 0 or wanted <= 0 or probabilities.len == 0) return null;
     const full: usize = @min(probabilities.len, @as(usize, @intCast(wanted)));
-    const plain = costs.get(base.rows) orelse return null;
+    const plain = base.forwardMs(costs, base.rows) orelse return null;
     const plain_score = base.tokens / (plain + fixed + base.host_ms);
     const seen = @min(tried, observed.len);
     var survival: f64 = 1;
@@ -194,7 +200,7 @@ pub fn prefix(costs: *const Table, holds: []const HoldCost, context_ms: f64, bas
         const last = n == full;
         if (last) lowered = seen_gain < raw;
         const depth: i64 = if (last) wanted else @intCast(n);
-        const verify = costs.get(@as(i64, base.rows) + @as(i64, @intCast(n))) orelse continue;
+        const verify = base.forwardMs(costs, @as(i64, base.rows) + @as(i64, @intCast(n))) orelse continue;
         const score = (base.tokens + gain) / (verify + fixed + base.host_ms + @as(f64, @floatFromInt(n)) * row_ms + holdMs(holds, 1, depth) + context_ms);
         if (last and score > plain_score) {
             best = .{ .depth = depth, .gain = gain, .rows = @floatFromInt(n), .lowered = false, .shortened = false, .pays = true };
@@ -271,9 +277,9 @@ pub fn canExplore(rule: anytype, whos: anytype, base: Base, fixed: f64) bool {
         rule.explore_price = .{ .rows = base.rows, .heads = heads, .depth = depth, .stamp = stamp, .marginal = lowest };
         break :m lowest;
     };
-    const live = cheapest + row_ms;
+    const live = cheapest + row_ms + base.row_ms;
     if (!std.math.isFinite(live)) return false;
-    return base.tokens * live < plain + fixed + base.host_ms;
+    return base.tokens * live < plain + fixed + base.host_ms + base.row_ms * @as(f64, @floatFromInt(base.rows -| base.streams));
 }
 
 /// Discard accounted startup/out-of-round work before the clock starts; pending GPU remains pending.
@@ -431,4 +437,45 @@ test "allocated counts price the same passes: charged streams only, past the fre
     try near(@as(f64, 0), countsMs(&product, &.{}, 32, 0, &.{ 1, 1, 1 }, &.{}, 1, &.{}), 1e-12); // nothing past the free first
     try near(@as(f64, 20), countsMs(&flat, &.{}, 32, 0, &.{ 9, 1, 1, 1, 1, 1, 1, 1 }, &.{}, 0, &.{}), 1e-9);
     try near(@as(f64, 10), countsMs(&flat, &.{}, 0, 0, &.{ 9, 1, 1, 1, 1, 1, 1, 1 }, &.{}, 0, &.{}), 1e-9);
+}
+
+test "a granted hold stays only while its stream's expected drafts pay for the verify rows and the hold pass" {
+    const Rule = @import("depth.zig").Rule;
+    const State = @import("depth.zig").State;
+    const Who = @import("depth.zig").Who;
+    const gpa = std.testing.allocator;
+    var shared: Table = .{};
+    defer shared.deinit(gpa);
+    for (1..33) |w| try shared.put(gpa, @intCast(w), 10.0 + @as(f64, @floatFromInt(w)));
+    const empty: Table = .{};
+    const cheap = [_]HoldCost{ .{ .streams = 1, .depth = 1, .ms = 1.0 }, .{ .streams = 8, .depth = 1, .ms = 4.5 } };
+    var states: [4]?State = @splat(null);
+    defer for (&states) |*st| if (st.*) |*x| x.deinit(gpa);
+    const granted = [_]?u32{ 2, 2, 0, 1 };
+    const gains = [_]?f64{ 1.8, 0.2, null, 0.9 };
+    var whos: [4]Who = undefined;
+    for (&whos, &states, granted, gains) |*w, *st, g, x| w.* = .{ .state = st, .draft_room = 100, .finished = false, .forced = false, .granted = g, .gain = x };
+    var rule: Rule = .{ .gpa = gpa, .k = .{ .hold_costs = &cheap }, .prior = &.{0.8}, .most_drafts = 9, .family_costs = &empty, .shared_costs = &shared, .mtp_step_ms = 0.5, .plain_guard = true, .node_probabilities = true, .granted_depth = true, .batch_rows = 32 };
+    defer rule.deinit();
+    try rule.observeOverhead(4, 4, shared.get(4).? + 8.0, false, 0); // 8 ms measured: a hold grid assumes no overhead of its own
+    // 8 ms overhead: plain 4 / 22; stream 0 then 3 raise the rate (5.8 / 25, 6.7 / 26.5), stream 1 would lower it
+    var out = [_]i64{ 4, 4, 0, 3 };
+    try rule.payHolds(&whos, false, &out, @import("hold_price.zig").Base.pending(whos.len));
+    try std.testing.expectEqualSlices(i64, &.{ 4, 0, 0, 3 }, &out);
+    var failing = std.testing.FailingAllocator.init(gpa, .{ .fail_index = 0 });
+    rule.gpa = failing.allocator();
+    out = .{ 4, 4, 0, 3 };
+    try rule.payHolds(&whos, false, &out, @import("hold_price.zig").Base.pending(whos.len));
+    try std.testing.expect(!failing.has_induced_failure);
+    try std.testing.expectEqualSlices(i64, &.{ 4, 0, 0, 3 }, &out);
+    rule.gpa = gpa;
+    const dear = [_]HoldCost{.{ .streams = 1, .depth = 1, .ms = 20.0 }};
+    rule.k.hold_costs = &dear;
+    out = .{ 4, 4, 0, 3 };
+    try rule.payHolds(&whos, false, &out, @import("hold_price.zig").Base.pending(whos.len));
+    try std.testing.expectEqualSlices(i64, &.{ 0, 0, 0, 0 }, &out); // no gain pays a 20 ms pass
+    whos[2].granted = 0;
+    out = .{ 4, 4, 2, 3 };
+    try rule.payHolds(&whos, false, &out, @import("hold_price.zig").Base.pending(whos.len));
+    try std.testing.expectEqualSlices(i64, &.{ 0, 0, 2, 0 }, &out); // a probe after a grant of none keeps its hold
 }

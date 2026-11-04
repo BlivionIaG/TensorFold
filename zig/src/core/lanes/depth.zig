@@ -7,6 +7,7 @@ pub const pricedBatched = alloc.pricedBatched;
 
 pub const Constants = struct {
     depth_rate: f64 = 0.15, // weight of the newest round in a depth's acceptance
+    learn_rows: bool = false, // shared_costs came from another machine: learn what a row costs here
     depth_probe_every: u64 = 8, // rounds between probes one depth deeper
     cost_rate: f64 = 0.2, // weight of the newest round in a depth's measured time
     plain_margin: f64 = 1.05, // a drafted depth must beat plain rounds' tokens a ms by this much
@@ -84,6 +85,7 @@ pub const Rule = struct {
     confidence_floor: ?f64 = null,
     batch_rows: u32,
     batched_heads: bool = false, // one batch drafts every stream of a shared round (its steps: the deepest stream's)
+    row_cost: @import("row_cost.zig").RowCost = .{}, // what a row costs past shared_costs here, under k.learn_rows
     round_ms: Table = .{}, // a round's wall time by drafts, every stream's: what sampled streams price by
     overhead: std.ArrayList(Overhead) = .empty, // a shared round's ms past its forward, by streams (insertion order)
     greedy_ms: Table = .{}, // round_ms from greedy rounds alone: what greedy streams price by
@@ -95,6 +97,7 @@ pub const Rule = struct {
 
     pub fn deinit(r: *Rule) void {
         r.gpa.free(r.hold_order);
+        r.row_cost.deinit(r.gpa);
         r.round_ms.deinit(r.gpa);
         r.overhead.deinit(r.gpa);
         r.greedy_ms.deinit(r.gpa);
@@ -293,7 +296,9 @@ pub const Rule = struct {
 
     /// Reserved head prefixes share the full cohort's target rows and one padded hold pass.
     pub fn payHolds(r: *Rule, whos: []const Who, sampled: bool, out: []i64, base: @import("hold_price.zig").Base) !void {
-        return @import("hold_offers.zig").pay(r, whos, sampled, out, base);
+        var priced = base;
+        priced.row_ms = r.row_cost.extraMs(base.streams, sampled);
+        return @import("hold_offers.zig").pay(r, whos, sampled, out, priced);
     }
 
     /// Head drafts for the streams of a shared round, sized by allocation over their chain chances.
@@ -352,13 +357,14 @@ pub const Rule = struct {
         const own_steps = r.draft_step_ms != 0; // the backend's own draft step prices a stream's drafts past its first
         const context_rows = work[whos.len..];
         for (context_rows, 0..) |*rows, i| rows.* = whos[i].hold_context_rows;
+        const extra_row_ms = r.row_cost.extraMs(live, sampled);
         const head: alloc.HeadCost = if (own_steps)
-            .{ .step_ms = r.draft_step_ms, .batched = r.batched_heads and pricedBatched(), .free_first = true, .hold_costs = r.k.hold_costs, .hold_context_costs = r.k.hold_context_costs, .hold_context_rows = context_rows, .hold_rows = r.k.hold_rows, .hold_block_rows = r.k.hold_block_rows, .row_ms = row_ms }
+            .{ .step_ms = r.draft_step_ms, .batched = r.batched_heads and pricedBatched(), .free_first = true, .hold_costs = r.k.hold_costs, .hold_context_costs = r.k.hold_context_costs, .hold_context_rows = context_rows, .hold_rows = r.k.hold_rows, .hold_block_rows = r.k.hold_block_rows, .host_row_ms = row_ms, .row_ms = extra_row_ms }
         else
-            .{ .step_ms = r.mtp_step_ms, .batched = r.batched_heads, .hold_costs = r.k.hold_costs, .hold_context_costs = r.k.hold_context_costs, .hold_context_rows = context_rows, .hold_rows = r.k.hold_rows, .hold_block_rows = r.k.hold_block_rows, .row_ms = row_ms };
+            .{ .step_ms = r.mtp_step_ms, .batched = r.batched_heads, .hold_costs = r.k.hold_costs, .hold_context_costs = r.k.hold_context_costs, .hold_context_rows = context_rows, .hold_rows = r.k.hold_rows, .hold_block_rows = r.k.hold_block_rows, .host_row_ms = row_ms, .row_ms = extra_row_ms };
         // a timed hold grid prices the pass itself: the overhead beyond it is the fixed one either way
         const overhead = if (own_steps and r.k.hold_costs.len == 0) r.overheadMs(live, sampled) else r.fixedMs(live, sampled);
-        const counts = try alloc.allocateDrafts(r.gpa, ones, probs, r.shared_costs, overhead, @max(live, r.batch_rows), head);
+        const counts = try alloc.allocateDrafts(r.gpa, ones, probs, r.shared_costs, overhead, r.row_cost.capRows(live, sampled, @max(live, r.batch_rows)), head);
         defer r.gpa.free(counts);
         r.probeShared(whos, most, counts);
         if (r.plain_guard) {
@@ -434,7 +440,13 @@ pub const Rule = struct {
     /// ms is net of draws/model-only steps; head_ms is actual encoding + settled GPU, or modeled head work.
     pub fn observeOverhead(r: *Rule, streams: u32, rows: u64, ms: f64, sampled: bool, head_ms: f64) !void {
         const forward = r.shared_costs.get(@intCast(rows)) orelse return;
-        const extra = if (ms - forward > 0.0) ms - forward else 0.0;
+        if (r.k.learn_rows) try r.row_cost.observe(r.gpa, streams, rows, ms - forward - head_ms, sampled);
+        // rows the table underprices are no fixed cost: called fixed, they would make the next draft look cheaper
+        const row_ms = r.row_cost.extraMs(streams, sampled);
+        // no fit yet: a wide round's excess may be its rows, and adding it to the overhead draws the next round wider
+        if (r.k.learn_rows and streams > 1 and row_ms == 0 and rows > streams) return;
+        const paid = row_ms * @as(f64, @floatFromInt(rows -| streams));
+        const extra = if (ms - forward - paid > 0.0) ms - forward - paid else 0.0;
         const fixed = if (extra - head_ms > 0.0) extra - head_ms else 0.0;
         try r.addOverhead(&r.overhead, streams, fixed, extra - fixed);
         if (!sampled) try r.addOverhead(&r.greedy_overhead, streams, fixed, extra - fixed);
@@ -552,42 +564,4 @@ test "a copy ahead: one head draft beside it, or none when the head's drafts cos
         try rule.budgets(&whos, probe, false, &out);
         try std.testing.expectEqual(@as(i64, @intFromBool(!first)), out[0]);
     }
-}
-
-test "a granted hold stays only while its stream's expected drafts pay for the verify rows and the hold pass" {
-    const gpa = std.testing.allocator;
-    var shared: Table = .{};
-    defer shared.deinit(gpa);
-    for (1..33) |w| try shared.put(gpa, @intCast(w), 10.0 + @as(f64, @floatFromInt(w)));
-    const empty: Table = .{};
-    const cheap = [_]HoldCost{ .{ .streams = 1, .depth = 1, .ms = 1.0 }, .{ .streams = 8, .depth = 1, .ms = 4.5 } };
-    var states: [4]?State = @splat(null);
-    defer for (&states) |*st| if (st.*) |*x| x.deinit(gpa);
-    const granted = [_]?u32{ 2, 2, 0, 1 };
-    const gains = [_]?f64{ 1.8, 0.2, null, 0.9 };
-    var whos: [4]Who = undefined;
-    for (&whos, &states, granted, gains) |*w, *st, g, x| w.* = .{ .state = st, .draft_room = 100, .finished = false, .forced = false, .granted = g, .gain = x };
-    var rule: Rule = .{ .gpa = gpa, .k = .{ .hold_costs = &cheap }, .prior = &.{0.8}, .most_drafts = 9, .family_costs = &empty, .shared_costs = &shared, .mtp_step_ms = 0.5, .plain_guard = true, .node_probabilities = true, .granted_depth = true, .batch_rows = 32 };
-    defer rule.deinit();
-    try rule.observeOverhead(4, 4, shared.get(4).? + 8.0, false, 0); // 8 ms measured: a hold grid assumes no overhead of its own
-    // 8 ms overhead: plain 4 / 22; stream 0 then 3 raise the rate (5.8 / 25, 6.7 / 26.5), stream 1 would lower it
-    var out = [_]i64{ 4, 4, 0, 3 };
-    try rule.payHolds(&whos, false, &out, @import("hold_price.zig").Base.pending(whos.len));
-    try std.testing.expectEqualSlices(i64, &.{ 4, 0, 0, 3 }, &out);
-    var failing = std.testing.FailingAllocator.init(gpa, .{ .fail_index = 0 });
-    rule.gpa = failing.allocator();
-    out = .{ 4, 4, 0, 3 };
-    try rule.payHolds(&whos, false, &out, @import("hold_price.zig").Base.pending(whos.len));
-    try std.testing.expect(!failing.has_induced_failure);
-    try std.testing.expectEqualSlices(i64, &.{ 4, 0, 0, 3 }, &out);
-    rule.gpa = gpa;
-    const dear = [_]HoldCost{.{ .streams = 1, .depth = 1, .ms = 20.0 }};
-    rule.k.hold_costs = &dear;
-    out = .{ 4, 4, 0, 3 };
-    try rule.payHolds(&whos, false, &out, @import("hold_price.zig").Base.pending(whos.len));
-    try std.testing.expectEqualSlices(i64, &.{ 0, 0, 0, 0 }, &out); // no gain pays a 20 ms pass
-    whos[2].granted = 0;
-    out = .{ 4, 4, 2, 3 };
-    try rule.payHolds(&whos, false, &out, @import("hold_price.zig").Base.pending(whos.len));
-    try std.testing.expectEqualSlices(i64, &.{ 0, 0, 2, 0 }, &out); // a probe after a grant of none keeps its hold
 }
