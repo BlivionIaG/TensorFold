@@ -1,0 +1,121 @@
+test-native
++- run test 110 pass, 3 skip, 1 crash (114 total)
+error: 'draft_sources_metal_test.test.draft sources: Metal Qwen27 copies and DFlash2 use actual slot and head facts' terminated with signal SEGV
+failed command: ./.zig-cache/o/80eeca39960b06c9a111c5ba76177a3c/test --cache-dir=./.zig-cache --seed=0x76048461 --listen=-
+
+test-draft-metal-host
++- run test 10 pass, 1 crash (11 total)
+error: 'draft_sources_metal_test.test.draft sources: Metal Qwen27 copies and DFlash2 use actual slot and head facts' terminated with signal SEGV
+failed command: ./.zig-cache/o/6d556388d6010f5f8a9dd8006242ac62/test --cache-dir=./.zig-cache --seed=0x76048461 --listen=-
+
+Build Summary: 78/82 steps succeeded (2 failed); 783/789 tests passed (4 skipped, 2 crashed)
+tf-lfm2-dspark success
++- install tf-lfm2-dspark success
+   +- compile exe tf-lfm2-dspark fast native-native success 8s MaxRSS:737M
+      +- WriteFile exlr8_alias.zig cached
+      +- WriteFile draft_ids.txt success
+      +- WriteFile xsum.metal success
+      +- WriteFile nemotron_packed.metallib success
+      |  +- run xcrun (nemotron_packed.metallib) success 232ms
+      |     +- run xcrun (coop_down_1_0.air) success 118ms
+      |     +- run xcrun (coop_down_2_0.air) success 119ms
+      |     +- run xcrun (coop_down_2_1.air) success 119ms
+      |     +- run xcrun (coop_draft_1_0.air) success 118ms
+      |     +- run xcrun (coop_draft_2_0.air) success 115ms
+      |     +- run xcrun (coop_draft_2_1.air) success 118ms
+      |     +- run xcrun (coop_eh_1_0.air) success 117ms
+      |     +- run xcrun (coop_eh_1_0_sk.air) success 117ms
+      |     +- run xcrun (coop_eh_2_0.air) success 114ms
+      |     +- run xcrun (coop_eh_2_0_sk.air) success 117ms
+      |     +- run xcrun (coop_eh_2_1.air) success 115ms
+      |     +- run xcrun (coop_eh_2_1_sk.air) success 117ms
+      |     +- run xcrun (coop_head_1_0.air) success 118ms
+      |     +- run xcrun (coop_head_2_0.air) success 114ms
+      |     +- run xcrun (coop_head_2_1.air) success 119ms
+      |     +- run xcrun (coop_in_1_0.air) success 118ms
+      |     +- run xcrun (coop_in_1_0_sk.air) success 117ms
+      |     +- run xcrun (coop_in_2_0.air) success 118ms
+      |     +- run xcrun (coop_in_2_0_sk.air) success 116ms
+      |     +- run xcrun (coop_in_2_1.air) success 119ms
+      |     +- run xcrun (coop_in_2_1_sk.air) success 117ms
+      |     +- run xcrun (coop_out_1_0.air) success 119ms
+      |     +- run xcrun (coop_out_1_0_sk.air) success 115ms
+      |     +- run xcrun (coop_out_2_0.air) success 119ms
+      |     +- run xcrun (coop_out_2_0_sk.air) success 116ms
+      |     +- run xcrun (coop_out_2_1.air) success 115ms
+      |     +- run xcrun (coop_out_2_1_sk.air) success 117ms
+      |     +- run xcrun (coop_qkv_1_0.air) success 119ms
+      |     +- run xcrun (coop_qkv_2_0.air) success 921ms
+      |     +- run xcrun (coop_qkv_2_1.air) success 119ms
+      |     +- run xcrun (coop_up_1_0.air) success 119ms
+      |     +- run xcrun (coop_up_2_0.air) success 115ms
+      |     +- run xcrun (coop_up_2_1.air) success 119ms
+      |     +- run xcrun (up_relu2_1_0.air) success 120ms
+      |     +- run xcrun (up_relu2_2_0.air) success 116ms
+      |     +- run xcrun (up_relu2_2_1.air) success 115ms
+      +- WriteFile drama3_core.zig success
+      +- WriteFile drama3.metallib success
+         +- run xcrun (drama3.metallib) success 81ms
+            +- run xcrun (d3_dense.air) success 37ms
+            +- run xcrun (d3_gdn.air) success 28ms
+            +- run xcrun (d3_attn.air) success 27ms
+            +- run xcrun (d3_moe.air) success 42ms
+            +- run xcrun (d3_nvfp4.air) success 32ms
+            +- run xcrun (d3_guidance.air) success 19ms
+            +- run xcrun (d3_sample.air) success 40ms
+            +- run xcrun (d3_codec.air) success 38ms
+tf-kernel-contract success
++- install tf-kernel-contract success
+   +- compile exe tf-kernel-contract fast native-native success 32s MaxRSS:2G
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-drafter-skip-metal-host success
++- run test 56 pass (56 total) 228ms MaxRSS:7M
+   +- compile test fast native-native success 9s MaxRSS:743M
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-draft-metal-host transitive failure
++- run test 10 pass, 1 crash (11 total)
+   +- compile test fast native-native success 5s MaxRSS:540M
+      +- WriteFile drama3_core.zig (reused)
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile drama3.metallib (+1 more reused dependencies)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-qwen27-shared-allocation-host success
++- run test 410 pass, 1 skip (411 total) 34s MaxRSS:289M
+   +- compile test debug native success 3s MaxRSS:628M
+test-native transitive failure
++- run test 110 pass, 3 skip, 1 crash (114 total)
+   +- compile test fast native-native success 1m MaxRSS:4G
+      +- WriteFile drama3_core.zig (reused)
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile drama3.metallib (+1 more reused dependencies)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-lfm2-dspark success
++- run test 89 pass (89 total) 2s MaxRSS:306M
+   +- compile test fast native-native success 8s MaxRSS:708M
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+test-lfm2 success
++- run test 108 pass (108 total) 3s MaxRSS:308M
+   +- compile test fast native-native success 13s MaxRSS:1G
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+native success
++- install tensorfold-native success
+   +- compile exe tensorfold-native safe native-native success 1m MaxRSS:5G
+      +- options success
+      +- WriteFile drama_prompt.zig success
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile xsum.metal (reused)
+      +- WriteFile drama3_core.zig (reused)
+      +- WriteFile exlr8_alias.zig success
+      +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+      +- WriteFile drama3.metallib (+1 more reused dependencies)
+

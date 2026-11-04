@@ -1,0 +1,6 @@
+{"command": ["$HOME/tf-lfm2-test/r16-source-unit-9348e8306/zig-0.17.0/zig", "build", "native", "test-lfm2", "test-lfm2-dspark", "test-native", "test-qwen27-shared-allocation-host", "test-draft-metal-host", "test-drafter-skip-metal-host", "tf-kernel-contract", "tf-lfm2-dspark", "-Dcpu=apple_m1", "-Dversion=1.2.0", "-j1", "--summary", "all"], "returncode": 1, "seconds": 268.1443516248837, "log_sha256": "25cd5a9e953066d1a2c3a211527614b107c110e8933205f822d7e05e8031d475"}
+Traceback (most recent call last):
+  File "$M5_PACKET/m5-guards/run-guards.py", line 39, in <module>
+    assert run(build,p/'build.log',900)==0
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

@@ -1,0 +1,10 @@
+{"event": "ready", "label": "functional-cache", "seconds": 10.18962512537837}
+{"event": "stress", "slots": 6, "seconds": 60, "completed": 149, "cancelled": 87, "wrong": 0, "errors": []}
+{"event": "stress", "slots": 16, "seconds": 90, "completed": 276, "cancelled": 154, "wrong": 0, "errors": []}
+{"event": "sampled", "streams": 1, "equal": 1}
+{"event": "sampled", "streams": 4, "equal": 4}
+{"event": "sampled", "streams": 8, "equal": 8}
+{"event": "sampled", "streams": 16, "equal": 16}
+{"event": "ready", "label": "functional-fresh", "seconds": 9.671114042401314}
+{"event": "resume", "equal": true}
+{"label": "ORIGINAL_CACHE_CANCEL_SAMPLE_FUNCTIONAL_ONLY", "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5", "bits": 0, "activation_dtype": "BF16", "native_binary_sha256": "cb6fa76c0d11542ff13ffc74d7fa08c94d9b421a4f32b35173d588ef6217f542", "removed_environment": ["TF_INPUT", "TF_IN_AUTOMATION"], "complete": true, "elapsed_s": 238.94270975049585}

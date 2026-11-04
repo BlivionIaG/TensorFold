@@ -1,0 +1,6 @@
+{"command": ["$HOME/.local/zig-0.17.0/zig", "build", "native", "test-lfm2", "test-lfm2-dspark", "test-native", "test-qwen27-shared-allocation-host", "test-draft-metal-host", "test-drafter-skip-metal-host", "tf-kernel-contract", "tf-lfm2-dspark", "-Dcpu=apple_m1", "-Dversion=1.2.0", "-j1", "--summary", "all"], "returncode": 1, "seconds": 167.24813050031662, "log_sha256": "084ac0379f7355736ea68bac62e382fb908f7d3587ee5da75c79d8b9b3191386"}
+Traceback (most recent call last):
+  File "$TMP/tf-pr-review-r38/m4-final/guards/run-guards.py", line 39, in <module>
+    assert run(build,p/'build.log',900)==0
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

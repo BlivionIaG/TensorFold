@@ -1,0 +1,195 @@
+info: lfm2 dspark: a 1-draft clean hold takes 2.35 CPU-encode + GPU ms, a 9-draft hold 2.46 CPU-encode + GPU ms; 60 context quotes
+info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged
+PASS Markov producer bf16 bits 0x0: waited refused false, held target refused false, held host refused false (expected false)
+PASS Markov producer bf16 bits 0x7f80: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer bf16 bits 0xff80: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer bf16 bits 0x7fc0: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer bf16 bits 0x0: waited refused false, held target refused false, held host refused false (expected false)
+target tap control: 1 rows, twin true, no capture
+target tap control: 1 rows, twin true, 5 columns, scratch capture
+target tap control: 1 rows, 5 columns, table-only stage
+target tap control: 1 rows, 5 columns, stage mode 0
+target tap control: 1 rows, 5 columns, stage mode 1
+target tap control: 1 rows, twin true, 3 columns, scratch capture
+target tap control: 1 rows, 3 columns, table-only stage
+target tap control: 1 rows, 3 columns, stage mode 0
+target tap control: 1 rows, 3 columns, stage mode 1
+target tap control: 1 rows, twin true, 8 columns, scratch capture
+target tap control: 1 rows, 8 columns, table-only stage
+target tap control: 1 rows, 8 columns, stage mode 0
+target tap control: 1 rows, 8 columns, stage mode 1
+target taps: 1 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 4 rows, twin true, no capture
+target tap control: 4 rows, twin true, 5 columns, scratch capture
+target tap control: 4 rows, 5 columns, table-only stage
+target tap control: 4 rows, 5 columns, stage mode 0
+target tap control: 4 rows, 5 columns, stage mode 1
+target tap control: 4 rows, twin true, 3 columns, scratch capture
+target tap control: 4 rows, 3 columns, table-only stage
+target tap control: 4 rows, 3 columns, stage mode 0
+target tap control: 4 rows, 3 columns, stage mode 1
+target tap control: 4 rows, twin true, 8 columns, scratch capture
+target tap control: 4 rows, 8 columns, table-only stage
+target tap control: 4 rows, 8 columns, stage mode 0
+target tap control: 4 rows, 8 columns, stage mode 1
+target taps: 4 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 8 rows, twin true, no capture
+target tap control: 8 rows, twin true, 5 columns, scratch capture
+target tap control: 8 rows, 5 columns, table-only stage
+target tap control: 8 rows, 5 columns, stage mode 0
+target tap control: 8 rows, 5 columns, stage mode 1
+target tap control: 8 rows, twin true, 3 columns, scratch capture
+target tap control: 8 rows, 3 columns, table-only stage
+target tap control: 8 rows, 3 columns, stage mode 0
+target tap control: 8 rows, 3 columns, stage mode 1
+target tap control: 8 rows, twin true, 8 columns, scratch capture
+target tap control: 8 rows, 8 columns, table-only stage
+target tap control: 8 rows, 8 columns, stage mode 0
+target tap control: 8 rows, 8 columns, stage mode 1
+target taps: 8 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 16 rows, twin true, no capture
+target tap control: 16 rows, twin true, 5 columns, scratch capture
+target tap control: 16 rows, 5 columns, table-only stage
+target tap control: 16 rows, 5 columns, stage mode 0
+target tap control: 16 rows, 5 columns, stage mode 1
+target tap control: 16 rows, twin true, 3 columns, scratch capture
+target tap control: 16 rows, 3 columns, table-only stage
+target tap control: 16 rows, 3 columns, stage mode 0
+target tap control: 16 rows, 3 columns, stage mode 1
+target tap control: 16 rows, twin true, 8 columns, scratch capture
+target tap control: 16 rows, 8 columns, table-only stage
+target tap control: 16 rows, 8 columns, stage mode 0
+target tap control: 16 rows, 8 columns, stage mode 1
+target taps: 16 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 64 rows, twin true, no capture
+target tap control: 64 rows, twin true, 5 columns, scratch capture
+target tap control: 64 rows, 5 columns, table-only stage
+target tap control: 64 rows, 5 columns, stage mode 0
+target tap control: 64 rows, 5 columns, stage mode 1
+target tap control: 64 rows, twin true, 3 columns, scratch capture
+target tap control: 64 rows, 3 columns, table-only stage
+target tap control: 64 rows, 3 columns, stage mode 0
+target tap control: 64 rows, 3 columns, stage mode 1
+target tap control: 64 rows, twin true, 8 columns, scratch capture
+target tap control: 64 rows, 8 columns, table-only stage
+target tap control: 64 rows, 8 columns, stage mode 0
+target tap control: 64 rows, 8 columns, stage mode 1
+target taps: 64 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 1 rows, twin false, no capture
+target tap control: 1 rows, twin false, 5 columns, scratch capture
+target tap control: 1 rows, 5 columns, table-only stage
+target tap control: 1 rows, 5 columns, stage mode 0
+target tap control: 1 rows, 5 columns, stage mode 1
+target tap control: 1 rows, twin false, 3 columns, scratch capture
+target tap control: 1 rows, 3 columns, table-only stage
+target tap control: 1 rows, 3 columns, stage mode 0
+target tap control: 1 rows, 3 columns, stage mode 1
+target tap control: 1 rows, twin false, 8 columns, scratch capture
+target tap control: 1 rows, 8 columns, table-only stage
+target tap control: 1 rows, 8 columns, stage mode 0
+target tap control: 1 rows, 8 columns, stage mode 1
+target taps: 1 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 4 rows, twin false, no capture
+target tap control: 4 rows, twin false, 5 columns, scratch capture
+target tap control: 4 rows, 5 columns, table-only stage
+target tap control: 4 rows, 5 columns, stage mode 0
+target tap control: 4 rows, 5 columns, stage mode 1
+target tap control: 4 rows, twin false, 3 columns, scratch capture
+target tap control: 4 rows, 3 columns, table-only stage
+target tap control: 4 rows, 3 columns, stage mode 0
+target tap control: 4 rows, 3 columns, stage mode 1
+target tap control: 4 rows, twin false, 8 columns, scratch capture
+target tap control: 4 rows, 8 columns, table-only stage
+target tap control: 4 rows, 8 columns, stage mode 0
+target tap control: 4 rows, 8 columns, stage mode 1
+target taps: 4 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 8 rows, twin false, no capture
+target tap control: 8 rows, twin false, 5 columns, scratch capture
+target tap control: 8 rows, 5 columns, table-only stage
+target tap control: 8 rows, 5 columns, stage mode 0
+target tap control: 8 rows, 5 columns, stage mode 1
+target tap control: 8 rows, twin false, 3 columns, scratch capture
+target tap control: 8 rows, 3 columns, table-only stage
+target tap control: 8 rows, 3 columns, stage mode 0
+target tap control: 8 rows, 3 columns, stage mode 1
+target tap control: 8 rows, twin false, 8 columns, scratch capture
+target tap control: 8 rows, 8 columns, table-only stage
+target tap control: 8 rows, 8 columns, stage mode 0
+target tap control: 8 rows, 8 columns, stage mode 1
+target taps: 8 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 16 rows, twin false, no capture
+target tap control: 16 rows, twin false, 5 columns, scratch capture
+target tap control: 16 rows, 5 columns, table-only stage
+target tap control: 16 rows, 5 columns, stage mode 0
+target tap control: 16 rows, 5 columns, stage mode 1
+target tap control: 16 rows, twin false, 3 columns, scratch capture
+target tap control: 16 rows, 3 columns, table-only stage
+target tap control: 16 rows, 3 columns, stage mode 0
+target tap control: 16 rows, 3 columns, stage mode 1
+target tap control: 16 rows, twin false, 8 columns, scratch capture
+target tap control: 16 rows, 8 columns, table-only stage
+target tap control: 16 rows, 8 columns, stage mode 0
+target tap control: 16 rows, 8 columns, stage mode 1
+target taps: 16 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 64 rows, twin false, no capture
+target tap control: 64 rows, twin false, 5 columns, scratch capture
+target tap control: 64 rows, 5 columns, table-only stage
+target tap control: 64 rows, 5 columns, stage mode 0
+target tap control: 64 rows, 5 columns, stage mode 1
+target tap control: 64 rows, twin false, 3 columns, scratch capture
+target tap control: 64 rows, 3 columns, table-only stage
+target tap control: 64 rows, 3 columns, stage mode 0
+target tap control: 64 rows, 3 columns, stage mode 1
+target tap control: 64 rows, twin false, 8 columns, scratch capture
+target tap control: 64 rows, 8 columns, table-only stage
+target tap control: 64 rows, 8 columns, stage mode 0
+target tap control: 64 rows, 8 columns, stage mode 1
+target taps: 64 rows, twin false, released/duplicate/max-column layouts preserve all normalized and logit bytes
+the owned stage: 63 rows staged in uneven absorbs, absorbed as one 63-row piece like the direct absorbs' (> 32-row regime): keys, values and picks equal
+fixed query block: 9 rows; retained prefixes 1/3/9 preserve all first-row base-logit bytes, first proposal and confidence
+release-settled hold of 2 streams, depth 9, max debt 32: CPU-encode 0.079 ms taken at launch, GPU 3.609 ms taken after release, total 3.688 ms; pending CPU cleared, not recharged
+a synchronous hold of one block: CPU-encode 0.048 ms + GPU 2.426 ms = 2.474 ms taken once, one-block passes repriced; standalone absorb CPU-encode 0.007 ms + GPU 0.138 ms = 0.145 ms priced none
+split hold, 8 logical lanes: configured 9-row query blocks in bounded synchronous passes; 0.206 ms CPU-encode + 8.721 ms GPU = 8.927 ms taken once (9.935 ms wall); requested picks equal independent same-regime references
+split hold, 16 logical lanes: configured 9-row query blocks in bounded synchronous passes; 0.382 ms CPU-encode + 16.105 ms GPU = 16.487 ms taken once (18.467 ms wall); requested picks equal independent same-regime references
+absorb of 1 rows: 0.31 ms (best of 5)
+absorb of 4 rows: 0.41 ms (best of 5)
+absorb of 16 rows: 0.79 ms (best of 5)
+clean hold of 1 stream at depth 1: wall best 2.258 ms; best paired cost CPU-encode 0.061 ms + GPU 1.982 ms = 2.043 ms (5 attempts)
+clean hold of 1 stream at depth 3: wall best 2.391 ms; best paired cost CPU-encode 0.063 ms + GPU 2.078 ms = 2.141 ms (5 attempts)
+clean hold of 1 stream at depth 9: wall best 2.731 ms; best paired cost CPU-encode 0.067 ms + GPU 2.425 ms = 2.492 ms (5 attempts)
+clean hold of 2 streams at depth 1: synchronous wall best 2.807 ms; signalled best paired cost CPU-encode 0.065 ms + GPU 2.495 ms = 2.560 ms (5 attempts each)
+clean hold of 2 streams at depth 2: synchronous wall best 2.864 ms; signalled best paired cost CPU-encode 0.066 ms + GPU 2.582 ms = 2.648 ms (5 attempts each)
+clean hold of 2 streams at depth 3: synchronous wall best 2.974 ms; signalled best paired cost CPU-encode 0.066 ms + GPU 2.670 ms = 2.736 ms (5 attempts each)
+clean hold of 2 streams at depth 4: synchronous wall best 3.067 ms; signalled best paired cost CPU-encode 0.066 ms + GPU 2.759 ms = 2.825 ms (5 attempts each)
+clean hold of 2 streams at depth 8: synchronous wall best 3.444 ms; signalled best paired cost CPU-encode 0.072 ms + GPU 3.117 ms = 3.189 ms (5 attempts each)
+clean hold of 3 streams at depth 1: synchronous wall best 2.960 ms; signalled best paired cost CPU-encode 0.069 ms + GPU 2.639 ms = 2.708 ms (5 attempts each)
+clean hold of 3 streams at depth 2: synchronous wall best 3.084 ms; signalled best paired cost CPU-encode 0.069 ms + GPU 2.780 ms = 2.849 ms (5 attempts each)
+clean hold of 3 streams at depth 3: synchronous wall best 3.161 ms; signalled best paired cost CPU-encode 0.069 ms + GPU 2.900 ms = 2.969 ms (5 attempts each)
+clean hold of 3 streams at depth 4: synchronous wall best 3.329 ms; signalled best paired cost CPU-encode 0.070 ms + GPU 3.013 ms = 3.083 ms (5 attempts each)
+clean hold of 3 streams at depth 8: synchronous wall best 3.822 ms; signalled best paired cost CPU-encode 0.074 ms + GPU 3.533 ms = 3.607 ms (5 attempts each)
+steady rounds: 20 rounds of hold, chances, held and a verified absorb: 0 host allocations, 0 resizes, 20 unwaited holds
+deferred hold of 1 stream, depth 3, debt 95: CPU-encode 0.071 ms taken at launch, GPU 2.878 ms taken at settle, total 2.949 ms; pending CPU retained only for EMA
+deferred context: 2081 zero-grant rows, 29 overwritten pending rows, 2144 complete context rows and 3 later drafts match the independent replay
+zero-row rewind: context end 2143, no encode or GPU work; 3 later drafts match the retained-prefix replay
+row 0 base logits: cosine 0.99999, worst difference 0.129
+step 0: reference 13444 (margin 3.224, second 30447), GPU 13444 equal
+step 0: confidence reference 0.0867, GPU 0.0869
+step 1: reference 26956 (margin 0.643, second 2119), GPU 26956 equal
+step 1: confidence reference 0.0673, GPU 0.0673
+step 2: reference 207 (margin 0.572, second 20), GPU 207 equal
+step 2: confidence reference 0.1273, GPU 0.1268
+step 3: reference 63956 (margin 0.179, second 96987), GPU 63956 equal
+step 3: confidence reference 0.2833, GPU 0.2825
+step 4: reference 3911 (margin 0.075, second 2083), GPU 3911 equal
+step 4: confidence reference 0.1347, GPU 0.1339
+step 5: reference 2443 (margin 0.828, second 1094), GPU 2443 equal
+step 5: confidence reference 0.0893, GPU 0.0894
+step 6: reference 589 (margin 2.135, second 622), GPU 589 equal
+step 6: confidence reference 0.2814, GPU 0.2811
+step 7: reference 3498 (margin 0.717, second 20506), GPU 3498 equal
+step 7: confidence reference 0.0649, GPU 0.0650
+step 8: reference 34 (margin 1.608, second 278), GPU 34 equal
+step 8: confidence reference 0.0812, GPU 0.0813
+the reference's largest margin over a different GPU pick: 0.000
+the confidences' worst difference from the fp32 reference: 0.00080
+9 of 9 drafts equal the fp32 reference's picks on the same chain (63-token context)

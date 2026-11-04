@@ -1,0 +1,16 @@
+info: lfm2: DSpark standing aside on Apple M4 Pro; serving without a neural drafter (requires Apple M5 or newer)
+info: lfm2 moe: 13.4 GiB kept wired between requests, inside 70% of 48 GiB of RAM
+info: LFM2 window ms by width: 1 8.4, 2 10.8, 4 16.3, 8 27.1, 16 43.4
+info: LFM2 shared calibration: window16 43.42 ms, shared16 43.08 ms
+info: LFM2 shared marginal prices by rows: 17 49.0, 24 63.7, 32 80.4
+info: prompt cache: 0.0 GiB from 17.9 GiB free under the 70% cap (13.7 GiB in use once loaded, 48 GiB of RAM, 2 GiB kept for prompt buffers)
+[tensorfold] prompt chunks of up to 2,048 tokens, cut at replies 256+ tokens apart
+warning: libtfgrammar.dylib is required for structured output and required tool calls (HTTP 400 when missing); restore the matching release archive's lib/ directory or run zig build grammar -Dxgrammar=DIR; prepare DIR with git clone --branch v0.2.8 --recurse-submodules https://github.com/mlc-ai/xgrammar
+[tensorfold] profile: stable; registered overrides: none
+[tensorfold] serving review at http://127.0.0.1:18194/v1 (sampling: temperature 0.1, top_k 50; drafts: copies only; context: 16384; loaded in 9.2s)
+[tensorfold] 127.0.0.1 "GET /v1/models HTTP/1.1" 200 -
+[tensorfold] done chatcmpl-fcfbeb0dc601b3c7b99a5cc0fb361556 prompt=3605 cached=0 thinking=False effort=none tokens=64 sha=a064a0a2711c finish=length rounds=63 accepted=0/0 ttft=2.849 decode=0.556 elapsed=3.405 queued=0.000 tok/s=113.4
+[tensorfold] 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" 200 -
+[tensorfold] shutting down (SIGTERM): draining: new requests get 503; 0 request(s) in progress may finish within 20.0 s
+[tensorfold] shutting down: drained
+[tensorfold] shutting down: stopped
