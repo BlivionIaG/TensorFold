@@ -51,6 +51,8 @@ pub const SuffixLookup = proposer.SuffixLookup;
 pub const LogprobRow = logprob.Row;
 pub const Trim = trim.Trim;
 
+pub const FakeDrafter = @import("drafted_test.zig").FakeDrafter;
+
 test {
     std.testing.refAllDecls(@This());
     _ = @import("engine_test.zig");
