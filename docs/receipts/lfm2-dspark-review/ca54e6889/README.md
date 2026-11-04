@@ -35,7 +35,11 @@ No final-head model timing or model-qualification run is invented.
 [Source, binary and verification bindings](final-head/source-equivalence.json);
 [raw host build](final-head/host-build.log), [actual CLI smoke](final-head/native-smoke.log).
 
-Automatic final-head CI is being watched separately; the measured-source CI above is not relabelled.
+Automatic final-head CI is **11/11 successful jobs**, all bound to `7414d148e`, with no cancellations or reruns:
+[Zig format](https://github.com/ashhart/TensorFold/actions/runs/41893442450),
+[No GPU](https://github.com/ashhart/TensorFold/actions/runs/41893442375),
+[App/mobile](https://github.com/ashhart/TensorFold/actions/runs/41893442394).
+[Final-head raw proof](ci/final-head.json) is separate from the measured-source CI above.
 
 ## Current-source numerical guards
 
