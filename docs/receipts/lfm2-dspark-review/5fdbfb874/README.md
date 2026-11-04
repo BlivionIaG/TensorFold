@@ -6,6 +6,10 @@
 
 Qualified runtime source: `5fdbfb8749b14bc20bc9021dbe463cd56206d53a`, integrating pinned main `7eae7dc008ca8f280b3557596e7f8d425693b12d`. Scope is only [LFM2 DSpark #1394](https://github.com/ashhart/TensorFold/pull/1394).
 
+Diagnostic/docs follow-up head `4ef2b5fe06845e3554a574accd78e189077170b3` retains the same production sources/build files and actual M4 production binary. Its [exact-head fork CI record](followup-4ef-ci-proof.json) has nine successful jobs and two cancelled macOS jobs that never acquired hosted runners. Format, Linux/Windows host tests, Linux desktop, mobile and AppImage pass; this is not eleven green final-head checks or upstream PR CI. [Dispatch and runner annotations](followup-4ef-ci-prerequisite.json) retain the upstream 403 and hosted-capacity failure.
+
+The [new review at 6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133) requests a pre-M5 name-based stand-aside, an M5 matrix with plain/plain A/A, current-main integration, a separate DSpark contract suite and removal of unrelated CI additions. Newly pinned main is `00ff0f3b2c7ee67546e7a406f074e6d1d5c02593`; the earlier ancestry comparison used the older reported PR base, so it does not exclude conflicts against this new tip. That follow-up is separate work, not a relabelling of this packet or its failures.
+
 | Device | Complete cells | Token oracles equal | Medians below plain | Losses ≥1% | User observed loss<1% | Worst median | Original exit |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | M4 Pro | 144/144 | 306/306 | 13/32 | 12/32 | 20/32 | −4.4895182331% | 3 (FAIL) |

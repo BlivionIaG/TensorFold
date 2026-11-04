@@ -1,0 +1,93 @@
+{
+  "source_revision": "4ef2b5fe06845e3554a574accd78e189077170b3",
+  "upstream_pr_observation": {
+    "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+    "base_sha": "7eae7dc008ca8f280b3557596e7f8d425693b12d",
+    "mergeable": false,
+    "mergeable_state": "dirty",
+    "updated_at": "2026-11-04T14:34:43Z"
+  },
+  "github_compare": {
+    "status": "ahead",
+    "ahead_by": 158,
+    "behind_by": 0,
+    "merge_base_sha": "7eae7dc008ca8f280b3557596e7f8d425693b12d"
+  },
+  "initial_upstream_check_watch": {
+    "exit_code": 1,
+    "output": "no checks reported on the 'series/dspark-hold' branch"
+  },
+  "upstream_manual_dispatch": {
+    "workflow": "no-gpu.yml",
+    "ref": "refs/pull/1394/head",
+    "base_commit": "7eae7dc008ca8f280b3557596e7f8d425693b12d",
+    "exit_code": 1,
+    "error": "HTTP 403: Must have admin rights to Repository."
+  },
+  "fork_workflows": {
+    "no-gpu": 41849760121,
+    "zig-fmt": 41849760126,
+    "app": 41849760232
+  },
+  "scope": "Observed post-push metadata and dispatch prerequisite. Does not establish the cause of absent checks or whether GitHub metadata will later recompute.",
+  "recorded_unix_ns": 1793803352608549000,
+  "completed_app_runner_failure": {
+    "run_id": 41849760232,
+    "job_id": 126642614699,
+    "job_conclusion": "cancelled",
+    "runner_name": "",
+    "annotations": [
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "failure",
+        "title": "",
+        "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+        "raw_details": ""
+      }
+    ],
+    "log_fetch": "gh run view --job --log-failed returned no output; no runner log was available"
+  },
+  "new_main_ref_observed": "00ff0f3b2c7ee67546e7a406f074e6d1d5c02593",
+  "ancestry_scope_clarification": "The earlier compare used the reported PR base7eae, not the newer main tip00ff named by the latest review. It does not rule out a conflict against that newer main."
+}

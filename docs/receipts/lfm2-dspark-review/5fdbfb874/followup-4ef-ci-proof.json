@@ -1,0 +1,265 @@
+{
+  "source_revision": "4ef2b5fe06845e3554a574accd78e189077170b3",
+  "qualified_runtime_source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "recorded_unix_ns": 1793805683034042000,
+  "repository": "BlivionIaG/TensorFold",
+  "scope": "Unchanged official workflows manually dispatched on exact PR head; fork execution, not upstream PR CI. Two cancelled jobs never acquired hosted macOS runners. No retry or runner-label change.",
+  "job_conclusions": {
+    "success": 9,
+    "cancelled": 2
+  },
+  "workflows": [
+    {
+      "id": 41849760126,
+      "name": "Zig format",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760126"
+    },
+    {
+      "id": 41849760232,
+      "name": "App and mobile checks",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "failure",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760232"
+    },
+    {
+      "id": 41849760121,
+      "name": "No GPU",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "failure",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760121"
+    }
+  ],
+  "checks": [
+    {
+      "id": 126642613157,
+      "name": "fmt",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760126/job/126642613157",
+      "started_at": "2026-11-04T14:39:37Z",
+      "completed_at": "2026-11-04T14:39:51Z",
+      "runner_name": "GitHub Actions 1000013021"
+    },
+    {
+      "id": 126642613500,
+      "name": "appimage-linux",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760232/job/126642613500",
+      "started_at": "2026-11-04T14:39:39Z",
+      "completed_at": "2026-11-04T14:41:45Z",
+      "runner_name": "GitHub Actions 1000013022"
+    },
+    {
+      "id": 126642614006,
+      "name": "mobile",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760232/job/126642614006",
+      "started_at": "2026-11-04T14:39:38Z",
+      "completed_at": "2026-11-04T14:40:49Z",
+      "runner_name": "GitHub Actions 1000013023"
+    },
+    {
+      "id": 126642614159,
+      "name": "desktop-linux",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760232/job/126642614159",
+      "started_at": "2026-11-04T14:39:38Z",
+      "completed_at": "2026-11-04T14:49:56Z",
+      "runner_name": "GitHub Actions 1000013025"
+    },
+    {
+      "id": 126642614699,
+      "name": "desktop",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760232/job/126642614699",
+      "started_at": "2026-11-04T14:39:36Z",
+      "completed_at": "2026-11-04T14:54:37Z",
+      "runner_name": ""
+    },
+    {
+      "id": 126642615274,
+      "name": "release-paths (ubuntu-24.04)",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760121/job/126642615274",
+      "started_at": "2026-11-04T14:39:38Z",
+      "completed_at": "2026-11-04T14:43:38Z",
+      "runner_name": "GitHub Actions 1000013030"
+    },
+    {
+      "id": 126642615495,
+      "name": "zig",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760121/job/126642615495",
+      "started_at": "2026-11-04T14:39:37Z",
+      "completed_at": "2026-11-04T15:00:11Z",
+      "runner_name": "GitHub Actions 1000013027"
+    },
+    {
+      "id": 126642615685,
+      "name": "zig-macos-dev-tools",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760121/job/126642615685",
+      "started_at": "2026-11-04T14:39:36Z",
+      "completed_at": "2026-11-04T14:54:37Z",
+      "runner_name": ""
+    },
+    {
+      "id": 126642615728,
+      "name": "benchmark-clients (ubuntu-latest)",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760121/job/126642615728",
+      "started_at": "2026-11-04T14:39:38Z",
+      "completed_at": "2026-11-04T14:39:50Z",
+      "runner_name": "GitHub Actions 1000013028"
+    },
+    {
+      "id": 126642615892,
+      "name": "benchmark-clients (windows-latest)",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760121/job/126642615892",
+      "started_at": "2026-11-04T14:39:37Z",
+      "completed_at": "2026-11-04T14:40:04Z",
+      "runner_name": "GitHub Actions 1000013024"
+    },
+    {
+      "id": 126642617365,
+      "name": "zig-windows",
+      "head_sha": "4ef2b5fe06845e3554a574accd78e189077170b3",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BlivionIaG/TensorFold/actions/runs/41849760121/job/126642617365",
+      "started_at": "2026-11-04T14:39:38Z",
+      "completed_at": "2026-11-04T15:09:47Z",
+      "runner_name": "GitHub Actions 1000013031"
+    }
+  ],
+  "runner_failure_annotations": {
+    "126642614699": [
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "failure",
+        "title": "",
+        "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+        "raw_details": ""
+      }
+    ],
+    "126642615685": [
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "failure",
+        "title": "",
+        "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+        "raw_details": ""
+      },
+      {
+        "path": ".github",
+        "blob_href": "https://github.com/BlivionIaG/TensorFold/blob/4ef2b5fe06845e3554a574accd78e189077170b3/.github",
+        "start_line": 1,
+        "start_column": null,
+        "end_line": 1,
+        "end_column": null,
+        "annotation_level": "notice",
+        "title": "",
+        "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+        "raw_details": ""
+      }
+    ]
+  }
+}
