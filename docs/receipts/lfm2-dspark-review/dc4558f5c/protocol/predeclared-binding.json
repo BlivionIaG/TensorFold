@@ -1,0 +1,80 @@
+{
+  "schema": "lfm2-dspark-predeclared-source-binding/1",
+  "declared_before_new_m5_models": true,
+  "source_revision": "dc4558f5ce640bfcd161f8db8efa33d71be6369c",
+  "source_tree": "5c32ffa17a3cb17a56e99895e04a5a21accc375f",
+  "source_tree_ids": {
+    "zig": "8cde2a459552256e62ec780ef7fb7c459119b7ac",
+    "build.zig": "241e316fbebe9c77220066b47eb43e74e80bffda",
+    "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+  },
+  "source_archive_sha256": "47f0bd5f6bceca887b3be997fa33c26ba8e80d1e07b40e4cc3ee54c92ebb1697",
+  "pinned_main": "00ff0f3b2c7ee67546e7a406f074e6d1d5c02593",
+  "integration_commit": "374803c27af88ac71ebf0480b8977dc367b9ccdc",
+  "protocol_sha256": "92e210a9980310422712ffa4a976620a9d6c6408c5c94ec2e01ca67a91354633",
+  "driver_sha256": {
+    "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+    "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+    "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+    "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+    "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+    "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+    "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+  },
+  "model_sha256": {
+    "target": {
+      "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+      "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+      "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+      "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+      "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+      "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+      "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+      "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+      "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+    },
+    "drafter": {
+      "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+      "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+    }
+  },
+  "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+  "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+  "shared_lock_inode": 3719605,
+  "private_packet_manifest_sha256": "2da79f6033b4ecc64b23712d7227d63e3817d0b0b33a7ebb0dbf63c8ff6aac6e",
+  "python_runtime": {
+    "executable": "$PYTHON",
+    "version": "3.13.15",
+    "sha256": "2fb4683f9ab944ee39c46ff4184c985cd00b3431610440cf60b9fb8e2d1c8528",
+    "provenance": "Original M5 qualification interpreter path and version; current binary hash observed before any r38 M5 model execution. No interpreter or environment modifications."
+  },
+  "execution_files_sha256": {
+    "PARENT-INSTRUCTIONS.txt": "f13e3cc9eb53728ce69a2d9259f51a3b940a77f7040e167919585de71a65a0ec",
+    "analyze_plain_aa.py": "f9d943b43c19216b466d254279d384d0974850ee820078fcc59aff4c628f5446",
+    "collect_packet.py": "c822854ee38f5cea1a9676c5d6d466af70b1d734069a5ad45b2ac977435e629e",
+    "frozen-driver/bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+    "frozen-driver/bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+    "frozen-driver/bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+    "frozen-driver/bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+    "frozen-driver/bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+    "frozen-driver/bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+    "frozen-driver/bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed",
+    "launch_detached.py": "9ab1a15fcdc35ab59cff27735470fc079b0323cd1b7d43d8404a51954641cf59",
+    "m5-guards/binding.json": "1ae56c89a529b2422df7e3f2535d674a6cc11a63ddf51c85566cc1bf3c440220",
+    "m5-guards/run-guards.py": "70acdacacab8c7bff7c424701fa2a0c5451265f65a9768dae7a6ad7522ef977a",
+    "prepare_packet.py": "d8bbcccd91fe5d043e2485e1073d0b6700f8075bda9adca6ba120b1fd516b631",
+    "protocol/fixture-binding.json": "5548663a27dd1124c735652134cda437657d015ec302c13e01777b4bad803c55",
+    "protocol/original-artifacts.json": "ff159e5a5482115eb756611f85aef4727bdf08a1b06b4498629d730f7381379e",
+    "protocol/original-binding.json": "9fbb6e840cb70abb9a7a235c2bab62c3729188c3634cd1cf5189725af2a542ea",
+    "protocol/runtime-binding.json": "ee946a5e87f6b10ab1bd26300cb4ec5048541c5f42ac7cf50f8f1d9dabe6cdf3",
+    "protocol/study.json": "92e210a9980310422712ffa4a976620a9d6c6408c5c94ec2e01ca67a91354633",
+    "qual_common.py": "b7caee3c844abf7bf49aba5fde4787e3651592b4f0e13f7734391eab2951ddb4",
+    "remote_controller.py": "5e860ef639e3ef72bf558805844b829d3fd8e5729b3f3ea537fd52dce2121e28",
+    "run-full-matrix.py": "7711c3d62a9bb188ed4a8e4a01dcc76796530bf6fc6f1932b73510b46b8195c7",
+    "run-functional.py": "36441fe2264a955ab89f35de821d1d1c1a5e0c19ca856d9ea39fd8350f15b973",
+    "run_plain_aa.py": "c13695fa77165939d9cacf95409ed93abc1d89a8ba3f32ddabdb456616b809cf",
+    "source.tar.gz": "47f0bd5f6bceca887b3be997fa33c26ba8e80d1e07b40e4cc3ee54c92ebb1697",
+    "watch_packet.py": "666f5dbb71e0c9880d771ec939869c4c7a3705b3f7b12c87db42649c4dfbf379"
+  },
+  "redactions": "Only the Python executable path in this binding is aliased. The private packet manifest and runtime-binding original hashes are retained; study.json and the A/A scripts are byte-identical."
+}
