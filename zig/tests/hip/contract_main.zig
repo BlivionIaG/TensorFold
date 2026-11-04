@@ -18,6 +18,9 @@ const relu2_k = @import("contract_relu2.zig");
 const kv_k = @import("contract_kv_write.zig");
 const argmax_k = @import("contract_argmax.zig");
 const pair_k = @import("contract_relu2_pair.zig");
+const heads_rows_k = @import("contract_heads_rows.zig");
+const dense_k = @import("contract_dense.zig");
+const dense12_k = @import("contract_dense_wmma12.zig");
 const gate_k = @import("contract_moe_gate.zig");
 const router_k = @import("contract_router.zig");
 const kit = @import("contract_kit.zig");
@@ -25,6 +28,7 @@ const ocr_ops = @import("glm_ocr_ops").Ops;
 const ocr_points = @import("contract_glm_ocr_ops.zig");
 const ocr_norms = @import("contract_glm_ocr_norm.zig");
 const item_k = @import("contract_wmma_item.zig");
+const embed_k = @import("contract_embed.zig");
 
 const g = core.contract.gates;
 
@@ -152,6 +156,24 @@ fn run(a: std.mem.Allocator, io: std.Io) !usize {
     var pair = pair_k.Pair.init(a, &r, s, &l);
     defer pair.deinit();
     try kernels.append(a, pair.kernel());
+    var heads_rows = heads_rows_k.HeadsRows.init(a, &r, s, &l);
+    defer heads_rows.deinit();
+    try kernels.append(a, heads_rows.kernel());
+    var dense: [2]dense_k.DenseGemm = undefined;
+    for (&dense, [_]bool{ true, false }) |*d, fp32_out| d.* = .init(a, &r, s, &l, fp32_out);
+    defer for (&dense) |*d| d.deinit();
+    // the BF16 dense GEMM runs on BF16 builds only; an FP16 build keeps its trap body and serves no shape of it
+    if (l.dense.bf16) {
+        for (&dense) |*d| try kernels.append(a, d.kernel());
+    } else std.debug.print("N/A  hip dense_gemm_block: not served on this FP16 build\n", .{});
+    var dense12: [5]dense12_k.DenseWmma12 = undefined;
+    for (&dense12, [_]bool{ true, false, true, false, true }, 0..) |*d, fp32_out, i| d.* = .init(a, &r, s, &l, fp32_out, if (i < 2 or i == 4) .w12_small else .w12_big);
+    defer for (&dense12) |*d| d.deinit();
+    // the WMMA dense tile serves gfx12 only; elsewhere its symbol, and its control's, keep a trap body
+    if (l.dense.wmma12) {
+        dense12[4].planted = try ctl.function("tf_ctl_wmma12_bf16_sum");
+        for (&dense12) |*d| try kernels.append(a, d.kernel());
+    } else std.debug.print("N/A  hip dense_wmma12_gemm: not served off gfx12\n", .{});
     var gates: [3]gate_k.Gate = undefined;
     for (&gates, std.enums.values(gate_k.Which)) |*m, w| m.* = .init(a, &r, s, &l, w);
     defer for (&gates) |*m| m.deinit();
@@ -167,6 +189,14 @@ fn run(a: std.mem.Allocator, io: std.Io) !usize {
     for (&items, 0..) |*x, i| x.* = .init(a, &r, s, &l, i);
     defer for (&items) |*x| x.deinit();
     if (matrix) for (&items) |*x| try kernels.append(a, x.kernel());
+    var embeds: [4]embed_k.Embed = undefined;
+    var nembeds: usize = 0;
+    defer for (embeds[0..nembeds]) |*x| x.deinit();
+    for (std.enums.values(embed_k.Which)) |w| {
+        embeds[nembeds] = try .init(a, &r, s, &l, ctl, w);
+        nembeds += 1;
+    }
+    for (embeds[0..nembeds]) |*x| try kernels.append(a, x.kernel());
     var t: g.Tally = .{};
     var ocr = try ocr_ops.load(&r);
     defer ocr.unload();

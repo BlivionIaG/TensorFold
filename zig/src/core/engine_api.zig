@@ -144,6 +144,8 @@ pub const Sink = struct {
 };
 
 pub const Benchmark = @import("benchmark_info.zig").Snapshot;
+/// A reranker's label tokens: a prompt's relevance score is sigmoid(yes - no) of their last-row logits.
+pub const Rerank = struct { yes: u32, no: u32 };
 
 /// What the engine serves, fixed once it has loaded.
 pub const Info = struct {
@@ -198,6 +200,8 @@ pub const Info = struct {
     decode_share: ?f64 = null,
     /// The engine scores decisions (`score`) and writes no text: the server refuses text requests.
     decides: bool = false,
+    /// The engine is a reranker (it scores through `score`): the server answers POST /v1/rerank only when set.
+    rerank: ?Rerank = null,
     /// Decisions may carry pictures (`Decision.pictures`).
     pictures: bool = false,
     /// Image input (--vision); null: text only.
@@ -401,6 +405,7 @@ pub const LearnEvent = @import("learning_api.zig").LearnEvent;
 pub const LearnSink = @import("learning_api.zig").LearnSink;
 pub const LearnError = @import("learning_api.zig").LearnError;
 pub const Learner = @import("learning_api.zig").Learner;
+pub const pocket_audit = @import("pocket_audit.zig");
 
 pub const Engine = struct {
     ctx: *anyopaque,

@@ -113,6 +113,14 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const tune_run = b.addRunArtifact(tune_test);
     tune_run.has_side_effects = true; // timings: run every time, never from the cache
     b.step("hip-affine-tune", "Time every MLX affine prompt tile the GPU has and propose table rows (-Dhip-arch)").dependOn(&tune_run.step);
+    const dense_tune_module = b.createModule(.{ .root_source_file = b.path("zig/src/hip/dense_tune.zig"), .target = target, .link_libc = true });
+    dense_tune_module.addIncludePath(.{ .cwd_relative = hip_include });
+    dense_tune_module.addCSourceFile(.{ .file = b.path("zig/src/hip/device_arch.c"), .flags = &.{"-D__HIP_PLATFORM_AMD__"} });
+    dense_tune_module.addImport("hip_kernels", objects);
+    dense_tune_module.addImport("core", coreModule(b, target));
+    const dense_tune_run = b.addRunArtifact(b.addTest(.{ .root_module = dense_tune_module }));
+    dense_tune_run.has_side_effects = true; // timings: run every time, never from the cache
+    b.step("hip-dense-tune", "Time the dot2 and WMMA BF16 dense tiles at Qwen3-8B's shapes (-Dhip-arch)").dependOn(&dense_tune_run.step);
     const stub_kernels = b.createModule(.{ .root_source_file = b.addWriteFiles().add("kernels.zig", stub) });
     const host = engineModules(b, b.graph.host, .Debug, stub_kernels, null);
     b.step("test-slide-hip-host", "Unsupported HIP learning refuses before device or checkpoint access").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.native, .filters = &.{"slide admission:"} })).step);
@@ -141,6 +149,9 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.flashnext })).step);
     b.step("test-flashnext-proposal-hip-host", "Original Flash Next HIP IDs and head-row spans without device runtime").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.flashnext, .filters = &.{"Flash Next proposal:"} })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.nemotron })).step);
+    const qwen3_host = b.addRunArtifact(b.addTest(.{ .root_module = host.qwen3 }));
+    test_step.dependOn(&qwen3_host.step);
+    b.step("test-qwen3-hip-host", "Qwen3 dense config, checkpoint prefix and lm_head rows on the CPU").dependOn(&qwen3_host.step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.serve })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.native })).step);
     // the GPU programs compile on any host against stub kernels, so `test` catches what only they reach
@@ -150,6 +161,17 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const check = engineModules(b, check_target, .Debug, stub_kernels, null);
     b.step("check-native-hip-host", "Compile the real native HIP server with inert kernels, without GPU execution").dependOn(&server(b, check_target, check, build_options).step);
     const gpu = engineModules(b, target, optimize, objects, hip_include);
+    const qwen3_gpu = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/src/families/qwen3/forward_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "hip", .module = gpu.hip }, .{ .name = "qwen3", .module = gpu.qwen3 } },
+    }) });
+    const qwen3_run = b.addRunArtifact(qwen3_gpu);
+    qwen3_run.has_side_effects = true; // the checkpoints and oracle files named by TF_QWEN3_* are not cached inputs
+    b.step("qwen3-hip-gpu-build", "Compile the Qwen3 dense GPU checks without running them").dependOn(&qwen3_gpu.step);
+    b.step("qwen3-hip-gpu-test", "Qwen3 lastRows on the GPU against transformers (TF_QWEN3_EMBED_*, TF_QWEN3_RERANK_*)").dependOn(&qwen3_run.step);
     b.step("tf-qwen35-test", "Qwen3.5 / 3.6 model checks on the GPU (-Dhip-arch)").dependOn(&b.addInstallArtifact(checksExe(b, target, optimize, gpu), .{}).step);
     const fx_test = b.addExecutable(.{ .name = "tf-flashnext-hip-test", .root_module = b.createModule(.{
         .root_source_file = b.path("zig/tests/flashnext_hip/main.zig"),
@@ -212,6 +234,7 @@ pub const Engine = struct {
     family: *std.Build.Module,
     flashnext: *std.Build.Module,
     nemotron: *std.Build.Module,
+    qwen3: *std.Build.Module,
     native: *std.Build.Module,
 };
 
@@ -280,6 +303,18 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
     });
     const ocr_kernels = b.createModule(.{ .root_source_file = b.addWriteFiles().add("glm_ocr_kernels.zig", "const hip = @import(\"hip\"); pub const arch = hip.kernels.arch; pub const bytes = hip.kernels.images[@intFromEnum(hip.kernels.Group.glm_ocr)];\n"), .imports = &.{.{ .name = "hip", .module = hip }} });
     const glm_ocr = b.createModule(.{ .root_source_file = b.path("zig/src/families/glm_ocr/hip.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "hip", .module = hip }, .{ .name = "core", .module = core }, .{ .name = "lanes", .module = lanes }, .{ .name = "engine_api", .module = api }, .{ .name = "hip_serve", .module = serve }, .{ .name = "glm_ocr_kernels", .module = ocr_kernels } } });
+    const qwen3 = b.createModule(.{
+        .root_source_file = b.path("zig/src/families/qwen3/qwen3.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "hip", .module = hip },
+            .{ .name = "core", .module = core },
+            .{ .name = "lanes", .module = lanes },
+            .{ .name = "engine_api", .module = api },
+        },
+    });
     const native = b.createModule(.{
         .root_source_file = b.path("zig/src/native/hip.zig"),
         .target = target,
@@ -294,6 +329,7 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
             .{ .name = "nemotron", .module = nemotron },
             .{ .name = "glm_ocr", .module = glm_ocr },
             .{ .name = "hip_serve", .module = serve },
+            .{ .name = "qwen3", .module = qwen3 },
         },
     });
     return .{
@@ -304,6 +340,7 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
         .family = family,
         .flashnext = flashnext,
         .nemotron = nemotron,
+        .qwen3 = qwen3,
         .native = native,
     };
 }
@@ -335,15 +372,15 @@ const groups = [_][]const u8{
 
 /// What the group sources include, so an edit to one rebuilds them.
 const headers = [_][]const u8{
-    "attention/attention_fa.hip", "decode/pages.hpp",      "decode/plan.hpp",       "ops/attention.hpp",
-    "ops/common.hpp",             "ops/draw.hpp",          "ops/tp.hpp",            "ops/elementwise.hpp",
-    "ops/linear.hpp",             "ops/moe.hpp",           "ops/norms.hpp",         "ops/rope.hpp",
-    "common/arch.hpp",            "common/dot2.hpp",       "common/vec.hpp",        "common/wmma.hpp",
-    "quant/act.hpp",              "quant/mlx.hpp",         "quant/mlx_decoder.hpp", "quant/mlx_pieces.hpp",
-    "quant/mlx_tiles.hpp",        "tiles/dot2.hpp",        "tiles/epilogue.hpp",    "tiles/gemm.hpp",
-    "tiles/gemm_kp.hpp",          "tiles/matrix_gemm.hpp", "tiles/plan.hpp",        "tiles/stream.hpp",
-    "flashnext/streams.hpp",      "flashnext/ngram.hpp",   "flashnext/indexer.hpp", "flashnext/sparse.hpp",
-    "ops/nemotron_moe.hpp",
+    "attention/attention_fa.hip", "decode/pages.hpp",       "decode/plan.hpp",       "ops/attention.hpp",
+    "ops/common.hpp",             "ops/draw.hpp",           "ops/tp.hpp",            "ops/elementwise.hpp",
+    "ops/linear.hpp",             "ops/moe.hpp",            "ops/norms.hpp",         "ops/rope.hpp",
+    "common/arch.hpp",            "common/dot2.hpp",        "common/vec.hpp",        "common/wmma.hpp",
+    "quant/act.hpp",              "quant/mlx.hpp",          "quant/mlx_decoder.hpp", "quant/mlx_pieces.hpp",
+    "quant/mlx_tiles.hpp",        "tiles/dot2.hpp",         "tiles/epilogue.hpp",    "tiles/gemm.hpp",
+    "tiles/gemm_kp.hpp",          "tiles/matrix_gemm.hpp",  "tiles/plan.hpp",        "tiles/stream.hpp",
+    "flashnext/streams.hpp",      "flashnext/ngram.hpp",    "flashnext/indexer.hpp", "flashnext/sparse.hpp",
+    "ops/nemotron_moe.hpp",       "quant/bf16_decoder.hpp", "quant/dense_tiles.hpp", "tiles/wmma12_gemm.hpp",
 };
 
 /// The flags of the kernels' first build: no contraction, wave32 on RDNA, C++20.

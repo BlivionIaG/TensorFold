@@ -11,6 +11,8 @@ const memory = @import("exl3/pack/exl3_startup_memory.zig");
 const exl3_pass = @import("exl3/model/cuda_exl3_pass.zig");
 pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: []const u8, captured: ?[]const u8, o: F.Options) !F.Loaded {
     if (o.vision) |v| try @import("qwen_vision").media.checkLimits(v);
+    var load_cache = @import("core").checkpoint.cache.Load.begin(io, o.tp > 1);
+    defer load_cache.deinit();
     const Cuda = F.Cuda;
     const round_streams = 32;
 
@@ -153,6 +155,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
         .reservation = .{ .stream_bytes = stream_bytes, .streams = if (stream_bytes == 0) 0 else pool_budget.other / stream_bytes, .graph_bytes = attached.graph_reservation, .after_pool_bytes = attached.after_pool_bytes },
     };
     std.log.info("flashnext rank {d} memory ledger: persistent={d} scratch={d} deep_prefill={d} pool_scratch={d} expert_pools={d} stream_bytes={d} streams={d} graph_reservation={d} planned_total={d} free_after_pools={d}", .{ o.rank, ledger.persistent, ledger.scratch, ledger.deep_prefill, ledger.pool_scratch, ledger.expert_pools, stream_bytes, ledger.reservation.streams, pool_budget.graph_reservation, try ledger.total(), attached.free_after });
+    if (own.ranks) |r| try load_cache.finishAfter(.{ r, std.math.maxInt(u64) }, ranks.Session.room) else load_cache.finish();
     return .{
         .layout = own.kv.layout,
         .vision = own.vision,
