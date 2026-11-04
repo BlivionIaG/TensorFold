@@ -36,6 +36,7 @@ pub const reserveMemory = gbudget.reserveMemory;
 pub const clear = gcache.clear;
 pub const releaseSeq = gcache.releaseSeq;
 pub const releaseDecodeSeq = gcache.releaseDecodeSeq;
+pub const releaseDraft = gcache.releaseDraft;
 pub const releaseFor = gcache.releaseFor;
 pub const round = ghooks.round;
 pub const forward = ghooks.forward;

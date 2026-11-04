@@ -31,3 +31,8 @@ half-launched. A communicator error (a lost peer, a timeout) still ends the step
 
 The device planner, the plan active during a round and the MTP head's pool belong to the engine
 (`Engine.exl3_dplan`), so two engines in one process share none of them.
+
+Closed streams may retain sequence and draft allocations for reuse. Before either is actually freed, every captured
+graph borrowing its allocations is retired, including pending instantiations and prefill graphs. DeltaNet state sets
+move between sequences and draft windows, so retirement follows both input and output state identities rather than
+only the request that first captured a graph. Graphs for other allocations or CUDA drivers remain cached.

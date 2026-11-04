@@ -24,6 +24,8 @@ pub const Key = struct {
     output: u64,
     streams: u64 = 0,
     keep: u64 = 0,
+    /// First output state allocation, whose ownership can move between a sequence and drafts.
+    keep_state: u64 = 0,
     keep_nonstate: u64 = 0,
     /// The device planner's state (a new planner is new memory).
     plan: u64 = 0,

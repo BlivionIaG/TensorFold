@@ -39,6 +39,9 @@ const Recording = struct {
     var fills: usize = 0;
     var fail_fill_at: ?usize = null;
     var live: [256]?[]align(16) u8 = @splat(null);
+    var watched_state: u64 = 0;
+    var graph_live = false;
+    var freed_with_graph = false;
 
     fn alloc(output: *u64, len: usize) callconv(.c) c_int {
         allocations += 1;
@@ -52,6 +55,7 @@ const Recording = struct {
     }
 
     fn free(address: u64) callconv(.c) c_int {
+        if (address == watched_state and graph_live) freed_with_graph = true;
         for (&live) |*slot| if (slot.*) |bytes| if (@intFromPtr(bytes.ptr) == address) {
             allocator.free(bytes);
             slot.* = null;
@@ -82,10 +86,18 @@ const Recording = struct {
         return 0;
     }
 
+    fn graphDestroy(_: cuda.abi.GraphExec) callconv(.c) c_int {
+        graph_live = false;
+        return 0;
+    }
+
     fn driver() cuda.Driver {
         allocations = 0;
         fills = 0;
         fail_fill_at = null;
+        watched_state = 0;
+        graph_live = false;
+        freed_with_graph = false;
         var result: cuda.Driver = undefined;
         result.api.cuMemAlloc_v2 = alloc;
         result.api.cuMemFree_v2 = free;
@@ -93,6 +105,7 @@ const Recording = struct {
         result.api.cuMemsetD8_v2 = fillNow;
         result.api.cuCtxSynchronize = sync;
         result.api.cuStreamSynchronize = streamSync;
+        result.api.cuGraphExecDestroy = graphDestroy;
         return result;
     }
 };
@@ -140,6 +153,28 @@ fn sequence(owner: *prompt.Engine, cap: usize) !prompt.Seq {
         .logits = try allocator.alloc(u8, 16),
         .cap = cap,
     };
+}
+
+test "exl3: sequence destruction retires another draft's graph after a state-set transfer" {
+    const previous = graphs.force;
+    graphs.force = .graph;
+    defer graphs.force = previous;
+    graphs.cache.clear();
+    defer graphs.cache.clear();
+    var driver = Recording.driver();
+    var stream: cuda.Stream = .{ .d = &driver, .handle = @ptrFromInt(9) };
+    var owner = engine(&driver, &stream);
+    var current = try sequence(&owner, 16);
+    current.recycle_owner = null;
+    Recording.watched_state = current.state[0].ptr;
+    Recording.graph_live = true;
+    var key: graphs.Key = .{ .kind = 2, .rows = 2, .scratch = 1, .scores = 2, .output = 3, .keep = 4, .keep_state = current.state[0].ptr };
+    key.seq[0][2] = current.tail.ptr + 1;
+    graphs.cache.entries[0] = .{ .key = key, .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .used = 1, .stream = stream };
+    current.deinit(allocator);
+    try std.testing.expect(!Recording.freed_with_graph);
+    try std.testing.expect(!Recording.graph_live);
+    try std.testing.expect(graphs.cache.find(key) == null);
 }
 
 fn zero(bytes: []const u8) !void {

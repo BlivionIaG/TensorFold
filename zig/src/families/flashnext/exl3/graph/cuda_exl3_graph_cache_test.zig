@@ -52,8 +52,9 @@ test "exl3: sequence graph retirement removes mixed lanes and pending work witho
     gcache.seen[1] = .{ .key = live_key, .n = 10, .used = 1 };
     gprefill.pseen[0] = .{ .key = pkey, .n = 10 };
     gprefill.pseen[1] = .{ .key = live_pkey, .n = 10 };
-    const Seq = struct { tail: struct { ptr: u64 } };
-    gcache.releaseSeq(Seq{ .tail = .{ .ptr = 100 } });
+    const Seq = struct { tail: cuda.DeviceBuffer, state: []const cuda.DeviceBuffer = &.{} };
+    const retired: Seq = .{ .tail = .{ .d = &driver, .ptr = 100, .len = 0, .borrowed = true } };
+    gcache.releaseSeq(&retired);
     try std.testing.expect(gcache.find(owner_key) == null);
     try std.testing.expect(gcache.find(live_key) != null);
     try std.testing.expect(gcache.entries[2] == null and gcache.entries[3] == null);
@@ -64,7 +65,7 @@ test "exl3: sequence graph retirement removes mixed lanes and pending work witho
     try std.testing.expectEqual(@as(usize, 4), GraphTestDriver.exec_drops);
     try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.graph_drops);
     try std.testing.expectEqual(@as(u32, 1), gcache.sighting(owner_key));
-    gcache.releaseSeq(Seq{ .tail = .{ .ptr = 100 } });
+    gcache.releaseSeq(&retired);
     try std.testing.expectEqual(@as(usize, 4), GraphTestDriver.exec_drops);
 }
 
@@ -81,8 +82,9 @@ test "exl3: snapshot graph retirement keeps prefill templates but drops decode g
     const pkey: PKey = .{ .layer = 0, .rows = 32, .sub = 16, .pos0 = 0, .deep = 1, .base = 2, .base_cap = 32, .seq = .{ 1, 2, 100, 32, 3 }, .wait_count = 0, .wait_key = 0, .scores = 4, .tiles = false };
     gprefill.pentries[0] = .{ .key = pkey, .exec = exec, .used = 1 };
     gprefill.pseen[0] = .{ .key = pkey, .n = 2 };
-    const Seq = struct { tail: struct { ptr: u64 } };
-    gcache.releaseDecodeSeq(Seq{ .tail = .{ .ptr = 100 } });
+    const Seq = struct { tail: cuda.DeviceBuffer, state: []const cuda.DeviceBuffer = &.{} };
+    const retired: Seq = .{ .tail = .{ .d = &driver, .ptr = 100, .len = 0, .borrowed = true } };
+    gcache.releaseDecodeSeq(&retired);
     try std.testing.expect(gcache.entries[0] == null);
     try std.testing.expect(gprefill.pentries[0] != null);
     try std.testing.expect(gprefill.pseen[0] != null);

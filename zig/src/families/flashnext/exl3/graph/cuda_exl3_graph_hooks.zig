@@ -95,6 +95,12 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
         Key.seams(seq.fed + n, &key.chunks[0], &key.score_tiles[0]);
         if (hooks.keep) |kp| {
             key.keep = std.hash.Wyhash.hash(1, std.mem.asBytes(kp));
+            inline for (0..kp.layers.len) |layer| {
+                if (comptime wt.linearLayer(layer)) {
+                    key.keep_state = kp.layers[layer].state_out;
+                    break;
+                }
+            }
             if (grebind.stateRebindEnabled()) key.keep_nonstate = state_binding.keepHash(kp.*);
         }
         const tp0 = std.Io.Clock.awake.now(p.io).toNanoseconds();

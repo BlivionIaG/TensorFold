@@ -36,11 +36,13 @@ test "exl3: state binding normalized identity preserves all nonstate key guards"
     var flipped = original;
     flipped.seq[0][4] = 100;
     flipped.keep = 101;
+    flipped.keep_state = 102;
     try std.testing.expect(!std.meta.eql(original, flipped));
     try std.testing.expectEqualDeep(state_binding.normalized(original), state_binding.normalized(flipped));
     inline for (@typeInfo(Key).@"struct".field_names) |field| {
         if (comptime !std.mem.eql(u8, field, "seq") and
-            !std.mem.eql(u8, field, "pages") and !std.mem.eql(u8, field, "tiers") and !std.mem.eql(u8, field, "chunks") and !std.mem.eql(u8, field, "score_tiles") and !std.mem.eql(u8, field, "keep"))
+            !std.mem.eql(u8, field, "pages") and !std.mem.eql(u8, field, "tiers") and !std.mem.eql(u8, field, "chunks") and !std.mem.eql(u8, field, "score_tiles") and
+            !std.mem.eql(u8, field, "keep") and !std.mem.eql(u8, field, "keep_state"))
         {
             var changed = original;
             @field(changed, field) += 1;

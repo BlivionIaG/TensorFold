@@ -203,6 +203,14 @@ fn release(runtime: *Runtime, s: *State) void {
     runtime.state = null;
 }
 
+/// A draft's score buffer identifies its graphs; retire them before any of the draft's buffers are freed.
+pub fn releaseDraft(dlogits: *const cuda.DeviceBuffer) void {
+    for (&entries) |*en| if (en.*) |*x| if (x.key.dlogits == dlogits.ptr and x.stream.?.d == dlogits.d) {
+        dropEntry(x);
+        en.* = null;
+    };
+}
+
 pub fn releaseRuntime(runtime: *Runtime) void {
     if (runtime.state) |*s| release(runtime, s);
 }
@@ -535,60 +543,12 @@ pub fn evictOne() bool {
     return true;
 }
 
-test "exl3: synchronous chain launch failure retains ownership until retirement" {
-    const Mock = struct {
-        var drops: usize = 0;
-
-        fn instantiate(out: *cuda.abi.GraphExec, _: cuda.abi.Graph, _: u64) callconv(.c) c_int {
-            out.* = @ptrFromInt(1);
-            return 0;
-        }
-
-        fn upload(_: cuda.abi.GraphExec, _: cuda.abi.Stream) callconv(.c) c_int {
-            return 0;
-        }
-
-        fn synchronize(_: cuda.abi.Stream) callconv(.c) c_int {
-            return 0;
-        }
-
-        fn launch(_: cuda.abi.GraphExec, _: cuda.abi.Stream) callconv(.c) c_int {
-            return cuda.abi.error_not_ready;
-        }
-
-        fn destroy(_: cuda.abi.GraphExec) callconv(.c) c_int {
-            drops += 1;
-            return 0;
-        }
-
-        fn installAndLaunch(target: *?Entry, template: cuda.graph.Graph, entry: Entry) !void {
-            try installSync(target, template, entry);
-            try target.*.?.exec.launchOn(entry.stream.?);
-        }
-    };
-    Mock.drops = 0;
-    var driver: cuda.Driver = undefined;
-    driver.api.cuGraphInstantiateWithFlags = Mock.instantiate;
-    driver.api.cuGraphUpload = Mock.upload;
-    driver.api.cuStreamSynchronize = Mock.synchronize;
-    driver.api.cuGraphLaunch = Mock.launch;
-    driver.api.cuGraphExecDestroy = Mock.destroy;
-    const stream: cuda.Stream = .{ .d = &driver, .handle = @ptrFromInt(1) };
-    try graph.memory.configure(.{ .reservation_bytes = 100, .headroom_bytes = 20, .charge = .{ .exec = 20, .template = 10, .transient = 10 } });
-    const ticket = try graph.memory.admit(.chain, 0, 100);
-    var ticket_owned = true;
-    defer if (ticket_owned) graph.memory.release(ticket) catch unreachable;
-    var entry: ?Entry = null;
-    defer if (entry) |*cached| dropEntry(cached);
-    const result = Mock.installAndLaunch(&entry, .{ .d = &driver, .handle = @ptrFromInt(1) }, .{ .key = undefined, .used = 1, .admission = ticket, .stream = stream });
-    if (entry != null) ticket_owned = false;
-    try std.testing.expectError(error.NotReady, result);
-    try std.testing.expect(entry != null);
-    try std.testing.expectEqual(@as(usize, 0), Mock.drops);
-    try std.testing.expectEqual(@as(u64, 30), graph.memory.charged());
-    dropEntry(&entry.?);
-    entry = null;
-    try std.testing.expectEqual(@as(usize, 1), Mock.drops);
-    try std.testing.expectEqual(@as(u64, 0), graph.memory.charged());
-    try std.testing.expectError(error.StaleGraphTicket, graph.memory.release(ticket));
+test {
+    _ = @import("cuda_exl3_chain_test.zig").Cases(.{
+        .Entry = Entry,
+        .Key = Key,
+        .entries = &entries,
+        .installSync = installSync,
+        .dropEntry = dropEntry,
+    });
 }

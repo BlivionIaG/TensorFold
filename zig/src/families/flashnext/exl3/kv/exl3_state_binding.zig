@@ -162,6 +162,7 @@ pub fn normalized(key: anytype) @TypeOf(key) {
     var candidate = key;
     candidate.seq[0][4] = 0;
     candidate.keep = key.keep_nonstate;
+    candidate.keep_state = 0;
     return candidate;
 }
 

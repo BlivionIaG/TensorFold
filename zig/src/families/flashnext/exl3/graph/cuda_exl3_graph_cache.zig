@@ -81,10 +81,50 @@ pub fn references(key: Key, tail: u64) bool {
     return false;
 }
 
+fn resourceSeq(seq: *const [5]u64, tail: u64, state: u64) bool {
+    return (tail != 0 and seq[2] == tail) or (state != 0 and seq[4] == state);
+}
+
+fn resourceKey(key: *const Key, tail: u64, state: u64) bool {
+    if (state != 0 and key.keep_state == state) return true;
+    for (&key.seq) |*seq| if (resourceSeq(seq, tail, state)) return true;
+    return false;
+}
+
+fn draftKey(key: *const Key, draft: anytype) bool {
+    return (draft.logits.ptr != 0 and key.output == draft.logits.ptr) or
+        (draft.streams.ptr != 0 and key.streams == draft.streams.ptr) or
+        resourceKey(key, draft.kc.ptr, draft.spare[0].ptr);
+}
+
+fn onDriver(held: *const Entry, driver: *const cuda.Driver) bool {
+    if (held.stream) |stream| return stream.d == driver;
+    if (held.exec) |exec| return exec.d == driver;
+    if (held.template) |template| return template.d == driver;
+    if (held.pending) |pending| return pending.graph.d == driver;
+    return false;
+}
+
+/// Drafts exchange whole state sets with sequences; retire every graph that still borrows their allocations.
+pub fn releaseDraft(draft: anytype) void {
+    for (&entries) |*entry| if (entry.*) |*held| {
+        if (!draftKey(&held.key, draft) or !onDriver(held, draft.dlogits.d)) continue;
+        drop(held);
+        entry.* = null;
+    };
+    for (&gprefill.pentries) |*entry| if (entry.*) |*held| {
+        if (held.exec.d != draft.dlogits.d or !resourceSeq(&held.key.seq, draft.kc.ptr, draft.spare[0].ptr)) continue;
+        gprefill.dropPrefill(held);
+        entry.* = null;
+    };
+}
+
 pub fn releaseSeqImpl(seq: anytype, keep_prefill: bool) void {
     const tail = seq.tail.ptr;
     if (tail == 0) return;
-    for (&entries) |*entry| if (entry.*) |*x| if (references(x.key, tail)) {
+    const state = if (seq.state.len > 0) seq.state[0].ptr else 0;
+    for (&entries) |*entry| if (entry.*) |*x| {
+        if (!resourceKey(&x.key, tail, state) or !onDriver(x, seq.tail.d)) continue;
         drop(x);
         entry.* = null;
     };
@@ -92,7 +132,7 @@ pub fn releaseSeqImpl(seq: anytype, keep_prefill: bool) void {
         entry.* = null;
     };
     if (!keep_prefill) {
-        for (&gprefill.pentries) |*entry| if (entry.*) |*x| if (x.key.seq[2] == tail) {
+        for (&gprefill.pentries) |*entry| if (entry.*) |*x| if (x.exec.d == seq.tail.d and resourceSeq(&x.key.seq, tail, state)) {
             gprefill.dropPrefill(x);
             entry.* = null;
         };

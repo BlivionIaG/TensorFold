@@ -320,6 +320,8 @@ pub const Draft = struct {
         }
         if (d.stream) |stream| cuda.completion.drain(stream.d, stream, "Flash Next draft work did not drain before release");
         if (@import("exl3/offload/cuda_exl3_recycle.zig").giveDraft(d)) return; // graphs: kept for the next stream
+        @import("exl3/model/cuda_exl3_chain.zig").releaseDraft(&d.dlogits);
+        @import("exl3/graph/cuda_exl3_graph.zig").releaseDraft(d);
         if (d.verify_host) |*host| host.free();
         d.gpa.free(d.host);
         for (&d.spare) |*b| b.free();
