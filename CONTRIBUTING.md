@@ -33,14 +33,6 @@ Run the full suite on an isolated machine when the local GPU is serving a model.
 These results do not substitute for an actual checkpoint/model gate.
 On macOS, `zig build dev-tools` compiles and links every `tf-*` developer tool without running one; run it after changing an API they call.
 
-The `No GPU` and `Zig format` workflows also accept manual runs on a selected branch.
-Use the PR's pinned baseline commit for the lean comparison; a manual run does not waive any check:
-
-```sh
-gh workflow run no-gpu.yml --repo OWNER/TensorFold --ref BRANCH -f base_commit=BASE_SHA
-gh workflow run zig-fmt.yml --repo OWNER/TensorFold --ref BRANCH
-```
-
 For the CUDA host-test subset without the macOS Metal family tests:
 
 ```sh
