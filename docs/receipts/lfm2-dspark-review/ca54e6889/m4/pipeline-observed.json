@@ -1,0 +1,112 @@
+{
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934",
+  "scope": "M4_PRE_M5_STAND_ASIDE_ORIGINAL_NUMERICAL_AND_FUNCTIONAL_SCOPES",
+  "not_performance_qualification": true,
+  "no_new_long_context_invocation": true,
+  "complete": true,
+  "records": [
+    {
+      "label": "original-guards",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "$TMP/tf-pr-review-r38/m4-ca54e6889/guards/run-guards.py"
+      ],
+      "status": "exited",
+      "started_unix_ns": 1793812301910846000,
+      "pid": 92525,
+      "returncode": 0,
+      "elapsed_s": 301.1488550826907,
+      "log_sha256": "ddcca1253eb995d9be6eb4cbf5441d974931941c196104ced59cff3298f5d35d",
+      "completed_unix_ns": 1793812603060586000
+    },
+    {
+      "label": "functional-0",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "$TMP/tf-pr-review-r38/m4-ca54e6889/run-functional.py",
+        "--root",
+        "$SOURCE",
+        "--binding",
+        "$TMP/tf-pr-review-r38/m4-ca54e6889/guards/binding.json",
+        "--output",
+        "$TMP/tf-pr-review-r38/m4-ca54e6889/functional-0",
+        "--bits",
+        "0"
+      ],
+      "status": "exited",
+      "started_unix_ns": 1793812603067400000,
+      "pid": 93921,
+      "returncode": 0,
+      "elapsed_s": 239.00040266755968,
+      "log_sha256": "87cc51ebc9d8a818b5dc4210efba97fe71e1dc3858cad0da1da33c06fab8f5ac",
+      "completed_unix_ns": 1793812842068795000
+    },
+    {
+      "label": "functional-8",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "$TMP/tf-pr-review-r38/m4-ca54e6889/run-functional.py",
+        "--root",
+        "$SOURCE",
+        "--binding",
+        "$TMP/tf-pr-review-r38/m4-ca54e6889/guards/binding.json",
+        "--output",
+        "$TMP/tf-pr-review-r38/m4-ca54e6889/functional-8",
+        "--bits",
+        "8"
+      ],
+      "status": "exited",
+      "started_unix_ns": 1793812842069943000,
+      "pid": 95500,
+      "returncode": 0,
+      "elapsed_s": 238.39481612481177,
+      "log_sha256": "e68c9f75fa5607cfa4627e408d7d3289e9ca7462ee501c28518d4c35877dbbfb",
+      "completed_unix_ns": 1793813080465825000
+    }
+  ],
+  "route_observations": [
+    {
+      "bits": 0,
+      "log": "functional-0/functional-cache.server.log",
+      "stand_aside": true,
+      "neural_initialization_logged": false,
+      "clean_shutdown": true,
+      "log_sha256": "97118e2f28497dbfc464001535ef0e68de721b9e4179994b943b533b29f0b1c4"
+    },
+    {
+      "bits": 0,
+      "log": "functional-0/functional-fresh.server.log",
+      "stand_aside": true,
+      "neural_initialization_logged": false,
+      "clean_shutdown": true,
+      "log_sha256": "cd662b1d2cccd444b4e0880e458fface2a3045db93830c2f3f52d2ebcf5b0ad3"
+    },
+    {
+      "bits": 8,
+      "log": "functional-8/functional-cache.server.log",
+      "stand_aside": true,
+      "neural_initialization_logged": false,
+      "clean_shutdown": true,
+      "log_sha256": "8d8754f576f906e608b2c6c6acb6639dfac1992f9183df3a072f435f0e93ea49"
+    },
+    {
+      "bits": 8,
+      "log": "functional-8/functional-fresh.server.log",
+      "stand_aside": true,
+      "neural_initialization_logged": false,
+      "clean_shutdown": true,
+      "log_sha256": "8dab5b87c136c0c181ef7142820b7e29ac11613672401b4424e041ad568f0212"
+    }
+  ],
+  "started_unix_ns": 1793812301621474000,
+  "source_verified_before": true,
+  "python_executable": "/opt/homebrew/opt/python@3.14/bin/python3.14",
+  "python_version": "3.14.7 (main, Aug  5 2026, 10:29:49) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "python_sha256": "87d4df53fd91304be5bac391fb204643c36b7df2023c04a0953bcbc7d4fdf634",
+  "zig_sha256": "1c5f706db0ed6d55451940f31dc05a6177d05696bc1fa5d853696d04c718b523",
+  "production_binary_sha256": "cb6fa76c0d11542ff13ffc74d7fa08c94d9b421a4f32b35173d588ef6217f542",
+  "source_verified_after": true,
+  "completed_unix_ns": 1793813080703836000,
+  "exit_code": 0
+}

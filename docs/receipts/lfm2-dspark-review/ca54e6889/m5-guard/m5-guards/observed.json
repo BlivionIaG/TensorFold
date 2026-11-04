@@ -1,0 +1,135 @@
+{
+  "scope": "IntegratedPinnedMainM5OriginalGuards;NoServingQualification",
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "base_revision": "00ff0f3b2c7ee67546e7a406f074e6d1d5c02593",
+  "source_tree_ids": {
+    "zig": "7748b5f103e4da00f9155b499d09c49cb615d87c",
+    "build.zig": "241e316fbebe9c77220066b47eb43e74e80bffda",
+    "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+  },
+  "production_binary_sha256": "50d52f95a58c0c62cdecda98eb97f8eedfd82798b73ae430381cbc6a708bb517",
+  "binary_sha256": "a717296c420c2d6d3b6214138483e6d090e7af8201429d49b7897224ccc30f28",
+  "cases": [
+    {
+      "bits": 0,
+      "requested_prefix": 9,
+      "reference_equal": 9,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.0,
+      "confidence_max_difference": 0.0008,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "818d093f3c4ca03759260cd9429b34b3412558382733e6f2562119d3073ba46f"
+    },
+    {
+      "bits": 8,
+      "requested_prefix": 9,
+      "reference_equal": 8,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.075,
+      "confidence_max_difference": 0.00225,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "3f552facc3ba8af399d8d3967d493e506b9b93c2c162f5d44a14e480c8ae3737"
+    }
+  ],
+  "records": [
+    {
+      "command": [
+        "$HOME/tf-lfm2-test/r16-source-unit-9348e8306/zig-0.17.0/zig",
+        "build",
+        "native",
+        "test-lfm2",
+        "test-lfm2-dspark",
+        "test-native",
+        "test-qwen27-shared-allocation-host",
+        "test-draft-metal-host",
+        "test-drafter-skip-metal-host",
+        "tf-kernel-contract",
+        "tf-lfm2-dspark",
+        "-Dcpu=apple_m1",
+        "-Dversion=1.2.0",
+        "-j1",
+        "--summary",
+        "all"
+      ],
+      "returncode": 0,
+      "seconds": 263.6883761254139,
+      "log_sha256": "fb4d478514f203e2768ee9a114eb3233cf2157f23b8abf85f2a50c8f27097c2d"
+    },
+    {
+      "command": [
+        "$M5_PACKET/source/zig-out/bin/tf-kernel-contract",
+        "--only",
+        "lfm2"
+      ],
+      "returncode": 0,
+      "seconds": 112.89274079212919,
+      "log_sha256": "bf6b959e9c038b9e16cd4326dea7da33f2ad1936037a9abe669f16c51b118ee5"
+    },
+    {
+      "command": [
+        "$M5_PACKET/source/zig-out/bin/tf-lfm2-dspark",
+        "$TARGET",
+        "$DRAFTER",
+        "64",
+        "9",
+        "0"
+      ],
+      "returncode": 0,
+      "seconds": 6.6142180832102895,
+      "log_sha256": "818d093f3c4ca03759260cd9429b34b3412558382733e6f2562119d3073ba46f"
+    },
+    {
+      "command": [
+        "$M5_PACKET/source/zig-out/bin/tf-lfm2-dspark",
+        "$TARGET",
+        "$DRAFTER",
+        "64",
+        "9",
+        "8"
+      ],
+      "returncode": 0,
+      "seconds": 6.125326165929437,
+      "log_sha256": "3f552facc3ba8af399d8d3967d493e506b9b93c2c162f5d44a14e480c8ae3737"
+    }
+  ],
+  "binding": {
+    "driver_sha256": {
+      "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+      "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+      "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+      "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+      "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+      "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+      "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+    },
+    "frozen_driver": "$M5_PACKET/frozen-driver",
+    "shared_lock": "$TMP/tensorfold-model.lock",
+    "shared_lock_inode_observed": 3719605,
+    "model_sha256": {
+      "target": {
+        "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+        "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+        "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+        "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+        "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+        "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+        "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+        "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+        "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+      },
+      "drafter": {
+        "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+        "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+      }
+    },
+    "remote_target": "$TARGET",
+    "remote_drafter": "$DRAFTER",
+    "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+    "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+    "source_archive_sha256": "a47ec92ef6dd9f253bc5431e0bc5bc81f7ed6e2f9abdee2e9136a79028f00934"
+  }
+}

@@ -2,7 +2,7 @@
 
 Source: [`ca54e6889ed8ed00400bfeb4fa1be30a3a687de5`](https://github.com/BlivionIaG/TensorFold/commit/ca54e6889ed8ed00400bfeb4fa1be30a3a687de5). Pinned upstream main: `00ff0f3b2c7ee67546e7a406f074e6d1d5c02593`.
 
-This protocol is published **before any M5 model execution on this revision**. It responds only to [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133). It is not a completed qualification or a performance-pass claim.
+The protocol was [published at `634a3031d`](https://github.com/BlivionIaG/TensorFold/tree/634a3031d082eba23746b073429c944af09e0d32/docs/receipts/lfm2-dspark-review/ca54e6889) **before this revision's M5 launch**. This report responds only to [review6633416133](https://github.com/ashhart/TensorFold/pull/1394#issuecomment-6633416133). M4 verification and both devices' original numerical guards are complete; the M5 full matrix is running. **No full performance result or pass claimed yet.**
 
 ## Why this source follows the failed prerequisite
 
@@ -15,9 +15,52 @@ The [source-dc4558f5c packet](../dc4558f5c/README.md) retains both chips' origin
 - Current main integrated, including its non-LFM2 support. Unrelated CI-dispatch and CONTRIBUTING additions removed; prior published commits preserved. No CI PR or unrelated model work.
 - Actual lean comparison: **425 head / 425 pinned-base warnings, zero new**. Formatting passed for this revision before commit.
 
-## Observed preliminary M4 route smoke
+## Current-source numerical guards
 
-Source `3d0f720c4824fbf7fb6b34f18f5f5789c8178975`: 24/24 complete 128-token requests matched hashes across plain, requested-BF16 and requested-8-bit arms, including `draft:false` oracles. Both requested arms logged stand-aside; no neural initialization/calibration was logged. Three clean exits, no forced kills. **Routing smoke only; not the final source numerical guards or performance qualification.**
+| Chip | Build steps | Fresh test summary | LFM2 positive kernels | Negative controls |
+|---|---:|---|---:|---:|
+| M4 Pro | 82/82 | 122/125 passed, 3 skipped; remaining unchanged groups cached | 16/16 | 24/24 red as planted |
+| M5 Ultra | 82/82 | 785/789 passed, 4 skipped | 17/17 | 24/24 red as planted |
+
+M4's build summary counts freshly executed test steps; unchanged groups were normal Zig-cache hits.
+No test-selection or cache flags changed. Raw [M4](m4/guards/build.log) and
+[M5](m5-guard/m5-guards/build.log) logs disclose every step. The shared fixture SEGV is fixed on both chips.
+
+The native head diagnostic uses BF16 activations in both weight modes, compared with an independent FP32
+head reference on captured BF16 target features. This is **not an FP32 target-server arm**.
+
+| Chip | Drafter weights | FP32 pick agreement | Largest different-pick margin | Maximum absolute confidence difference |
+|---|---|---:|---:|---:|
+| M4 Pro | Released BF16 | 9/9 | 0 | 0.00085 |
+| M4 Pro | 8-bit | 9/9 | 0 | 0.00152 |
+| M5 Ultra | Released BF16 | 9/9 | 0 | 0.00080 |
+| M5 Ultra | 8-bit | 8/9 | 0.075 | 0.00225 |
+
+These are nonzero numerical differences, not a “zero error” claim. M5's 8-bit case has one proposal-pick
+mismatch and passes the unchanged reference criteria; final serving-token exactness is a separate check.
+Both devices retain fixed query width 9, the 8/16 logical-cohort cases, all 60 context quotes, zero-row rewind
+and all five nonfinite-producer controls. [M4 receipts](m4/guards/observed.json);
+[M5 receipts](m5-guard/m5-guards/observed.json).
+
+## Current-source M4 stand-aside lifecycle
+
+Both requested weight modes take the canonical no-neural serving route. Every cache/fresh server logs
+stand-aside, none logs neural initialization/calibration, and all four shut down cleanly without force.
+
+| Requested drafter mode | Reused cache tokens | Sampled oracle/solo/concurrent triples equal | Stress completed | Cancelled | Wrong / errors | Clean servers |
+|---|---:|---:|---:|---:|---|---:|
+| BF16 | 3517 | 29/29 | 425 | 241 | 0 / 0 | 2/2 |
+| 8-bit | 3517 | 29/29 | 425 | 241 | 0 / 0 | 2/2 |
+
+Each mode retains the original 6-stream/60-second and 16-stream/90-second stress fixtures. Resumed and
+fresh token hashes match. Normal cheap-copy eligibility remains; the recorded resumed requests have
+zero drafted proposals, so these data do not claim copy or neural activity in every request.
+Independent head diagnostics above remain enabled on M4; they are not neural serving.
+[Complete source/binary/lifecycle proof](m4/pipeline-observed.json) checks source files before and after.
+
+This is not a new active-drafter M4 performance matrix: M4 is now ineligible. No new M4 long invocation
+was made; prior long receipts and the independent maximum-context diagnostic OOM retain their original
+source bindings. The earlier routing-only smoke is retained in the immutable predeclaration.
 
 ## Frozen M5 procedure
 

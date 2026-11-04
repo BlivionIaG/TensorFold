@@ -1,0 +1,63 @@
+{
+  "source_revision": "ca54e6889ed8ed00400bfeb4fa1be30a3a687de5",
+  "scope": "CompletedOriginalGuardsOnly_NotFullQualification",
+  "guard_exit_code": 0,
+  "controller_log_sha256_verified_against_delivered_receipt": "b4458b6349b11f1cc0fb3470a6542a014217f622f01671e9e859998ef513eea1",
+  "files": [
+    {
+      "path": "original-guards.controller.log",
+      "original_sha256": "b4458b6349b11f1cc0fb3470a6542a014217f622f01671e9e859998ef513eea1",
+      "published_sha256": "e6db8cac255df605024b8734bc67e5f78701a2644dd0fd7e168aba112cf61ac4",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5-guards/observed.json",
+      "original_sha256": "16c4f972a174dddbba4339c19f356cf4c049563a5e14bf7abbbeafdfc65c25c5",
+      "published_sha256": "44fa3950c24b5faec78dafe8bffaeef1e07950ce8ea264169d6c827e78a168e5",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5-guards/native-bits8-depth9.log",
+      "original_sha256": "3f552facc3ba8af399d8d3967d493e506b9b93c2c162f5d44a14e480c8ae3737",
+      "published_sha256": "3f552facc3ba8af399d8d3967d493e506b9b93c2c162f5d44a14e480c8ae3737",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5-guards/native-bits0-depth9.log",
+      "original_sha256": "818d093f3c4ca03759260cd9429b34b3412558382733e6f2562119d3073ba46f",
+      "published_sha256": "818d093f3c4ca03759260cd9429b34b3412558382733e6f2562119d3073ba46f",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5-guards/lfm2.log",
+      "original_sha256": "bf6b959e9c038b9e16cd4326dea7da33f2ad1936037a9abe669f16c51b118ee5",
+      "published_sha256": "bf6b959e9c038b9e16cd4326dea7da33f2ad1936037a9abe669f16c51b118ee5",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5-guards/build.log",
+      "original_sha256": "fb4d478514f203e2768ee9a114eb3233cf2157f23b8abf85f2a50c8f27097c2d",
+      "published_sha256": "fb4d478514f203e2768ee9a114eb3233cf2157f23b8abf85f2a50c8f27097c2d",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5-guards/binding.json",
+      "original_sha256": "f3a8596252de88eefe124e00bb3f217feafbf12f59deb21d0fa94135fa18afa9",
+      "published_sha256": "2beef8fd8d338f147deefbfc2830e929918e17bf1445c4138ac879d092f67a59",
+      "path_redactions_only": true
+    },
+    {
+      "path": "m5-guards/run-guards.py",
+      "original_sha256": "70acdacacab8c7bff7c424701fa2a0c5451265f65a9768dae7a6ad7522ef977a",
+      "published_sha256": "70acdacacab8c7bff7c424701fa2a0c5451265f65a9768dae7a6ad7522ef977a",
+      "path_redactions_only": true
+    },
+    {
+      "path": "pipeline-observed.snapshot.json",
+      "original_sha256": "4fed11c14bd447c4593ddbf2f9ac6faeae0926c14887d462db13c3302fcf0cf6",
+      "published_sha256": "f139245a33bc96d848819514a68e57ecc2006c97db2bc1f8781c139a8a8e6062",
+      "path_redactions_only": true,
+      "mutable_controller_snapshot_not_final_completion": true
+    }
+  ]
+}
