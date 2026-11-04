@@ -1,0 +1,77 @@
+info: lfm2 dspark: a 1-draft clean hold takes 8.01 CPU-encode + GPU ms, a 9-draft hold 10.13 CPU-encode + GPU ms; 60 context quotes
+info: lfm2 dspark: weights 625.1 MiB, scratch 92.3 MiB, a stream 10 KiB a position and up to 40960 KiB staged
+PASS Markov producer bf16 bits 0x0: waited refused false, held target refused false, held host refused false (expected false)
+PASS Markov producer bf16 bits 0x7f80: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer bf16 bits 0xff80: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer bf16 bits 0x7fc0: waited refused true, held target refused true, held host refused true (expected true)
+PASS Markov producer bf16 bits 0x0: waited refused false, held target refused false, held host refused false (expected false)
+target tap control: 1 rows, twin true, no capture
+target tap control: 1 rows, twin true, 5 columns, scratch capture
+target tap control: 1 rows, 5 columns, table-only stage
+target tap control: 1 rows, 5 columns, stage mode 0
+target tap control: 1 rows, 5 columns, stage mode 1
+target tap control: 1 rows, twin true, 3 columns, scratch capture
+target tap control: 1 rows, 3 columns, table-only stage
+target tap control: 1 rows, 3 columns, stage mode 0
+target tap control: 1 rows, 3 columns, stage mode 1
+target tap control: 1 rows, twin true, 8 columns, scratch capture
+target tap control: 1 rows, 8 columns, table-only stage
+target tap control: 1 rows, 8 columns, stage mode 0
+target tap control: 1 rows, 8 columns, stage mode 1
+target taps: 1 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 4 rows, twin true, no capture
+target tap control: 4 rows, twin true, 5 columns, scratch capture
+target tap control: 4 rows, 5 columns, table-only stage
+target tap control: 4 rows, 5 columns, stage mode 0
+target tap control: 4 rows, 5 columns, stage mode 1
+target tap control: 4 rows, twin true, 3 columns, scratch capture
+target tap control: 4 rows, 3 columns, table-only stage
+target tap control: 4 rows, 3 columns, stage mode 0
+target tap control: 4 rows, 3 columns, stage mode 1
+target tap control: 4 rows, twin true, 8 columns, scratch capture
+target tap control: 4 rows, 8 columns, table-only stage
+target tap control: 4 rows, 8 columns, stage mode 0
+target tap control: 4 rows, 8 columns, stage mode 1
+target taps: 4 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 8 rows, twin true, no capture
+target tap control: 8 rows, twin true, 5 columns, scratch capture
+target tap control: 8 rows, 5 columns, table-only stage
+target tap control: 8 rows, 5 columns, stage mode 0
+target tap control: 8 rows, 5 columns, stage mode 1
+target tap control: 8 rows, twin true, 3 columns, scratch capture
+target tap control: 8 rows, 3 columns, table-only stage
+target tap control: 8 rows, 3 columns, stage mode 0
+target tap control: 8 rows, 3 columns, stage mode 1
+target tap control: 8 rows, twin true, 8 columns, scratch capture
+target tap control: 8 rows, 8 columns, table-only stage
+target tap control: 8 rows, 8 columns, stage mode 0
+target tap control: 8 rows, 8 columns, stage mode 1
+target taps: 8 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 16 rows, twin true, no capture
+target tap control: 16 rows, twin true, 5 columns, scratch capture
+target tap control: 16 rows, 5 columns, table-only stage
+target tap control: 16 rows, 5 columns, stage mode 0
+target tap control: 16 rows, 5 columns, stage mode 1
+target tap control: 16 rows, twin true, 3 columns, scratch capture
+target tap control: 16 rows, 3 columns, table-only stage
+target tap control: 16 rows, 3 columns, stage mode 0
+target tap control: 16 rows, 3 columns, stage mode 1
+target tap control: 16 rows, twin true, 8 columns, scratch capture
+target tap control: 16 rows, 8 columns, table-only stage
+target tap control: 16 rows, 8 columns, stage mode 0
+target tap control: 16 rows, 8 columns, stage mode 1
+target taps: 16 rows, twin true, released/duplicate/max-column layouts preserve all normalized and logit bytes
+target tap control: 130816 rows, twin true, no capture
+target tap control: 130816 rows, twin true, 5 columns, scratch capture
+target tap control: 130816 rows, 5 columns, table-only stage
+target tap control: 130816 rows, 5 columns, stage mode 0
+target tap control: 130816 rows, 5 columns, stage mode 1
+target tap control: 130816 rows, twin true, 3 columns, scratch capture
+target tap control: 130816 rows, 3 columns, table-only stage
+target tap control: 130816 rows, 3 columns, stage mode 0
+target tap control: 130816 rows, 3 columns, stage mode 1
+target tap control: 130816 rows, twin true, 8 columns, scratch capture
+target tap control: 130816 rows, 8 columns, table-only stage
+target tap control: 130816 rows, 8 columns, stage mode 0
+LFM2 forward: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)
+error: GpuFailed

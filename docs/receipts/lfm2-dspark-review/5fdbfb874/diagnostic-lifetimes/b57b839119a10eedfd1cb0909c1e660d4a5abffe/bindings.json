@@ -1,0 +1,32 @@
+{
+  "source_revision": "b57b839119a10eedfd1cb0909c1e660d4a5abffe",
+  "production_source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "scope": "Path-only public redactions; maximum eight-column stage OOM retained",
+  "files": {
+    "observed.json": {
+      "original_sha256": "f4b871a6a09e42523858abef9819990330ecafac4244efde7bf7d4b1158f0bb7",
+      "published_sha256": "aa10751ce66d775e76506fb86cc77c646cabda5edb31d9a957314ac5589b6135",
+      "transformation": "local path prefixes only"
+    },
+    "build.log": {
+      "original_sha256": "82fc16c01cbaaeaf7cb18c572d97e3b8df521043aee15895bb1c4b64b289dd4f",
+      "published_sha256": "82fc16c01cbaaeaf7cb18c572d97e3b8df521043aee15895bb1c4b64b289dd4f",
+      "transformation": "byte-identical"
+    },
+    "native-64-bits0.log": {
+      "original_sha256": "000f4dd08ee6d195f5db36c561fdbec6daf14e2c8b50e849fc404aac15aca133",
+      "published_sha256": "000f4dd08ee6d195f5db36c561fdbec6daf14e2c8b50e849fc404aac15aca133",
+      "transformation": "byte-identical"
+    },
+    "native-64-bits8.log": {
+      "original_sha256": "b42f047db3fdba2107f7dd7510811e5bee5e1d3d51479d8e64197151b24e5613",
+      "published_sha256": "b42f047db3fdba2107f7dd7510811e5bee5e1d3d51479d8e64197151b24e5613",
+      "transformation": "byte-identical"
+    },
+    "native-130816-bits0.log": {
+      "original_sha256": "0c149caa79ef6ddf27c4cf6079191de149a7fe7ea65cc52ec6e20b1edfa3e280",
+      "published_sha256": "0c149caa79ef6ddf27c4cf6079191de149a7fe7ea65cc52ec6e20b1edfa3e280",
+      "transformation": "byte-identical"
+    }
+  }
+}

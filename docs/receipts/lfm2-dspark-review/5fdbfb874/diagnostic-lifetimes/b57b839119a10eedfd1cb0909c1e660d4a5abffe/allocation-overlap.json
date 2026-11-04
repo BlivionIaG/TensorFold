@@ -1,0 +1,32 @@
+{
+  "source_revision": "b57b839119a10eedfd1cb0909c1e660d4a5abffe",
+  "diagnostic_binary_sha256": "4ec0ff3e4e7d1dff25ac48a52c38da0746b948739f899a46606688b7d97e6e96",
+  "failure_phase": "130816 rows, twin true, 8 columns, stage mode 0",
+  "scope": "Static sizes of three coexisting buffers, not a resident-memory peak or measured Metal private allocation. Excludes target/drafter weights, full scratch, target cache, normalized-output reference, other transients and OS memory.",
+  "rows": 130816,
+  "hidden": 2048,
+  "columns": 8,
+  "allocations": [
+    {
+      "name": "Raw scratch-capture destination plus row-address table",
+      "kind": "Metal shared buffer",
+      "formula": "rows * columns * hidden * 2 + rows * 8",
+      "bytes": 4287625216,
+      "gib": 3.993162155151367
+    },
+    {
+      "name": "Independent stage destination including two guard rows",
+      "kind": "Metal shared buffer",
+      "formula": "(rows + 2) * columns * hidden * 2",
+      "bytes": 4286644224,
+      "gib": 3.99224853515625
+    },
+    {
+      "name": "Independent captured-tap reference",
+      "kind": "Host allocation",
+      "formula": "rows * columns * hidden * 2",
+      "bytes": 4286578688,
+      "gib": 3.9921875
+    }
+  ]
+}
