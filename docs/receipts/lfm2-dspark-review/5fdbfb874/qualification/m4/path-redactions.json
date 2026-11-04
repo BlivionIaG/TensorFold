@@ -1,0 +1,26 @@
+[
+  {
+    "path": "native-guards.json",
+    "original_sha256": "8c41a697c033c6eb80a1b3cd24b584102af9cd021f9de48ed9dd4fb8f6a4b9e3",
+    "published_sha256": "3c9207e41ebd028651d7d8cbd8f1a528a1e3c7eb9b140b1c774a010ee88a3309",
+    "transform": "Local paths anonymized only; numerical values and verdicts preserved"
+  },
+  {
+    "path": "matrix-analysis.json",
+    "original_sha256": "ae4fb504b5a85301aec1b6e90d19a0e58ec5f8b9c8562bb55a6a73d041c7a53e",
+    "published_sha256": "ae4fb504b5a85301aec1b6e90d19a0e58ec5f8b9c8562bb55a6a73d041c7a53e",
+    "transform": "Local paths anonymized only; numerical values and verdicts preserved"
+  },
+  {
+    "path": "controller-observed.json",
+    "original_sha256": "80dcb9538e1567a93b50007e1d38b10b7c2df936f186386091addce55a3cf442",
+    "published_sha256": "fff09f3f2cccb52daf650248aecf6131c52c1eb5ec3d2e410eec45afc95245e7",
+    "transform": "Local paths anonymized only; numerical values and verdicts preserved"
+  },
+  {
+    "path": "long-memory-diagnosis.json",
+    "original_sha256": "b3d5720b5c935557c6e529793052cf4a9e3c411077a78950bf18ef560942dfa9",
+    "published_sha256": "b3d5720b5c935557c6e529793052cf4a9e3c411077a78950bf18ef560942dfa9",
+    "transform": "Local paths anonymized only; numerical values and verdicts preserved"
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "metadata.json": {
+    "sha256": "e1af02dcd487cc3ae445f9a8fe195915020eef9b164d0ef13bc3201226e61d67",
+    "bytes": 2383,
+    "transform": "none; byte-identical original"
+  },
+  "cells.jsonl": {
+    "sha256": "60922aa8ad8a683c6f06f22356cbd83e5444aba7040cd0537f259c176c351907",
+    "bytes": 637491,
+    "transform": "none; byte-identical original"
+  },
+  "events.jsonl": {
+    "sha256": "8a0578502276146726f322bef14531c9740d35015ff361750e70f7ecd7da8fae",
+    "bytes": 29100,
+    "transform": "none; byte-identical original"
+  },
+  "summary.json": {
+    "sha256": "c805edb41b13cb687b959859d292bcf7df16304896bea380ca14f843d3b166ba",
+    "bytes": 21663,
+    "transform": "none; byte-identical original"
+  },
+  "requests.jsonl.gz": {
+    "original_sha256": "039146a8d1cf970a09a4f59d776bf72716edfec4b9c677ce72e00b8e9f8a934a",
+    "original_bytes": 37921683,
+    "compressed_sha256": "bb1761ef4254395c11643c001c41f0c1db5e028b33576562426c274f2d0cad04",
+    "compressed_bytes": 12934123,
+    "decoded_sha256_matches_original": true
+  },
+  "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "native_binary_sha256": "ee8f3451f5264f11bc9dea24af7ba5b0b6e00d5004e496d0f8a7d7f18bc92d02"
+}

@@ -1,0 +1,266 @@
+{
+  "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+  "source_tree_ids": {
+    "zig": "037474ab51d3fc77510561c58d33dcf65d6cccc2",
+    "build.zig": "8ee3fd97d815217ef18eea3fb5c335b857984ee4",
+    "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+  },
+  "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa",
+  "all_requested_phases_executed": true,
+  "collection_status": "complete_with_retained_collector_failure",
+  "original_pipeline_complete": false,
+  "original_pipeline_error": {
+    "type": "BrokenPipeError",
+    "message": "[Errno 32] Broken pipe",
+    "traceback": "Traceback (most recent call last):\n  File \"$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-qualification.py\", line 108, in <module>\n    scenario_codes.append(run('functional-' + str(bits), [sys.executable, str(p / 'run-functional.py'),\n                          ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                              '--root', str(root), '--binding', str(p / 'm5-guards/binding.json'),\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                              '--output', str(p / ('functional-' + str(bits))), '--bits', str(bits)], env))\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-qualification.py\", line 62, in run\n    print(json.dumps(row), flush=True)\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nBrokenPipeError: [Errno 32] Broken pipe\n"
+  },
+  "original_pipeline_sha256": "a60cfcdfb52f7f0596d28fd67ed28eef1d0676123e8da067a913108e5441819f",
+  "continuation_proof_sha256": "4fa402b9f19338340f959c65c8357fac8aa4415d7acf8551380de0d15b52b1cc",
+  "phases": [
+    {
+      "label": "original-guards",
+      "command": [
+        "$PYTHON",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/run-guards.py"
+      ],
+      "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+      "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+      "started_unix_ns": 1793785571408431000,
+      "controller_pid": 34069,
+      "returncode": 0,
+      "elapsed_s": 305.1846990827471,
+      "log_sha256": "1ad9ee152a61b96aae33d69e2e77bf8a6170caff997f9d3f9d4eaffeba139a7d",
+      "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+    },
+    {
+      "label": "full-matrix",
+      "command": [
+        "$PYTHON",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-full-matrix.py",
+        "--binding",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/binding.json",
+        "--guard-proof",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/observed.json",
+        "--binary",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/runtime/tensorfold-native",
+        "--output",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-full"
+      ],
+      "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+      "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+      "started_unix_ns": 1793785876616439000,
+      "controller_pid": 34261,
+      "returncode": 3,
+      "elapsed_s": 2015.317840917036,
+      "log_sha256": "1ca41fb6bd263648302a4ff2576c9677e248507d5417c86992d0c9fc7c192a8e",
+      "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+    },
+    {
+      "label": "functional-0",
+      "command": [
+        "$PYTHON",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-functional.py",
+        "--root",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/source",
+        "--binding",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/binding.json",
+        "--output",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/functional-0",
+        "--bits",
+        "0"
+      ],
+      "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+      "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+      "started_unix_ns": 1793787891941826000,
+      "controller_pid": 34698,
+      "returncode": 0,
+      "elapsed_s": 193.38720762496814,
+      "log_sha256": "f87fbba143bfc29e7370f554842243c4290338b2c9ea272786f9ae237689d5b1",
+      "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+    },
+    {
+      "label": "functional-8",
+      "command": [
+        "$PYTHON",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-functional.py",
+        "--root",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/source",
+        "--binding",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/binding.json",
+        "--output",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/functional-8",
+        "--bits",
+        "8"
+      ],
+      "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+      "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+      "started_unix_ns": 1793788085338237000,
+      "controller_pid": 36972,
+      "returncode": 0,
+      "elapsed_s": 191.48795833298936,
+      "log_sha256": "0785029beeb1a9a7d9113280af9987738f086e8a48c9a837a2de8c3d4cd7d4fd",
+      "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+    },
+    {
+      "label": "original-long",
+      "command": [
+        "$PYTHON",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/source/docs/receipts/lfm2-dspark-review/qualification.py",
+        "long"
+      ],
+      "started_unix_ns": 1793788342291790000,
+      "controller_pid": 39319,
+      "returncode": 0,
+      "elapsed_s": 1250.835318707861,
+      "log_sha256": "138e55284a695a32f6fc62b0b71ac00a3dfee2e2ffef77fd6bf84abaa000d953"
+    }
+  ],
+  "model_phase_reruns": 0,
+  "guard_build_count": 1,
+  "full_matrix_count": 1,
+  "long_continuation_reason": "Original collector disconnected; pipeline persisted successfulfunctional8 then BrokenPipe before long ever started. Continued only missinglong once, preserved originalfailure.",
+  "source_files_unchanged": true,
+  "native_binary_unchanged": true,
+  "original_matrix_summary_unchanged": true,
+  "original_matrix_summary_sha256": "2642fd65b0273ba83c892f27c6351b95fbb96cf5c849bdb30eb0824d14e5397d",
+  "actual_clean_server_shutdowns": 14,
+  "actual_server_shutdowns": [
+    {
+      "path": "functional-0/functional-cache.shutdown.json",
+      "forced_kill": false,
+      "seconds": 0.2636008751578629,
+      "returncode": 0
+    },
+    {
+      "path": "functional-0/functional-fresh.shutdown.json",
+      "forced_kill": false,
+      "seconds": 0.5931444577872753,
+      "returncode": 0
+    },
+    {
+      "path": "functional-8/functional-cache.shutdown.json",
+      "forced_kill": false,
+      "seconds": 0.4901452078483999,
+      "returncode": 0
+    },
+    {
+      "path": "functional-8/functional-fresh.shutdown.json",
+      "forced_kill": false,
+      "seconds": 0.5516180410049856,
+      "returncode": 0
+    },
+    {
+      "path": "long-context/long-context.shutdown.json",
+      "forced_kill": false,
+      "seconds": 0.3851320408284664,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T09:55:04Z",
+      "label": "r0-plain",
+      "forced_kill": false,
+      "seconds": 0.8,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T09:58:48Z",
+      "label": "r0-bf16",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:02:30Z",
+      "label": "r0-bits8",
+      "forced_kill": false,
+      "seconds": 0.1,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:06:14Z",
+      "label": "r1-bf16",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:09:57Z",
+      "label": "r1-bits8",
+      "forced_kill": false,
+      "seconds": 0.3,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:13:41Z",
+      "label": "r1-plain",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:17:25Z",
+      "label": "r2-bits8",
+      "forced_kill": false,
+      "seconds": 0.4,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:21:08Z",
+      "label": "r2-plain",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:24:51Z",
+      "label": "r2-bf16",
+      "forced_kill": false,
+      "seconds": 0.5,
+      "returncode": 0
+    }
+  ],
+  "functional_totals": {
+    "0": {
+      "completed": 1387,
+      "cancelled": 754,
+      "wrong": 0,
+      "errors": 0,
+      "sampled_equal_triples": 29,
+      "resume_equal": true
+    },
+    "8": {
+      "completed": 1389,
+      "cancelled": 752,
+      "wrong": 0,
+      "errors": 0,
+      "sampled_equal_triples": 29,
+      "resume_equal": true
+    }
+  },
+  "historical_binding_scopes": {
+    "historical-r35/": {
+      "scope": "retained prior-source failures, NOT current results",
+      "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+      "source_archive_sha256": "3ca340ec39493b7d32ba23902e2087111e54def1184c1665331b4ada1cbe7b12",
+      "native_binary_sha256": "0ada11bcd2ac70eee71afd0fc0cfaf418983c2c29975c47979e8444a54ef6f43"
+    },
+    "superseded-source-14be.tar": {
+      "scope": "preparation-only source, never built or checked by this worker",
+      "source_revision": "14be7eb48c627b934f594f1a4060b5808afd80b5",
+      "source_archive_sha256": "ff3528d4e9c7e8be6a2a403b9a2e80c0a207af551c9d9ef6f2c6bef0ae5b472c"
+    },
+    "input.json": "superseded initial task input; final-freeze.json andm5-guards/binding.json bind actual executed source"
+  },
+  "privacy": "private operational packet; parent owns sanitized publication",
+  "postprocessor_note": "analyze-qualification.py updated after model execution only to reuse parentbyteidenticalverdictproof and include retained transport failure; not a source/controller/protocol change."
+}

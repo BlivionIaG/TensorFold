@@ -1,0 +1,130 @@
+{
+  "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "native_binary_sha256": "ee8f3451f5264f11bc9dea24af7ba5b0b6e00d5004e496d0f8a7d7f18bc92d02",
+  "original_summary_sha256": "c805edb41b13cb687b959859d292bcf7df16304896bea380ca14f843d3b166ba",
+  "summary_replay_byte_identical": true,
+  "original_matrix_exit": 3,
+  "metrics": {
+    "original_verdict": "fail",
+    "original_exit_code": 3,
+    "observed_owner_budget_pass": 20,
+    "negative_literal_comparisons": 13,
+    "loss_at_least_one_percent": 12,
+    "worst_comparison": {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bits8",
+      "samples_by_rep": {
+        "0": 161.9076117857601,
+        "1": 168.8200026926301,
+        "2": 161.06214870959448
+      },
+      "complete": true,
+      "median_tps": 161.9076117857601,
+      "delta_pct_vs_plain": -4.489518233070189,
+      "paired_delta_pct_by_rep": {
+        "0": -4.866093383903946,
+        "1": 2.754579718033723,
+        "2": -4.988263071747578
+      }
+    },
+    "largest_plain_three_sample_range": {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "range_percent": 8.692307151657563
+    },
+    "sign_flipping_paired_comparisons": 32,
+    "exactness": {
+      "failures": 0
+    },
+    "scenario": {
+      "failures": 0
+    }
+  },
+  "functional": {
+    "0": {
+      "resume_equal": true,
+      "cached_tokens": 3517,
+      "sampled_hash_triples_equal": 29,
+      "stress": [
+        {
+          "slots": 6,
+          "seconds": 60,
+          "completed": 143,
+          "cancelled": 84,
+          "wrong": 0,
+          "errors": []
+        },
+        {
+          "slots": 16,
+          "seconds": 90,
+          "completed": 265,
+          "cancelled": 147,
+          "wrong": 0,
+          "errors": []
+        }
+      ],
+      "shutdowns": [
+        {
+          "forced_kill": false,
+          "seconds": 0.3392627090215683,
+          "returncode": 0
+        },
+        {
+          "forced_kill": false,
+          "seconds": 0.5064334571361542,
+          "returncode": 0
+        }
+      ]
+    },
+    "8": {
+      "resume_equal": true,
+      "cached_tokens": 3517,
+      "sampled_hash_triples_equal": 29,
+      "stress": [
+        {
+          "slots": 6,
+          "seconds": 60,
+          "completed": 143,
+          "cancelled": 84,
+          "wrong": 0,
+          "errors": []
+        },
+        {
+          "slots": 16,
+          "seconds": 90,
+          "completed": 269,
+          "cancelled": 150,
+          "wrong": 0,
+          "errors": []
+        }
+      ],
+      "shutdowns": [
+        {
+          "forced_kill": false,
+          "seconds": 0.23824391700327396,
+          "returncode": 0
+        },
+        {
+          "forced_kill": false,
+          "seconds": 0.5944125829264522,
+          "returncode": 0
+        }
+      ]
+    }
+  },
+  "long_served_equal_lengths": [
+    4096,
+    16384,
+    65536,
+    130816
+  ],
+  "long_native_reference": {
+    "65536": "PASS;9/9FP32",
+    "130816": "FAIL;GpuFailed;GPUoutofmemory;FP32comparisonnotreached"
+  },
+  "clean_nonforced_server_exits": 14,
+  "correctness_workflow_complete": false
+}

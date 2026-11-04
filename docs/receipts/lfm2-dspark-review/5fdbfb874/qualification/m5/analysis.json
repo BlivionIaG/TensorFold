@@ -1,0 +1,2422 @@
+{
+  "label": "ORIGINAL_FINAL_M5_QUALIFICATION_UNALTERED_VERDICTS",
+  "binding": {
+    "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+    "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+    "source_tree_ids": {
+      "zig": "037474ab51d3fc77510561c58d33dcf65d6cccc2",
+      "build.zig": "8ee3fd97d815217ef18eea3fb5c335b857984ee4",
+      "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+    },
+    "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa",
+    "guard_binary_sha256": "4366d23b5bfb15df557a1081ca99aa7f44e9f76bf02775b0c95a5a1ad47ee62b",
+    "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+    "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+    "model_sha256": {
+      "target": {
+        "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+        "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+        "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+        "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+        "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+        "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+        "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+        "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+        "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+      },
+      "drafter": {
+        "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+        "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+      }
+    },
+    "driver_sha256": {
+      "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+      "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+      "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+      "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+      "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+      "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+      "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+    },
+    "zig_binary_sha256": "1c5f706db0ed6d55451940f31dc05a6177d05696bc1fa5d853696d04c718b523",
+    "shared_lock_inode": 3719605
+  },
+  "pipeline_complete": false,
+  "pipeline_records": [
+    {
+      "label": "original-guards",
+      "command": [
+        "$PYTHON",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/run-guards.py"
+      ],
+      "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+      "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+      "started_unix_ns": 1793785571408431000,
+      "controller_pid": 34069,
+      "returncode": 0,
+      "elapsed_s": 305.1846990827471,
+      "log_sha256": "1ad9ee152a61b96aae33d69e2e77bf8a6170caff997f9d3f9d4eaffeba139a7d",
+      "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+    },
+    {
+      "label": "full-matrix",
+      "command": [
+        "$PYTHON",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-full-matrix.py",
+        "--binding",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/binding.json",
+        "--guard-proof",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/observed.json",
+        "--binary",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/runtime/tensorfold-native",
+        "--output",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-full"
+      ],
+      "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+      "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+      "started_unix_ns": 1793785876616439000,
+      "controller_pid": 34261,
+      "returncode": 3,
+      "elapsed_s": 2015.317840917036,
+      "log_sha256": "1ca41fb6bd263648302a4ff2576c9677e248507d5417c86992d0c9fc7c192a8e",
+      "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+    },
+    {
+      "label": "functional-0",
+      "command": [
+        "$PYTHON",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-functional.py",
+        "--root",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/source",
+        "--binding",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/binding.json",
+        "--output",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/functional-0",
+        "--bits",
+        "0"
+      ],
+      "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+      "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+      "started_unix_ns": 1793787891941826000,
+      "controller_pid": 34698,
+      "returncode": 0,
+      "elapsed_s": 193.38720762496814,
+      "log_sha256": "f87fbba143bfc29e7370f554842243c4290338b2c9ea272786f9ae237689d5b1",
+      "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+    },
+    {
+      "label": "functional-8",
+      "command": [
+        "$PYTHON",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-functional.py",
+        "--root",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/source",
+        "--binding",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/binding.json",
+        "--output",
+        "$HOME/tf-lfm2-test/r36-final-5fdbfb874/functional-8",
+        "--bits",
+        "8"
+      ],
+      "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+      "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+      "started_unix_ns": 1793788085338237000,
+      "controller_pid": 36972,
+      "returncode": 0,
+      "elapsed_s": 191.48795833298936,
+      "log_sha256": "0785029beeb1a9a7d9113280af9987738f086e8a48c9a837a2de8c3d4cd7d4fd",
+      "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+    }
+  ],
+  "original_pipeline_error": {
+    "type": "BrokenPipeError",
+    "message": "[Errno 32] Broken pipe",
+    "traceback": "Traceback (most recent call last):\n  File \"$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-qualification.py\", line 108, in <module>\n    scenario_codes.append(run('functional-' + str(bits), [sys.executable, str(p / 'run-functional.py'),\n                          ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                              '--root', str(root), '--binding', str(p / 'm5-guards/binding.json'),\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                              '--output', str(p / ('functional-' + str(bits))), '--bits', str(bits)], env))\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-qualification.py\", line 62, in run\n    print(json.dumps(row), flush=True)\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nBrokenPipeError: [Errno 32] Broken pipe\n"
+  },
+  "completion_accounting": {
+    "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+    "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+    "source_tree_ids": {
+      "zig": "037474ab51d3fc77510561c58d33dcf65d6cccc2",
+      "build.zig": "8ee3fd97d815217ef18eea3fb5c335b857984ee4",
+      "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+    },
+    "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa",
+    "all_requested_phases_executed": true,
+    "collection_status": "complete_with_retained_collector_failure",
+    "original_pipeline_complete": false,
+    "original_pipeline_error": {
+      "type": "BrokenPipeError",
+      "message": "[Errno 32] Broken pipe",
+      "traceback": "Traceback (most recent call last):\n  File \"$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-qualification.py\", line 108, in <module>\n    scenario_codes.append(run('functional-' + str(bits), [sys.executable, str(p / 'run-functional.py'),\n                          ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                              '--root', str(root), '--binding', str(p / 'm5-guards/binding.json'),\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                              '--output', str(p / ('functional-' + str(bits))), '--bits', str(bits)], env))\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-qualification.py\", line 62, in run\n    print(json.dumps(row), flush=True)\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nBrokenPipeError: [Errno 32] Broken pipe\n"
+    },
+    "original_pipeline_sha256": "a60cfcdfb52f7f0596d28fd67ed28eef1d0676123e8da067a913108e5441819f",
+    "continuation_proof_sha256": "4fa402b9f19338340f959c65c8357fac8aa4415d7acf8551380de0d15b52b1cc",
+    "phases": [
+      {
+        "label": "original-guards",
+        "command": [
+          "$PYTHON",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/run-guards.py"
+        ],
+        "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+        "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+        "started_unix_ns": 1793785571408431000,
+        "controller_pid": 34069,
+        "returncode": 0,
+        "elapsed_s": 305.1846990827471,
+        "log_sha256": "1ad9ee152a61b96aae33d69e2e77bf8a6170caff997f9d3f9d4eaffeba139a7d",
+        "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+      },
+      {
+        "label": "full-matrix",
+        "command": [
+          "$PYTHON",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-full-matrix.py",
+          "--binding",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/binding.json",
+          "--guard-proof",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/observed.json",
+          "--binary",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/runtime/tensorfold-native",
+          "--output",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-full"
+        ],
+        "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+        "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+        "started_unix_ns": 1793785876616439000,
+        "controller_pid": 34261,
+        "returncode": 3,
+        "elapsed_s": 2015.317840917036,
+        "log_sha256": "1ca41fb6bd263648302a4ff2576c9677e248507d5417c86992d0c9fc7c192a8e",
+        "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+      },
+      {
+        "label": "functional-0",
+        "command": [
+          "$PYTHON",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-functional.py",
+          "--root",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/source",
+          "--binding",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/binding.json",
+          "--output",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/functional-0",
+          "--bits",
+          "0"
+        ],
+        "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+        "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+        "started_unix_ns": 1793787891941826000,
+        "controller_pid": 34698,
+        "returncode": 0,
+        "elapsed_s": 193.38720762496814,
+        "log_sha256": "f87fbba143bfc29e7370f554842243c4290338b2c9ea272786f9ae237689d5b1",
+        "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+      },
+      {
+        "label": "functional-8",
+        "command": [
+          "$PYTHON",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/run-functional.py",
+          "--root",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/source",
+          "--binding",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/m5-guards/binding.json",
+          "--output",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/functional-8",
+          "--bits",
+          "8"
+        ],
+        "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+        "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+        "started_unix_ns": 1793788085338237000,
+        "controller_pid": 36972,
+        "returncode": 0,
+        "elapsed_s": 191.48795833298936,
+        "log_sha256": "0785029beeb1a9a7d9113280af9987738f086e8a48c9a837a2de8c3d4cd7d4fd",
+        "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa"
+      },
+      {
+        "label": "original-long",
+        "command": [
+          "$PYTHON",
+          "$HOME/tf-lfm2-test/r36-final-5fdbfb874/source/docs/receipts/lfm2-dspark-review/qualification.py",
+          "long"
+        ],
+        "started_unix_ns": 1793788342291790000,
+        "controller_pid": 39319,
+        "returncode": 0,
+        "elapsed_s": 1250.835318707861,
+        "log_sha256": "138e55284a695a32f6fc62b0b71ac00a3dfee2e2ffef77fd6bf84abaa000d953"
+      }
+    ],
+    "model_phase_reruns": 0,
+    "guard_build_count": 1,
+    "full_matrix_count": 1,
+    "long_continuation_reason": "Original collector disconnected; pipeline persisted successfulfunctional8 then BrokenPipe before long ever started. Continued only missinglong once, preserved originalfailure.",
+    "source_files_unchanged": true,
+    "native_binary_unchanged": true,
+    "original_matrix_summary_unchanged": true,
+    "original_matrix_summary_sha256": "2642fd65b0273ba83c892f27c6351b95fbb96cf5c849bdb30eb0824d14e5397d",
+    "actual_clean_server_shutdowns": 14,
+    "actual_server_shutdowns": [
+      {
+        "path": "functional-0/functional-cache.shutdown.json",
+        "forced_kill": false,
+        "seconds": 0.2636008751578629,
+        "returncode": 0
+      },
+      {
+        "path": "functional-0/functional-fresh.shutdown.json",
+        "forced_kill": false,
+        "seconds": 0.5931444577872753,
+        "returncode": 0
+      },
+      {
+        "path": "functional-8/functional-cache.shutdown.json",
+        "forced_kill": false,
+        "seconds": 0.4901452078483999,
+        "returncode": 0
+      },
+      {
+        "path": "functional-8/functional-fresh.shutdown.json",
+        "forced_kill": false,
+        "seconds": 0.5516180410049856,
+        "returncode": 0
+      },
+      {
+        "path": "long-context/long-context.shutdown.json",
+        "forced_kill": false,
+        "seconds": 0.3851320408284664,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T09:55:04Z",
+        "label": "r0-plain",
+        "forced_kill": false,
+        "seconds": 0.8,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T09:58:48Z",
+        "label": "r0-bf16",
+        "forced_kill": false,
+        "seconds": 0.7,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:02:30Z",
+        "label": "r0-bits8",
+        "forced_kill": false,
+        "seconds": 0.1,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:06:14Z",
+        "label": "r1-bf16",
+        "forced_kill": false,
+        "seconds": 0.7,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:09:57Z",
+        "label": "r1-bits8",
+        "forced_kill": false,
+        "seconds": 0.3,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:13:41Z",
+        "label": "r1-plain",
+        "forced_kill": false,
+        "seconds": 0.7,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:17:25Z",
+        "label": "r2-bits8",
+        "forced_kill": false,
+        "seconds": 0.4,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:21:08Z",
+        "label": "r2-plain",
+        "forced_kill": false,
+        "seconds": 0.7,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:24:51Z",
+        "label": "r2-bf16",
+        "forced_kill": false,
+        "seconds": 0.5,
+        "returncode": 0
+      }
+    ],
+    "functional_totals": {
+      "0": {
+        "completed": 1387,
+        "cancelled": 754,
+        "wrong": 0,
+        "errors": 0,
+        "sampled_equal_triples": 29,
+        "resume_equal": true
+      },
+      "8": {
+        "completed": 1389,
+        "cancelled": 752,
+        "wrong": 0,
+        "errors": 0,
+        "sampled_equal_triples": 29,
+        "resume_equal": true
+      }
+    },
+    "historical_binding_scopes": {
+      "historical-r35/": {
+        "scope": "retained prior-source failures, NOT current results",
+        "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+        "source_archive_sha256": "3ca340ec39493b7d32ba23902e2087111e54def1184c1665331b4ada1cbe7b12",
+        "native_binary_sha256": "0ada11bcd2ac70eee71afd0fc0cfaf418983c2c29975c47979e8444a54ef6f43"
+      },
+      "superseded-source-14be.tar": {
+        "scope": "preparation-only source, never built or checked by this worker",
+        "source_revision": "14be7eb48c627b934f594f1a4060b5808afd80b5",
+        "source_archive_sha256": "ff3528d4e9c7e8be6a2a403b9a2e80c0a207af551c9d9ef6f2c6bef0ae5b472c"
+      },
+      "input.json": "superseded initial task input; final-freeze.json andm5-guards/binding.json bind actual executed source"
+    },
+    "privacy": "private operational packet; parent owns sanitized publication",
+    "postprocessor_note": "analyze-qualification.py updated after model execution only to reuse parentbyteidenticalverdictproof and include retained transport failure; not a source/controller/protocol change."
+  },
+  "postprocessor_sha256": "fb94537197a6cfe6282855e36bdafac93e4b7d133530797e3ffb40ec92a26d75",
+  "original_guard_cases": [
+    {
+      "bits": 0,
+      "requested_prefix": 9,
+      "reference_equal": 9,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.0,
+      "confidence_max_difference": 0.0008,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "92acb3528c268a544e2146c3d0dfd1c33fe9d41dccddbe9aea5ab9f0c7c674c0"
+    },
+    {
+      "bits": 8,
+      "requested_prefix": 9,
+      "reference_equal": 8,
+      "reference_count": 9,
+      "different_pick_max_margin": 0.075,
+      "confidence_max_difference": 0.00225,
+      "prefix_bytes_and_first_pick_invariant": true,
+      "confidence_prefix_invariant": true,
+      "logical_cohorts_8_and_16": true,
+      "log_sha256": "a3e8022fd33f5b90b876178882ab538a5ee6954d2fa82874759921991a82d6c3"
+    }
+  ],
+  "guard_log_summaries": {
+    "build.log": [
+      "Build Summary: 82/82 steps succeeded; 783/787 tests passed (4 skipped)"
+    ],
+    "lfm2.log": [
+      "FAIL shapes control: metal lfm2 argmax, a tie goes to the highest id: at 1x128000x1: a pick differs from the first id of the row's largest logit",
+      "FAIL nonfinite control: metal lfm2 argmax, a nonfinite logit is not flagged: a row with a nonfinite logit is not flagged",
+      "FAIL shapes control: metal lfm2 stream conv, every stream reads the first stream's state: at 2x2048x3 its bytes differ from lfm2_conv a stream's from byte 4096",
+      "FAIL shapes control: metal lfm2 stream attention, every stream writes the first stream's cache: at 2x2048x5 its bytes differ from lfm2_qk, lfm2_attn_mma and lfm2_attn_merge a stream's from byte 4096",
+      "FAIL shapes control: metal lfm2 norm tap wrong column: at 1x2048x2048 its bytes differ from LFM2 norm followed by tap copy's from byte 20480",
+      "FAIL shapes control: metal lfm2 norm tap first wrong column: at 1x2048x2048 its bytes differ from LFM2 norm followed by tap copy's from byte 20480",
+      "FAIL shapes control: metal lfm2 combine norm tap wrong column: at 1x2048x2048 its bytes differ from LFM2 norm followed by tap copy's from byte 20480",
+      "FAIL shapes control: metal lfm2 tap copy, rows packed at the hidden size, not the taps' row: at 10x10240x1: an output differs from the copy's bits",
+      "FAIL shapes control: metal lfm2 tap copy, a column of another tap is overwritten: at 1x10240x1: an output differs from the copy's bits",
+      "FAIL nonfinite control: metal lfm2 markov step, a nonfinite score is not flagged: a row with an isolated NaN or infinity score is not flagged",
+      "FAIL shapes control: metal lfm2 markov step, every stream reads the first stream's previous token: at 4x128000x256: the pick's score is below the row's best by more than its bound",
+      "FAIL nonfinite control: metal lfm2 markov pick, isolated infinities are not flagged: a pick partial's nonfinite flag differs (empty -Inf/UINT_MAX is valid)",
+      "FAIL shapes control: metal lfm2 markov pick, an empty partial is flagged: at 5x257x1: a pick partial's nonfinite flag differs (empty -Inf/UINT_MAX is valid)",
+      "FAIL shapes control: metal lfm2 draft ids, a pick past the vocabulary keeps its token: at 4x1x1: an id differs from its pick",
+      "FAIL shapes control: metal lfm2 block attention, a row misses the last key: at 1x2048x9: an output is past its float64 bound",
+      "FAIL nonfinite control: metal lfm2 markov step bf16, a nonfinite score is not flagged: a row with an isolated NaN or infinity score is not flagged",
+      "FAIL shapes control: metal lfm2 markov step bf16, every stream reads the first stream's previous token: at 4x128000x256: the pick's score is below the row's best by more than its bound",
+      "FAIL shapes control: metal lfm2 bf16 rows, a lane skips every second step of k: at 1x2048x2048 output 0 is 1.250000e1 where float64 gives 3.908109e1: 169.24 of its bound",
+      "FAIL shapes control: metal lfm2 bf16 rows, a group's last row is not computed: at 1x2048x2048 output 0 is 0.000000e0 where float64 gives 1.713310e1: 240.27 of its bound",
+      "FAIL shapes control: metal lfm2 bf16 tile, W's tile is read untransposed: at 17x2048x2048 output 0 is 3.150000e1 where float64 gives 2.904058e1: 19.04 of its bound",
+      "FAIL shapes control: metal lfm2 bf16 tile, the last column is not written: at 17x2048x2048 output 2047 is -nan where float64 gives -3.651221e1: nan of its bound",
+      "FAIL shapes control: metal lfm2 dspark context kv, every row overwrites the first position: at 9x512x7 its bytes differ from lfm2_qk's key and value outputs's from byte 1024",
+      "FAIL shapes control: metal lfm2 dspark context kv, RoPE uses the wrong frequency: at 9x512x7 its bytes differ from lfm2_qk's key and value outputs's from byte 898",
+      "FAIL shapes control: metal lfm2 dspark confidence, the previous token's W1 row is not added: at 1x1x2304 output 0 is 1.444290e1 where float64 gives 6.130740e0: 8377.84 of its bound",
+      "error: pipeline tf_ctl_big_tg: Threadgroup memory size (36864) exceeds the maximum threadgroup memory allowed (32768)",
+      "SUMMARY 17 kernels: 17 pass gates 1-4, 0 fail, 0 known findings; 24 controls: 24 red as planted, 0 missed; 0 limit problems; gates 100117 ms, limits 9318 ms"
+    ],
+    "native-bits0-depth9.log": [
+      "the reference's largest margin over a different GPU pick: 0.000",
+      "the confidences' worst difference from the fp32 reference: 0.00080",
+      "9 of 9 drafts equal the fp32 reference's picks on the same chain (63-token context)"
+    ],
+    "native-bits8-depth9.log": [
+      "step 4: reference 3911 (margin 0.075, second 2083), GPU 2083 DIFFERENT",
+      "the reference's largest margin over a different GPU pick: 0.075",
+      "the confidences' worst difference from the fp32 reference: 0.00225",
+      "8 of 9 drafts equal the fp32 reference's picks on the same chain (63-token context)"
+    ]
+  },
+  "activation_dtype": "BF16 for both BF16 and 8-bit drafter weights",
+  "fp32_reference_semantics": "FP32 host drafter on the same released checkpoint, BF16 target taps widened to FP32, original target embedding/head. Not an FP32 target server. Each Markov step teacher-forced on the previous GPU pick. 8-bit mismatches remain diagnostic, not universal exactness.",
+  "original_summary_sha256": "2642fd65b0273ba83c892f27c6351b95fbb96cf5c849bdb30eb0824d14e5397d",
+  "parent_offline_replay_proof": {
+    "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+    "original_summary_sha256": "2642fd65b0273ba83c892f27c6351b95fbb96cf5c849bdb30eb0824d14e5397d",
+    "replayed_summary_sha256": "2642fd65b0273ba83c892f27c6351b95fbb96cf5c849bdb30eb0824d14e5397d",
+    "byte_identical": true,
+    "frozen_verdict_module_sha256": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+    "original_exit_code": 3,
+    "recorded_cells": 144,
+    "original_oracles": 306,
+    "clean_zero_exit_events": [
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T09:55:04Z",
+        "label": "r0-plain",
+        "forced_kill": false,
+        "seconds": 0.8,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T09:58:48Z",
+        "label": "r0-bf16",
+        "forced_kill": false,
+        "seconds": 0.7,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:02:30Z",
+        "label": "r0-bits8",
+        "forced_kill": false,
+        "seconds": 0.1,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:06:14Z",
+        "label": "r1-bf16",
+        "forced_kill": false,
+        "seconds": 0.7,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:09:57Z",
+        "label": "r1-bits8",
+        "forced_kill": false,
+        "seconds": 0.3,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:13:41Z",
+        "label": "r1-plain",
+        "forced_kill": false,
+        "seconds": 0.7,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:17:25Z",
+        "label": "r2-bits8",
+        "forced_kill": false,
+        "seconds": 0.4,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:21:08Z",
+        "label": "r2-plain",
+        "forced_kill": false,
+        "seconds": 0.7,
+        "returncode": 0
+      },
+      {
+        "event": "shutdown",
+        "at": "2026-11-04T10:24:51Z",
+        "label": "r2-bf16",
+        "forced_kill": false,
+        "seconds": 0.5,
+        "returncode": 0
+      }
+    ]
+  },
+  "original_summary_byte_identical_after_analysis": true,
+  "original_verdict": "fail",
+  "original_exit_code": 3,
+  "original_performance_verdict": "fail",
+  "recorded_cells": 144,
+  "ok_cells": 144,
+  "oracle_seeds": 306,
+  "oracle_ok": 306,
+  "raw_request_rows": 2736,
+  "exactness": {
+    "failures": 0
+  },
+  "scenario": {
+    "failures": 0
+  },
+  "all_original_failures": [],
+  "all_original_failures_total": 0,
+  "functional": {
+    "0": {
+      "observed": {
+        "label": "ORIGINAL_CACHE_CANCEL_SAMPLE_FUNCTIONAL_ONLY",
+        "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+        "bits": 0,
+        "activation_dtype": "BF16",
+        "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa",
+        "removed_environment": [],
+        "complete": true,
+        "elapsed_s": 193.34553362522274
+      },
+      "stress": [
+        {
+          "slots": 6,
+          "seconds": 60,
+          "completed": 452,
+          "cancelled": 247,
+          "wrong": 0,
+          "errors": []
+        },
+        {
+          "slots": 16,
+          "seconds": 90,
+          "completed": 935,
+          "cancelled": 507,
+          "wrong": 0,
+          "errors": []
+        }
+      ],
+      "resume_equal": true,
+      "sampled": [
+        {
+          "streams": 1,
+          "count": 1,
+          "equal": 1
+        },
+        {
+          "streams": 4,
+          "count": 4,
+          "equal": 4
+        },
+        {
+          "streams": 8,
+          "count": 8,
+          "equal": 8
+        },
+        {
+          "streams": 16,
+          "count": 16,
+          "equal": 16
+        }
+      ],
+      "shutdowns": {
+        "functional-cache.shutdown.json": {
+          "forced_kill": false,
+          "seconds": 0.2636008751578629,
+          "returncode": 0
+        },
+        "functional-fresh.shutdown.json": {
+          "forced_kill": false,
+          "seconds": 0.5931444577872753,
+          "returncode": 0
+        }
+      }
+    },
+    "8": {
+      "observed": {
+        "label": "ORIGINAL_CACHE_CANCEL_SAMPLE_FUNCTIONAL_ONLY",
+        "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+        "bits": 8,
+        "activation_dtype": "BF16",
+        "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa",
+        "removed_environment": [],
+        "complete": true,
+        "elapsed_s": 191.4423499996774
+      },
+      "stress": [
+        {
+          "slots": 6,
+          "seconds": 60,
+          "completed": 455,
+          "cancelled": 248,
+          "wrong": 0,
+          "errors": []
+        },
+        {
+          "slots": 16,
+          "seconds": 90,
+          "completed": 934,
+          "cancelled": 504,
+          "wrong": 0,
+          "errors": []
+        }
+      ],
+      "resume_equal": true,
+      "sampled": [
+        {
+          "streams": 1,
+          "count": 1,
+          "equal": 1
+        },
+        {
+          "streams": 4,
+          "count": 4,
+          "equal": 4
+        },
+        {
+          "streams": 8,
+          "count": 8,
+          "equal": 8
+        },
+        {
+          "streams": 16,
+          "count": 16,
+          "equal": 16
+        }
+      ],
+      "shutdowns": {
+        "functional-cache.shutdown.json": {
+          "forced_kill": false,
+          "seconds": 0.4901452078483999,
+          "returncode": 0
+        },
+        "functional-fresh.shutdown.json": {
+          "forced_kill": false,
+          "seconds": 0.5516180410049856,
+          "returncode": 0
+        }
+      }
+    }
+  },
+  "long_context": [
+    {
+      "length": 4096,
+      "plain": {
+        "usage": {
+          "prompt_tokens": 4096,
+          "completion_tokens": 64,
+          "total_tokens": 4160,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "runtime": {
+          "enable_thinking": false,
+          "reasoning_effort": "none",
+          "engine": "lanes",
+          "tokens_per_second": 255.24122355787523,
+          "seconds": 0.246825333,
+          "prefill_seconds": 0.297829833,
+          "prefill_widths": [],
+          "prefill_raised": [],
+          "time_to_first_token": 0.29840425,
+          "sampling": "greedy",
+          "drafts": false,
+          "token_sha": "8394ececc0cc",
+          "token_sha256": "8394ececc0ccdeea4fd63598ff8309e489e7309932166b11e366f6706b8a4b3a",
+          "token_ids": [
+            271,
+            279,
+            854,
+            22373,
+            825,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045
+          ],
+          "min_rows": 1
+        },
+        "speculative": {
+          "rounds": 63,
+          "drafted": 0,
+          "accepted": 0,
+          "acceptance_rate": 0.0,
+          "tokens_per_round": 1.0158730158730158
+        },
+        "content": "onan em Defense ob\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06",
+        "wall": 0.5463077500462532
+      },
+      "drafted": {
+        "usage": {
+          "prompt_tokens": 4096,
+          "completion_tokens": 64,
+          "total_tokens": 4160,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "runtime": {
+          "enable_thinking": false,
+          "reasoning_effort": "none",
+          "engine": "lanes",
+          "tokens_per_second": 254.21048729224975,
+          "seconds": 0.247826125,
+          "prefill_seconds": 0.290044709,
+          "prefill_widths": [],
+          "prefill_raised": [],
+          "time_to_first_token": 0.290198583,
+          "sampling": "greedy",
+          "drafts": true,
+          "token_sha": "8394ececc0cc",
+          "token_sha256": "8394ececc0ccdeea4fd63598ff8309e489e7309932166b11e366f6706b8a4b3a",
+          "token_ids": [
+            271,
+            279,
+            854,
+            22373,
+            825,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045
+          ],
+          "min_rows": 1
+        },
+        "speculative": {
+          "rounds": 58,
+          "drafted": 12,
+          "accepted": 5,
+          "acceptance_rate": 0.4166666666666667,
+          "tokens_per_round": 1.103448275862069
+        },
+        "content": "onan em Defense ob\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06",
+        "wall": 0.5385242919437587
+      },
+      "equal": true
+    },
+    {
+      "length": 16384,
+      "plain": {
+        "usage": {
+          "prompt_tokens": 16384,
+          "completion_tokens": 64,
+          "total_tokens": 16448,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "runtime": {
+          "enable_thinking": false,
+          "reasoning_effort": "none",
+          "engine": "lanes",
+          "tokens_per_second": 231.2765074081463,
+          "seconds": 0.272401208,
+          "prefill_seconds": 1.278421375,
+          "prefill_widths": [],
+          "prefill_raised": [],
+          "time_to_first_token": 1.278691083,
+          "sampling": "greedy",
+          "drafts": false,
+          "token_sha": "a2dcb347e183",
+          "token_sha256": "a2dcb347e183d9e8a0be485abb99d222ff060dfc83781384863e7bf16cf22da3",
+          "token_ids": [
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045
+          ],
+          "min_rows": 1
+        },
+        "speculative": {
+          "rounds": 63,
+          "drafted": 0,
+          "accepted": 0,
+          "acceptance_rate": 0.0,
+          "tokens_per_round": 1.0158730158730158
+        },
+        "content": " Method%onan em Defense ob\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06",
+        "wall": 1.551752250175923
+      },
+      "drafted": {
+        "usage": {
+          "prompt_tokens": 16384,
+          "completion_tokens": 64,
+          "total_tokens": 16448,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "runtime": {
+          "enable_thinking": false,
+          "reasoning_effort": "none",
+          "engine": "lanes",
+          "tokens_per_second": 245.3638882776429,
+          "seconds": 0.2567615,
+          "prefill_seconds": 1.279295916,
+          "prefill_widths": [],
+          "prefill_raised": [],
+          "time_to_first_token": 1.279575167,
+          "sampling": "greedy",
+          "drafts": true,
+          "token_sha": "a2dcb347e183",
+          "token_sha256": "a2dcb347e183d9e8a0be485abb99d222ff060dfc83781384863e7bf16cf22da3",
+          "token_ids": [
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045,
+            7045
+          ],
+          "min_rows": 1
+        },
+        "speculative": {
+          "rounds": 57,
+          "drafted": 10,
+          "accepted": 6,
+          "acceptance_rate": 0.6,
+          "tokens_per_round": 1.1228070175438596
+        },
+        "content": " Method%onan em Defense ob\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06\u5c06",
+        "wall": 1.537015583831817
+      },
+      "equal": true
+    },
+    {
+      "length": 65536,
+      "plain": {
+        "usage": {
+          "prompt_tokens": 65536,
+          "completion_tokens": 64,
+          "total_tokens": 65600,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "runtime": {
+          "enable_thinking": false,
+          "reasoning_effort": "none",
+          "engine": "lanes",
+          "tokens_per_second": 157.55171319882325,
+          "seconds": 0.399868708,
+          "prefill_seconds": 7.302614208,
+          "prefill_widths": [],
+          "prefill_raised": [],
+          "time_to_first_token": 7.303316375,
+          "sampling": "greedy",
+          "drafts": false,
+          "token_sha": "c2ba0e4604c6",
+          "token_sha256": "c2ba0e4604c6beb356eefe87cdec6c938f5f4a484521bfd73e8f9e6b57bc22b6",
+          "token_ids": [
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            284,
+            8,
+            124900,
+            124900,
+            124900,
+            25,
+            124900,
+            25,
+            124900,
+            26,
+            124900,
+            25,
+            124900,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25
+          ],
+          "min_rows": 1
+        },
+        "speculative": {
+          "rounds": 63,
+          "drafted": 0,
+          "accepted": 0,
+          "acceptance_rate": 0.0,
+          "tokens_per_round": 1.0158730158730158
+        },
+        "content": "onan em Defense obwit\n\n<|im_end|><|im_end|><|im_end|>1<|im_end|>1<|im_end|>2<|im_end|>1<|im_end|>1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1",
+        "wall": 7.704773250035942
+      },
+      "drafted": {
+        "usage": {
+          "prompt_tokens": 65536,
+          "completion_tokens": 64,
+          "total_tokens": 65600,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "runtime": {
+          "enable_thinking": false,
+          "reasoning_effort": "none",
+          "engine": "lanes",
+          "tokens_per_second": 237.06431562785127,
+          "seconds": 0.265750667,
+          "prefill_seconds": 7.306309125,
+          "prefill_widths": [],
+          "prefill_raised": [],
+          "time_to_first_token": 7.306981666,
+          "sampling": "greedy",
+          "drafts": true,
+          "token_sha": "c2ba0e4604c6",
+          "token_sha256": "c2ba0e4604c6beb356eefe87cdec6c938f5f4a484521bfd73e8f9e6b57bc22b6",
+          "token_ids": [
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            284,
+            8,
+            124900,
+            124900,
+            124900,
+            25,
+            124900,
+            25,
+            124900,
+            26,
+            124900,
+            25,
+            124900,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25,
+            19,
+            25
+          ],
+          "min_rows": 1
+        },
+        "speculative": {
+          "rounds": 37,
+          "drafted": 32,
+          "accepted": 26,
+          "acceptance_rate": 0.8125,
+          "tokens_per_round": 1.7297297297297298
+        },
+        "content": "onan em Defense obwit\n\n<|im_end|><|im_end|><|im_end|>1<|im_end|>1<|im_end|>2<|im_end|>1<|im_end|>1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1",
+        "wall": 7.5743201253935695
+      },
+      "equal": true
+    },
+    {
+      "length": 130816,
+      "plain": {
+        "usage": {
+          "prompt_tokens": 130816,
+          "completion_tokens": 64,
+          "total_tokens": 130880,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "runtime": {
+          "enable_thinking": false,
+          "reasoning_effort": "none",
+          "engine": "lanes",
+          "tokens_per_second": 115.83367432407479,
+          "seconds": 0.543883291,
+          "prefill_seconds": 20.538906792,
+          "prefill_widths": [],
+          "prefill_raised": [],
+          "time_to_first_token": 20.540204292,
+          "sampling": "greedy",
+          "drafts": false,
+          "token_sha": "3cc988610216",
+          "token_sha256": "3cc9886102163ddcfa01f3a3f20f723929d6cb01e51cb4bd3e960f05ca0569c3",
+          "token_ids": [
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373
+          ],
+          "min_rows": 1
+        },
+        "speculative": {
+          "rounds": 63,
+          "drafted": 0,
+          "accepted": 0,
+          "acceptance_rate": 0.0,
+          "tokens_per_round": 1.0158730158730158
+        },
+        "content": "onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense",
+        "wall": 21.087041665799916
+      },
+      "drafted": {
+        "usage": {
+          "prompt_tokens": 130816,
+          "completion_tokens": 64,
+          "total_tokens": 130880,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "runtime": {
+          "enable_thinking": false,
+          "reasoning_effort": "none",
+          "engine": "lanes",
+          "tokens_per_second": 331.9577880790544,
+          "seconds": 0.189783166,
+          "prefill_seconds": 20.54227125,
+          "prefill_widths": [],
+          "prefill_raised": [],
+          "time_to_first_token": 20.543627875,
+          "sampling": "greedy",
+          "drafts": true,
+          "token_sha": "3cc988610216",
+          "token_sha256": "3cc9886102163ddcfa01f3a3f20f723929d6cb01e51cb4bd3e960f05ca0569c3",
+          "token_ids": [
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373,
+            825,
+            95,
+            3162,
+            4829,
+            9944,
+            13,
+            271,
+            279,
+            854,
+            22373
+          ],
+          "min_rows": 1
+        },
+        "speculative": {
+          "rounds": 15,
+          "drafted": 54,
+          "accepted": 48,
+          "acceptance_rate": 0.8888888888888888,
+          "tokens_per_round": 4.266666666666667
+        },
+        "content": "onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense obwdef Press Method%onan em Defense",
+        "wall": 20.736414917279035
+      },
+      "equal": true
+    }
+  ],
+  "long_shutdowns": {
+    "long-context.shutdown.json": {
+      "forced_kill": false,
+      "seconds": 0.3851320408284664,
+      "returncode": 0
+    }
+  },
+  "long_fp32_references": [
+    {
+      "log": "long-context/dspark-reference-130816.log",
+      "sha256": "7fb1b06de0bfe20e1f4d6c87d729d32c7a7097fddcbdaf8a576fb44b6ada443a",
+      "reference_lines": [
+        "row 0 base logits: cosine 0.99981, worst difference 0.152",
+        "the reference's largest margin over a different GPU pick: 0.000",
+        "the confidences' worst difference from the fp32 reference: 0.00911",
+        "9 of 9 drafts equal the fp32 reference's picks on the same chain (130815-token context)"
+      ]
+    },
+    {
+      "log": "long-context/dspark-reference-65536.log",
+      "sha256": "c7d7d0ab4afc0624084501a545c300c88bc4769a9aef76a8e88ba3d44955007c",
+      "reference_lines": [
+        "row 0 base logits: cosine 0.99993, worst difference 0.131",
+        "the reference's largest margin over a different GPU pick: 0.000",
+        "the confidences' worst difference from the fp32 reference: 0.00625",
+        "9 of 9 drafts equal the fp32 reference's picks on the same chain (65535-token context)"
+      ]
+    }
+  ],
+  "matrix_shutdowns": [
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T09:55:04Z",
+      "label": "r0-plain",
+      "forced_kill": false,
+      "seconds": 0.8,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T09:58:48Z",
+      "label": "r0-bf16",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:02:30Z",
+      "label": "r0-bits8",
+      "forced_kill": false,
+      "seconds": 0.1,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:06:14Z",
+      "label": "r1-bf16",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:09:57Z",
+      "label": "r1-bits8",
+      "forced_kill": false,
+      "seconds": 0.3,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:13:41Z",
+      "label": "r1-plain",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:17:25Z",
+      "label": "r2-bits8",
+      "forced_kill": false,
+      "seconds": 0.4,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:21:08Z",
+      "label": "r2-plain",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:24:51Z",
+      "label": "r2-bf16",
+      "forced_kill": false,
+      "seconds": 0.5,
+      "returncode": 0
+    }
+  ],
+  "raw_activity_counters_all_proposal_sources": {
+    "plain": {
+      "rounds": 215880,
+      "drafted": 22444,
+      "accepted": 14070
+    },
+    "bf16": {
+      "rounds": 215851,
+      "drafted": 22149,
+      "accepted": 14099
+    },
+    "bits8": {
+      "rounds": 214470,
+      "drafted": 24277,
+      "accepted": 15480
+    }
+  },
+  "counter_scope": "Aggregate speculative counters do not prove DSpark NN/operator execution or GPU occupancy.",
+  "comparisons": [
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 285.14520443785864,
+        "1": 285.45301936178384,
+        "2": 285.32754727501776
+      },
+      "samples_by_rep": {
+        "0": 288.7167950463129,
+        "1": 288.41834553600944,
+        "2": 288.5017378397958
+      },
+      "plain_median_tps": 285.32754727501776,
+      "median_tps": 288.5017378397958,
+      "complete": true,
+      "delta_pct_vs_plain": 1.1124725232781518,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 285.14520443785864,
+        "1": 285.45301936178384,
+        "2": 285.32754727501776
+      },
+      "samples_by_rep": {
+        "0": 290.1110249393642,
+        "1": 290.0378594627948,
+        "2": 289.2121122238285
+      },
+      "plain_median_tps": 285.32754727501776,
+      "median_tps": 290.0378594627948,
+      "complete": true,
+      "delta_pct_vs_plain": 1.6508438223936883,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 645.6051158401959,
+        "1": 636.9035932114468,
+        "2": 645.5729750631815
+      },
+      "samples_by_rep": {
+        "0": 646.3529454938424,
+        "1": 645.379119161803,
+        "2": 654.7521947528586
+      },
+      "plain_median_tps": 645.5729750631815,
+      "median_tps": 646.3529454938424,
+      "complete": true,
+      "delta_pct_vs_plain": 0.12081832121064728,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 645.6051158401959,
+        "1": 636.9035932114468,
+        "2": 645.5729750631815
+      },
+      "samples_by_rep": {
+        "0": 642.7690894630965,
+        "1": 637.5027690833028,
+        "2": 645.7344844951675
+      },
+      "plain_median_tps": 645.5729750631815,
+      "median_tps": 642.7690894630965,
+      "complete": true,
+      "delta_pct_vs_plain": -0.43432512022526515,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 853.2342771867314,
+        "1": 854.4275057887189,
+        "2": 853.3422990195231
+      },
+      "samples_by_rep": {
+        "0": 854.6587735700975,
+        "1": 854.0706010191332,
+        "2": 854.1663488629171
+      },
+      "plain_median_tps": 853.3422990195231,
+      "median_tps": 854.1663488629171,
+      "complete": true,
+      "delta_pct_vs_plain": 0.09656732642231436,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 853.2342771867314,
+        "1": 854.4275057887189,
+        "2": 853.3422990195231
+      },
+      "samples_by_rep": {
+        "0": 853.671074564354,
+        "1": 833.547004591425,
+        "2": 852.9367354948829
+      },
+      "plain_median_tps": 853.3422990195231,
+      "median_tps": 852.9367354948829,
+      "complete": true,
+      "delta_pct_vs_plain": -0.04752647619908901,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 875.323706958646,
+        "1": 871.6693947317289,
+        "2": 872.4093345639827
+      },
+      "samples_by_rep": {
+        "0": 873.3823328050912,
+        "1": 871.4859557084657,
+        "2": 872.9458663278153
+      },
+      "plain_median_tps": 872.4093345639827,
+      "median_tps": 872.9458663278153,
+      "complete": true,
+      "delta_pct_vs_plain": 0.061500002645065166,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 875.323706958646,
+        "1": 871.6693947317289,
+        "2": 872.4093345639827
+      },
+      "samples_by_rep": {
+        "0": 886.4254115867531,
+        "1": 905.4403066765052,
+        "2": 873.3241231820673
+      },
+      "plain_median_tps": 872.4093345639827,
+      "median_tps": 886.4254115867531,
+      "complete": true,
+      "delta_pct_vs_plain": 1.6065941144216778,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 272.05690724751133,
+        "1": 271.8083962695992,
+        "2": 270.9187180439925
+      },
+      "samples_by_rep": {
+        "0": 272.3059154970395,
+        "1": 271.6203990606704,
+        "2": 272.001817747355
+      },
+      "plain_median_tps": 271.8083962695992,
+      "median_tps": 272.001817747355,
+      "complete": true,
+      "delta_pct_vs_plain": 0.0711609650071221,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 272.05690724751133,
+        "1": 271.8083962695992,
+        "2": 270.9187180439925
+      },
+      "samples_by_rep": {
+        "0": 274.33663334053983,
+        "1": 274.39331763137324,
+        "2": 273.11790874966516
+      },
+      "plain_median_tps": 271.8083962695992,
+      "median_tps": 274.33663334053983,
+      "complete": true,
+      "delta_pct_vs_plain": 0.9301541474211694,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 552.9428708808714,
+        "1": 552.1681192940094,
+        "2": 550.673779966784
+      },
+      "samples_by_rep": {
+        "0": 553.6211467941725,
+        "1": 553.0877603724978,
+        "2": 553.5481062313072
+      },
+      "plain_median_tps": 552.1681192940094,
+      "median_tps": 553.5481062313072,
+      "complete": true,
+      "delta_pct_vs_plain": 0.24992151648708383,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 552.9428708808714,
+        "1": 552.1681192940094,
+        "2": 550.673779966784
+      },
+      "samples_by_rep": {
+        "0": 553.6202721602741,
+        "1": 553.9871775773537,
+        "2": 551.5801292902514
+      },
+      "plain_median_tps": 552.1681192940094,
+      "median_tps": 553.6202721602741,
+      "complete": true,
+      "delta_pct_vs_plain": 0.2629910738275454,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 712.1686120276775,
+        "1": 711.2493812204063,
+        "2": 712.3284663850147
+      },
+      "samples_by_rep": {
+        "0": 714.953265948755,
+        "1": 716.264864389914,
+        "2": 713.7747942115038
+      },
+      "plain_median_tps": 712.1686120276775,
+      "median_tps": 714.953265948755,
+      "complete": true,
+      "delta_pct_vs_plain": 0.3910104817943516,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 712.1686120276775,
+        "1": 711.2493812204063,
+        "2": 712.3284663850147
+      },
+      "samples_by_rep": {
+        "0": 712.4886822235555,
+        "1": 716.0014524179724,
+        "2": 712.3159147001386
+      },
+      "plain_median_tps": 712.1686120276775,
+      "median_tps": 712.4886822235555,
+      "complete": true,
+      "delta_pct_vs_plain": 0.04494303602720073,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 878.4089659663274,
+        "1": 880.0306819907414,
+        "2": 878.6159691987762
+      },
+      "samples_by_rep": {
+        "0": 878.1654384201142,
+        "1": 878.7717559777582,
+        "2": 877.22987625608
+      },
+      "plain_median_tps": 878.6159691987762,
+      "median_tps": 878.1654384201142,
+      "complete": true,
+      "delta_pct_vs_plain": -0.051277326437937365,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "code",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 878.4089659663274,
+        "1": 880.0306819907414,
+        "2": 878.6159691987762
+      },
+      "samples_by_rep": {
+        "0": 876.7817565819068,
+        "1": 879.0430035145448,
+        "2": 876.6953093699299
+      },
+      "plain_median_tps": 878.6159691987762,
+      "median_tps": 876.7817565819068,
+      "complete": true,
+      "delta_pct_vs_plain": -0.2087615842609747,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 265.5787179173224,
+        "1": 264.96832856848823,
+        "2": 264.56365888006013
+      },
+      "samples_by_rep": {
+        "0": 265.3017385373456,
+        "1": 265.5695163752096,
+        "2": 265.74338888299445
+      },
+      "plain_median_tps": 264.96832856848823,
+      "median_tps": 265.5695163752096,
+      "complete": true,
+      "delta_pct_vs_plain": 0.22689044006480863,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 1,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 265.5787179173224,
+        "1": 264.96832856848823,
+        "2": 264.56365888006013
+      },
+      "samples_by_rep": {
+        "0": 265.1866896728059,
+        "1": 265.02958600949455,
+        "2": 266.7084966931492
+      },
+      "plain_median_tps": 264.96832856848823,
+      "median_tps": 265.1866896728059,
+      "complete": true,
+      "delta_pct_vs_plain": 0.08241026597306522,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 625.349844138967,
+        "1": 625.4557507440597,
+        "2": 624.4794889399943
+      },
+      "samples_by_rep": {
+        "0": 625.463733279263,
+        "1": 624.9879126237341,
+        "2": 625.54419190443
+      },
+      "plain_median_tps": 625.349844138967,
+      "median_tps": 625.463733279263,
+      "complete": true,
+      "delta_pct_vs_plain": 0.018212068230827327,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 4,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 625.349844138967,
+        "1": 625.4557507440597,
+        "2": 624.4794889399943
+      },
+      "samples_by_rep": {
+        "0": 625.6291793248087,
+        "1": 626.2245866984553,
+        "2": 625.3131919850196
+      },
+      "plain_median_tps": 625.349844138967,
+      "median_tps": 625.6291793248087,
+      "complete": true,
+      "delta_pct_vs_plain": 0.04466862644321168,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 822.4775731921665,
+        "1": 822.3407258812434,
+        "2": 820.9279735359364
+      },
+      "samples_by_rep": {
+        "0": 821.6513574316601,
+        "1": 822.3458607679538,
+        "2": 821.3660934564326
+      },
+      "plain_median_tps": 822.3407258812434,
+      "median_tps": 821.6513574316601,
+      "complete": true,
+      "delta_pct_vs_plain": -0.0838300266406633,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 8,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 822.4775731921665,
+        "1": 822.3407258812434,
+        "2": 820.9279735359364
+      },
+      "samples_by_rep": {
+        "0": 821.5740083375572,
+        "1": 821.7780152246005,
+        "2": 822.0310695185585
+      },
+      "plain_median_tps": 822.3407258812434,
+      "median_tps": 821.7780152246005,
+      "complete": true,
+      "delta_pct_vs_plain": -0.06842792031732658,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 809.7969450724493,
+        "1": 810.0295917490283,
+        "2": 810.9481069267957
+      },
+      "samples_by_rep": {
+        "0": 813.4672744296189,
+        "1": 808.7242379823648,
+        "2": 808.9614812168554
+      },
+      "plain_median_tps": 810.0295917490283,
+      "median_tps": 808.9614812168554,
+      "complete": true,
+      "delta_pct_vs_plain": -0.13186068052978284,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 0.0,
+      "streams": 16,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 809.7969450724493,
+        "1": 810.0295917490283,
+        "2": 810.9481069267957
+      },
+      "samples_by_rep": {
+        "0": 806.4235110960831,
+        "1": 810.1664192819167,
+        "2": 806.3861191614999
+      },
+      "plain_median_tps": 810.0295917490283,
+      "median_tps": 806.4235110960831,
+      "complete": true,
+      "delta_pct_vs_plain": -0.4451788786084876,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 259.0978872619309,
+        "1": 258.7666650692204,
+        "2": 259.2976737283866
+      },
+      "samples_by_rep": {
+        "0": 259.542471304004,
+        "1": 259.42730783871053,
+        "2": 259.47036136626775
+      },
+      "plain_median_tps": 259.0978872619309,
+      "median_tps": 259.47036136626775,
+      "complete": true,
+      "delta_pct_vs_plain": 0.14375806312936223,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 1,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 259.0978872619309,
+        "1": 258.7666650692204,
+        "2": 259.2976737283866
+      },
+      "samples_by_rep": {
+        "0": 261.12586430958095,
+        "1": 259.88615835355876,
+        "2": 257.8218523301873
+      },
+      "plain_median_tps": 259.0978872619309,
+      "median_tps": 259.88615835355876,
+      "complete": true,
+      "delta_pct_vs_plain": 0.3042367886354036,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 562.6869908656279,
+        "1": 562.0590803544139,
+        "2": 560.4882261866375
+      },
+      "samples_by_rep": {
+        "0": 562.5782847314206,
+        "1": 562.7301340964702,
+        "2": 563.19735358599
+      },
+      "plain_median_tps": 562.0590803544139,
+      "median_tps": 562.7301340964702,
+      "complete": true,
+      "delta_pct_vs_plain": 0.1193920293278028,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 4,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 562.6869908656279,
+        "1": 562.0590803544139,
+        "2": 560.4882261866375
+      },
+      "samples_by_rep": {
+        "0": 564.0824826392515,
+        "1": 563.3887704864952,
+        "2": 561.3085281365198
+      },
+      "plain_median_tps": 562.0590803544139,
+      "median_tps": 563.3887704864952,
+      "complete": true,
+      "delta_pct_vs_plain": 0.23657479766057143,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 721.2109922803231,
+        "1": 721.5544733865447,
+        "2": 719.8394500768403
+      },
+      "samples_by_rep": {
+        "0": 722.4491326194269,
+        "1": 721.6813074075019,
+        "2": 722.3738445459687
+      },
+      "plain_median_tps": 721.2109922803231,
+      "median_tps": 722.3738445459687,
+      "complete": true,
+      "delta_pct_vs_plain": 0.16123607073277313,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 8,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 721.2109922803231,
+        "1": 721.5544733865447,
+        "2": 719.8394500768403
+      },
+      "samples_by_rep": {
+        "0": 721.1641084378615,
+        "1": 721.3634439832631,
+        "2": 720.018719213964
+      },
+      "plain_median_tps": 721.2109922803231,
+      "median_tps": 721.1641084378615,
+      "complete": true,
+      "delta_pct_vs_plain": -0.00650071102125116,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bf16",
+      "plain_samples_by_rep": {
+        "0": 885.9273338889288,
+        "1": 885.1923431989786,
+        "2": 885.1720779991691
+      },
+      "samples_by_rep": {
+        "0": 885.228323516794,
+        "1": 883.709095494643,
+        "2": 884.3729588281051
+      },
+      "plain_median_tps": 885.1923431989786,
+      "median_tps": 884.3729588281051,
+      "complete": true,
+      "delta_pct_vs_plain": -0.09256568667465048,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": false
+    },
+    {
+      "prompt": "chat",
+      "temperature": 1.0,
+      "streams": 16,
+      "arm": "bits8",
+      "plain_samples_by_rep": {
+        "0": 885.9273338889288,
+        "1": 885.1923431989786,
+        "2": 885.1720779991691
+      },
+      "samples_by_rep": {
+        "0": 885.6780971393923,
+        "1": 885.6236211894326,
+        "2": 883.8723153017323
+      },
+      "plain_median_tps": 885.1923431989786,
+      "median_tps": 885.6236211894326,
+      "complete": true,
+      "delta_pct_vs_plain": 0.048721387364847324,
+      "user_loss_strictly_less_than_1_percent": true,
+      "maintainer_every_cell_at_least_plain": true
+    }
+  ],
+  "user_performance": {
+    "rule": "Every original per-cell median comparison has observed loss strictly less than 1%; delta > -1. No pooling, trimming or uncertainty waiver.",
+    "pass_count": 32,
+    "failure_count": 0,
+    "incomplete_count": 0,
+    "verdict": "pass"
+  },
+  "maintainer_performance": {
+    "rule": "Every original per-cell median comparison >= plain; delta >= 0. Original zero-tolerance verdict remains authoritative.",
+    "pass_count": 22,
+    "failure_count": 10,
+    "incomplete_count": 0,
+    "verdict": "fail"
+  },
+  "worst_comparison": {
+    "prompt": "chat",
+    "temperature": 0.0,
+    "streams": 16,
+    "arm": "bits8",
+    "plain_samples_by_rep": {
+      "0": 809.7969450724493,
+      "1": 810.0295917490283,
+      "2": 810.9481069267957
+    },
+    "samples_by_rep": {
+      "0": 806.4235110960831,
+      "1": 810.1664192819167,
+      "2": 806.3861191614999
+    },
+    "plain_median_tps": 810.0295917490283,
+    "median_tps": 806.4235110960831,
+    "complete": true,
+    "delta_pct_vs_plain": -0.4451788786084876,
+    "user_loss_strictly_less_than_1_percent": true,
+    "maintainer_every_cell_at_least_plain": false
+  }
+}

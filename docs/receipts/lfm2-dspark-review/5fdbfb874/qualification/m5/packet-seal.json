@@ -1,0 +1,14 @@
+{
+  "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "source_archive_sha256": "5f13d1bd16293d31b911757805d1aa3b3a28934496b40bc4145b80d2327d0307",
+  "native_binary_sha256": "d96296edf478a962c416d2339c06cf2e0677b114c33c2726fd7ec434d0337dfa",
+  "packet_path": "$TMPDIR/tf-pr-review-r36/m5/private-packet.tar.gz",
+  "packet_sha256": "39d559572a1f1f48fcce333f5c95d9bdbc5ed5856e5a52259910fd1e97f0a904",
+  "packet_size_bytes": 88726792,
+  "result_manifest_sha256": "803813049c4927ed95ba53de3a397361ec4122dd8ba4cb0b32b6a46239210c47",
+  "analysis_sha256": "325c4220337adb4c79f3c4223749240752920698c70a3c22aebb47cd8b4541d2",
+  "completion_accounting_sha256": "366596219888d8d9c1477657f3fae17c7064c2df9185c9c66833f1b9fcd21e24",
+  "original_summary_sha256": "2642fd65b0273ba83c892f27c6351b95fbb96cf5c849bdb30eb0824d14e5397d",
+  "remote_packet_path": "$HOME/tf-lfm2-test/r36-final-5fdbfb874/private-packet.tar.gz",
+  "scope": "Complete private packet, including all original raw evidence, exact executed binaries, sealed source archive, original collector failure and never-started-long continuation. Historicalr35 and unexecuted14be artifacts retain separate bindings."
+}

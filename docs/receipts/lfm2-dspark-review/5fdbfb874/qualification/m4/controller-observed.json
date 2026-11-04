@@ -1,0 +1,78 @@
+{
+  "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "base_revision": "7eae7dc008ca8f280b3557596e7f8d425693b12d",
+  "complete": false,
+  "records": [
+    {
+      "label": "original-full-matrix",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "$TMPDIR/tf-pr-review-r36/m4-final/run-full-matrix.py",
+        "--binding",
+        "$TMPDIR/tf-pr-review-r36/m4-final/guards/binding.json",
+        "--guard-proof",
+        "$TMPDIR/tf-pr-review-r36/m4-final/guards/observed.json",
+        "--binary",
+        "$TMPDIR/tf-pr-review-r36/m4-final/runtime/tensorfold-native",
+        "--output",
+        "$TMPDIR/tf-pr-review-r36/m4-final/full"
+      ],
+      "returncode": 3,
+      "elapsed_s": 4948.181735416874,
+      "log_sha256": "bcb1fc2517f2e689a3919b72a781240754d4e023f0c9c8c569cdafc8045f8701"
+    },
+    {
+      "label": "original-functional-0",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "$TMPDIR/tf-pr-review-r36/m4-final/run-functional.py",
+        "--root",
+        "$TMPDIR/tf-review-r36-dspark-main",
+        "--binding",
+        "$TMPDIR/tf-pr-review-r36/m4-final/guards/binding.json",
+        "--output",
+        "$TMPDIR/tf-pr-review-r36/m4-final/functional-0",
+        "--bits",
+        "0"
+      ],
+      "returncode": 0,
+      "elapsed_s": 257.6045013749972,
+      "log_sha256": "b2bdde07a1a7208c2d8c060312c630901f9b28bf23cee93af2a2e77652889a8a"
+    },
+    {
+      "label": "original-functional-8",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "$TMPDIR/tf-pr-review-r36/m4-final/run-functional.py",
+        "--root",
+        "$TMPDIR/tf-review-r36-dspark-main",
+        "--binding",
+        "$TMPDIR/tf-pr-review-r36/m4-final/guards/binding.json",
+        "--output",
+        "$TMPDIR/tf-pr-review-r36/m4-final/functional-8",
+        "--bits",
+        "8"
+      ],
+      "returncode": 0,
+      "elapsed_s": 253.73578816652298,
+      "log_sha256": "22d6b63d5d520f48faa3d00edcea2b893c3d901058fd2d72fc6dfde92309a3b0"
+    },
+    {
+      "label": "original-long",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "$TMPDIR/tf-review-r36-dspark-main/docs/receipts/lfm2-dspark-review/qualification.py",
+        "long"
+      ],
+      "returncode": 1,
+      "elapsed_s": 5320.240052125417,
+      "log_sha256": "6f775069b7260d78b2390e0bcb31f2783739258e1ad386df0b5407ca316d1bfc"
+    }
+  ],
+  "started_unix_ns": 1793785916409935000,
+  "native_binary_sha256": "ee8f3451f5264f11bc9dea24af7ba5b0b6e00d5004e496d0f8a7d7f18bc92d02",
+  "original_gate_returncode": 3,
+  "error_type": "AssertionError",
+  "error": "",
+  "completed_unix_ns": 1793796696344466000
+}

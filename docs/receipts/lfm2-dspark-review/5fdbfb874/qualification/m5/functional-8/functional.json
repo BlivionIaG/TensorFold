@@ -1,0 +1,447 @@
+{
+  "resumed": {
+    "usage": {
+      "prompt_tokens": 3605,
+      "completion_tokens": 64,
+      "total_tokens": 3669,
+      "prompt_tokens_details": {
+        "cached_tokens": 3517
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "runtime": {
+      "enable_thinking": false,
+      "reasoning_effort": "none",
+      "engine": "lanes",
+      "tokens_per_second": 561.3372300235227,
+      "seconds": 0.112232,
+      "prefill_seconds": 0.035121375,
+      "prefill_widths": [],
+      "prefill_raised": [],
+      "time_to_first_token": 0.035484958,
+      "sampling": "greedy",
+      "drafts": true,
+      "token_sha": "2fed3f850c53",
+      "token_sha256": "2fed3f850c53a2a46620eb8b0facca0a7db4890e9462c4db2a39a5597f462a91",
+      "token_ids": [
+        8,
+        962,
+        30629,
+        37207,
+        962,
+        355,
+        401,
+        7426,
+        383,
+        1046,
+        30525,
+        923,
+        17251,
+        1438,
+        401,
+        32191,
+        85,
+        577,
+        7478,
+        316,
+        47935,
+        9706,
+        32191,
+        41,
+        47935,
+        309,
+        401,
+        32191,
+        86,
+        577,
+        7478,
+        283,
+        47935,
+        9706,
+        32191,
+        42,
+        47935,
+        923,
+        3813,
+        278,
+        9043,
+        296,
+        278,
+        7687,
+        32191,
+        85,
+        577,
+        7478,
+        283,
+        47935,
+        9706,
+        462,
+        3572,
+        90984,
+        81,
+        18963,
+        90990,
+        355,
+        22173,
+        405,
+        278,
+        13723,
+        2045,
+        302
+      ],
+      "min_rows": 1
+    },
+    "speculative": {
+      "rounds": 12,
+      "drafted": 52,
+      "accepted": 51,
+      "acceptance_rate": 0.9807692307692307,
+      "tokens_per_round": 5.333333333333333
+    },
+    "content": "\n\n**Matrix multiplication** is an operation on two matrices\u2014typically an \\(m \\times n\\) matrix \\(A\\) and an \\(n \\times p\\) matrix \\(B\\)\u2014where the entry in the resulting \\(m \\times p\\) matrix at position \\((i,j)\\) is computed as the dot product of",
+    "wall": 0.1482495409436524
+  },
+  "resume_request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Public cache fixture.\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\nalpha beta gamma delta\n\nExplain matrix multiplication in one paragraph."
+      },
+      {
+        "role": "assistant",
+        "content": "\nMatrix multiplication is an operation on two matrices\u2014typically an \\(m \\times n\\) matrix \\(A\\) and an \\(n \\times p\\) matrix \\(B\\)\u2014where the entry in the resulting \\(m \\times p\\) matrix at position \\((i,j)\\) is computed as the dot product of the \\("
+      },
+      {
+        "role": "user",
+        "content": "Give a small numerical example and explain each step."
+      }
+    ],
+    "max_tokens": 64
+  },
+  "stress_reference_hashes": [
+    {
+      "prompt": "quicksort-raw",
+      "sha256": "9e4feb5a9aadd228c02f26c10e22d5a858be52f9690de23130431897ab4a95d0"
+    },
+    {
+      "prompt": "rust-reverse-words",
+      "sha256": "d9499a1af105f9d0477f4fda4f2afde556c782008fe552d4a7cd0ebf71e80101"
+    },
+    {
+      "prompt": "multiply-17-23",
+      "sha256": "72bba60a60f4df7bf0b2a34dab50868cd071c0b99c2ac9d3b2f0cc99a8c6ab84"
+    },
+    {
+      "prompt": "sleep-tips",
+      "sha256": "dc9d14472ff7c82357f0686ee61236b54726924051b1222778247438e54345db"
+    },
+    {
+      "prompt": "js-debounce-raw",
+      "sha256": "d80d7a1d94635a9a5ce9305bf22133261181963691b70407d3212b0557e0d458"
+    },
+    {
+      "prompt": "linear-equation",
+      "sha256": "8ebb10c3e63f3fd3a265072c4a9ef09d88058a4fc50e488f523ce44cb0afdc0d"
+    },
+    {
+      "prompt": "fishing-village",
+      "sha256": "c1100e452897c3c18c70f946d0ae4f05a345e7f90b10bece58e0cd584daf0ade"
+    },
+    {
+      "prompt": "sql-left-join",
+      "sha256": "d04f354206e1c4c56ff5956161df55ffea050df8d858b655c26a2f8673b741b4"
+    }
+  ],
+  "stress": [
+    {
+      "slots": 6,
+      "seconds": 60,
+      "completed": 455,
+      "cancelled": 248,
+      "wrong": 0,
+      "errors": []
+    },
+    {
+      "slots": 16,
+      "seconds": 90,
+      "completed": 934,
+      "cancelled": 504,
+      "wrong": 0,
+      "errors": []
+    }
+  ],
+  "sampled": [
+    {
+      "streams": 1,
+      "hashes": [
+        [
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d",
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d",
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d"
+        ]
+      ]
+    },
+    {
+      "streams": 4,
+      "hashes": [
+        [
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d",
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d",
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d"
+        ],
+        [
+          "c99ab72197e17fde3d3663c329d67152ae5641c49b11e8194c7db40eccf711d5",
+          "c99ab72197e17fde3d3663c329d67152ae5641c49b11e8194c7db40eccf711d5",
+          "c99ab72197e17fde3d3663c329d67152ae5641c49b11e8194c7db40eccf711d5"
+        ],
+        [
+          "c10b43f97e6e3a72f57980bafcf598931d5c4e57fe313580303911fc40830770",
+          "c10b43f97e6e3a72f57980bafcf598931d5c4e57fe313580303911fc40830770",
+          "c10b43f97e6e3a72f57980bafcf598931d5c4e57fe313580303911fc40830770"
+        ],
+        [
+          "51b0d3cc4c23679db3b995d9decd5b4c8e04f1543c5da88c0076dc550f87c133",
+          "51b0d3cc4c23679db3b995d9decd5b4c8e04f1543c5da88c0076dc550f87c133",
+          "51b0d3cc4c23679db3b995d9decd5b4c8e04f1543c5da88c0076dc550f87c133"
+        ]
+      ]
+    },
+    {
+      "streams": 8,
+      "hashes": [
+        [
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d",
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d",
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d"
+        ],
+        [
+          "c99ab72197e17fde3d3663c329d67152ae5641c49b11e8194c7db40eccf711d5",
+          "c99ab72197e17fde3d3663c329d67152ae5641c49b11e8194c7db40eccf711d5",
+          "c99ab72197e17fde3d3663c329d67152ae5641c49b11e8194c7db40eccf711d5"
+        ],
+        [
+          "c10b43f97e6e3a72f57980bafcf598931d5c4e57fe313580303911fc40830770",
+          "c10b43f97e6e3a72f57980bafcf598931d5c4e57fe313580303911fc40830770",
+          "c10b43f97e6e3a72f57980bafcf598931d5c4e57fe313580303911fc40830770"
+        ],
+        [
+          "51b0d3cc4c23679db3b995d9decd5b4c8e04f1543c5da88c0076dc550f87c133",
+          "51b0d3cc4c23679db3b995d9decd5b4c8e04f1543c5da88c0076dc550f87c133",
+          "51b0d3cc4c23679db3b995d9decd5b4c8e04f1543c5da88c0076dc550f87c133"
+        ],
+        [
+          "1330f02fdc900dbab934f2c0097e46a2608c35e620be479bf9819f68c1ad2366",
+          "1330f02fdc900dbab934f2c0097e46a2608c35e620be479bf9819f68c1ad2366",
+          "1330f02fdc900dbab934f2c0097e46a2608c35e620be479bf9819f68c1ad2366"
+        ],
+        [
+          "ba44af1f43a9f23b0bbadc69ea88414df1e7625f0aa2ade7acd73666362ec4ff",
+          "ba44af1f43a9f23b0bbadc69ea88414df1e7625f0aa2ade7acd73666362ec4ff",
+          "ba44af1f43a9f23b0bbadc69ea88414df1e7625f0aa2ade7acd73666362ec4ff"
+        ],
+        [
+          "36b7dc4d8daac1d982e69cb8a13b97aa3d76403555565c13e19ff839f6a50c31",
+          "36b7dc4d8daac1d982e69cb8a13b97aa3d76403555565c13e19ff839f6a50c31",
+          "36b7dc4d8daac1d982e69cb8a13b97aa3d76403555565c13e19ff839f6a50c31"
+        ],
+        [
+          "4e295b6a9b36a30ee500d0c93fb4d23083bf86a26a0d2dbdc720516e39c3b2cf",
+          "4e295b6a9b36a30ee500d0c93fb4d23083bf86a26a0d2dbdc720516e39c3b2cf",
+          "4e295b6a9b36a30ee500d0c93fb4d23083bf86a26a0d2dbdc720516e39c3b2cf"
+        ]
+      ]
+    },
+    {
+      "streams": 16,
+      "hashes": [
+        [
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d",
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d",
+          "30c10286f6d8d5c1e874fe7698627e604bcc3a286b3da84ad487c184c2a8840d"
+        ],
+        [
+          "c99ab72197e17fde3d3663c329d67152ae5641c49b11e8194c7db40eccf711d5",
+          "c99ab72197e17fde3d3663c329d67152ae5641c49b11e8194c7db40eccf711d5",
+          "c99ab72197e17fde3d3663c329d67152ae5641c49b11e8194c7db40eccf711d5"
+        ],
+        [
+          "c10b43f97e6e3a72f57980bafcf598931d5c4e57fe313580303911fc40830770",
+          "c10b43f97e6e3a72f57980bafcf598931d5c4e57fe313580303911fc40830770",
+          "c10b43f97e6e3a72f57980bafcf598931d5c4e57fe313580303911fc40830770"
+        ],
+        [
+          "51b0d3cc4c23679db3b995d9decd5b4c8e04f1543c5da88c0076dc550f87c133",
+          "51b0d3cc4c23679db3b995d9decd5b4c8e04f1543c5da88c0076dc550f87c133",
+          "51b0d3cc4c23679db3b995d9decd5b4c8e04f1543c5da88c0076dc550f87c133"
+        ],
+        [
+          "1330f02fdc900dbab934f2c0097e46a2608c35e620be479bf9819f68c1ad2366",
+          "1330f02fdc900dbab934f2c0097e46a2608c35e620be479bf9819f68c1ad2366",
+          "1330f02fdc900dbab934f2c0097e46a2608c35e620be479bf9819f68c1ad2366"
+        ],
+        [
+          "ba44af1f43a9f23b0bbadc69ea88414df1e7625f0aa2ade7acd73666362ec4ff",
+          "ba44af1f43a9f23b0bbadc69ea88414df1e7625f0aa2ade7acd73666362ec4ff",
+          "ba44af1f43a9f23b0bbadc69ea88414df1e7625f0aa2ade7acd73666362ec4ff"
+        ],
+        [
+          "36b7dc4d8daac1d982e69cb8a13b97aa3d76403555565c13e19ff839f6a50c31",
+          "36b7dc4d8daac1d982e69cb8a13b97aa3d76403555565c13e19ff839f6a50c31",
+          "36b7dc4d8daac1d982e69cb8a13b97aa3d76403555565c13e19ff839f6a50c31"
+        ],
+        [
+          "4e295b6a9b36a30ee500d0c93fb4d23083bf86a26a0d2dbdc720516e39c3b2cf",
+          "4e295b6a9b36a30ee500d0c93fb4d23083bf86a26a0d2dbdc720516e39c3b2cf",
+          "4e295b6a9b36a30ee500d0c93fb4d23083bf86a26a0d2dbdc720516e39c3b2cf"
+        ],
+        [
+          "16e209d6f6ca13b44c6c2ac86018d6117f48739fe679c8b10f219711ff9cb986",
+          "16e209d6f6ca13b44c6c2ac86018d6117f48739fe679c8b10f219711ff9cb986",
+          "16e209d6f6ca13b44c6c2ac86018d6117f48739fe679c8b10f219711ff9cb986"
+        ],
+        [
+          "45cab8cc38d33c168e96169e6cd61ecb339df2e61855515953cdeb5314d7e351",
+          "45cab8cc38d33c168e96169e6cd61ecb339df2e61855515953cdeb5314d7e351",
+          "45cab8cc38d33c168e96169e6cd61ecb339df2e61855515953cdeb5314d7e351"
+        ],
+        [
+          "0bfbd2b2a91cab827879cb2bd2aa696bf6bd49516c2aa5439c83ecb386ea7369",
+          "0bfbd2b2a91cab827879cb2bd2aa696bf6bd49516c2aa5439c83ecb386ea7369",
+          "0bfbd2b2a91cab827879cb2bd2aa696bf6bd49516c2aa5439c83ecb386ea7369"
+        ],
+        [
+          "1e81d9e26277be61b38974b207ca6f31e045350d3e939c4ec700e40603553f0a",
+          "1e81d9e26277be61b38974b207ca6f31e045350d3e939c4ec700e40603553f0a",
+          "1e81d9e26277be61b38974b207ca6f31e045350d3e939c4ec700e40603553f0a"
+        ],
+        [
+          "97ba371a7ee308d84fd24f6cf3e574b817a1fe7a56728a122cfe9ab4aae75363",
+          "97ba371a7ee308d84fd24f6cf3e574b817a1fe7a56728a122cfe9ab4aae75363",
+          "97ba371a7ee308d84fd24f6cf3e574b817a1fe7a56728a122cfe9ab4aae75363"
+        ],
+        [
+          "6884f675a0b28c8d331d9d245919814741dcefeaf12900e783d1b525d4490398",
+          "6884f675a0b28c8d331d9d245919814741dcefeaf12900e783d1b525d4490398",
+          "6884f675a0b28c8d331d9d245919814741dcefeaf12900e783d1b525d4490398"
+        ],
+        [
+          "7b81161c5817e10474e598a19f3fc2008bdece4a9e4c68e1dc52024e4d5d32db",
+          "7b81161c5817e10474e598a19f3fc2008bdece4a9e4c68e1dc52024e4d5d32db",
+          "7b81161c5817e10474e598a19f3fc2008bdece4a9e4c68e1dc52024e4d5d32db"
+        ],
+        [
+          "e5997fd3392b57373c76457f8c69bd05899ad99c92abf281efc274e148dd74fd",
+          "e5997fd3392b57373c76457f8c69bd05899ad99c92abf281efc274e148dd74fd",
+          "e5997fd3392b57373c76457f8c69bd05899ad99c92abf281efc274e148dd74fd"
+        ]
+      ]
+    }
+  ],
+  "fresh": {
+    "usage": {
+      "prompt_tokens": 3605,
+      "completion_tokens": 64,
+      "total_tokens": 3669,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "runtime": {
+      "enable_thinking": false,
+      "reasoning_effort": "none",
+      "engine": "lanes",
+      "tokens_per_second": 597.5493363526964,
+      "seconds": 0.105430625,
+      "prefill_seconds": 0.295987459,
+      "prefill_widths": [],
+      "prefill_raised": [],
+      "time_to_first_token": 0.298200917,
+      "sampling": "greedy",
+      "drafts": true,
+      "token_sha": "2fed3f850c53",
+      "token_sha256": "2fed3f850c53a2a46620eb8b0facca0a7db4890e9462c4db2a39a5597f462a91",
+      "token_ids": [
+        8,
+        962,
+        30629,
+        37207,
+        962,
+        355,
+        401,
+        7426,
+        383,
+        1046,
+        30525,
+        923,
+        17251,
+        1438,
+        401,
+        32191,
+        85,
+        577,
+        7478,
+        316,
+        47935,
+        9706,
+        32191,
+        41,
+        47935,
+        309,
+        401,
+        32191,
+        86,
+        577,
+        7478,
+        283,
+        47935,
+        9706,
+        32191,
+        42,
+        47935,
+        923,
+        3813,
+        278,
+        9043,
+        296,
+        278,
+        7687,
+        32191,
+        85,
+        577,
+        7478,
+        283,
+        47935,
+        9706,
+        462,
+        3572,
+        90984,
+        81,
+        18963,
+        90990,
+        355,
+        22173,
+        405,
+        278,
+        13723,
+        2045,
+        302
+      ],
+      "min_rows": 1
+    },
+    "speculative": {
+      "rounds": 13,
+      "drafted": 51,
+      "accepted": 50,
+      "acceptance_rate": 0.9803921568627451,
+      "tokens_per_round": 4.923076923076923
+    },
+    "content": "\n\n**Matrix multiplication** is an operation on two matrices\u2014typically an \\(m \\times n\\) matrix \\(A\\) and an \\(n \\times p\\) matrix \\(B\\)\u2014where the entry in the resulting \\(m \\times p\\) matrix at position \\((i,j)\\) is computed as the dot product of",
+    "wall": 0.40462970780208707
+  },
+  "resume_equal": true
+}

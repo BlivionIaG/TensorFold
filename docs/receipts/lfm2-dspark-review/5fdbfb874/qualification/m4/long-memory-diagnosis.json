@@ -1,0 +1,37 @@
+{
+  "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "observed_failure": "LFM2 forward: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory); GpuFailed",
+  "failed_length": 130816,
+  "native_reference_completed": false,
+  "served_equality_at_same_length": true,
+  "scope": "Native diagnostic reserves full-prompt scratch and independent tap-control caches; not the serving backend prompt-chunk working set",
+  "static_lower_bounds": {
+    "scratch_lower_bound_bytes": 16650262156,
+    "main_cache_kv_bytes": 2679439360,
+    "full_span_plain_cache_kv_bytes": 2679439360,
+    "original_taps_bytes": 2680158208,
+    "drafter_reported_weights_mib": 625.1,
+    "drafter_reported_scratch_mib": 92.3,
+    "excludes": "Target weights, target buffer alignment/plan storage, transient command resources, CPU allocations, later tap-layout/stage controls and OS use"
+  },
+  "scratch_terms": {
+    "ids_bad": 523268,
+    "h_r_y": 1607467008,
+    "x": 535887872,
+    "queries": 535822336,
+    "bcx": 1607467008,
+    "k_v": 267911168,
+    "attention_partials": 553648128,
+    "gate_up_act": 9242935296,
+    "route_picks_weights": 36628480,
+    "expert_outputs": 2143289344,
+    "pos_tokens_ident": 6279168,
+    "work": 65672,
+    "sums": 96280576,
+    "logits_best": 8192256,
+    "rowseg_tiles": 256,
+    "conv_snapshots": 7864320
+  },
+  "thresholds_or_admission_limits_changed": false,
+  "rerun": false
+}

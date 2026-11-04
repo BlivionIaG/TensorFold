@@ -1,0 +1,84 @@
+{
+  "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "original_summary_sha256": "2642fd65b0273ba83c892f27c6351b95fbb96cf5c849bdb30eb0824d14e5397d",
+  "replayed_summary_sha256": "2642fd65b0273ba83c892f27c6351b95fbb96cf5c849bdb30eb0824d14e5397d",
+  "byte_identical": true,
+  "frozen_verdict_module_sha256": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+  "original_exit_code": 3,
+  "recorded_cells": 144,
+  "original_oracles": 306,
+  "clean_zero_exit_events": [
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T09:55:04Z",
+      "label": "r0-plain",
+      "forced_kill": false,
+      "seconds": 0.8,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T09:58:48Z",
+      "label": "r0-bf16",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:02:30Z",
+      "label": "r0-bits8",
+      "forced_kill": false,
+      "seconds": 0.1,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:06:14Z",
+      "label": "r1-bf16",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:09:57Z",
+      "label": "r1-bits8",
+      "forced_kill": false,
+      "seconds": 0.3,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:13:41Z",
+      "label": "r1-plain",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:17:25Z",
+      "label": "r2-bits8",
+      "forced_kill": false,
+      "seconds": 0.4,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:21:08Z",
+      "label": "r2-plain",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:24:51Z",
+      "label": "r2-bf16",
+      "forced_kill": false,
+      "seconds": 0.5,
+      "returncode": 0
+    }
+  ]
+}

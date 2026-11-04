@@ -1,0 +1,7 @@
+{
+  "scope": "Post-failure read-only MTLCreateSystemDefaultDevice and physicalMemory query; not memory-peak telemetry",
+  "recommendedMaxWorkingSetSize": 40200896512,
+  "physicalMemory": 51539607552,
+  "units": "bytes",
+  "command": ["xcrun", "swift", "-e", "import Metal; if let d = MTLCreateSystemDefaultDevice() { print(\"recommendedMaxWorkingSetSize=\\(d.recommendedMaxWorkingSetSize)\"); print(\"physicalMemory=\\(ProcessInfo.processInfo.physicalMemory)\") }"]
+}

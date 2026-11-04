@@ -1,0 +1,32 @@
+[
+  {
+    "path": "analysis.json",
+    "original_sha256": "325c4220337adb4c79f3c4223749240752920698c70a3c22aebb47cd8b4541d2",
+    "published_sha256": "3c28a33b545e87947a23534d5d3ec5ce6016d42fcae16e1b6b9efa1a40b19b95",
+    "transform": "Local paths anonymized only; numerical values and verdicts preserved"
+  },
+  {
+    "path": "completion-accounting.json",
+    "original_sha256": "366596219888d8d9c1477657f3fae17c7064c2df9185c9c66833f1b9fcd21e24",
+    "published_sha256": "f40a5921e0fbc8cbc6ab77fa9b1c087a527b2033de4952d09d6e8092bcfa2c6c",
+    "transform": "Local paths anonymized only; numerical values and verdicts preserved"
+  },
+  {
+    "path": "verdict-replay-proof.json",
+    "original_sha256": "2c8159ac7364c9bb26c883d62b7dba1001beef40c6b19fa3aff6fd5bb40a7814",
+    "published_sha256": "2c8159ac7364c9bb26c883d62b7dba1001beef40c6b19fa3aff6fd5bb40a7814",
+    "transform": "Local paths anonymized only; numerical values and verdicts preserved"
+  },
+  {
+    "path": "packet-seal.json",
+    "original_sha256": "d50eab78686c1054978a80958a3d7419e1713f3483ff62512feb15fab469cbbd",
+    "published_sha256": "ab0861ca26653641345e5c56e546e73fa12ef0ec8225851910a26b252dbc5503",
+    "transform": "Local paths anonymized only; numerical values and verdicts preserved"
+  },
+  {
+    "path": "native-guards.json",
+    "original_sha256": "958b5987d4f0a1902b4d7f5fbda96d7c5da5c0861c2aa0e839714ec4c0088e72",
+    "published_sha256": "4ce107ef591ddefe5aece154e9c968cf72952e4511a2c57b23858a45d1f06383",
+    "transform": "Local paths anonymized only; numerical values and verdicts preserved"
+  }
+]

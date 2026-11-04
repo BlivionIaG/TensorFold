@@ -1,0 +1,81 @@
+{
+  "source_revision": "5fdbfb8749b14bc20bc9021dbe463cd56206d53a",
+  "original_summary_sha256": "c805edb41b13cb687b959859d292bcf7df16304896bea380ca14f843d3b166ba",
+  "replayed_summary_sha256": "c805edb41b13cb687b959859d292bcf7df16304896bea380ca14f843d3b166ba",
+  "byte_identical": true,
+  "original_exit_code": 3,
+  "clean_zero_exit_events": [
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:00:52Z",
+      "label": "r0-plain",
+      "forced_kill": false,
+      "seconds": 0.6,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:10:06Z",
+      "label": "r0-bf16",
+      "forced_kill": false,
+      "seconds": 0.4,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:19:28Z",
+      "label": "r0-bits8",
+      "forced_kill": false,
+      "seconds": 0.3,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:28:29Z",
+      "label": "r1-bf16",
+      "forced_kill": false,
+      "seconds": 0.4,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:37:32Z",
+      "label": "r1-bits8",
+      "forced_kill": false,
+      "seconds": 0.3,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:46:36Z",
+      "label": "r1-plain",
+      "forced_kill": false,
+      "seconds": 0.5,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T10:55:47Z",
+      "label": "r2-bits8",
+      "forced_kill": false,
+      "seconds": 0.7,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T11:05:00Z",
+      "label": "r2-plain",
+      "forced_kill": false,
+      "seconds": 0.5,
+      "returncode": 0
+    },
+    {
+      "event": "shutdown",
+      "at": "2026-11-04T11:14:24Z",
+      "label": "r2-bf16",
+      "forced_kill": false,
+      "seconds": 0.4,
+      "returncode": 0
+    }
+  ]
+}
