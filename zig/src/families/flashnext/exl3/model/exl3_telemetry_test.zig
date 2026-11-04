@@ -99,3 +99,22 @@ test "exl3: per-layer deltas sum to aggregate counters and overlapping reports c
     try std.testing.expectEqual(second_report.experts.device_copies, second[0].counts.device_copies);
     try std.testing.expectEqual(@as(u64, 10), first[0].counts.host_miss_picks + second[0].counts.host_miss_picks);
 }
+
+test "exl3: per-layer event times remain gauges when later invocations get faster" {
+    var first = [_]telemetry.LayerSample{.{ .owner = 1, .kind = .decoder, .layer = 0, .lines = 16, .timing = .{ .service_ns = 500, .copy_ns = 300, .exposed_copy_wait_ns = 100 } }};
+    var last = first;
+    last[0].timing = .{ .service_ns = 200, .copy_ns = 150, .exposed_copy_wait_ns = 0 };
+    last[0].counts.host_busy_wait_ns = 50;
+    const before: telemetry.Snapshot = .{ .rank = .{ .rank = 0, .world = 1 }, .scope = 1, .layers = &first };
+    var after = before;
+    after.layers = &last;
+    var cursor: telemetry.LayerCursor(1) = .{};
+    const samples = try cursor.claim(std.testing.allocator, before, after);
+    defer std.testing.allocator.free(samples);
+    try std.testing.expectEqualDeep(last[0].timing, samples[0].timing);
+    try std.testing.expectEqual(@as(u64, 50), samples[0].counts.host_busy_wait_ns);
+    const report: telemetry.Report = .{ .rank = before.rank, .interval = .{ .phase = .decode, .model_rows = 1, .steps = 1 }, .experts = .{}, .layers = samples };
+    const text = try report.formatAlloc(std.testing.allocator);
+    defer std.testing.allocator.free(text);
+    try std.testing.expect(std.mem.indexOf(u8, text, "timing_scope=last_device_invocation last_device_service_ns=200 last_device_copy_ns=150 last_device_exposed_copy_wait_ns=0") != null);
+}

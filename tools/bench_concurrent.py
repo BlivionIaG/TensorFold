@@ -198,14 +198,16 @@ def median(values) -> float | None:
 
 
 def distinct(path: str) -> list[dict]:
-    """``--prompts``' file: a JSON list of {"name", "kind", "prompt"} items with unique names."""
+    """Named chat/completion prompts; completion prompts may contain exact unsigned-32-bit token arrays."""
     with open(path, encoding="utf-8") as f:
         items = json.load(f)
     ok = isinstance(items, list) and len(items) > 0 and all(
         isinstance(x, dict) and isinstance(x.get("name"), str) and x.get("kind") in ("chat", "completion")
-        and isinstance(x.get("prompt"), str) and len(x["prompt"]) > 0 for x in items)
+        and ((isinstance(x.get("prompt"), str) and len(x["prompt"]) > 0)
+             or (x.get("kind") == "completion" and isinstance(x.get("prompt"), list) and len(x["prompt"]) > 0
+                 and all(type(token) is int and 0 <= token <= 0xffffffff for token in x["prompt"]))) for x in items)
     if not ok or len({x["name"] for x in items}) != len(items):
-        raise ValueError("--prompts: expected a JSON list of {name, kind, prompt} items with unique names")
+        raise ValueError("--prompts: expected unique named chat/completion items; completion may use uint32 token arrays")
     return [{"name": x["name"], "kind": x["kind"], "prompt": x["prompt"]} for x in items]
 
 
@@ -215,6 +217,7 @@ def main() -> None:
     p.add_argument("model")
     p.add_argument("--levels", default="4", help="concurrent requests, a comma list")
     p.add_argument("--tokens", type=int, default=256)
+    p.add_argument("--skip-warmup", action="store_true", help="skip the automatic 16-output-token warmup")
     p.add_argument("--reps", type=int, default=3)
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument("--temperatures", default="1.0,0")
@@ -257,7 +260,10 @@ def main() -> None:
         except (OSError, ValueError) as exc:
             p.error(str(exc))
     cells = [None] if args.mixed or args.prompts else PROMPTS
-    report: dict = {"label": args.label, "tokens": args.tokens, "mixed": args.mixed, "cells": []}
+    report: dict = {"label": args.label, "tokens": args.tokens, "mixed": args.mixed, "warmup_reply_tokens": 0 if args.skip_warmup else 16, "cells": []}
+    token_counts = {item["name"]: len(item["prompt"]) for item in pool if isinstance(item["prompt"], list)}
+    if token_counts:
+        report["prompt_token_counts"] = token_counts
     if args.prompts:
         report["prompts"] = [q["name"] for q in pool]
     for temp in temps:
@@ -271,7 +277,8 @@ def main() -> None:
                 specs = [(item, args.seed + i if temp > 0 else args.seed) for i in range(max(levels))]
             if args.no_seed:
                 specs = [(spec[0], None) for spec in specs]
-            together(args.base, args.model, specs[:1], 16, temp, api_key=api_key)  # warm-up
+            if not args.skip_warmup:
+                together(args.base, args.model, specs[:1], 16, temp, api_key=api_key)  # warm-up
             alone: dict[tuple[str, int | None], dict] = {}
             if args.alone or args.serial:
                 for spec in specs:
@@ -304,7 +311,8 @@ def main() -> None:
                     if alone:
                         # None: the request or its solo run failed (not an exactness result)
                         rep["equal_alone"] = [token_equal(alone[(r["prompt"], r["seed"])], r) for r in runs]
-                        fields = ("tokens", "token_sha256", "output_sha256", "complete", "error")
+                        fields = ("tokens", "token_sha256", "output_sha256", "complete", "error",
+                                  "prompt_tokens", "cached_tokens", "cache_state")
                         rep["comparisons"] = []
                         for r in runs:
                             ref = alone[(r["prompt"], r["seed"])]

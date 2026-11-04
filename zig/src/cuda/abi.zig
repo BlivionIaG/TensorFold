@@ -152,7 +152,7 @@ pub const ExecUpdateResultInfo = extern struct {
     error_from_node: GraphNode,
 };
 
-/// CU_EVENT_RECORD_EXTERNAL: in a capture, an event record node outside work can wait on; else a plain record.
+/// CU_EVENT_RECORD_EXTERNAL creates a graph node; the driver rejects it outside capture with CUDA_ERROR_ILLEGAL_STATE.
 pub const event_record_external: c_uint = 0x1;
 
 /// CU_MEMORYTYPE_DEVICE

@@ -175,11 +175,13 @@ pub const Budget = struct {
     lines: ?usize = null,
     /// Elastic memory: each pool also reserves virtual room for the lines that fit with K/V at `kv_floor_bytes`.
     elastic: ?struct { kv_floor_bytes: u64 } = null,
+    /// Opt-in fit mode (EXPERT_LINES=fit): the fewest lines a layer may get. Never set with `lines`.
+    fit_floor: ?usize = null,
     /// Rows a planned round holds (the pass's block of routed rows).
     max_rows: usize = moe_rows,
 };
 
-/// TF_FLASHNEXT_EXPERT_LINES and TF_FLASHNEXT_EXPERT_RESERVE_MB override pool sizing.
+/// TF_FLASHNEXT_EXPERT_LINES (a count, or `fit` plus _FLOOR) and TF_FLASHNEXT_EXPERT_RESERVE_MB override pool sizing.
 pub fn budgetFromEnv(stream_bytes: u64) !Budget {
     return budgetFromEnvWithStreams(stream_bytes, null);
 }
@@ -194,7 +196,11 @@ fn budgetFromEnvWithStreams(stream_bytes: u64, requested_streams: ?u32) !Budget 
     if (dplan.enabled()) {
         b.planner_rows = dplan.planner_rows;
     }
-    if (std.c.getenv("TF_FLASHNEXT_EXPERT_LINES")) |v| b.lines = try std.fmt.parseInt(usize, std.mem.span(v), 10);
+    switch (try memory.parseLines(envText("TF_FLASHNEXT_EXPERT_LINES"), envText("TF_FLASHNEXT_EXPERT_LINES_FLOOR"), pool_.min_lines)) {
+        .auto => {},
+        .explicit => |count| b.lines = count,
+        .fit => |floor| b.fit_floor = floor,
+    }
     if (std.c.getenv("TF_FLASHNEXT_EXPERT_RESERVE_MB")) |v| b.reserve = try memory.mebibytes(std.mem.span(v));
     if (requested_streams == null) if (std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS")) |v| {
         const env_streams = try std.fmt.parseInt(u64, std.mem.span(v), 10);
@@ -207,6 +213,10 @@ fn budgetFromEnvWithStreams(stream_bytes: u64, requested_streams: ?u32) !Budget 
 fn streamReservation(stream_bytes: u64, streams: u32) !u64 {
     if (streams == 0) return error.InvalidStreamCount;
     return std.math.mul(u64, stream_bytes, streams);
+}
+
+fn envText(name: [*:0]const u8) ?[]const u8 {
+    return if (std.c.getenv(name)) |value| std.mem.span(value) else null;
 }
 
 test "EXL3 pool reserves the requested number of concurrent stream caches" {
@@ -227,7 +237,8 @@ pub fn freeBytes(d: *const cuda.Driver) !u64 {
 pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cuda.Stream, runtime: ?*@import("../prefill/cuda_exl3_prefill_state.zig").Runtime, layers: []const @import("../../cuda_prompt_load.zig").Layer, mtp: ?*const @import("../../cuda_prompt_load.zig").Layer, rows: usize, b: Budget, profile_counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !Attached {
     var all: [wt.layers_n + 1]*load.Experts = undefined;
     const n = offloadedLayers(layers, mtp, &all);
-    const delta_text = if (std.c.getenv("TF_FLASHNEXT_EXL3_LINE_DELTAS")) |value| std.mem.span(value) else null;
+    const allocation_rank = if (n != 0 and all[0].tp != null) all[0].tp.?.rank else 0;
+    const delta_text = try line_deltas.fromEnv(allocation_rank);
     var out: Attached = .{};
     const scratch_before = try freeBytes(d);
     out.graph_reservation = b.graph_reservation;
@@ -256,8 +267,8 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     out.free_before = free;
     out.scratch_bytes = scratch_before -| free;
     const reserve_floor = b.reserve orelse serverReserve(total);
-    // an elastic pool keeps the allocator margin above an overriding reserve too
-    const reserve = if (b.reserve != null and b.elastic == null) b.reserve.? else try std.math.add(u64, reserve_floor, b.margin);
+    // Elastic and fit pools keep the allocator margin above an overriding reserve too.
+    const reserve = if (b.reserve != null and b.elastic == null and b.fit_floor == null) b.reserve.? else try std.math.add(u64, reserve_floor, b.margin);
     out.reserve_bytes = reserve;
     // beside its lines a layer holds the shared expert's region, its six tables and its masked picks (sized for the
     var fixed: u64 = 0;
@@ -271,7 +282,7 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     const line_cost = try std.math.add(u64, out.line_bytes, if (b.planner_rows != null) 8 else 0);
     const all_fixed = try std.math.add(u64, fixed, planner_fixed);
     const prefill = @import("../prefill/cuda_exl3_prefill.zig");
-    const minimum_pools = try memory.poolBytes(b.lines orelse pool_.min_lines, line_cost, n, all_fixed);
+    const minimum_pools = try memory.poolBytes(b.lines orelse b.fit_floor orelse pool_.min_lines, line_cost, n, all_fixed);
     const protected = try std.math.add(u64, try std.math.add(u64, reserve, future), minimum_pools);
     out.prefill_window_bytes = prefill.reserveTwoChunk(runtime, d, free, protected, b.graph_reservation) catch |err| declined: {
         std.log.warn("flashnext exl3 prefill: two-chunk reservation refused ({t}); keeping single-chunk prefill", .{err});
@@ -291,7 +302,16 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     const world: usize = if (all[0].tp) |t| t.world else 1;
     const fit = pool_.linesFor(free, try std.math.add(u64, serverReserve(total), b.margin), try std.math.add(u64, future, all_fixed), line_cost, n, pool_.min_lines) catch null;
     const uniform = std.c.getenv("TF_FLASHNEXT_EXL3_UNIFORM_LINES") != null;
-    const lines = if (b.lines) |explicit| (if (delta_text != null or uniform) explicit else memory.rankLines(explicit, world, fit)) else try pool_.linesFor(free, reserve, try std.math.add(u64, future, all_fixed), line_cost, n, pool_.min_lines);
+    const lines = if (b.lines) |explicit| (if (delta_text != null or uniform) explicit else memory.rankLines(explicit, world, fit)) else if (b.fit_floor) |floor| blk: {
+        // the most the rank has room for (the same ledger as an unset count), refused below the floor
+        const room_lines = pool_.linesFor(free, reserve, try std.math.add(u64, future, all_fixed), line_cost, n, 0) catch 0;
+        const sized = memory.fitLines(room_lines, floor) catch |err| {
+            std.log.err("flashnext exl3 rank {d}: expert lines mode=fit: {d} lines a layer fit, below the floor of {d} (TF_FLASHNEXT_EXPERT_LINES_FLOOR)", .{ allocation_rank, room_lines, floor });
+            return err;
+        };
+        std.log.info("flashnext exl3 rank {d}: expert lines mode=fit floor={d} fit={d} lines={d} (residency never changes output bytes)", .{ allocation_rank, floor, room_lines, sized });
+        break :blk sized;
+    } else try pool_.linesFor(free, reserve, try std.math.add(u64, future, all_fixed), line_cost, n, pool_.min_lines);
     if (b.lines) |explicit| if (lines != explicit) std.log.info("flashnext exl3: this rank holds {d} lines a layer, {d} more than the {d} asked for: it has the room (residency never changes output bytes)", .{ lines, lines - explicit, explicit });
     if (lines < pool_.min_lines) return error.PoolTooSmall;
     const startup_bytes = try memory.poolBytes(lines, line_cost, n, all_fixed);
@@ -476,4 +496,18 @@ test "exl3: offload facts belong to the engine whose layers are inspected" {
     try std.testing.expect(!offloaded(&b));
     experts.pool = null;
     try std.testing.expect(!offloaded(&a));
+}
+
+test "exl3: fit mode sizes from the unset-count ledger and only adds a floor" {
+    const line: u64 = 1_843_200;
+    const free: u64 = 12 << 30;
+    const other: u64 = (11 << 30) / 2;
+    const unset = try pool_.linesFor(free, 1 << 30, other, line, 48, pool_.min_lines);
+    const room = try pool_.linesFor(free, 1 << 30, other, line, 48, 0);
+    try std.testing.expectEqual(unset, room);
+    try std.testing.expectEqual(unset, try memory.fitLines(room, pool_.min_lines));
+    try std.testing.expectError(error.PoolTooSmall, memory.fitLines(room, room + 1));
+    // a rank with no room at all reads as zero lines, below any floor
+    try std.testing.expectEqual(@as(usize, 0), pool_.linesFor(1 << 30, 2 << 30, 0, line, 48, 0) catch 0);
+    try std.testing.expectError(error.PoolTooSmall, memory.fitLines(0, pool_.min_lines));
 }

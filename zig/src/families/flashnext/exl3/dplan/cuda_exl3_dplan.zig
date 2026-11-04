@@ -7,6 +7,7 @@ const offload = pool_.offload;
 const telemetry = @import("../model/exl3_telemetry.zig");
 const recent_demand = @import("../offload/exl3_recent_demand.zig");
 const layout = @import("exl3_dplan_layout.zig");
+const timing_ = @import("cuda_exl3_offload_timing.zig");
 pub const demand_trace = @import("exl3_dplan_trace.zig");
 pub const replay = @import("exl3_dplan_replay.zig");
 pub const policy_eval = @import("exl3_dplan_policy_eval.zig");
@@ -82,6 +83,10 @@ pub const DevPlan = struct {
     history_initialized: bool = false,
     /// Experts read in place from the host bank (more misses than free lines in a round), summed at each pull.
     inplace: u64 = 0,
+    timings: []timing_.Timing = &.{},
+    timing_epoch: ?cuda.Event = null,
+    /// Pause during draft capture: repeating an event's external record makes graph instantiation fail.
+    timing_paused: bool = false,
     trace_mem: ?cuda.DeviceBuffer = null,
     trace_checkpoint_fn: ?cuda.Function = null,
 
@@ -89,6 +94,7 @@ pub const DevPlan = struct {
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, pools: []const *pool_.Pool) !*DevPlan {
         if (!cuda.kernels.available) return error.BuiltWithoutKernels;
+        const experiment = try @import("../offload/exl3_offload_experiment.zig").fromEnv();
         if (pools.len == 0) return error.Invalid;
         const pool_states = try gpa.alloc(PoolState, pools.len);
         errdefer gpa.free(pool_states);
@@ -112,6 +118,18 @@ pub const DevPlan = struct {
         errdefer statics.free();
         // rows a planned round may hold (MTP verify windows reach 16): more distinct misses than lines free of the
         const max_rows = maxRows();
+        const timing_requested = try @import("../offload/exl3_offload_experiment.zig").timingFromEnv();
+        const timings = try gpa.alloc(timing_.Timing, if (timing_requested) pools.len else 0);
+        var timings_initialized: usize = 0;
+        errdefer {
+            for (timings[0..timings_initialized]) |*timing| timing.deinit();
+            gpa.free(timings);
+        }
+        for (timings) |*timing| {
+            timing.* = try timing_.Timing.init(d);
+            timings_initialized += 1;
+        }
+
         var trace_mem: ?cuda.DeviceBuffer = null;
         errdefer if (trace_mem) |*buffer| buffer.free();
         if (demand_trace.requested) {
@@ -129,6 +147,14 @@ pub const DevPlan = struct {
         errdefer gpa.free(seen);
         var side = try cuda.Stream.init(d, true);
         errdefer side.deinit();
+        var timing_epoch: ?cuda.Event = if (timing_requested) try cuda.Event.init(d, true) else null;
+        errdefer if (timing_epoch) |*epoch| epoch.deinit();
+        if (timing_epoch) |epoch| {
+            try timing_.mark(epoch, side);
+            for (timings) |*timing| try timing.initialize(side);
+            try side.synchronize();
+            for (timings) |*timing| try timing.initializeAfterConsumers(epoch);
+        }
         var ev_plan = try cuda.Event.init(d, false);
         errdefer ev_plan.deinit();
         var ev_copy = try cuda.Event.init(d, false);
@@ -170,17 +196,24 @@ pub const DevPlan = struct {
             .ev_plan = ev_plan,
             .ev_copy = ev_copy,
             .split = split,
-            // the held experts compute beside the misses' copies
-            .overlap = true,
+            .overlap = experiment.overlap,
+            .recent_eviction = experiment.recent_eviction,
+            .timings = timings,
+            .timing_epoch = timing_epoch,
             .trace_mem = trace_mem,
             .trace_checkpoint_fn = if (trace_mem != null) try mod.function("fn_exl3_dcheckpoint") else null,
         };
         if (dp.overlap) dp.copy_blocks = overlapCopyBlocks(d) catch dp.copy_blocks;
+        if (experiment.copy_blocks) |blocks| dp.copy_blocks = blocks;
         return dp;
     }
 
     pub fn deinit(dp: *DevPlan) void {
         dp.side.synchronize() catch {};
+        if (dp.stream) |stream| stream.synchronize() catch {};
+        for (dp.timings) |*timing| timing.deinit();
+        dp.gpa.free(dp.timings);
+        if (dp.timing_epoch) |*epoch| epoch.deinit();
         if (dp.trace_mem) |*buffer| buffer.free();
         dp.split.free();
         dp.ev_copy.deinit();
@@ -319,6 +352,17 @@ pub const DevPlan = struct {
         return t;
     }
 
+    pub fn samplePoolTimingAfterConsumers(dp: *const DevPlan, pool: *const pool_.Pool) !?telemetry.LayerTiming {
+        if (dp.timings.len == 0 or dp.owner != .device) return null;
+        const index = dp.indexOf(pool) orelse return null;
+        return dp.timings[index].sampleAfterConsumers(dp.overlap, dp.timing_epoch orelse return error.InvalidOffloadTiming);
+    }
+
+    /// Whether the layer markers record now.
+    fn timed(dp: *const DevPlan) bool {
+        return dp.timings.len != 0 and !dp.timing_paused;
+    }
+
     pub fn samplePoolAfterConsumers(dp: *const DevPlan, pool: *const pool_.Pool) !telemetry.Device {
         if (!pool.telemetry_valid) return error.TelemetryCounterRegression;
         var total = pool.telemetry_device;
@@ -436,11 +480,18 @@ pub const DevPlan = struct {
         var c: cuda.Args = .{};
         c.add(work);
         c.add(work_n);
-        if (!dp.overlap) return cuda.launch.launch(dp.copy_fn, .{ .grid = .{ .x = dp.copy_blocks }, .block = .{ .x = 256 } }, s, &c);
+        if (!dp.overlap) {
+            if (dp.timed()) try timing_.mark(dp.timings[i].copy_start, s);
+            try cuda.launch.launch(dp.copy_fn, .{ .grid = .{ .x = dp.copy_blocks }, .block = .{ .x = 256 } }, s, &c);
+            if (dp.timed()) try timing_.mark(dp.timings[i].copy_end, s);
+            return;
+        }
         // the copies on the side stream (a fork in a captured graph); `s` joins them before the misses' experts
         try dp.ev_plan.record(s);
         try dp.side.wait(dp.ev_plan);
+        if (dp.timed()) try timing_.mark(dp.timings[i].copy_start, dp.side);
         try cuda.launch.launch(dp.copy_fn, .{ .grid = .{ .x = dp.copy_blocks }, .block = .{ .x = 256 } }, dp.side, &c);
+        if (dp.timed()) try timing_.mark(dp.timings[i].copy_end, dp.side);
         try dp.ev_copy.record(dp.side);
     }
 };
@@ -504,16 +555,24 @@ pub fn release(st: *State) void {
 
 /// One offloaded layer's experts on the device plan: plan + copies, then `Experts.run` on the pool's tables, as the
 pub fn runLayer(dp: *DevPlan, st: cuda.Stream, i: usize, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
+    if (i >= dp.pools.len) return error.Invalid;
+    if (dp.timed()) try timing_.mark(dp.timings[i].start, st);
     try dp.plan(st, i, picks, rows);
     if (!dp.overlap) {
         try ex.run(st, layer, xin, 2560, .bf16, picks, wts, rows, out, sc);
     } else {
         // held experts while the copies run, then the misses' experts and (expert parallel) the combine of every slot
         try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr, 0, rows, 0, sc);
+        if (dp.timed()) try timing_.mark(dp.timings[i].held_end, st);
         try st.wait(dp.ev_copy);
+        if (dp.timed()) try timing_.mark(dp.timings[i].joined, st);
         try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr + dp.max_rows * 11 * 4, wts, rows, out, sc);
     }
     try dp.restore(st, i);
+    if (dp.timed()) {
+        try timing_.mark(dp.timings[i].end, st);
+        dp.timings[i].recorded = true;
+    }
 }
 
 /// Rows a device-planned round holds at most: the MTP verify window.

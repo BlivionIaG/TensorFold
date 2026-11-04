@@ -343,10 +343,14 @@ pub fn draft(comptime Tri: type, o: anytype, d: *mtp.Draft, next: []const u32, r
     var ps = p;
     ps.stream = st.side;
     ps.tri = tri_side;
+    // the capture's conditional step bodies repeat this pool's layer: no timing events inside the graph
+    dp.timing_paused = true;
     const launched = run(Tri, key, o, &p, &ps, d, st, picks, heads, len0, confidence) catch |err| {
+        dp.timing_paused = false;
         std.log.err("flashnext exl3 chain: the draft chain failed ({t})", .{err});
         return err;
     };
+    dp.timing_paused = false;
     if (!launched) {
         stats.eager += 1;
         return eagerChain(o, d, count, picks, confidence, out);
