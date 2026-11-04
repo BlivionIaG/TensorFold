@@ -34,7 +34,7 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         c.addArgs(&.{ "-device", device, "-options", b.fmt("{s}{s} -I zig/kernels/xpu/qwen27", .{ if (std.mem.startsWith(u8, k[0], "rows_")) opts_rows else opts, k[2] }), "-output_no_suffix", "-output", k[0], "-out_dir" });
         c.setCwd(b.path("."));
         c.addFileInput(b.path("zig/kernels/xpu/gemma4/attn_rows_g4.cl"));
-        for ([_][]const u8{ "glue.cl", "glue_attn.cl", "glue_quant.cl" }) |part| c.addFileInput(b.path(b.fmt("zig/kernels/xpu/qwen27/{s}", .{part})));
+        for ([_][]const u8{ "glue.cl", "glue_attn.cl", "glue_quant.cl", "shape.h" }) |part| c.addFileInput(b.path(b.fmt("zig/kernels/xpu/qwen27/{s}", .{part})));
         const dir = c.addOutputDirectoryArg(b.fmt("ocloc-{s}", .{k[0]}));
         _ = files.addCopyFile(dir.path(b, b.fmt("{s}.bin", .{k[0]})), b.fmt("{s}.bin", .{k[0]}));
     }
@@ -332,4 +332,9 @@ pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     const gdn_tests = b.addRunArtifact(b.addTest(.{ .root_module = gdn }));
     b.step("test-fp64-gdn-xpu-host", "The XPU GDN FP64 reference's bf16 rounding without devices or ocloc").dependOn(&gdn_tests.step);
     step.dependOn(&gdn_tests.step);
+    // the Qwen27 runner's config.json check (xpu/qwen27_config.zig), which Runner.init makes before any load
+    const shape = b.createModule(.{ .root_source_file = b.path("zig/src/xpu/qwen27_config.zig"), .target = host, .optimize = .debug, .link_libc = true });
+    const shape_tests = b.addRunArtifact(b.addTest(.{ .root_module = shape }));
+    b.step("test-qwen27-config-xpu-host", "The XPU 27B runner's config.json shape and layer pattern without devices or ocloc").dependOn(&shape_tests.step);
+    step.dependOn(&shape_tests.step);
 }
