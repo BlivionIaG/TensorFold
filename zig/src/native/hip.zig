@@ -9,12 +9,13 @@ const flashnext = @import("flashnext");
 const nemotron = @import("nemotron");
 const serve = @import("hip_serve");
 const glm_ocr = @import("glm_ocr");
+const qwen3 = @import("qwen3");
 const Allocator = std.mem.Allocator;
 const admission = hip.admission;
 const modelContext = admission.modelContext;
 
 /// The HIP families: namespaces with `model_type`, `formats`, `default_context`, `prefill_step`, `open` and `follow`.
-const registry = .{ qwen35.native, qwen35.native_moe, flashnext.native, nemotron.native, glm_ocr.native };
+const registry = .{ qwen35.native, qwen35.native_moe, flashnext.native, nemotron.native, glm_ocr.native, qwen3.native };
 
 pub const backends: []const []const u8 = &.{"hip"};
 /// No per-thread alternate signal stack: its thread-local leaves RCCL's and HIP's threads too little stack to start.
@@ -43,11 +44,12 @@ fn refuse(a: Allocator, problem: *[]const u8, comptime fmt: []const u8, args: an
 }
 
 /// Why `matrix=on` cannot run on a GPU of `caps`, or null when its matrix-core tiles exist (gfx11's WMMA).
-fn matrixRefused(policy: hip.Policy, caps: hip.Caps) ?[]const u8 {
+fn matrixRefused(comptime F: type, policy: hip.Policy, caps: hip.Caps) ?[]const u8 {
     if (policy.matrix != .on) return null;
     return switch (caps.matrix) {
         .wmma11 => null,
-        .wmma12 => "the gfx12 matrix-core tiles (RDNA4's WMMA layout) are not implemented yet",
+        // a family whose products are all BF16 dense ones has gfx12 tiles; the MLX affine tiles have none yet
+        .wmma12 => if (@hasDecl(F, "matrix_wmma12") and F.matrix_wmma12) null else "the gfx12 matrix-core tiles (RDNA4's WMMA layout) are not implemented yet for this family",
         .none => "this GPU has no matrix cores",
     };
 }
@@ -117,7 +119,7 @@ fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open
     if (o.mtp_drafts) |n| policy.mtp.drafts = @intCast(n);
     if (o.mtp_confidence) |c| policy.mtp.confidence = c;
     if (o.keep) |n| policy.slots = @intCast(@min(n, 1 << 16));
-    if (matrixRefused(policy, caps)) |why| return refuse(a, problem, "matrix=on: {s}; matrix=auto runs the dot2 tiles", .{why});
+    if (matrixRefused(F, policy, caps)) |why| return refuse(a, problem, "matrix=on: {s}; matrix=auto runs the dot2 tiles", .{why});
     const group: ?hip.collective.Group = if (o.tp > 1) try join(a, gpa, io, o, caps, &policy, problem) else null;
     errdefer if (group) |g| g.close(gpa);
     const policy_line = try std.fmt.allocPrint(gpa, "{f}", .{policy});
@@ -310,7 +312,8 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
     h.clock = .{ .io = io };
     h.core = lanes.Engine.init(gpa, &h.cfg, loaded.backend, h.clock.clock());
     errdefer h.core.deinit();
-    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .benchmark_ranks = if (r.dev.group) |g| @intCast(g.world) else 1, .lanes = @intCast(loaded.streams), .context_window = @intCast(r.options.window), .prefill_step = F.prefill_step, .decode_share = o.decode_share, .policy = h.policy_line, .startup = loaded.startup, .structures = true, .vision = visionOffer(loaded), .reasoning = reasoning(F) });
+    const what = Serves.of(loaded, r.options.window);
+    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .benchmark_ranks = if (r.dev.group) |g| @intCast(g.world) else 1, .lanes = @intCast(loaded.streams), .context_window = @intCast(what.window), .prefill_step = F.prefill_step, .decode_share = o.decode_share, .policy = h.policy_line, .startup = loaded.startup, .structures = what.text_generation, .text_generation = what.text_generation, .embeddings = what.embeddings, .decides = what.decides, .rerank = what.rerank, .vision = visionOffer(loaded), .reasoning = reasoning(F) });
     h.host.memory = .{ .read = readMemory };
     if (@hasField(@TypeOf(loaded), "cache")) {
         h.host.cache = loaded.cache;
@@ -321,6 +324,28 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
     served = true;
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };
 }
+
+/// What a family's `Loaded` says it serves; a family that names none generates text in the window asked.
+const Serves = struct {
+    text_generation: bool = true,
+    embeddings: ?api.EmbeddingInfo = null,
+    decides: bool = false,
+    rerank: ?api.Rerank = null,
+    window: usize,
+
+    fn of(loaded: anytype, asked: usize) Serves {
+        const L = @TypeOf(loaded);
+        var s: Serves = .{ .window = asked };
+        if (@hasField(L, "text_generation")) s.text_generation = loaded.text_generation;
+        if (@hasField(L, "embeddings")) s.embeddings = loaded.embeddings;
+        if (@hasField(L, "decides")) s.decides = loaded.decides;
+        if (@hasField(L, "rerank")) s.rerank = loaded.rerank;
+        if (@hasField(L, "window")) if (loaded.window) |w| {
+            s.window = w;
+        };
+        return s;
+    }
+};
 
 /// A rank above 0: holds its share and runs rank 0's steps until rank 0 stops; false with `problem` if it cannot start.
 pub fn follow(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !bool {
@@ -366,6 +391,7 @@ test "every registered family is listed for capabilities" {
     try std.testing.expectEqualStrings("qwen4_exp", families[2].model_type);
     try std.testing.expectEqualStrings("nemotron_h", families[3].model_type);
     try std.testing.expectEqualStrings("glm_ocr", families[4].model_type);
+    try std.testing.expectEqualStrings("qwen3", families[5].model_type);
 }
 
 test "GLM-OCR native flags: MTP and tensor ranks refuse before readiness; copy drafts remain" {
@@ -384,6 +410,17 @@ test "Nemotron refuses --slide and --mtp-confidence on HIP before it loads, and 
     const capped: api.Open = .{ .dir = "d", .model_type = "nemotron_h", .mtp_drafts = 1 };
     try std.testing.expect(flagRefused(nemotron.native, capped) == null);
     try std.testing.expect(flagRefused(nemotron.native, .{ .dir = "d", .model_type = "nemotron_h" }) == null);
+}
+
+test "a one-GPU family refuses --tp before the group forms; the others are not refused for it" {
+    const OneGpu = struct {
+        pub const tp_refusal = "--tp: one GPU only";
+    };
+    try std.testing.expectEqualStrings("--tp: one GPU only", flagRefused(OneGpu, .{ .dir = "d", .model_type = "m", .tp = 2 }).?);
+    try std.testing.expect(flagRefused(OneGpu, .{ .dir = "d", .model_type = "m" }) == null);
+    try std.testing.expect(flagRefused(nemotron.native, .{ .dir = "d", .model_type = "nemotron_h", .tp = 2 }) == null);
+    try std.testing.expectEqualStrings(qwen3.native.tp_refusal, flagRefused(qwen3.native, .{ .dir = "d", .model_type = "qwen3", .tp = 2, .rank = 1 }).?);
+    try std.testing.expect(!reasoning(qwen3.native));
 }
 
 test "a family that names a --slide or --mtp-confidence refusal is refused before it loads; the others are not" {
@@ -456,12 +493,17 @@ test "--kv-cache fp8 is refused by name on HIP; bf16 caches are not" {
 test "matrix=on runs only where the matrix-core tiles exist; auto runs everywhere" {
     var on: hip.Policy = .{};
     try on.apply("matrix=on");
-    try std.testing.expect(matrixRefused(on, hip.Caps.of("gfx1100").?) == null);
-    try std.testing.expect(matrixRefused(on, hip.Caps.of("gfx1151").?) == null);
-    try std.testing.expect(std.mem.indexOf(u8, matrixRefused(on, hip.Caps.of("gfx1201").?).?, "not implemented") != null);
-    try std.testing.expect(matrixRefused(on, hip.Caps.of("gfx1030").?) != null);
+    try std.testing.expect(matrixRefused(qwen35.native, on, hip.Caps.of("gfx1100").?) == null);
+    try std.testing.expect(matrixRefused(qwen35.native, on, hip.Caps.of("gfx1151").?) == null);
+    try std.testing.expect(std.mem.indexOf(u8, matrixRefused(qwen35.native, on, hip.Caps.of("gfx1201").?).?, "not implemented") != null);
+    // the families on MLX affine tiles keep the gfx12 refusal; qwen3's BF16 dense products have the WMMA tile
+    inline for (.{ qwen35.native, qwen35.native_moe, flashnext.native, nemotron.native }) |F| try std.testing.expect(matrixRefused(F, on, hip.Caps.of("gfx1201").?) != null);
+    try std.testing.expect(matrixRefused(qwen3.native, on, hip.Caps.of("gfx1201").?) == null);
+    try std.testing.expect(matrixRefused(qwen3.native, on, hip.Caps.of("gfx1030").?) != null);
+    inline for (.{ qwen35.native, qwen3.native }) |F| try std.testing.expect(matrixRefused(F, on, hip.Caps.of("gfx1100").?) == null);
+    try std.testing.expect(matrixRefused(qwen35.native, on, hip.Caps.of("gfx1030").?) != null);
     const auto: hip.Policy = .{};
-    for ([_][]const u8{ "gfx1030", "gfx1100", "gfx1151", "gfx1200", "gfx1201" }) |name| try std.testing.expect(matrixRefused(auto, hip.Caps.of(name).?) == null);
+    for ([_][]const u8{ "gfx1030", "gfx1100", "gfx1151", "gfx1200", "gfx1201" }) |name| try std.testing.expect(matrixRefused(qwen35.native, auto, hip.Caps.of(name).?) == null);
 }
 
 test {
@@ -481,4 +523,21 @@ test "slide admission: HIP followers refuse before joining ranks" {
         try std.testing.expect(!try follow(a, std.testing.allocator, std.testing.io, .{ .dir = "missing-slide-checkpoint", .model_type = f.model_type, .slide = true, .tp = 2, .rank = 1 }, &why));
         try std.testing.expectEqualStrings(try std.fmt.allocPrint(a, "--slide: {s} checkpoints do not learn on HIP yet", .{f.model_type}), why);
     }
+}
+
+test "a family's Loaded names what it serves; one without the fields generates text in the asked window" {
+    const Plain = struct { streams: usize };
+    const p = Serves.of(Plain{ .streams = 1 }, 4096);
+    try std.testing.expect(p.text_generation and p.embeddings == null and p.window == 4096);
+    const Embed = struct { text_generation: bool, embeddings: ?api.EmbeddingInfo, window: ?usize };
+    const e = Serves.of(Embed{ .text_generation = false, .embeddings = .{ .dimensions = 8, .vocabulary = 4, .max_batch_tokens = 2048 }, .window = 2048 }, 32768);
+    try std.testing.expect(!e.text_generation and e.embeddings.?.dimensions == 8 and e.window == 2048);
+    const Unsized = struct { window: ?usize };
+    try std.testing.expectEqual(@as(usize, 32768), Serves.of(Unsized{ .window = null }, 32768).window);
+    const Rerank = struct { text_generation: bool, decides: bool, rerank: ?api.Rerank, window: ?usize };
+    const r = Serves.of(Rerank{ .text_generation = false, .decides = true, .rerank = .{ .yes = 9693, .no = 2152 }, .window = 32768 }, 40960);
+    try std.testing.expect(!r.text_generation and r.decides and r.embeddings == null and r.window == 32768);
+    try std.testing.expectEqual(@as(u32, 9693), r.rerank.?.yes);
+    try std.testing.expect(p.rerank == null and e.rerank == null);
+    try std.testing.expect(!p.decides and !e.decides);
 }

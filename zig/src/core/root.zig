@@ -12,6 +12,7 @@ pub const eaq_container = @import("eaq_container.zig");
 pub const digest_cache = @import("digest_cache.zig");
 pub const checkpoint_identity = @import("checkpoint_identity.zig");
 pub const checkpoint = @import("checkpoint.zig");
+pub const checkpoint_fixture = @import("checkpoint_fixture.zig");
 pub const exl3_load = @import("exl3_load.zig");
 pub const direct_io = @import("direct_io.zig");
 pub const direct_gather = @import("direct_gather.zig");
@@ -37,7 +38,7 @@ pub const tuning = @import("tuning.zig");
 pub const norms_ref = @import("norms_ref.zig");
 pub const l2_ref = @import("l2_ref.zig");
 pub const act_ref = @import("act_ref.zig");
-pub const bf16_round = @import("bf16_round.zig");
+pub const bf16_round = @import("bf16_round");
 pub const rope_yarn = @import("rope_yarn.zig");
 /// transformers' default and proportional RoPE inverse frequencies in fp32, word for word.
 pub const rope_freq = @import("rope_freq.zig");

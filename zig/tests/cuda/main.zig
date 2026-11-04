@@ -99,6 +99,7 @@ const flashnext_shared_tests = @import("flashnext_shared_tests.zig");
 const flashnext_nvfp4_tp_tests = @import("flashnext_nvfp4_tp_tests.zig");
 const flashnext_fp8_experts_tests = @import("flashnext_fp8_experts_tests.zig");
 const nvfp4_fact_tests = @import("nvfp4_fact_tests.zig");
+const nvfp4_b32_tests = @import("nvfp4_b32_tests.zig");
 const lane_half_tests = @import("lane_half_tests.zig");
 const flashnext_dense_hc_tests = @import("flashnext_dense_hc_tests.zig");
 const flashnext_hc_tests = @import("flashnext_hc_tests.zig");
@@ -141,6 +142,7 @@ const usage =
     \\  flashnext-nvfp4-tp        rank-local expert cuts and FP32 partials against FP64 (one GPU)
     \\  flashnext-fp8-experts     the MTP head's block-FP8 experts (512 x 640 x 2560) through moe_native.fp8 against FP64
     \\  nvfp4-fact                NVFP4 experts' prompt tiles with the decode form's sums: its bytes at every row, FP64
+    \\  nvfp4-b32                 block 32 experts with csf0 scales: block 16's bytes on equal scales, each form and width
     \\  lane-half                 lane half tiles (MXFP8, BF16): bytes equal to the 64-column tile, FP64, cold-weight time
     \\  flashnext-dense-hc        dense connection weights and FP32 normalization against FP64
     \\  flashnext-hc              Flash Next's own hyper-connection and n-gram glue against float64 (synthetic rows)
@@ -278,6 +280,7 @@ const usage =
     \\  kolibri-reference MODEL IDS  Kolibri-1's layer 0 and head against float64 from the checkpoint (prompt and decode rows)
     \\  kolibri-layers MODEL IDS    Kolibri-1's window edge (513 keys) and its fifth layer's full reach, on the checkpoint
     \\  kolibri-full MODEL IDS N    Kolibri-1: eager rows, steps, drafted, sampled, shared rounds, cuts and kept states alike
+    \\  kolibri-pages MODEL TEXT N  Kolibri-1: full layers in pool pages == linear caches, replies and logits
     \\  kolibri-greedy MODEL PROMPTS N OUT  Kolibri-1 greedy from each prompt (JSON id lists): ids and top-2 margins
     \\  kolibri-logits MODEL IDS OUT [PROMPTS]  Kolibri-1's teacher-forced fp32 logits of 2,048 prompt rows; each prompt's last
     \\  glm-synth <dir> [fp8pb|local]  a synthetic GLM-5.3-Flash checkpoint (2 layers, 16 experts) and its dc.json for the lane checks
@@ -356,6 +359,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "flashnext-nvfp4-tp")) return flashnext_nvfp4_tp_tests.run(gpu);
     if (std.mem.eql(u8, cmd, "flashnext-fp8-experts")) return flashnext_fp8_experts_tests.run(gpu);
     if (std.mem.eql(u8, cmd, "nvfp4-fact")) return nvfp4_fact_tests.run(gpu);
+    if (std.mem.eql(u8, cmd, "nvfp4-b32")) return nvfp4_b32_tests.run(gpu);
     if (std.mem.eql(u8, cmd, "lane-half")) return lane_half_tests.run(gpu);
     if (std.mem.eql(u8, cmd, "flashnext-dense-hc")) return flashnext_dense_hc_tests.run(gpu);
     if (std.mem.eql(u8, cmd, "flashnext-hc")) return flashnext_hc_tests.run(gpu);
@@ -521,6 +525,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "kolibri-reference")) return kolibri_layer_tests.reference(gpu, try arg(rest, 0), try arg(rest, 1));
     if (std.mem.eql(u8, cmd, "kolibri-layers")) return kolibri_layer_tests.layers(gpu, try arg(rest, 0), try arg(rest, 1));
     if (std.mem.eql(u8, cmd, "kolibri-full")) return kolibri_tests.full(gpu, try arg(rest, 0), try arg(rest, 1), try arg(rest, 2));
+    if (std.mem.eql(u8, cmd, "kolibri-pages")) return @import("kolibri_pages_tests.zig").pages(gpu, rest);
     if (std.mem.eql(u8, cmd, "kolibri-greedy")) return kolibri_tests.greedy(gpu, try arg(rest, 0), try arg(rest, 1), try arg(rest, 2), try arg(rest, 3));
     if (std.mem.eql(u8, cmd, "kolibri-logits")) return kolibri_tests.logits(gpu, try arg(rest, 0), try arg(rest, 1), try arg(rest, 2), if (rest.len > 3) rest[3] else null);
     if (std.mem.eql(u8, cmd, "aot-fallback")) return aot_fallback_tests.run(gpu, try arg(rest, 0));

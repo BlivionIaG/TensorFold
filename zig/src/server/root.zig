@@ -81,6 +81,7 @@ test {
     _ = @import("log.zig");
     _ = @import("request_log.zig");
     _ = @import("messages.zig");
+    _ = @import("pdf.zig");
     _ = @import("images.zig");
     _ = @import("images_video_marker_test.zig");
     _ = @import("image_key.zig");
@@ -91,6 +92,9 @@ test {
     _ = @import("stream_preflight_test.zig");
     _ = @import("stream_dsml_test.zig");
     _ = @import("tool_cut_test.zig");
+    _ = @import("tool_glm_stream_test.zig");
+    _ = @import("tool_glm_messages_test.zig");
+    _ = @import("tool_single_stream_test.zig");
     _ = @import("logprobs_test.zig");
     _ = @import("think_split_test.zig");
     _ = @import("deepseek_reply_test.zig");
@@ -112,6 +116,9 @@ test {
     _ = @import("decisions_test.zig");
     _ = @import("systemone.zig");
     _ = @import("systemone_test.zig");
+    _ = @import("rerank_test.zig");
+    _ = @import("rerank_ids_test.zig");
+    _ = @import("rerank_cut_test.zig");
     _ = @import("slide_context_test.zig");
     // both run over Unix socket pairs
     if (comptime @import("builtin").os.tag != .windows) {
@@ -121,6 +128,11 @@ test {
     _ = @import("slide_writer_test.zig");
     _ = @import("slide.zig");
     _ = @import("slide_cli.zig");
+    _ = @import("slide_audit.zig");
+    _ = @import("slide_audit_cli.zig");
+    _ = @import("slide_audit_probes.zig");
+    _ = @import("slide_audit_test.zig");
+    _ = @import("slide_audit_endpoint_test.zig");
     _ = @import("slide_key.zig");
     _ = @import("slide_graph.zig");
     _ = @import("slide_graph_delete.zig");

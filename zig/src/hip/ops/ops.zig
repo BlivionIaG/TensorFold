@@ -33,6 +33,8 @@ pub const Ops = struct {
     prefill: bool = false,
     /// A lane round's forward: decode tiles at any row count, so a row's bits ignore the rows it shares a round with.
     window: bool = false,
+    /// rocBLAS on this stream, for bf16 projections (null: the model has none).
+    blas: ?*const @import("../blas.zig").Blas = null,
 
     pub const project = products.project;
     pub const projectGroup = products.projectGroup;
@@ -48,6 +50,7 @@ pub const Ops = struct {
     pub const affineRouted = products.affineRouted;
     pub const embedAffine = products.embedAffine;
     pub const denseRows = products.denseRows;
+    pub const denseGemm = products.denseGemm;
 
     /// Whether decode.hip's merged launches are on.
     pub fn fused(o: Ops) bool {
@@ -55,6 +58,7 @@ pub const Ops = struct {
     }
 
     pub const attnGate = attention.attnGate;
+    pub const headsRows = attention.headsRows;
     pub const ropePrefill = attention.ropePrefill;
     pub const qkRope = attention.qkRope;
     pub const ropeDecode = attention.ropeDecode;

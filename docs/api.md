@@ -45,7 +45,7 @@ different scopes, or scopes a key the flags or environment already give, is refu
 
 | Scope | Routes |
 | --- | --- |
-| `inference` | POST `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`, `/v1/messages/count_tokens`, `/v1/tokenize`, `/v1/detokenize`, `/v1/audio/speech`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, and the same paths without `/v1` where the server has them; GET `/v1/models`, `/models`, `/v1/voices` |
+| `inference` | POST `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`, `/v1/messages/count_tokens`, `/v1/tokenize`, `/v1/detokenize`, `/v1/audio/speech`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, `/v1/rerank` (also by PUT), and the same paths without `/v1` where the server has them; GET `/v1/models`, `/models`, `/v1/voices` |
 | `read` | GET `/metrics`, `/v1/metrics`, `/v1/load`, `/memory`, `/v1/memory`, `/stats`, `/dashboard`, `/v1/benchmark/manifest`, `/v1/models`, `/models`, `/v1/voices` |
 
 A scoped key reaches nothing else: not the stored Responses (GET or DELETE `/v1/responses/ID`), Recall, Sliding Weights,
@@ -147,6 +147,34 @@ question id, and `usage.completion_tokens` 0. `probabilities` are a softmax over
 `temperature`. A request the tokenizer or the context window cannot score returns HTTP 400.
 For decisions, `chat_template_kwargs` may be omitted, null, or an object containing only
 `enable_thinking: false`; other types, keys, or thinking values return HTTP 400.
+
+## Rerank
+
+`POST /v1/rerank` (also `/rerank`, and by `PUT` as SGLang takes it) scores each document against a query with a
+reranker checkpoint. The native HIP engine serves `Qwen/Qwen3-Reranker-8B`: the engine declares the reranker and
+its label tokens (`1_LogitScore/config.json`), and its startup line says `qwen3 reranker`. Every other server answers
+the route with HTTP 400 "this model is not a reranker", and a reranker server answers chat, completion, Responses,
+Messages, speech, decision, System One and embedding requests with HTTP 400 "this model is a reranker: use POST
+/v1/rerank".
+
+| Field | Meaning |
+| --- | --- |
+| `query` | The query: a string, a `{"text": ...}` object, or a list of text parts |
+| `documents` | One or more documents, each in the same forms as `query` |
+| `instruction` | The task the model card's prompt states; default "Given a web search query, retrieve relevant passages that answer the query". SGLang's `instruct` is read when `instruction` is absent |
+| `top_n` | Return the best `top_n` results only; default all |
+| `return_documents` | Echo each document as sent; default `true` |
+| `max_length` | The most tokens one prompt may take; default 8192, the model card's. A longer prompt keeps the template whole and loses the end of its content (the document's last tokens), as the card's tokenizer cuts it; a cap that would leave no token of the document returns HTTP 400 |
+| `return_logits`, `return_prompt_token_ids` | Add `meta_info` with `logit_yes` and `logit_no`, or the prompt's token ids, to each result; default `false` |
+
+Each document's prompt is the model card's template, token for token, with the query, the document and the
+instruction as plain text (text that spells a special token stays text). The score is
+`sigmoid(logit_yes - logit_no)` from the last position's label logits. The response is
+`{"results": [{"index", "relevance_score", "document"}], "usage": {"total_tokens"}}`, best first, ties in input order;
+`total_tokens` counts every prompt's tokens as scored, after any cut. Every prompt is cut and checked against the
+context window before the first is scored, so a refused request costs no GPU work; a prompt past the window (with a
+`max_length` above it) returns HTTP 400 with `code` `context_length_exceeded`. An image or video part returns HTTP
+400. Errors use the server's envelope, as on every route: `{"error": {"message", "type"}}`.
 
 ## Living Weights
 
@@ -497,6 +525,22 @@ GPU's memory can freeze the host, so lower it only with room to spare.
 On a discrete card (an RTX 3090, an A100) the server sizes its window from the card's own free memory, as the driver
 reports it, less a reserve of a 32nd of the card and at least 1 GiB. `TENSORFOLD_MEMORY_RESERVE_GIB` sets that one from
 0.5 GiB up.
+
+## Embeddings
+
+`POST /v1/embeddings` takes OpenAI's body: `input` is one text, a list of texts, one list of token IDs or a list of
+them, with `encoding_format` (`float` or `base64`) and `dimensions`. Every family that serves embeddings shares these
+refusals, each an HTTP 400 `invalid_request_error`:
+
+| Input | Refusal |
+| --- | --- |
+| a text that is empty or whitespace only (Python's whitespace set, which SGLang strips before it refuses) | "embedding text must not be empty or whitespace only"; in a list, "embedding input at index N must not be empty or whitespace only" |
+| one input longer than the model's context | code `context_length_exceeded`: "the input (N tokens) is longer than the model's context length (C tokens)" |
+| inputs that each fit but together reach the server's batch limit | "the embedding batch exceeds the admitted N tokens" |
+
+An over-long input is named before the batch limit is checked, so a client learns that the input itself is too long,
+not that the batch is too full. `dimensions` crops each vector to that many leading values and renormalizes it; a
+model with Matryoshka (MRL) widths takes any width in its declared range (32 to 4,096 for Qwen3-Embedding-8B).
 
 ## Responses
 

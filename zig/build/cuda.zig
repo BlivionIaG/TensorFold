@@ -103,8 +103,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     runner.addImport("exlr8_frozen", b.createModule(.{ .root_source_file = b.path("zig/tests/fixtures/exlr8/frozen.zig"), .target = target, .optimize = optimize }));
     runner.addImport("exlr8_frozen_dense", b.createModule(.{ .root_source_file = b.path("zig/tests/fixtures/exlr8/frozen_dense.zig"), .target = target, .optimize = optimize }));
     for (exlr8_build.denseModules(b, target, optimize, exlr8, exlr8_tests[0])) |m| runner.addImport(m.name, m.module);
-    const glm_cuda = glmCuda(b, target, optimize, cuda, mods.core, mods.lanes, mods.heat, mods.api);
-    runner.addImport("glm_cuda", glm_cuda);
+    runner.addImport("glm_cuda", glmCuda(b, target, optimize, cuda, mods.core, mods.lanes, mods.heat, mods.api));
     @import("minimax_cuda.zig").targets(b, target, optimize, strip, cuda, mods.core, mods.lanes, runner);
     for ([_]struct { []const u8, *std.Build.Module }{ .{ "kolibri1", kolibri1Module(b, target, optimize, cuda, mods.core, mods.lanes) }, .{ "dory", @import("dory.zig").module(b, target, optimize, cuda, mods.core, mods.lanes) } }) |m| runner.addImport(m[0], m[1]);
     runner.addImport("gemma4_cuda", @import("gemma4_cuda.zig").module(b, target, optimize, cuda, mods.core, mods.lanes));
@@ -419,12 +418,12 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
     const eos_policy = b.step("test-eos-policy-host", "Shared EOS, real HfText and HTTP policy without a GPU");
     eos_policy.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"EOS policy:"} })).step);
     eos_policy.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = mods.tokenizer, .filters = &.{"EOS policy:"} })).step);
-    const eos_family = kolibri1Module(b, host, .debug, cuda, mods.core, mods.lanes);
-    eos_policy.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = eos_family, .filters = &.{"EOS policy:"} })).step);
+    eos_policy.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = kolibri1Module(b, host, .debug, cuda, mods.core, mods.lanes), .filters = &.{"EOS policy:"} })).step);
     b.step("test-dory-cli-host", "Dory CUDA loop option forwarding and invalid-value refusals").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"--device and --segments:"} })).step);
     b.step("test-dory-chat-host", "Dory chat template, EOS, reasoning split and qwen3_coder call on the CPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Dory chat:"} })).step);
     b.step("test-embeddings-protocol-host", "Embedding request and response contracts without an admitted model or GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"embeddings protocol:"} })).step);
     b.step("test-embeddings-http-host", "Embedding route capability and borrowed request lifetime without a model or GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"embeddings HTTP:"} })).step);
+    @import("rerank_host.zig").steps(b, server_tests);
     @import("safetensors_header_host.zig").steps(b, mods.core, step);
     b.step("test-runtime-capabilities-host", "Optional library discovery in actual capabilities JSON").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"runtime library:"} })).step);
     b.step("test-vision-cli-host", "Image token budgets through parsing and engine admission options without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"vision image budget:"} })).step);
@@ -434,6 +433,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
     b.step("test-lesson-questions-host", "Supplied questions through the production lesson without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Lesson questions:"} })).step);
     b.step("test-grammar-metrics-host", "Grammar totals in whole and streamed replies without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"grammar timing:"} })).step);
     b.step("test-slide-input-host", "Text-only lesson admission before any engine work").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"slide input:"} })).step);
+    b.step("test-pocket-audit-host", "Read-only pocket audit probes, witnesses and CLI on the host").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "pocket audit", "audit request:", "audit CLI:", "audit probe bank:", "audit endpoint:" } })).step);
     b.step("test-slide-recovery-host", "Living Weights conversation and stream regressions without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "lesson conversations:", "lesson stream:", "lesson writer:" } })).step);
     b.step("test-issue-934", "Benchmark config admission and receipt regressions").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"issue 934:"} })).step);
     b.step("test-issue-969", "First-EOS classification and incomplete benchmark messages without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"issue 969"} })).step);

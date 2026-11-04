@@ -22,8 +22,10 @@ test "runtime library: missing CUDA rank dependency retains its identity" {
 test "runtime library: missing media refusals name the actual loader soname" {
     const mac = @import("builtin").os.tag == .macos;
     const windows = @import("builtin").os.tag == .windows;
+    const libs = @import("sys").optional_libraries;
     try std.testing.expect(std.mem.containsAtLeast(u8, jpeg.missing, 1, if (mac) "libturbojpeg.0.dylib" else if (windows) "turbojpeg.dll" else "libturbojpeg.so.0"));
     try std.testing.expect(std.mem.containsAtLeast(u8, webp.missing, 1, if (mac) "libwebpdecoder.3.dylib" else "libwebpdecoder.so.3"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, libs.spec(.pdfium).message, 1, if (mac) "libpdfium.dylib" else if (windows) "pdfium.dll" else "libpdfium.so"));
 }
 
 test "runtime library: missing RoCE dependency retains its identity" {
@@ -195,4 +197,45 @@ test "runtime library: native entry points defer the catalog warning to their re
         try std.testing.expect(std.mem.indexOf(u8, body[0..line], "optional_libraries.atBoundary()") != null);
         try std.testing.expect(std.mem.startsWith(u8, std.mem.trimStart(u8, body[line + 1 ..], " \t"), "defer report.deinit();"));
     }
+}
+
+test "runtime library: PDFium discovery refuses bare loader names and uses only TENSORFOLD_LIBPDFIUM or release lib/" {
+    const libs = @import("sys").optional_libraries;
+    const s = libs.spec(.pdfium);
+    const Fake = struct {
+        var override: ?[:0]const u8 = null;
+        var only: []const u8 = "";
+        var restricted: usize = 0;
+        pub const windows = true;
+        pub fn getenv(_: [*:0]const u8) ?[:0]const u8 {
+            return override;
+        }
+        pub const DynLib = struct {
+            pub fn open(path: []const u8) !@This() {
+                if (std.mem.eql(u8, path, only)) return .{};
+                return error.FileNotFound;
+            }
+            pub fn openRestricted(path: []const u8) !@This() {
+                restricted += 1;
+                return open(path);
+            }
+            pub fn close(_: *@This()) void {}
+        };
+    };
+    Fake.override = null;
+    Fake.only = s.names[0];
+    Fake.restricted = 0;
+    try std.testing.expect(!libs.found(s, std.testing.allocator, Fake, "/opt/tensorfold/bin"));
+    const local_path = try std.fs.path.join(std.testing.allocator, &.{ "/opt/tensorfold/bin", "..", "lib", s.names[0] });
+    defer std.testing.allocator.free(local_path);
+    Fake.only = local_path;
+    try std.testing.expect(libs.found(s, std.testing.allocator, Fake, "/opt/tensorfold/bin"));
+    Fake.override = "/custom/libpdfium";
+    Fake.only = "/custom/libpdfium";
+    try std.testing.expect(libs.found(s, std.testing.allocator, Fake, null));
+    try std.testing.expectEqual(@as(usize, 4), Fake.restricted);
+    Fake.override = null;
+    Fake.only = libs.spec(.jpeg).names[0];
+    try std.testing.expect(libs.found(libs.spec(.jpeg), std.testing.allocator, Fake, null));
+    try std.testing.expectEqual(@as(usize, 4), Fake.restricted);
 }
