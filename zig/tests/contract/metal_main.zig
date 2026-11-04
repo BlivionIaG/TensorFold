@@ -34,14 +34,8 @@ const fsr = @import("metal_fsr.zig");
 const gemma = @import("metal_gemma4.zig");
 const gemma_embed = @import("metal_gemma4_embed.zig");
 const gemma_mixed = @import("metal_gemma4_mixed.zig");
-const lfm2_argmax = @import("metal_lfm2_argmax.zig");
-const lfm2_streams = @import("metal_lfm2_streams.zig");
-const lfm2_controls = @import("metal_lfm2_controls.zig");
-const lfm2_tap = @import("metal_lfm2_tap.zig");
-const lfm2_norm_tap = @import("metal_lfm2_norm_tap.zig");
 const lfm2_drafting = @import("metal_lfm2_drafting.zig");
 const lfm2_bf16 = @import("metal_lfm2_bf16.zig");
-const lfm2_conf = @import("metal_lfm2_confidence.zig");
 const llama_k = @import("metal_llama_all.zig");
 const g = contract.gates;
 const usage = "usage: tf-kernel-contract [--only TEXT] [--no-gates] [--no-limits] [--offline DIR] [--seed N] [--repro] [--rotary-long] [--rotary-accuracy FILE]";
@@ -230,93 +224,9 @@ pub fn main(init: std.process.Init) !u8 {
         if (!tensor) return error.TensorUnitsRequired;
         try kernels.append(a, mixed.kernel());
     }
-    var lfm2_list: std.ArrayList(*lfm2_argmax.Probe) = .empty;
-    var lfm2_streams_list: std.ArrayList(*lfm2_streams.Probe) = .empty;
-    defer {
-        for (lfm2_list.items) |p| {
-            p.deinit();
-            a.destroy(p);
-        }
-        for (lfm2_streams_list.items) |p| {
-            p.deinit();
-            a.destroy(p);
-        }
-        lfm2_list.deinit(a);
-        lfm2_streams_list.deinit(a);
-    }
-    for (std.enums.values(lfm2_controls.Mutation)) |m| {
-        const argmax_side = m == .none or m == .argmax_last_tie or m == .argmax_no_flag;
-        if (argmax_side) {
-            if (!wanted(o, if (m == .none) lfm2_argmax.name else m.name())) continue;
-            const p = try a.create(lfm2_argmax.Probe);
-            errdefer a.destroy(p);
-            p.* = try lfm2_argmax.Probe.init(a, device, queue, m);
-            try lfm2_list.append(a, p);
-            try kernels.append(a, p.kernel());
-            if (m != .none) continue;
-        }
-        for (std.enums.values(lfm2_streams.Which)) |w| {
-            const control_for = (m == .conv_first_state and w == .conv) or (m == .attention_first_cache and w == .attention);
-            if (m != .none and !control_for) continue;
-            if (!wanted(o, if (m == .none) lfm2_streams.spec(w).name else m.name())) continue;
-            const p = try a.create(lfm2_streams.Probe);
-            errdefer a.destroy(p);
-            p.* = try lfm2_streams.Probe.init(a, device, queue, w, m);
-            try lfm2_streams_list.append(a, p);
-            try kernels.append(a, p.kernel());
-        }
-    }
-    var norm_tap_list: std.ArrayList(*lfm2_norm_tap.Probe) = .empty;
-    defer {
-        for (norm_tap_list.items) |p| {
-            p.deinit();
-            a.destroy(p);
-        }
-        norm_tap_list.deinit(a);
-    }
-    for (std.enums.values(lfm2_norm_tap.Which)) |w| for ([_]bool{ false, true }) |control| {
-        if (!wanted(o, if (control) lfm2_norm_tap.controlName(w) else lfm2_norm_tap.spec(w).name)) continue;
-        const p = try a.create(lfm2_norm_tap.Probe);
-        errdefer a.destroy(p);
-        p.* = try lfm2_norm_tap.Probe.init(a, device, queue, w, control);
-        try norm_tap_list.append(a, p);
-        try kernels.append(a, p.kernel());
-    };
-    var tap_list: std.ArrayList(*lfm2_tap.Probe) = .empty;
-    defer {
-        for (tap_list.items) |p| {
-            p.deinit();
-            a.destroy(p);
-        }
-        tap_list.deinit(a);
-    }
-    for ([_]lfm2_controls.Mutation{ .none, .tap_packed_rows, .tap_clobbers_column }) |m| {
-        if (!wanted(o, if (m == .none) lfm2_tap.name else m.name())) continue;
-        const p = try a.create(lfm2_tap.Probe);
-        errdefer a.destroy(p);
-        p.* = try lfm2_tap.Probe.init(a, device, queue, m);
-        try tap_list.append(a, p);
-        try kernels.append(a, p.kernel());
-    }
     var drafting: lfm2_drafting.Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
     defer drafting.deinit();
     try drafting.collect(o.only, tensor);
-    var conf_list: std.ArrayList(*lfm2_conf.Probe) = .empty;
-    defer {
-        for (conf_list.items) |p| {
-            p.deinit();
-            a.destroy(p);
-        }
-        conf_list.deinit(a);
-    }
-    for ([_]lfm2_controls.Mutation{ .none, .confidence_no_w1 }) |m| {
-        if (!wanted(o, if (m == .none) lfm2_conf.name else m.name())) continue;
-        const p = try a.create(lfm2_conf.Probe);
-        errdefer a.destroy(p);
-        p.* = try lfm2_conf.Probe.init(a, device, queue, m);
-        try conf_list.append(a, p);
-        try kernels.append(a, p.kernel());
-    }
     var rows_list: std.ArrayList(*rows_k.Row) = .empty;
     var proj_list: std.ArrayList(*affine_k.Proj) = .empty;
     defer for (rows_list.items) |r| r.deinit();

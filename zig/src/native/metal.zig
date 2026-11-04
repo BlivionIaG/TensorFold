@@ -65,7 +65,7 @@ fn isGemma4(model_type: []const u8) bool {
 pub fn chip(a: Allocator) ?[]const u8 {
     const device = mtl.Device.init() catch return null;
     defer device.deinit();
-    const gen = generation(std.mem.span(device.name())) orelse return null;
+    const gen = metal_admit.generation(std.mem.span(device.name())) orelse return null;
     return std.fmt.allocPrint(a, "apple-m{d}", .{gen}) catch null;
 }
 
@@ -76,19 +76,9 @@ pub fn deviceName(a: Allocator, _: ?u32) ?[]const u8 {
     return a.dupe(u8, std.mem.span(device.name())) catch null;
 }
 
-/// The M generation in a Metal device name ("Apple M5 Max": 5).
-fn generation(name: []const u8) ?u32 {
-    var words = std.mem.tokenizeScalar(u8, name, ' ');
-    if (!std.ascii.eqlIgnoreCase(words.next() orelse return null, "apple")) return null;
-    const word = words.next() orelse return null;
-    if (word.len < 2 or std.ascii.toLower(word[0]) != 'm') return null;
-    const gen = std.fmt.parseInt(u32, word[1..], 10) catch return null;
-    return if (gen >= 1) gen else null;
-}
-
 /// Python's prompt chunk: 8,192 rows with tensor units (M5 on) where memory allows, else its 2,048.
 fn prefillStep(device: mtl.Device) u32 {
-    const gen = generation(std.mem.span(device.name())) orelse 0;
+    const gen = metal_admit.generation(std.mem.span(device.name())) orelse 0;
     return if (gen >= 5 and device.maxWorkingSet() >= 48 << 30) 8192 else 2048;
 }
 
@@ -191,7 +181,20 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     if (std.mem.eql(u8, o.model_type, "spark2_5")) return @import("spark25.zig").open(a, gpa, io, o, problem);
     if (std.mem.eql(u8, o.model_type, "minimax_m3_vl")) return @import("minimax_m3.zig").open(a, gpa, io, o, problem);
     if (std.mem.eql(u8, o.model_type, "llama")) return @import("llama.zig").open(a, gpa, io, o, problem);
-    if (std.mem.eql(u8, o.model_type, "lfm2_moe")) return @import("lfm2_moe.zig").open(a, gpa, io, o, problem);
+    if (std.mem.eql(u8, o.model_type, "lfm2_moe")) {
+        var serving = o;
+        if (o.drafter != null) {
+            const device = try mtl.Device.init();
+            defer device.deinit();
+            const name = std.mem.span(device.name());
+            serving = metal_admit.lfm2DrafterOptions(o, name);
+            if (serving.drafter == null and o.drafts) std.log.info(
+                "lfm2: DSpark standing aside on {s}; serving without a neural drafter (requires Apple M5 or newer)",
+                .{name},
+            );
+        }
+        return @import("lfm2_moe.zig").open(a, gpa, io, serving, problem);
+    }
     if (!std.mem.eql(u8, o.model_type, "nemotron_h")) {
         problem.* = try std.fmt.allocPrint(a, "the native engine has no backend for {s} checkpoints yet; the Python engine 0.6.6 may serve them: python -m pip install git+https://github.com/ashhart/TensorFold.git@v0.6.6", .{o.model_type});
         return null;
@@ -474,13 +477,6 @@ fn openGlmDsa(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[
     return .{ .engine = h.engine(), .close = glm_dsa.close, .ctx = h };
 }
 
-test "chip classes from Metal device names" {
-    try std.testing.expectEqual(@as(?u32, 5), generation("Apple M5 Max"));
-    try std.testing.expectEqual(@as(?u32, 12), generation("Apple M12"));
-    try std.testing.expectEqual(@as(?u32, null), generation("AMD Radeon Pro"));
-    try std.testing.expectEqual(@as(?u32, null), generation("Apple Mx"));
-}
-
 test "--learn is refused for the 27B, the 2B and GLM-5.3 (EXLR8), and not for the families that keep prompt states on disk" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
@@ -547,7 +543,7 @@ test "--slide is refused by every family but Nemotron, which learns into its wei
 
 test "drafter admission: LFM2 DSpark and Llama survive centralized Metal refusal" {
     const a = std.testing.allocator;
-    for ([_][]const u8{ "lfm2_moe", "llama", "gemma4" }) |model| {
+    for ([_][]const u8{ "lfm2_moe", "llama", "gemma4", "qwen3_5_moe" }) |model| {
         try std.testing.expect((try refusal(a, .{ .dir = "d", .model_type = model, .drafter = "draft" }, false)) == null);
     }
     try std.testing.expect((try refusal(a, .{ .dir = "d", .model_type = "qwen3_5", .drafter = "draft" }, true)) == null);
