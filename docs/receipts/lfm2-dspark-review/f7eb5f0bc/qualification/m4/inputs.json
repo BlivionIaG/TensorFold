@@ -1,0 +1,66 @@
+{
+  "driver_sha256": {
+    "bench_lfm2_dspark.py": "928a1c1b6751e184243c48d187e552b622874da0ec6168a101e3d636664e3e97",
+    "bench_lfm2_dspark_verdict.py": "c30d4c902979acaab150440bcf76d95492394e2abe0fe720903cb5f3090881ce",
+    "bench_concurrent.py": "3234c3edfc71725d9a66f1a6485f1bc43870a3ee0c797f90ac1e7ef9a6ae74e2",
+    "bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+    "bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+    "bench_metrics.py": "26f4c3ecbb03df4f12e24d18840fea989d9ef8c63117ca11eb944ef670458a27",
+    "bench_timing.py": "158f636ef0b3bed460ce19ef4872b6d8607ff7a8590562d06bae8bd55e6f44ed"
+  },
+  "shared_lock_inode_observed": 68270044,
+  "model_sha256": {
+    "target": {
+      "config.json": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244",
+      "generation_config.json": "d1ecad152cd278e57220364423f5a5b19350f1e6e230ff82281a5c23a3173f16",
+      "tokenizer_config.json": "11f1de897317b489dd09199284528382eeb17f566398b16e2039bb2266d26b09",
+      "tokenizer.json": "695be7802a0e4b8a81048f0ff5ebb7fc811a0ba5a6be63dbb24deb5a81096f41",
+      "chat_template.jinja": "aadd425edb1d42fe9288e5de3624c21c1c03099129b9cfea5978f1bc67222c0a",
+      "model.safetensors.index.json": "7887b03265aef7824c8e5b9a51667e486f889749240d8c59a95f3cd899e86e4a",
+      "model-00001-of-00003.safetensors": "17e953456c62314a498f1ef5ee8a5f1b51ac83f6b6bb684f160dde4f92cd11c0",
+      "model-00002-of-00003.safetensors": "c3ae09dba31b3786c325425435021cf5d5bf06c1a79acb31a741e15a47e5bb14",
+      "model-00003-of-00003.safetensors": "9814144af5045ea8c96e2f1352148fdbe9f8a0085b76df6d6760efbe916e9840"
+    },
+    "drafter": {
+      "config.json": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb",
+      "model.safetensors": "7d06a78556b0b1f386134508f09b00a3a7e0e5e0ec2cc73119229f4ef7c9b299"
+    }
+  },
+  "target_revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+  "drafter_revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+  "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "source_archive_sha256": "3ca340ec39493b7d32ba23902e2087111e54def1184c1665331b4ada1cbe7b12",
+  "source_tree_ids": {
+    "zig": "dc425cce7d4bb20d2e623cc08439966a64d67f35",
+    "build.zig": "cd4e87a234349b3d37dd8651c3dad3d3f6f2e9cc",
+    "build.zig.zon": "4d53e0a915fa86ee3b35a90b8f84fc4990517ee7"
+  },
+  "base_revision": "2c8422a0c49d04a1867cffec081a1a42b65c857f",
+  "native_binary_sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0",
+  "guard_proof_sha256": "9222474f2d14ad62395c1923677c02095b1e7f5f9729db7ba2931f665492fbac",
+  "controller_sha256": "7711c3d62a9bb188ed4a8e4a01dcc76796530bf6fc6f1932b73510b46b8195c7",
+  "original_driver_unmodified": true,
+  "hardware": {
+    "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+    "os_build": "25F80",
+    "machine": "arm64",
+    "hw_model": "Mac16,7",
+    "cpu": "Apple M4 Pro",
+    "memory_bytes": "51539607552",
+    "python": "3.14.7"
+  },
+  "model_processes_rerun_for_replay": false,
+  "scope_reduced": false,
+  "native_private_instrumentation": false,
+  "original_frozen_gate_replaced": false,
+  "requests": {
+    "original_bytes": 37919953,
+    "original_lines": 2736,
+    "original_sha256": "9697f6173de9351e300cf60e3965b1075e0ec7e68a40a620f05cedce1f695b81",
+    "compression": "deterministic gzip,mtime0,no original filename",
+    "compressed_bytes": 12917944,
+    "compressed_sha256": "41ad7c21ddcaf59d277b99d9badcd2547055042ab123b99d253b2e2dadcc712d",
+    "decoded_sha256_matches_original": true,
+    "privacy_scan_passed": true
+  }
+}

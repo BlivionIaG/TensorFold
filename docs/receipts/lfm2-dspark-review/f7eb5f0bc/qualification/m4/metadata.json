@@ -1,0 +1,119 @@
+{
+ "schema": "bench_lfm2_dspark/1",
+ "label": "QUALIFICATION",
+ "smoke": false,
+ "started_at": "2026-11-03T23:14:10Z",
+ "same_head": "every arm runs this one binary (tensorfold-native); arms differ only in the drafter flags",
+ "binary": {
+  "name": "tensorfold-native",
+  "sha256": "a7be9659f48c7cdb6a19a63a013bc850c679343a9e18e5dfa81ef220ff702fc0"
+ },
+ "source_revision": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+ "target": {
+  "revision": "667408d494bde191c2cb9dd4f4549827816b9275",
+  "config_json_sha256": "4901707c3cef43e3cf68a0dedc3e39687de43413cab30578a32c63c643984244"
+ },
+ "drafter": {
+  "revision": "e052e5b1dd103c38cdd4f8ddc068d7dea4586f55",
+  "config_json_sha256": "5ab0e6e4b2cb052b48d802acc3c095f5ca64d55084ebe8d11986d36b2e9eafeb"
+ },
+ "settings": {
+  "context": 4096,
+  "parallel": 16,
+  "prompt_cache_gib": 0,
+  "tokens": 512,
+  "reps": 3,
+  "rotation": [
+   [
+    "plain",
+    "bf16",
+    "bits8"
+   ],
+   [
+    "bf16",
+    "bits8",
+    "plain"
+   ],
+   [
+    "bits8",
+    "plain",
+    "bf16"
+   ]
+  ],
+  "rotation_balanced": true,
+  "seed": 1234,
+  "seed_rule": "sampled: seed + stream index; greedy: seed (bench_concurrent)",
+  "widths": [
+   1,
+   4,
+   8,
+   16
+  ],
+  "temperatures": [
+   0.0,
+   1.0
+  ],
+  "prompts": [
+   "code",
+   "chat"
+  ],
+  "sampling": {
+   "temperature>0": {
+    "top_k": 20,
+    "top_p": 0.95
+   },
+   "ignore_eos": true
+  },
+  "arms": {
+   "plain": [],
+   "bf16": [
+    "--drafter",
+    "{drafter}"
+   ],
+   "bits8": [
+    "--drafter",
+    "{drafter}",
+    "--drafter-bits",
+    "8"
+   ]
+  },
+  "serve_flags": [
+   "--parallel 16",
+   "--context 4096",
+   "--prompt-cache-gib 0",
+   "--snapshot-dir none",
+   "--max-snapshots 0",
+   "--no-update-check"
+  ],
+  "speed_metric": "bench_concurrent.aggregates()['aggregate_tps'] per launch cell; median over reps",
+  "diagnostic_logging": "off",
+  "env_prefixes_removed": [
+   "TF_",
+   "TENSORFOLD_",
+   "MTL_",
+   "METAL_",
+   "GEMMA_DRAFT_TRACE",
+   "FZ_PRICE_BATCHED"
+  ],
+  "env_variables_removed": []
+ },
+ "environment": {
+  "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "os_build": "25F80",
+  "machine": "arm64",
+  "hw_model": "Mac16,7",
+  "cpu": "Apple M4 Pro",
+  "memory_bytes": "51539607552",
+  "python": "3.14.7"
+ },
+ "publishable": [
+  "metadata.json",
+  "requests.jsonl",
+  "cells.jsonl",
+  "events.jsonl",
+  "summary.json"
+ ],
+ "not_publishable": [
+  "private-logs/"
+ ]
+}

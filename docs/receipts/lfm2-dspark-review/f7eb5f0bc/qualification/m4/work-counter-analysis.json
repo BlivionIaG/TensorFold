@@ -1,0 +1,129 @@
+{
+  "scope": "All proposal sources; aggregate counters are not proof of neural-head execution or identical physical GPU work.",
+  "exact_three_arm_counter_parity_rep_cells": 26,
+  "total_rep_cells": 48,
+  "totals_by_arm": {
+    "plain": {
+      "rounds": 209435,
+      "drafted": 26056,
+      "accepted": 20515
+    },
+    "bf16": {
+      "rounds": 209370,
+      "drafted": 26152,
+      "accepted": 20580
+    },
+    "bits8": {
+      "rounds": 209439,
+      "drafted": 26235,
+      "accepted": 20511
+    }
+  },
+  "startup_head_weights_mib": {
+    "plain": [
+      null,
+      null,
+      null
+    ],
+    "bf16": [
+      625.1,
+      625.1,
+      625.1
+    ],
+    "bits8": [
+      361.4,
+      361.4,
+      361.4
+    ]
+  },
+  "code_T0_w1_by_rep": [
+    {
+      "rep": 0,
+      "arms": {
+        "plain": {
+          "aggregate_tps": 169.9610736957123,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          }
+        },
+        "bf16": {
+          "aggregate_tps": 169.71048641662128,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          }
+        },
+        "bits8": {
+          "aggregate_tps": 155.1491823425647,
+          "activity": {
+            "rounds": 260,
+            "drafted": 327,
+            "accepted": 251
+          }
+        }
+      }
+    },
+    {
+      "rep": 1,
+      "arms": {
+        "bf16": {
+          "aggregate_tps": 161.85282736334898,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          }
+        },
+        "bits8": {
+          "aggregate_tps": 157.43554645951284,
+          "activity": {
+            "rounds": 260,
+            "drafted": 327,
+            "accepted": 251
+          }
+        },
+        "plain": {
+          "aggregate_tps": 170.626018548654,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          }
+        }
+      }
+    },
+    {
+      "rep": 2,
+      "arms": {
+        "bits8": {
+          "aggregate_tps": 149.3988505146692,
+          "activity": {
+            "rounds": 282,
+            "drafted": 286,
+            "accepted": 229
+          }
+        },
+        "plain": {
+          "aggregate_tps": 161.83800042736922,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          }
+        },
+        "bf16": {
+          "aggregate_tps": 158.4232412923826,
+          "activity": {
+            "rounds": 272,
+            "drafted": 310,
+            "accepted": 239
+          }
+        }
+      }
+    }
+  ],
+  "causal_limit": "Some recorded work differs; neither all losses are timing noise nor neural-head compute alone caused the loss is established. The separate fixed A/A analysis is not complete."
+}

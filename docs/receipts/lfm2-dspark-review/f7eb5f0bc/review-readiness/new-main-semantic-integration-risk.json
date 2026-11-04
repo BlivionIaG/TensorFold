@@ -1,0 +1,12 @@
+{
+  "qualified_runtime_source_unchanged": "f7eb5f0bcf7c373a50d95a55acdee4e75cd75fce",
+  "actual_main_snapshot": "a897e165bb271f8cc7a6530bbfc5235abf270341",
+  "read_only_conflict_tree": "3419f01bb15c450fac0b2a9d194a0a5bc5812325",
+  "native_conflict": "upstream moved the drafter refusal out of open into refusal while adding Llama support; current DSpark head extends the former open-level allowlist with lfm2_moe",
+  "observed_merged_refusal_predicate": "o.drafter != null and !dense and !isGemma4(t) and !std.mem.eql(u8, t, \"llama\")",
+  "risk_inference": "Accepting this upstream refusal unchanged would reject lfm2_moe with --drafter before the later DSpark-specific admission path. Taking only the old head-level guard would also exclude the new Llama drafter path. Neither is a safe blind resolution.",
+  "contract_conflict": "upstream llama_k import versus head LFM2 tap/norm/drafting/BF16/confidence imports; retain both families and existing run/filter ordering",
+  "resolution_not_applied": "For any separately authorized integration: one central drafter allowlist supporting dense Qwen/Gemma/Llama/LFM2; remove obsolete outer guard; preserve all family contract registrations and prove before-weight option admission plus real model guards.",
+  "build_or_model_run_for_new_integration": false,
+  "source_or_qualification_changed": false
+}
