@@ -578,7 +578,7 @@ pub const ranks = @import("cli_gpu_flags.zig").ranks;
 
 const cli = @This();
 
-/// The private flag helpers cli_test.zig checks.
+/// The private flag helpers used by the CLI tests.
 pub const Test = if (builtin.is_test) struct {
     pub const cuda_build = cli.cuda_build;
     pub const native_serves = cli.native_serves;
