@@ -2,23 +2,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const api = @import("engine_api");
+const glp_startup = @import("glp_startup.zig");
+const cli_flag = @import("cli_flag.zig");
 const Allocator = std.mem.Allocator;
-pub const Kind = enum {
-    value, // --flag VALUE or --flag=VALUE
-    store_true, // --flag
-    append, // repeatable --flag VALUE
-};
-
-pub const Flag = struct {
-    name: []const u8,
-    kind: Kind = .value,
-    /// argparse's choices; empty: any value of the flag's type.
-    choices: []const []const u8 = &.{},
-    /// This binary honours the flag (and lists it in ``capabilities``); the rest are refused as unsupported.
-    native: bool = false,
-    /// The values it honours when only some of the choices.
-    native_values: ?[]const []const u8 = null,
-};
+pub const Kind = cli_flag.Kind;
+pub const Flag = cli_flag.Flag;
 const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else if (served("--backend=rocm")) &.{ "auto", "rocm" } else &.{ "auto", "cuda" };
 
 /// The flags past the common ones the binary's backend serves, from its root's `serves` (test roots: none).
@@ -47,7 +35,7 @@ pub const flags = [_]Flag{
     .{ .name = "--chat-template", .native = true },
     .{ .name = "--voices", .native = true },
     .{ .name = "--default-voice", .native = true },
-} ++ @import("drama_cfg.zig").flags ++ @import("admission_cli.zig").flags ++ [_]Flag{
+} ++ @import("drama_cfg.zig").flags ++ @import("admission_cli.zig").flags ++ glp_startup.flags ++ [_]Flag{
     .{ .name = "--alias", .kind = .append, .native = true },
     .{ .name = "--name-priority", .kind = .append, .native = true },
     .{ .name = "--api-key", .kind = .append, .native = true },
@@ -56,6 +44,7 @@ pub const flags = [_]Flag{
     .{ .name = "--dashboard", .kind = .store_true, .native = true },
     .{ .name = "--vision", .kind = .store_true, .native = true },
     .{ .name = "--vision-urls", .kind = .store_true, .native = true },
+    .{ .name = "--vision-pdf", .kind = .store_true, .native = true },
     .{ .name = "--vision-offload", .kind = .store_true },
     .{ .name = "--vision-max-images", .native = true },
     .{ .name = "--vision-max-videos", .native = true },
@@ -73,7 +62,7 @@ pub const flags = [_]Flag{
     .{ .name = "--min-p", .native = true },
     .{ .name = "--thinking", .kind = .store_true, .native = true },
     .{ .name = "--no-thinking", .kind = .store_true, .native = true },
-    .{ .name = "--reasoning-effort", .choices = &.{ "low", "medium", "high", "xhigh" }, .native = true },
+    .{ .name = "--reasoning-effort", .choices = @import("fields.zig").efforts[1..], .native = true },
     .{ .name = "--thinking-budget", .native = true },
     .{ .name = "--thinking-reserve", .native = true },
     .{ .name = "--loop-guard", .kind = .store_true, .native = true },
@@ -157,7 +146,7 @@ pub const flags = [_]Flag{
 };
 
 /// The variables this binary honours as the Python engine does, then the CUDA build's or the Metal build's.
-pub const env = [_][]const u8{ "TENSORFOLD_API_KEY", "TENSORFOLD_NO_LIVE", "TENSORFOLD_SEED_SALT", "TENSORFOLD_REQUEST_LOG", "TENSORFOLD_NO_UPDATE_CHECK", "HF_HOME", "HF_HUB_CACHE", "HF_HUB_OFFLINE", "BRAVE_SEARCH_API_KEY" } ++
+pub const env = [_][]const u8{ "TENSORFOLD_API_KEY", "TENSORFOLD_NO_LIVE", "TENSORFOLD_SEED_SALT", "TENSORFOLD_REQUEST_LOG", "TENSORFOLD_NO_UPDATE_CHECK", "TENSORFOLD_LIBPDFIUM", "TENSORFOLD_MAX_PDF_PAGES", "HF_HOME", "HF_HUB_CACHE", "HF_HUB_OFFLINE", "BRAVE_SEARCH_API_KEY" } ++
     (if (cuda_build) [_][]const u8{ "TF_CUDA_DEVICE", "TF_CUDA_SEGMENTS", "TENSORFOLD_CUDA_KERNELS", "TENSORFOLD_MEMORY_RESERVE_GIB", "TENSORFOLD_CUDA_MEMORY_LIMIT_GB", "TENSORFOLD_P2P_DIAGNOSTICS", "TENSORFOLD_P2P_PROBE" } else [_][]const u8{}) ++
     (if (builtin.os.tag == .macos) [_][]const u8{"TF_Q27_PROFILE"} else [_][]const u8{});
 pub const Args = struct {
@@ -225,6 +214,7 @@ pub const Args = struct {
     drafter_bits: u8 = 4,
     rope_yarn: ?f64 = null, // YaRN with this factor over the checkpoint's trained window (Qwen3.5/3.6 on CUDA)
     record: ?[]const u8 = null, // drafter training rows written under this folder
+    glp: ?glp_startup.Vec = null, // --glp: the control vector file and the strength in force
     kv_cache: []const u8 = "bf16", // fp8: e4m3 attention caches with a scale a row, about twice the context
     prompt_precision: []const u8 = "bf16", // int8: prompt matmuls quantize their inputs to int8 a 64-input group
     slide: bool = false, // Sliding Weights learns what /v1/slide/learn is told into the served weights, live
@@ -247,6 +237,7 @@ pub const Args = struct {
     cortheon: bool = false, // Cortheon's program, research before building, and cortheon_search/cortheon_fetch run by the server
     vision: bool = false, // image input (GLM-5.3-Flash): data-URL image_url parts in user messages
     vision_urls: bool = false, // with --vision, public HTTPS image URLs too (media_fetch.zig)
+    vision_pdf: bool = false, // with --vision, inline PDF document parts too (pdf.zig)
     vision_max_images: u32 = 4,
     vision_max_videos: u32 = 2,
     vision_image_tokens: u32 = 4096,
@@ -318,6 +309,7 @@ pub fn parse(a: Allocator, argv: []const []const u8, u: *Usage) error{ Usage, Ou
         return fail(u, a, "invalid silence guard configuration: {s}", .{@errorName(err)});
     out.redraw.validate(out.silence) catch |err| return fail(u, a, "invalid redraw configuration: {s}", .{@errorName(err)});
     if (out.vision_urls and !out.vision) return fail(u, a, "--vision-urls needs --vision", .{});
+    if (out.vision_pdf and !out.vision) return fail(u, a, "--vision-pdf needs --vision", .{});
     if (out.idle_unload < 0 or out.idle_unload > std.math.maxInt(i64) / std.time.ns_per_s) return fail(u, a, "argument --idle-unload: expected a seconds count from 0 (off) under {d}: '{d}'", .{ std.math.maxInt(i64) / std.time.ns_per_s, out.idle_unload });
     out.alias = repeated.alias.items;
     out.name_priority = repeated.priorities.items;
@@ -334,6 +326,7 @@ pub fn parse(a: Allocator, argv: []const []const u8, u: *Usage) error{ Usage, Ou
     out.allowed_host = repeated.hosts.items;
     out.allowed_origin = repeated.origins.items;
     try spillWith(u, a, out);
+    if (try glp_startup.read(a, &out.glp)) |why| return fail(u, a, "{s}", .{why});
     return out;
 }
 
@@ -461,7 +454,7 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
         const n = try int(u, a, name, v);
         if (n < 0) return fail(u, a, "argument --compact-keep: expected a token count from 0: '{s}'", .{v});
         out.compact_keep = @intCast(n);
-    } else if (is(name, "--compact-memory")) out.compact_memory = v else if (is(name, "--slide")) out.slide = true else if (is(name, "--slide-graph")) out.slide_graph = v else if (is(name, "--parallel")) out.parallel = v else if (is(name, "--backend")) out.backend = v else if (is(name, "--cortheon")) out.cortheon = true else if (is(name, "--vision")) out.vision = true else if (is(name, "--vision-urls")) out.vision_urls = true else if (is(name, "--vision-max-images")) {
+    } else if (is(name, "--compact-memory")) out.compact_memory = v else if (is(name, "--slide")) out.slide = true else if (is(name, "--slide-graph")) out.slide_graph = v else if (is(name, "--parallel")) out.parallel = v else if (is(name, "--backend")) out.backend = v else if (is(name, "--cortheon")) out.cortheon = true else if (is(name, "--vision")) out.vision = true else if (is(name, "--vision-urls")) out.vision_urls = true else if (is(name, "--vision-pdf")) out.vision_pdf = true else if (is(name, "--vision-max-images")) {
         const n = try int(u, a, name, v);
         if (n < 1 or n > 64) return fail(u, a, "argument --vision-max-images: expected 1 to 64 images: '{s}'", .{v});
         out.vision_max_images = @intCast(n);
@@ -484,7 +477,7 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
         out.redraw.budget_s = try float(u, a, name, v);
     } else if (is(name, "--short-reply-ratio")) out.redraw.short_ratio = try float(u, a, name, v) else if (is(name, "--short-reply-chars-per-s")) out.redraw.short_chars_per_s = try float(u, a, name, v) else if (is(name, "--silence-redraw-controls")) {
         out.redraw.controls = @import("drama_allow.zig").parse(v) catch return fail(u, a, "argument --silence-redraw-controls: expected comma-separated UTF-8 names without square brackets, or an empty list: '{s}'", .{v});
-    } else if (is(name, "--register-redraw-st")) out.redraw.register.st = try float(u, a, name, v) else if (is(name, "--register-redraw-high")) out.redraw.register.high = try float(u, a, name, v) else if (is(name, "--register-high-hz")) out.redraw.register.high_hz = try float(u, a, name, v);
+    } else if (is(name, "--register-redraw-st")) out.redraw.register.st = try float(u, a, name, v) else if (is(name, "--register-redraw-high")) out.redraw.register.high = try float(u, a, name, v) else if (is(name, "--register-high-hz")) out.redraw.register.high_hz = try float(u, a, name, v) else if (is(name, "--glp")) out.glp = glp_startup.withPath(out.glp, v) else if (is(name, "--glp-alpha")) out.glp = glp_startup.withAlpha(out.glp, glp_startup.strength(v) orelse return fail(u, a, "argument --glp-alpha: expected a finite strength above 0: '{s}'", .{v}));
 }
 
 /// --recall and the flags that imply it; false for any other flag.
@@ -531,6 +524,7 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .drafter_bits = args.drafter_bits,
         .rope_yarn = args.rope_yarn,
         .record = args.record,
+        .glp = try glp_startup.engine(a, dir, model_type, args.backend, args.glp),
         .kv8 = std.mem.eql(u8, args.kv_cache, "fp8"),
         .prompt_int8 = std.mem.eql(u8, args.prompt_precision, "int8"),
         .speed_up = args.speed_up,

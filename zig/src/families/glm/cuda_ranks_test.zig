@@ -149,7 +149,11 @@ const Fabric = struct {
 };
 
 test "a direct split start on a ring of four without a switch is refused before loading, at every rank" {
-    for (0..4) |r| try std.testing.expectError(error.SplitUnreachable, Fabric.probe(.{}, r, 4, false));
+    for (0..4, [_]usize{ 2, 3, 0, 1 }) |r, peer| {
+        ranks.refused_pair = null;
+        try std.testing.expectError(error.SplitUnreachable, Fabric.probe(.{}, r, 4, false));
+        try std.testing.expectEqual(@as(?[2]usize, .{ r, peer }), ranks.refused_pair);
+    }
     // the same start on four ranks behind a switch probes each pair once each way
     for (0..4) |r| try std.testing.expectEqual(@as(usize, 6), try Fabric.probe(.{}, r, 4, true));
     // two ranks are each other's neighbours: a direct split starts on a ring of two
@@ -236,6 +240,31 @@ test "TF_GLM_KDA_PAD: 0 by default, 1 or 0, refused otherwise and without glm_mm
     const all = [_]Fingerprint{ Fingerprint.of(2, 0, .{}, 8192, true, h, h, h), Fingerprint.of(2, 1, padded, 8192, true, h, h, h) };
     try std.testing.expectEqual(@as(?Mismatch, .{ .field = .kda_pad, .rank = 1 }), mismatch(&all));
 }
+
+test "TF_GLM_PROMPT_TAIL: unset, 0 or 1, refused otherwise" {
+    const Reader = struct {
+        fn off(key: [:0]const u8) ?[]const u8 {
+            return if (std.mem.eql(u8, key, "TF_GLM_PROMPT_TAIL")) "0" else null;
+        }
+        fn on(key: [:0]const u8) ?[]const u8 {
+            return if (std.mem.eql(u8, key, "TF_GLM_PROMPT_TAIL")) "1" else null;
+        }
+        fn empty(key: [:0]const u8) ?[]const u8 {
+            return if (std.mem.eql(u8, key, "TF_GLM_PROMPT_TAIL")) "" else null;
+        }
+        fn yes(key: [:0]const u8) ?[]const u8 {
+            return if (std.mem.eql(u8, key, "TF_GLM_PROMPT_TAIL")) "yes" else null;
+        }
+    };
+    var problem: []const u8 = "";
+    _ = try Settings.read(&fake, &problem);
+    _ = try Settings.read(Reader.off, &problem);
+    _ = try Settings.read(Reader.on, &problem);
+    for ([_]*const fn ([:0]const u8) ?[]const u8{ &Reader.empty, &Reader.yes }) |refused| {
+        try std.testing.expectError(error.BadSetting, Settings.read(refused, &problem));
+        try std.testing.expectEqualStrings("TF_GLM_PROMPT_TAIL: 0 or 1", problem);
+    }
+}
 fn digestFixture(io: std.Io, dir: std.Io.Dir, sub: []const u8, byte: u8) !void {
     try dir.createDirPath(io, sub);
     var d = try dir.openDir(io, sub, .{});
@@ -287,6 +316,44 @@ test "TF_GLM_CHUNK_SOLO: off by default, 2048 or 4096, and every rank must agree
     try std.testing.expectEqualStrings("TF_GLM_CHUNK_SOLO: 2048 or 4096", problem);
     const all = [_]Fingerprint{ Fingerprint.of(2, 0, .{}, 8192, true, @splat(0), @splat(0), @splat(0)), Fingerprint.of(2, 1, on, 8192, true, @splat(0), @splat(0), @splat(0)) };
     try std.testing.expectEqual(Mismatch{ .field = .solo, .rank = 1 }, mismatch(&all).?);
+}
+
+test "TF_GLM_OVERLAP_PIECES: unset, 8 under TF_GLM_CHUNK_SOLO=4096 with TF_GLM_ROCE_MULTI=1 where the wire opens, else 3; a set value wins" {
+    const Reader = struct {
+        fn wire(key: [:0]const u8) ?[]const u8 {
+            if (std.mem.eql(u8, key, "TF_GLM_ROCE_MULTI")) return "1";
+            if (std.mem.eql(u8, key, "TF_TP_MASTER")) return "10.0.0.1";
+            if (std.mem.eql(u8, key, "TF_TP_KERNEL_IMAGE")) return "tp_mailbox.fatbin";
+            if (std.mem.eql(u8, key, "TF_GLM_WORLD")) return "3";
+            return null;
+        }
+        fn solo(key: [:0]const u8) ?[]const u8 {
+            return if (std.mem.eql(u8, key, "TF_GLM_CHUNK_SOLO")) "4096" else null;
+        }
+        fn both(key: [:0]const u8) ?[]const u8 {
+            return solo(key) orelse wire(key);
+        }
+        fn bothTwo(key: [:0]const u8) ?[]const u8 {
+            return if (std.mem.eql(u8, key, "TF_GLM_WORLD")) "2" else both(key);
+        }
+        fn bothSet(key: [:0]const u8) ?[]const u8 {
+            return if (std.mem.eql(u8, key, "TF_GLM_OVERLAP_PIECES")) "3" else both(key);
+        }
+        fn soloNarrow(key: [:0]const u8) ?[]const u8 {
+            return if (std.mem.eql(u8, key, "TF_GLM_CHUNK_SOLO")) "2048" else wire(key);
+        }
+        fn none(_: [:0]const u8) ?[]const u8 {
+            return null;
+        }
+    };
+    var problem: []const u8 = "";
+    try std.testing.expectEqual(@as(u32, 8), (try Settings.read(Reader.both, &problem)).pieces);
+    try std.testing.expectEqual(@as(u32, 3), (try Settings.read(Reader.bothTwo, &problem)).pieces);
+    try std.testing.expectEqual(@as(u32, 3), (try Settings.read(Reader.bothSet, &problem)).pieces);
+    try std.testing.expectEqual(@as(u32, 3), (try Settings.read(Reader.solo, &problem)).pieces);
+    try std.testing.expectEqual(@as(u32, 3), (try Settings.read(Reader.wire, &problem)).pieces);
+    try std.testing.expectEqual(@as(u32, 3), (try Settings.read(Reader.soloNarrow, &problem)).pieces);
+    try std.testing.expectEqual(@as(u32, 3), (try Settings.read(Reader.none, &problem)).pieces);
 }
 
 test "prompt K experiment is explicit and all ranks must agree" {

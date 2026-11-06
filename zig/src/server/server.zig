@@ -69,6 +69,8 @@ pub const Config = struct {
     use_drafts: bool = true,
     /// --vision-urls: image parts may name public HTTPS URLs, fetched before admission (media_fetch.zig).
     vision_urls: bool = false,
+    /// --vision-pdf: file/input_file and data:application/pdf parts are rendered via PDFium (pdf.zig).
+    vision_pdf: bool = false,
     seed_salt: i64 = 0,
     silence_mid: bool = false,
     silence_guard: bool = false,
@@ -101,7 +103,7 @@ pub const Config = struct {
     admission: @import("request_admission.zig").Limits = .{},
     /// The open /health names these after its other keys; empty fields are left out.
     identity: Identity = .{},
-    /// The process environment GET /v1/benchmark/manifest reads (rank count, revision, the hardware probe); null: none.
+    /// The process environment GET /v1/benchmark/manifest reads (revision and the hardware probe); null: none.
     environ: ?*const std.process.Environ.Map = null,
 };
 
@@ -113,6 +115,12 @@ pub fn namedBackground(config: Config, f: Value) bool {
     };
     for (config.background_ids) |id| if (std.mem.eql(u8, id, asked)) return true;
     return false;
+}
+
+/// Name the compiled structure with the client's own field when its route carried one (a borrowed static literal).
+pub fn nameStructure(format: ?[]const u8, request: *api.Request) void {
+    const name = format orelse return;
+    if (request.structure) |*st| st.field = name;
 }
 
 pub const Server = struct {
@@ -142,7 +150,6 @@ pub const Server = struct {
     /// Connections open now; a stop waits for them before freeing what they read.
     open_connections: std.atomic.Value(u32) = .init(0),
     draining: std.atomic.Value(bool) = .init(false),
-    penalties_logged: std.atomic.Value(bool) = .init(false), // an engine without them was sent penalties: said once
     generating: std.atomic.Value(u32) = .init(0),
     /// Model requests holding a reservation, when config.admission is on.
     admission: @import("request_admission.zig").Controller = .{},
@@ -168,11 +175,16 @@ pub const Server = struct {
     recall: ?*api.recall_store.Store = null,
 
     /// Reads what the template and tokenizer decide once: late system role, think markers, efforts, the forced close.
+    pub fn media(srv: *const Server) @import("messages.zig").Media {
+        return .ofVision(srv.info.vision, srv.config.vision_pdf);
+    }
+
     pub fn init(gpa: Allocator, io: std.Io, engine: api.Engine, text: model_text.Text, config: Config, keys: ?*auth.Store) !*Server {
         const srv = try gpa.create(Server);
         srv.* = .{ .gpa = gpa, .io = io, .engine = engine, .info = engine.info(), .text = text, .config = config, .keys = keys, .metrics = .{ .gpa = gpa }, .load = .init(io), .store = .{ .gpa = gpa }, .arena = .init(gpa), .slide = .init(gpa, io, config.slide_graph), .teacher = .init(gpa) };
         errdefer srv.deinit(); // a later step's failure stops the keepalive before the caller closes the engine
         if (srv.info.embeddings != null and srv.info.text_generation) return error.InvalidEmbeddingCapabilities;
+        if (srv.info.readouts != null and (srv.info.text_generation or srv.info.embeddings != null)) return error.InvalidReadoutCapabilities;
         if (srv.info.vision) |vision| if (@import("vision_markers.zig").firstUnsafe(text, vision)) |id| {
             log.line("--vision: marker token {d} is not an added token in this tokenizer; image and video input cannot be served safely", .{id});
             return error.InvalidVisionMarkers;
@@ -244,7 +256,7 @@ pub const Server = struct {
 
     /// The effort the template hears: the request's name, or this server's default.
     pub fn effortFor(srv: *const Server, explicit: ?[]const u8) ?[]const u8 {
-        const e = explicit orelse srv.config.reasoning_effort orelse return null;
+        const e = explicit orelse srv.config.reasoning_effort orelse (if (srv.text.vtable.format == .kimi) "max" else return null);
         return fields.coerceEffort(e, srv.effort_levels);
     }
 
@@ -279,18 +291,16 @@ pub const Server = struct {
         };
     }
 
-    /// The request's penalties over the configured defaults; none, and a log line once, where the engine ignores them.
+    /// The request's penalties over configured defaults; unsupported non-default values are refused by name.
     pub fn resolvePenalties(srv: *Server, cx: *Cx, f: Value) errors.Refused!api.Penalties {
         const options = try json.newObject(cx.a);
         if (srv.config.default_sampling) |d| try merge(options, cx, try fields.parseNumbers(cx, d));
         try merge(options, cx, try fields.parseNumbers(cx, f));
-        const p: api.Penalties = .{
-            .presence = @floatCast(number(options.get("presence_penalty")) orelse 0),
-            .frequency = @floatCast(number(options.get("frequency_penalty")) orelse 0),
-        };
-        if (!p.active() or srv.info.penalties) return p;
-        if (!srv.penalties_logged.swap(true, .monotonic)) log.line("presence_penalty and frequency_penalty are ignored: {s} does not apply them", .{srv.backendName()});
-        return .{};
+        const presence = number(options.get("presence_penalty")) orelse 0;
+        const frequency = number(options.get("frequency_penalty")) orelse 0;
+        if (!srv.info.penalties and (presence != 0 or frequency != 0))
+            return cx.fail(.request, "presence_penalty and frequency_penalty are not supported by backend '{s}': send 0 or leave them out", .{srv.backendName()});
+        return .{ .presence = @floatCast(presence), .frequency = @floatCast(frequency) };
     }
 
     /// A specific engine name, or the server's backend identity when the shared host uses its default name.
@@ -333,7 +343,7 @@ pub const Server = struct {
         var err: [512]u8 = undefined;
         const compiled = c.compile(srv.io, @fromBackingInt(@intCast(@backingInt(kind))), text, &err) catch
             return cx.fail(.request, "{s}: the grammar cannot be enforced: {s}", .{ field, std.mem.sliceTo(&err, 0) });
-        return .{ .kind = kind, .text = text, .after = if (thinking) srv.text.tokenId(srv.markers.close) else null, .compiler = c, .compiled = compiled };
+        return .{ .kind = kind, .field = field, .text = text, .after = if (thinking) srv.text.tokenId(srv.markers.close) else null, .compiler = c, .compiled = compiled };
     }
 
     /// grammar_budget: a boolean; true keeps a grammar's reply completable within max_tokens (none without a grammar).

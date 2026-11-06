@@ -16,6 +16,7 @@ pub const built_sm: ?u32 = options.built_sm;
 
 pub const qwen4_hc: []const u8 = if (available) &Blob("fatbin_qwen4_hc").bytes else &.{};
 pub const qwen4_ple: []const u8 = if (available) &Blob("fatbin_qwen4_ple").bytes else &.{};
+pub const gemma4_ple: []const u8 = if (available) &Blob("fatbin_gemma4_ple").bytes else &.{};
 pub const qwen4_gdn: []const u8 = if (available) &Blob("fatbin_qwen4_gdn").bytes else &.{};
 pub const qwen4_projection: []const u8 = if (available) &Blob("fatbin_qwen4_projection").bytes else &.{};
 pub const gdn: []const u8 = if (available) &Blob("fatbin_gdn").bytes else &.{};
@@ -49,6 +50,7 @@ pub const exlr8: []const u8 = if (available) &Blob("fatbin_exlr8").bytes else &.
 pub const exlr8_dense: []const u8 = if (available) &Blob("fatbin_exlr8_dense").bytes else &.{};
 pub const nvfp4_experts_tile: []const u8 = if (available) &Blob("fatbin_nvfp4_experts_tile").bytes else &.{};
 pub const nvfp4_experts: []const u8 = if (available) &Blob("fatbin_nvfp4_experts").bytes else &.{};
+pub const nvfp4_experts32: []const u8 = if (available) &Blob("fatbin_nvfp4_experts32").bytes else &.{};
 pub const rank_sum: []const u8 = if (available) &Blob("fatbin_rank_sum").bytes else &.{};
 pub const sample: []const u8 = if (available) &Blob("fatbin_sample").bytes else &.{};
 pub const train: []const u8 = if (available) &Blob("fatbin_train").bytes else &.{};

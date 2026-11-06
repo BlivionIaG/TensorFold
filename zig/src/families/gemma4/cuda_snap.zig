@@ -1,4 +1,4 @@
-//! A stream's caches at a prompt position: full layers' [0, at), each sliding layer's last window - 1 positions.
+//! A stream's caches at a prompt position: full layers' [0, at), sliding layers' last window - 1; owning layers only.
 const std = @import("std");
 const cuda = @import("cuda");
 const cfg = @import("cuda_config.zig");
@@ -31,7 +31,7 @@ fn rowBytes(m: *const fwd.Model, i: usize) usize {
 /// Bytes a state at `at` copies, its full layers' positions below `from` held as pages.
 pub fn copyBytes(m: *const fwd.Model, at: usize, from: usize) u64 {
     var n: usize = 0;
-    for (0..m.layers) |i| n += 2 * (if (cfg.global(i)) at - from else tail(at)) * rowBytes(m, i);
+    for (0..fwd.pages.ownLayers(m)) |i| n += 2 * (if (cfg.global(i)) at - from else tail(at)) * rowBytes(m, i);
     return n;
 }
 
@@ -39,7 +39,7 @@ pub fn copyBytes(m: *const fwd.Model, at: usize, from: usize) u64 {
 fn each(m: *const fwd.Model, slot: usize, at: usize, from: usize, ctx: anytype, comptime f: fn (@TypeOf(ctx), dev: u64, off: usize, len: usize) anyerror!void) !void {
     if (from > 0 and (!m.paged or from % fwd.pages.tokens != 0 or from > at)) return error.KeptPagesUnpaged;
     var off: usize = 0;
-    for (0..m.layers) |i| for ([_][]u64{ m.kc, m.vc }) |cache| {
+    for (0..fwd.pages.ownLayers(m)) |i| for ([_][]u64{ m.kc, m.vc }) |cache| {
         const rb = rowBytes(m, i);
         if (cfg.global(i) and m.paged) { // pages: p in page p / page_tokens of the slot's row, a copy a run within one
             var p: usize = from;
@@ -101,7 +101,7 @@ fn regions(m: *const fwd.Model) usize {
 
 fn fullLayer(m: *const fwd.Model, j: usize) usize {
     var n: usize = 0;
-    for (0..m.layers) |i| if (cfg.global(i)) {
+    for (0..fwd.pages.ownLayers(m)) |i| if (cfg.global(i)) {
         if (n == j) return i;
         n += 1;
     };
@@ -180,4 +180,30 @@ test "a state holds global layers' positions and each sliding ring's last window
     try testing.expectEqual([3]usize{ (1 << 30) + fwd.ring * sb, (fwd.ring - 977) * sb, 464 * sb }, runs.items[1]);
     const last = runs.items[runs.items.len - 1];
     try testing.expectEqual([3]usize{ (12 << 30) + 4096 * gb, 2 * 5 * 1023 * sb + at * gb, at * gb }, last);
+}
+
+test "a paged state takes a global layer's positions through the slot's pages, a run a page, in position order" {
+    var k = [_]u64{ 1 << 30, 2 << 30, 3 << 30, 4 << 30, 5 << 30, 6 << 30 };
+    var v = [_]u64{ 7 << 30, 8 << 30, 9 << 30, 10 << 30, 11 << 30, 12 << 30 };
+    var ids = [_]u32{ 0, 0, 0, 0, 7, 2, 9, 0 }; // slot 1's row: pages 7, 2, 9, then unmapped
+    var m: fwd.Model = undefined;
+    m.geo = cfg.unified12b;
+    m.layers = 6; // layer 5 is global
+    m.context = 4 * fwd.pages.tokens;
+    m.paged = true;
+    m.ids = &ids;
+    m.kc = &k;
+    m.vc = &v;
+    const at = 2 * fwd.pages.tokens + 10; // pages 7 and 2 whole, then 10 rows of page 9
+    const gb = 1 * 512 * 2;
+    var runs: std.ArrayList([3]usize) = .empty;
+    defer runs.deinit(testing.allocator);
+    try each(&m, 1, at, 0, Count{ .runs = &runs }, Count.add);
+    try testing.expectEqual(@as(usize, 5 * 2 + 2 * 3), runs.items.len); // a sliding cache's 522 rows: one run each
+    const pt = fwd.pages.tokens;
+    const kr = runs.items[runs.items.len - 6 ..][0..3];
+    try testing.expectEqual([3]usize{ (6 << 30) + 7 * pt * gb, kr[0][1], pt * gb }, kr[0]);
+    try testing.expectEqual([3]usize{ (6 << 30) + 2 * pt * gb, kr[0][1] + pt * gb, pt * gb }, kr[1]);
+    try testing.expectEqual([3]usize{ (6 << 30) + 9 * pt * gb, kr[0][1] + 2 * pt * gb, 10 * gb }, kr[2]);
+    try testing.expectEqual(bytes(&m, at), runs.items[runs.items.len - 1][1] + runs.items[runs.items.len - 1][2]);
 }

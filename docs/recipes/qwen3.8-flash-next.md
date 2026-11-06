@@ -9,8 +9,9 @@ requested storage, with the shared runtime reserve. Unused source-file padding i
 `info` prints the base text load and cold pack budgets separately; these are conservative plans, not measured fit results.
 A 128 GB Mac may not hold the complete load even when the weight files fit.
 Use a smaller quantization or raise the OS wired limit where supported; fewer streams or a shorter context reduce
-additional session storage. Native Metal does not implement `--ple-on-ssd` yet. CUDA also serves the 4-bit checkpoint
-([Flash Next on CUDA](flash-next-cuda.md)), and HIP serves it and two oQ checkpoints on a Strix Halo iGPU
+additional session storage. Native Metal's `--ple-on-ssd` leaves the n-gram tables in the checkpoint and reads their
+rows from SSD in batches ([Exact Fluid Subgraph Residency](fluid-subgraph-residency.md)). CUDA also serves the 4-bit
+checkpoint ([Flash Next on CUDA](flash-next-cuda.md)), and HIP serves it and two oQ checkpoints on a Strix Halo iGPU
 ([native HIP](#native-hip-on-a-strix-halo-igpu)).
 
 ```bash
@@ -249,8 +250,7 @@ each reply of concurrent requests (`--parallel 4`) equals the same request alone
 through the same code; its replies have not been checked on their own.
 
 Not supported here:
-- `--tp 2` and `--ple-on-ssd` on an NVFP4 checkpoint stop at startup: two ranks read the MLX checkpoint, and the
-  NVFP4 exports' tables stay memory-mapped.
+- `--ple-on-ssd` on an NVFP4 checkpoint stops at startup: the NVFP4 exports' tables stay memory-mapped.
 - `ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4` (186 GB; bf16 linears and n-gram table) has the RadixArk layout apart
   from its bf16 table, which the loader reads, but the whole checkpoint has not been loaded or served here, so it
   is not listed as tested.
@@ -381,14 +381,17 @@ Serially on the mixed-K pack, TensorFold is 1.51-1.55x ExLlamaV3. On the uniform
 TensorFold's serial path is 5-6% behind ExLlamaV3's, and on both EXL3 packs it is 5-9% behind its own MLX path.
 With drafts on the current engine (the table above), the 3.05 bpw pack decodes 1.6-2.2x ExLlamaV3's serial speed.
 
-### MLX 4-bit, one or two ranks
+### One or two ranks
 
-For two ranks, pull the checkpoint on both and start rank 1 first:
+Two ranks split a ModelOpt checkpoint, not the MLX one. Pull it on both and start rank 1 first:
 
 ```bash
-tensorfold serve TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP --tp 2 --rank 1 --master 192.0.2.1
-tensorfold serve TensorFold/Qwen3.8-Flash-Next-MLX-4bit-MTP --tp 2 --rank 0 --master 192.0.2.1 --name bench --host 0.0.0.0
+tensorfold serve nvidia/Qwen3.8-Flash-Next-NVFP4 --tp 2 --rank 1 --master 192.0.2.1
+tensorfold serve nvidia/Qwen3.8-Flash-Next-NVFP4 --tp 2 --rank 0 --master 192.0.2.1 --name bench --host 0.0.0.0
 ```
+
+With drafts on, two ranks keep prompt states as one GPU does. On two GB10s, a chat with about 28,500 tokens of history
+takes 22.5 s to reply fresh and 1.7 s resumed, and every resumed reply equals the fresh one.
 
 ### Serving
 
@@ -414,7 +417,7 @@ reply still equals its solo run. The cost is decode speed while prompts fill: a 
 most of the experts, so live replies decode at about a tenth of their usual rate during a burst's prefill (2.6-3.2
 of 32-41 tok/s on one Spark) instead of stopping. `--decode-share S` sizes the passes so a round's decoding takes
 that share of the pass's time: 0.25 about doubles decode during a prefill and roughly halves prompt speed. The
-default, 0, keeps whole passes. The native binary refuses `--decode-share`.
+default, 0, keeps whole passes. The native server takes `--decode-share` as a time share instead: see [the API](../api.md).
 
 Prompt pieces are 2,048 rows, or 4,096 while nothing decodes on a DGX Spark serving the MLX checkpoint without
 `--vision`, when the admitted window leaves room (the startup log names the choice). `TENSORFOLD_PREFILL_ROWS=N`

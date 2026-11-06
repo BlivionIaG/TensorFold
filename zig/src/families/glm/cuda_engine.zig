@@ -97,7 +97,7 @@ pub const Engine = struct {
     pages: ?*pages_mod.Pages = null, // the other streams' KV pages and sequences (cuda_pages), once the server attached them
     index_split: bool = false, // the next prompt step's indexer rows split across the ranks: rank 0's choice, the chunk's flag 2
     index_splits: u64 = 0, // prompt steps whose indexer rows split (glm-split-check counts them)
-    share_pages: bool = false, // TF_GLM_KV_SHARE: a kept state leaves its prefix's pages to the prompt cache that holds them
+    share_pages: bool = false, // TF_KV_SHARE: a kept state leaves its prefix's pages to the shared store that holds them
 
     /// Opens rank `rank` of `world` over `comm`; the ranks agree on settings (cuda_ranks) before the weights load.
     pub fn init(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, ctx: *const cuda.Context, checkpoint: []const u8, lib: *const cuda.nccl.Library, comm: cuda.nccl.Comm, rank: usize, world: usize, o: Options) !*Engine {
@@ -141,7 +141,8 @@ pub const Engine = struct {
         const spans = try gpa.alloc(shard.Span, world);
         errdefer gpa.free(spans);
         for (spans, 0..) |*sp, q| sp.* = (try shard.Share.of(&c, q, world)).vocab;
-        var m = try fw.Modules.load(d, ctx);
+        const block32 = !exl3.isExl3(gpa, text) and try @import("cuda_experts.zig").wantsBlock32(gpa, text);
+        var m = try fw.Modules.load(d, ctx, block32);
         errdefer m.deinit();
         var pieces = try fw.Pieces.init(d, o.settings.pieces);
         errdefer pieces.deinit();
@@ -182,6 +183,7 @@ pub const Engine = struct {
         e.bp = try fw.Buffers.init(d, &e.w, prompt_solo.bufferRows(o.settings.solo), true, o.capacity);
         errdefer e.bp.deinit();
         if (o.settings.solo and rank == 0) std.log.info("glm: prompt passes of {d} rows, {d} while another stream decodes", .{ fw.solo_rows, fw.prefill_rows });
+        if (world > 1 and rank == 0) std.log.info("glm: a prompt chunk's exchanges in {d} row pieces", .{o.settings.pieces});
         e.bd = try fw.Buffers.init(d, &e.w, fw.window_rows, false, o.capacity);
         errdefer e.bd.deinit();
         e.bm = try fw.Buffers.init(d, &e.w, fw.window_rows, false, o.capacity);
@@ -349,6 +351,7 @@ pub const Engine = struct {
         var one: [1]fw.Rank = undefined;
         var f = e.view(&e.bp, &one);
         f.index_split = split;
+        if (start + rows <= len -| @as(usize, @intCast(dflash.WIN))) f.taps = null; // none read (dflash.promptRun)
         const as_i32: []const i32 = @ptrCast(part);
         if (marks) |m| if (start > 0 and std.mem.indexOfScalar(u32, m.at, @intCast(start)) != null) m.call(m.ctx, @intCast(start));
         f.prof = e.prompt_profs[if (rows <= 64) 0 else if (rows <= 256) 1 else if (rows <= 1024) 2 else 3];
