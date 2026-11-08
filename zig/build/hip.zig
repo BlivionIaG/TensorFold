@@ -38,7 +38,7 @@ pub fn options(b: *std.Build) Options {
     return .{
         .hipcc = b.option([]const u8, "hipcc", "HIP compiler for model-free tests"),
         .hip_include = b.option([]const u8, "hip-include", "HIP header directory"),
-        .hip_arch = b.option([]const u8, "hip-arch", "Exact GPU architecture for the probe code object"),
+        .hip_arch = b.option([]const u8, "hip-arch", "Exact GPU architecture for the probe code object (default gfx900 on macOS, gfx1151 elsewhere)"),
         .device_lib = b.option([]const u8, "hip-device-lib", "ROCm device bitcode directory (default <rocm>/lib/llvm/amdgcn/bitcode; Arch: <rocm>/amdgcn/bitcode)"),
         .relax_branches = b.option(bool, "hip-relax-branches", "Relax gfx1100 branches earlier (-amdgpu-s-branch-bits=15), for clang 21 (#1521)") orelse false,
     };
@@ -83,7 +83,7 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const hipcc = hipcc_resolved;
     const hip_include = o.hip_include orelse
         b.pathResolve(&.{ std.fs.path.dirname(hipcc_resolved) orelse "/opt/rocm/bin", "..", "include" });
-    const hip_arch = o.hip_arch orelse "gfx1151";
+    const hip_arch = o.hip_arch orelse if (builtin.os.tag == .macos) "gfx900" else "gfx1151";
     if (caps.Caps.of(hip_arch) == null or std.mem.indexOfScalar(u8, hip_arch, ':') != null)
         std.debug.panic("-Dhip-arch {s} is not an exact name in the caps table (zig/src/hip/caps.zig)", .{hip_arch});
     const hip_compile = hipccRun(b, hipcc, &.{ "--genco", b.fmt("--offload-arch={s}", .{hip_arch}), "-O2", "-ffp-contract=off" });
@@ -522,10 +522,11 @@ const headers = [_][]const u8{
     "tiles/gemm_kp.hpp",          "tiles/matrix_gemm.hpp", "tiles/plan.hpp",                "tiles/stream.hpp",           "flashnext/streams.hpp",
     "flashnext/ngram.hpp",        "flashnext/indexer.hpp", "flashnext/sparse.hpp",          "ops/nemotron_moe.hpp",       "quant/bf16_decoder.hpp",
     "quant/dense_tiles.hpp",      "tiles/wmma12_gemm.hpp", "tiles/wmma12_gemm_k32_ref.hpp", "ops/columns.hpp",            "columns_controls.hpp",
-    "ops/vision.hpp",             "ops/dense_text.hpp",    "ops/vl_position.hpp",           "flashnext/sparse_lanes.hpp",
+    "ops/vision.hpp",             "ops/dense_text.hpp",    "ops/vl_position.hpp",           "flashnext/sparse_lanes.hpp", "common/fdot2.hpp",
+    "common/wave.hpp",
 };
-/// The flags of the kernels' first build: no contraction, wave32 on RDNA, C++20.
-const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-mno-wavefrontsize64", "-ffp-contract=off" };
+/// The flags of the kernels' first build: no contraction, C++20; RDNA also gets `-mno-wavefrontsize64` (wave32), added by `compileSource` for wave32 caps only (gfx9 has no wave32 mode).
+const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-ffp-contract=off" };
 const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, relax_branches: bool, arch: []const u8) *std.Build.Module {
@@ -564,6 +565,7 @@ fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, o
     const root = std.fs.path.dirname(std.fs.path.dirname(cc.resolved) orelse ".") orelse ".";
     const run = hipccRun(b, cc.name, &.{"--genco"});
     run.addArgs(&flags);
+    if (c.wave == 32) run.addArg("-mno-wavefrontsize64");
     if (strict) run.addArgs(&.{ "-O2", "-fno-fast-math", "-fdenormal-fp-math=ieee" });
     run.addArg(b.fmt("-DTF_WAVE={d}", .{c.wave}));
     run.addArg(b.fmt("-DTF_DOT2_F16={d}", .{@intFromBool(c.dot2_f16)}));

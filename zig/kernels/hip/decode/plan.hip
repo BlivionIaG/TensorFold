@@ -11,16 +11,25 @@ __device__ __forceinline__ float wave_sum(float x) {
     return __shfl(x, 0, 32);
 }
 
-// x from lane ^ M of its 16-lane row (M < 16): a DPP row_xmask move, all lanes active.
+// x from lane ^ M of its 16-lane row (M < 16): a DPP row_xmask move, all lanes active. gfx900's DPP has no row_xmask (gfx10+): a
+// width-16 shuffle gives the same value.
 template <int M>
 __device__ __forceinline__ float row_xor(float x) {
+#if defined(__gfx900__)
+    return __shfl_xor(x, M, 16);
+#else
     return __builtin_bit_cast(float, __builtin_amdgcn_mov_dpp(__builtin_bit_cast(int, x), 0x160 + M, 0xf, 0xf, false));
+#endif
 }
 
 // wave_sum's folds, own value then partner's at xor 16, 8, 4, 2, 1, without LDS: every lane ends with the sum.
 __device__ __forceinline__ float wave_sum_dpp(float x) {
+#if defined(__gfx900__)
+    x += __shfl_xor(x, 16, 32);  // v_permlanex16 is gfx10+: the partner row's lane i by a shuffle
+#else
     const int w = __builtin_bit_cast(int, x);
     x += __builtin_bit_cast(float, __builtin_amdgcn_permlanex16(w, w, 0x76543210u, 0xfedcba98u, false, false));
+#endif
     x += row_xor<8>(x);
     x += row_xor<4>(x);
     x += row_xor<2>(x);
