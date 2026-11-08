@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# `hipcc --genco`-compatible wrapper over Homebrew LLVM for macOS: HIP device code to an AMDGPU code object, no ROCm install.
+# Only what zig/build/hip.zig (and `hipcc --genco` users) needs: compile one .hip file for --offload-arch=gfxNNN to a linked, unbundled .hsaco.
+#
+# ROCm root = $TF_VEGA_ROOT, else the directory above this script as invoked (bin/hipcc symlink in the root made by fetch-rocm.sh);
+# it provides include/hip/** and lib/llvm/amdgcn/bitcode/*.bc (an explicit --rocm-path / --rocm-device-lib-path argument wins).
+# Mirrors hipcc (rocm-systems hipBin_amd.h): -x hip for .hip, -O3 unless an -O level is given, --genco = --cuda-device-only,
+# -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false. Added for macOS: the SDK libc++ needs, lld path, unbundled output.
+# Env: TF_VEGA_ROOT, TF_LLVM_PREFIX (default /opt/homebrew/opt/llvm), TF_LLD_PREFIX (/opt/homebrew/opt/lld), TF_SDKROOT (else xcrun),
+#      TF_HIP_COV (code object version, default 5: what the runtime's loader implements; 6 is clang 23's own default).
+set -euo pipefail
+SELF=${BASH_SOURCE[0]}
+ROOT=${TF_VEGA_ROOT:-$(cd "$(dirname "$SELF")/.." && pwd)}
+LLVM=${TF_LLVM_PREFIX:-/opt/homebrew/opt/llvm}
+LLD=${TF_LLD_PREFIX:-/opt/homebrew/opt/lld}
+[ -x "$LLVM/bin/clang" ] || { echo "hipcc: $LLVM/bin/clang missing (brew install llvm)" >&2; exit 1; }
+[ -x "$LLD/bin/ld.lld" ] || { echo "hipcc: $LLD/bin/ld.lld missing (brew install lld)" >&2; exit 1; }
+SDK=${TF_SDKROOT:-$(xcrun --show-sdk-path 2>/dev/null || true)}
+[ -n "$SDK" ] && [ -d "$SDK/usr/include" ] || { echo "hipcc: no macOS SDK (set TF_SDKROOT)" >&2; exit 1; }
+
+args=(); have_o=0; have_rocm=0; have_lib=0; genco=0
+for a in "$@"; do
+	case "$a" in
+	--genco) genco=1; continue ;;
+	-O*) have_o=1 ;;
+	--rocm-path=*) have_rocm=1 ;;
+	--rocm-device-lib-path=*) have_lib=1 ;;
+	--version) "$LLVM/bin/clang" --version; exit 0 ;;
+	esac
+	args+=("$a")
+done
+[ "$genco" = 1 ] || { echo "hipcc: only --genco compiles are supported by this wrapper" >&2; exit 2; }
+pre=(--no-default-config -isysroot "$SDK" -x hip --cuda-device-only --offload-device-only --no-gpu-bundle-output
+	"--ld-path=$LLD/bin/ld.lld" "-mcode-object-version=${TF_HIP_COV:-5}"
+	-mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false)
+[ "$have_rocm" = 1 ] || pre+=("--rocm-path=$ROOT")
+[ "$have_lib" = 1 ] || pre+=("--rocm-device-lib-path=$ROOT/lib/llvm/amdgcn/bitcode")
+[ "$have_o" = 1 ] || pre+=(-O3)
+exec "$LLVM/bin/clang++" "${pre[@]}" "${args[@]}"

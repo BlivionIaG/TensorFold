@@ -326,7 +326,7 @@ const Caps = @import("../caps.zig").Caps;
 
 fn kernelsOn(gfx: []const u8) affine.Registry {
     const caps = Caps.of(gfx).?;
-    return affine.Registry.init(if (caps.generation == .rdna2) &tuning.gfx1030 else &tuning.gfx1100, &all);
+    return affine.Registry.init(Kernels.tableFor(caps), &all);
 }
 
 fn envOn(gfx: []const u8, stream_on: bool, gemm_on: bool, matrix_on: bool) Env {
@@ -336,7 +336,7 @@ fn envOn(gfx: []const u8, stream_on: bool, gemm_on: bool, matrix_on: bool) Env {
 }
 
 test "a lane round and a prompt each keep one family at every row count, on every GPU and policy" {
-    for ([_][]const u8{ "gfx1030", "gfx1100", "gfx1151" }) |gfx| {
+    for ([_][]const u8{ "gfx900", "gfx1030", "gfx1100", "gfx1151" }) |gfx| {
         const r = kernelsOn(gfx);
         for ([_]bool{ true, false }) |matrix_on| try r.verify(envOn(gfx, true, true, matrix_on), .mlx);
     }
@@ -414,4 +414,29 @@ test "a prompt takes the K-parallel tiles by rows and by items, then the 128-row
     shape.items = 350;
     shape.m = 10;
     try std.testing.expect(std.mem.endsWith(u8, v.select(envOn("gfx1030", true, true, false), .mlx, .routed, .prefill, shape).?.id, "kp1"));
+}
+
+test "Vega 10 keeps the fp16 families and never runs the 128-row GEMM tile, which spills most of its registers there" {
+    const r = kernelsOn("gfx900");
+    const env = envOn("gfx900", true, true, false);
+    var shape: Shape = .{ .m = 1, .n = 4096, .k = 4096, .bits = 4, .group = 64, .fp16 = true, .tables = .f16 };
+    // a prompt: the K-parallel tiles, then the 32-row GEMM tile to 32 rows, then the 64-row one at every size
+    const prompt = [_]struct { u32, []const u8 }{ .{ 1, "kp0" }, .{ 2, "kp0" }, .{ 3, "kp1" }, .{ 5, "kp2" }, .{ 24, "kp2" }, .{ 25, "gemm32" }, .{ 32, "gemm32" }, .{ 33, "gemm64" }, .{ 64, "gemm64" }, .{ 65, "gemm64" }, .{ 4096, "gemm64" } };
+    for (prompt) |p| {
+        shape.m = p[0];
+        try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .project, .prefill, shape).?.id, p[1]));
+    }
+    // a decode call outside a lane round: the stream tile to 16 rows, the wide tile to 63, the reference block tile from 64
+    const decode = [_]struct { u32, []const u8 }{ .{ 1, "stream" }, .{ 16, "stream" }, .{ 17, "wide" }, .{ 63, "wide" }, .{ 64, "block" }, .{ 200, "block" } };
+    for (decode) |d| {
+        shape.m = d[0];
+        try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .project, .decode, shape).?.id, d[1]));
+    }
+    // a plan: its K-parallel tiles, then the 64-row GEMM tile
+    shape.items = 100;
+    shape.m = 30;
+    try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .routed, .prefill, shape).?.id, "kp3"));
+    shape.items = 411;
+    try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .routed, .prefill, shape).?.id, "gemm64"));
+    for (r.entries) |e| try std.testing.expect(!std.mem.endsWith(u8, e.id, ".gemm") or tuning.find(r.table, e.id) == null);
 }

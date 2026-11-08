@@ -6,6 +6,8 @@
 
 #include <hip/hip_runtime.h>
 
+#include "common/fdot2.hpp"
+#include "common/wave.hpp"
 
 namespace {
 
@@ -24,7 +26,7 @@ struct alignas(16) Quad {
     half2_t p[4];
 };
 
-__device__ __forceinline__ float dot2(half2_t a, half2_t b, float c) { return __builtin_amdgcn_fdot2(a, b, c, false); }
+__device__ __forceinline__ float dot2(half2_t a, half2_t b, float c) { return TF_FDOT2(a, b, c); }
 __device__ __forceinline__ Quad ld_quad(const half_t* p) { return *reinterpret_cast<const Quad*>(p); }
 __device__ __forceinline__ Quad zero_quad() {
     Quad z;
@@ -170,7 +172,7 @@ tf_gdn_wy(const half_t* __restrict__ kh, const half_t* __restrict__ vh, const fl
     __shared__ float sBeta[kBT];
     __shared__ float sBe[kBT];
     const int tid = threadIdx.x;
-    const int wave = __builtin_amdgcn_readfirstlane(tid >> 5);
+    const int wave = tf::rocm::group32(tid);
     const int head = blockIdx.y;
     const int chunk = blockIdx.x;
     const int t0 = chunk * kBT;
@@ -400,7 +402,7 @@ tf_gdn_o(const half_t* __restrict__ qh, const half_t* __restrict__ kh, const hal
     __shared__ alignas(16) half_t sVT[kBT * kTLd];
     __shared__ float sGc[kBT];
     const int tid = threadIdx.x;
-    const int wave = __builtin_amdgcn_readfirstlane(tid >> 5);
+    const int wave = tf::rocm::group32(tid);
     const int chunk = blockIdx.x;
     const int head = blockIdx.y;
     const int t0 = chunk * kBT;

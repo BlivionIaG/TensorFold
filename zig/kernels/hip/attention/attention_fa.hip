@@ -6,6 +6,8 @@
 
 #include <type_traits>
 
+#include "common/fdot2.hpp"
+
 namespace tf {
 namespace rocm {
 
@@ -34,10 +36,10 @@ __device__ __forceinline__ float fa_dot_half(const __half* q, const __half* k) {
     float a0 = 0.f, a1 = 0.f, a2 = 0.f, a3 = 0.f;
 #pragma unroll 8
     for (int p = 0; p < D / 2; p += 4) {
-        a0 = __builtin_amdgcn_fdot2(qq[p], kk[p], a0, false);
-        a1 = __builtin_amdgcn_fdot2(qq[p + 1], kk[p + 1], a1, false);
-        a2 = __builtin_amdgcn_fdot2(qq[p + 2], kk[p + 2], a2, false);
-        a3 = __builtin_amdgcn_fdot2(qq[p + 3], kk[p + 3], a3, false);
+        a0 = TF_FDOT2(qq[p], kk[p], a0);
+        a1 = TF_FDOT2(qq[p + 1], kk[p + 1], a1);
+        a2 = TF_FDOT2(qq[p + 2], kk[p + 2], a2);
+        a3 = TF_FDOT2(qq[p + 3], kk[p + 3], a3);
     }
     return (a0 + a1) + (a2 + a3);
 }
@@ -49,13 +51,13 @@ __device__ __forceinline__ float fa_dot_half(const __half* q, const __half* k, i
     float a0 = 0.f, a1 = 0.f, a2 = 0.f, a3 = 0.f;
     int p = 0;
     for (; p + 4 <= pairs; p += 4) {
-        a0 = __builtin_amdgcn_fdot2(qq[p], kk[p], a0, false);
-        a1 = __builtin_amdgcn_fdot2(qq[p + 1], kk[p + 1], a1, false);
-        a2 = __builtin_amdgcn_fdot2(qq[p + 2], kk[p + 2], a2, false);
-        a3 = __builtin_amdgcn_fdot2(qq[p + 3], kk[p + 3], a3, false);
+        a0 = TF_FDOT2(qq[p], kk[p], a0);
+        a1 = TF_FDOT2(qq[p + 1], kk[p + 1], a1);
+        a2 = TF_FDOT2(qq[p + 2], kk[p + 2], a2);
+        a3 = TF_FDOT2(qq[p + 3], kk[p + 3], a3);
     }
     float acc = (a0 + a1) + (a2 + a3);
-    for (; p < pairs; ++p) acc = __builtin_amdgcn_fdot2(qq[p], kk[p], acc, false);
+    for (; p < pairs; ++p) acc = TF_FDOT2(qq[p], kk[p], acc);
     return acc;
 }
 
@@ -171,23 +173,23 @@ __device__ __forceinline__ void fa_pair_half(const __half* q, const __half* k0, 
         __half2 q1 = qq[p + 1];
         __half2 q2 = qq[p + 2];
         __half2 q3 = qq[p + 3];
-        a0 = __builtin_amdgcn_fdot2(q0, a[p], a0, false);
-        a1 = __builtin_amdgcn_fdot2(q1, a[p + 1], a1, false);
-        a2 = __builtin_amdgcn_fdot2(q2, a[p + 2], a2, false);
-        a3 = __builtin_amdgcn_fdot2(q3, a[p + 3], a3, false);
+        a0 = TF_FDOT2(q0, a[p], a0);
+        a1 = TF_FDOT2(q1, a[p + 1], a1);
+        a2 = TF_FDOT2(q2, a[p + 2], a2);
+        a3 = TF_FDOT2(q3, a[p + 3], a3);
         if constexpr (Bc == 64) {
-            b0 = __builtin_amdgcn_fdot2(q0, b[p], b0, false);
-            b1 = __builtin_amdgcn_fdot2(q1, b[p + 1], b1, false);
-            b2 = __builtin_amdgcn_fdot2(q2, b[p + 2], b2, false);
-            b3 = __builtin_amdgcn_fdot2(q3, b[p + 3], b3, false);
+            b0 = TF_FDOT2(q0, b[p], b0);
+            b1 = TF_FDOT2(q1, b[p + 1], b1);
+            b2 = TF_FDOT2(q2, b[p + 2], b2);
+            b3 = TF_FDOT2(q3, b[p + 3], b3);
         }
     }
     s0 = (a0 + a1) + (a2 + a3);
     s1 = (b0 + b1) + (b2 + b3);
     for (; p < pairs; ++p) {
         __half2 qv = qq[p];
-        s0 = __builtin_amdgcn_fdot2(qv, a[p], s0, false);
-        if constexpr (Bc == 64) s1 = __builtin_amdgcn_fdot2(qv, b[p], s1, false);
+        s0 = TF_FDOT2(qv, a[p], s0);
+        if constexpr (Bc == 64) s1 = TF_FDOT2(qv, b[p], s1);
     }
 }
 

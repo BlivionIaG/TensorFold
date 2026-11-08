@@ -4,6 +4,7 @@
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
 
+#include "common/fdot2.hpp"
 #include "decode/pages.hpp"
 
 namespace {
@@ -23,7 +24,7 @@ struct Dot<__half> {
     using elem = _Float16;
     using pair = _Float16 __attribute__((ext_vector_type(2)));
     static __device__ __forceinline__ float dot(pair a, pair b, float acc) {
-        return __builtin_amdgcn_fdot2(a, b, acc, false);
+        return TF_FDOT2(a, b, acc);
     }
 };
 

@@ -1,5 +1,6 @@
 //! Complete model-free HIP runtime admission; partial symbol tables never escape.
 const std = @import("std");
+const builtin = @import("builtin");
 const abi = @import("abi.zig");
 pub const Error = error{ DriverUnavailable, MissingSymbol, HipFailed, Invalid };
 
@@ -7,9 +8,14 @@ pub const Runtime = struct {
     lib: std.DynLib,
     api: abi.Api,
 
+    /// The runtime library by its platform name (ROCm's libamdhip64.so, the macOS port's libamdhip64.dylib), found by the loader's
+    /// search path; TF_HIP_LIB names the file instead (an install outside the search path, or another runtime).
     pub fn open() Error!Runtime {
-        return openPath("libamdhip64.so");
+        if (std.c.getenv("TF_HIP_LIB")) |path| return openPath(std.mem.span(path));
+        return openPath(library_name);
     }
+
+    pub const library_name = if (builtin.os.tag == .macos) "libamdhip64.dylib" else "libamdhip64.so";
 
     pub fn openPath(path: []const u8) Error!Runtime {
         var lib = std.DynLib.open(path) catch return error.DriverUnavailable;

@@ -1,6 +1,7 @@
 //! HIP: mock-backed admission tests join `zig build test`; GPU builds and runs are opt-in steps (-Dhipcc, -Dhip-include, -Dhip-arch).
 
 const std = @import("std");
+const builtin = @import("builtin");
 const caps = @import("../src/hip/caps.zig");
 
 /// hip-host-test (part of `test`), hip-gpu-build and hip-gpu-test, hip-affine-build and hip-affine-test.
@@ -40,7 +41,8 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const hipcc_resolved = b.findProgram(.{ .names = &.{hipcc} }) orelse hipcc;
     const hip_include = b.option([]const u8, "hip-include", "HIP header directory") orelse
         b.pathResolve(&.{ std.fs.path.dirname(hipcc_resolved) orelse "/opt/rocm/bin", "..", "include" });
-    const hip_arch = b.option([]const u8, "hip-arch", "Exact GPU architecture for the probe code object") orelse "gfx1151";
+    const hip_arch = b.option([]const u8, "hip-arch", "Exact GPU architecture for the probe code object (default gfx900 on macOS, gfx1151 elsewhere)") orelse
+        if (builtin.os.tag == .macos) "gfx900" else "gfx1151";
     if (caps.Caps.of(hip_arch) == null or std.mem.indexOfScalar(u8, hip_arch, ':') != null)
         std.debug.panic("-Dhip-arch {s} is not an exact name in the caps table (zig/src/hip/caps.zig)", .{hip_arch});
     const hip_compile = b.addSystemCommand(&.{ hipcc, "--genco", b.fmt("--offload-arch={s}", .{hip_arch}), "-O2", "-ffp-contract=off" });
@@ -166,13 +168,14 @@ const headers = [_][]const u8{
     "attention/attention_fa.hip", "decode/pages.hpp", "decode/plan.hpp",     "ops/attention.hpp",     "ops/common.hpp",
     "ops/draw.hpp",               "ops/tp.hpp",       "ops/elementwise.hpp", "ops/linear.hpp",        "ops/moe.hpp",
     "ops/norms.hpp",              "ops/rope.hpp",     "common/arch.hpp",     "common/dot2.hpp",       "common/vec.hpp",
+    "common/fdot2.hpp",           "common/wave.hpp",
     "common/wmma.hpp",            "quant/act.hpp",    "quant/mlx.hpp",       "quant/mlx_decoder.hpp", "quant/mlx_pieces.hpp",
     "quant/mlx_tiles.hpp",        "tiles/dot2.hpp",   "tiles/epilogue.hpp",  "tiles/gemm.hpp",        "tiles/gemm_kp.hpp",
     "tiles/matrix_gemm.hpp",      "tiles/plan.hpp",   "tiles/stream.hpp",
 };
 
-/// The flags of the kernels' first build: no contraction, wave32 on RDNA, C++20.
-const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-mno-wavefrontsize64", "-ffp-contract=off" };
+/// The flags of the kernels' first build: no contraction, C++20; RDNA also gets `-mno-wavefrontsize64` (wave32), added by `kernelObjects` for wave32 caps only (gfx9 has no wave32 mode).
+const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-ffp-contract=off" };
 
 const stub = "pub const arch = \"\";\npub const images: [10][]align(8) const u8 = @splat(&.{});\n";
 
@@ -186,6 +189,7 @@ fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, d
     for (groups, 0..) |source, i| {
         const run = b.addSystemCommand(&.{ hipcc, "--genco" });
         run.addArgs(&flags);
+        if (c.wave == 32) run.addArg("-mno-wavefrontsize64");
         run.addArg(b.fmt("-DTF_WAVE={d}", .{c.wave}));
         run.addArg(b.fmt("-DTF_DOT2_F16={d}", .{@intFromBool(c.dot2_f16)}));
         run.addArg(b.fmt("-DTF_DOT2_BF16={d}", .{@intFromBool(c.dot2_bf16)}));
