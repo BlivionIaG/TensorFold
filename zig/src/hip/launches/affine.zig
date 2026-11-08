@@ -281,9 +281,10 @@ pub const Kernels = struct {
         return k.reg.select(k.env(), .mlx, op, path, shape);
     }
 
-    /// The costs of the GPU's generation: RDNA2's, the gfx11 ones for RDNA3 and RDNA3.5, RDNA4's own.
+    /// The costs of the GPU's generation: Vega 10's, RDNA2's, the gfx11 ones for RDNA3 and RDNA3.5, RDNA4's own.
     pub fn tableFor(caps: Caps) *const tuning.Table {
         return switch (caps.generation) {
+            .gcn5 => &tuning.gfx900,
             .rdna2 => &tuning.gfx1030,
             .rdna3 => &tuning.gfx1100,
             .rdna3_5 => &tuning.gfx1151,

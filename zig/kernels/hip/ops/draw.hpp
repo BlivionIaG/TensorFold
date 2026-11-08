@@ -6,8 +6,13 @@
 
 namespace {
 
+#ifndef TF_WAVE
+#error "TF_WAVE (the caps table's wavefront width) comes from the build"
+#endif
+
 constexpr int kThreads = 1024;
-constexpr int kWaves = kThreads / 32;
+constexpr int kWaveSize = TF_WAVE;  // the ballots below see a whole wavefront: 32 lanes on RDNA, 64 on gfx900
+constexpr int kWaves = kThreads / kWaveSize;
 
 __device__ __forceinline__ float widen(uint16_t bits, int kind) {
     if (kind == 1) return __half2float(__ushort_as_half(bits));
@@ -162,7 +167,7 @@ extern "C" __global__ void tf_topk(const uint16_t* logits, int n, const int* ks,
     const uint32_t kth = (high << 8) | static_cast<uint32_t>(pick[1]);
     const int above = pick[2], take = pick[3];
     int seen_gt = 0, seen_eq = 0;
-    const int lane = threadIdx.x & 31, wave = threadIdx.x >> 5;
+    const int lane = threadIdx.x & (kWaveSize - 1), wave = threadIdx.x / kWaveSize;
     for (int base = 0; base < n; base += kThreads) {
         int i = base + threadIdx.x;
         uint16_t bits = i < n ? row[i] : 0;
