@@ -4,6 +4,7 @@
 //   HIPPROF_REAL=<hipmac>/build/libamdhip64.dylib TF_HIP_LIB=<this>.dylib TF_POLICY=graphs=off tensorfold-native serve ...
 // Every symbol of zig/src/hip/abi.zig (and the two it looks up besides) is forwarded unchanged (the arguments are integers and pointers,
 // at most 11 of them, so one signature carries them all). hipModuleLaunchKernel is timed:
+//   HIPPROF_TRACE=file lists the first 3000 launches (name, grid, block, m n k) in order
 //   each   (default) launch, then hipStreamSynchronize, wall clock of both: one kernel's time + the runtime's fixed submit/complete cost
 //   rep    HIPPROF_REP=N (default 16): after the timed launch, the same launch N more times back to back, one sync: the pipelined time of
 //          a kernel in a stream (what a graph replay pays). Only kernels whose name contains HIPPROF_REP_MATCH (default "affine_") and
@@ -275,6 +276,15 @@ __attribute__((visibility("default"))) u hipModuleLaunchKernel(u a, u b, u c, u 
                 sides = cnt;
             }
         }
+    }
+    static FILE *trace;
+    static int trace_n;
+    if (!trace && getenv("HIPPROF_TRACE")) trace = fopen(getenv("HIPPROF_TRACE"), "w");
+    if (trace && trace_n < 3000) {
+        fprintf(trace, "%s g=%u,%u,%u b=%u,%u,%u m=%d n=%d k=%d\n", name, (unsigned)b, (unsigned)c, (unsigned)d, (unsigned)e, (unsigned)f,
+                (unsigned)g, m, n, kk);
+        fflush(trace);
+        trace_n++;
     }
     if (events_on) {
         pthread_mutex_lock(&mu);

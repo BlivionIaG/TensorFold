@@ -264,8 +264,10 @@ pub const Kernels = struct {
 
     /// LDS bytes a block stages its rows of x in, 0 for none: it repays one row at 4+ columns, two at 8 on a small GPU.
     pub fn stageBytes(k: *const Kernels, rows: c_int, depth: c_int, cb: c_int) u32 {
-        const bytes = @as(i64, rows) * (2 * @as(i64, depth) + @divTrunc(depth, 32) * 4);
-        // gcn5: x staged for every width while it is small (up to k = 4096 at one row: 8.7 KB, many blocks a CU), not at k = 9216 (19.5 KB: 3 blocks a CU)
+        // gcn5 stages x as fp32 pairs (the mix of gfx900 flushes denormal fp16 operands): 4 bytes an element, else 2
+        const x_bytes: i64 = if (k.caps.generation == .gcn5) 4 else 2;
+        const bytes = @as(i64, rows) * (x_bytes * @as(i64, depth) + @divTrunc(depth, 32) * 4);
+        // gcn5: x staged for every width while it is small (10.5 KB at k = 2560), not from k = 4096 (16.9 KB: 60 us staged, 42 unstaged)
         const repays = if (k.caps.generation == .gcn5 and k.tune.stage < 0) rows == 1 and bytes <= gcn5_stage_bytes else if (k.tune.stage >= 0) k.tune.stage == 1 and rows <= 2 else if (rows == 1) cb >= 4 else rows == 2 and cb == 8 and k.waves_wanted < streams_wanted;
         return if (k.stage_on and repays and bytes <= stage_bytes_max) @intCast(bytes) else 0;
     }
