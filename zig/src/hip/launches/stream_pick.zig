@@ -47,6 +47,18 @@ pub fn pick(generation: Generation, m: c_int, lpc_log2: u5, bits: c_int, n: c_in
     return tile;
 }
 
+/// `pick`, but at `want` columns a lane (a TF_STREAM_CB experiment; 0 keeps the pick) when that is one of `stream_cbs` and fits the
+/// lane's registers.
+pub fn pickWanted(want: c_int, generation: Generation, m: c_int, lpc_log2: u5, bits: c_int, n: c_int, items: c_int, pair: bool) Tile {
+    var tile = pick(generation, m, lpc_log2, bits, n, items, pair);
+    const ri = rowTile(m);
+    for (affine.stream_cbs, 0..) |cb, c| {
+        if (cb != want or cb * affine.stream_rows[ri] > 16 or cb * bits > affine.stream_code_words) continue;
+        tile = .{ .at = c, .per_block = perBlock(c, lpc_log2, if (pair) 2 else 1) };
+    }
+    return tile;
+}
+
 test "the widest columns that fill the card, and RDNA3.5's narrowest at one and two rows" {
     // 4-bit, K = 2048 (32 lanes a column): 12352 and 248320 columns
     try std.testing.expectEqual(@as(usize, 1), pick(.rdna3, 1, 5, 4, 12352, 1, false).at);
@@ -72,6 +84,14 @@ test "a routed pair counts its gate and up as one column, over every item" {
 test "a width no column count fits falls back to the narrowest tile and its block width" {
     try std.testing.expectEqual(Tile{ .at = 0, .per_block = 8 }, pick(.rdna3, 1, 5, 32, 12352, 1, false));
     try std.testing.expectEqual(Tile{ .at = 0, .per_block = 4 }, pick(.rdna3_5, 1, 5, 32, 512, 9, true));
+}
+
+test "a wanted width replaces the pick where the registers allow it, and 0 keeps the pick" {
+    try std.testing.expectEqual(pick(.rdna3, 1, 5, 4, 12352, 1, false), pickWanted(0, .rdna3, 1, 5, 4, 12352, 1, false));
+    try std.testing.expectEqual(@as(usize, 2), pickWanted(8, .rdna3, 1, 5, 4, 12352, 1, false).at);
+    try std.testing.expectEqual(@as(usize, 0), pickWanted(2, .rdna3, 1, 5, 4, 248320, 1, false).at);
+    // 8 columns of 32-bit codes take more words than a lane has: the pick stays
+    try std.testing.expectEqual(pick(.rdna3, 1, 5, 32, 12352, 1, false), pickWanted(8, .rdna3, 1, 5, 32, 12352, 1, false));
 }
 
 test "the row tile takes 1, 2, then 4 rows a block" {
