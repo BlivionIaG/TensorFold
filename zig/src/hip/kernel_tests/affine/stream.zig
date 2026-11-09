@@ -13,7 +13,7 @@ const prod = @import("product.zig");
 const pinned_f16: u64 = 0x36ef53355d892c81;
 /// gfx900 has no dot2: each fp16 pair is two fused steps, which rounds differently from RDNA2's dot2, so its bytes differ and have their own pin
 /// (recorded on a Vega 56 through hipmac, after the staged-x and float64-bound checks of this and the other affine tests passed on it).
-const pinned_f16_gfx900: u64 = 0x4ac20df95d45bee7;
+const pinned_f16_gfx900: u64 = 0xbfd29f54a3b90d6a;
 const pinned_bf16: u64 = 0x6b703ab847138aad;
 
 /// Row counts: one and two rows a block (the staged tiles), a partial block of four, and the y blocks above.

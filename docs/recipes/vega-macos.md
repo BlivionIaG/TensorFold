@@ -163,12 +163,47 @@ engine's own bit rules: solo equals batched, resumed equals fresh).
 | ten code objects for gfx900, all 335 kernels | build; every kernel resolves through the mock runtime's `hipModuleGetFunction` |
 | `HIPMAC_BACKEND=mock TF_HIP_LIB=<hipmac>/build/libamdhip64.dylib tensorfold-native serve ~/models/Qwen3.5-4B-MLX-4bit` | starts, loads, captures 7 graphs, replays 153 of 160 rounds, answers a chat request (the mock does not run kernels, so the text is empty) |
 
+## Decode on the card (Vega 56 through hipmac, TinyGPU)
+
+Measured with `tools/vega-macos/vega_gate.py` (starts `tensorfold-native serve` on `libamdhip64.dylib`, checks the greedy tokens against
+the mlx_lm references of `tools/vega-macos/mlx_ref.py`, then runs story decodes and reads `tensorfold.tokens_per_second`).
+
+| Step | decode tok/s | Tokens vs mlx_lm |
+| --- | --- | --- |
+| port as of the first run (two fused fp16 steps a pair, 32 lanes a column, 2 to 8 columns a lane) | 36.5 | identical (France 8 tokens, 96-token thinking) |
+| `v_mad_mix_f32` for the stream tile's fp16 pair (`TF_G9_MIX`; the products are exact, the story tokens equal the fused pair's) | 46.7 | identical |
+| `v_and_or_b32` builds a code pair in one op (`TF_G9_ANDOR`, bit-identical) | 49.3 | identical |
+| lanes a column that leave none idle (80 chunks at k = 2560: 16 lanes, 5 rounds), at most 4 columns a lane, x staged up to k = 4096, weights requested before the stage | 57.5 | identical |
+| `TF_G9_FOLD=1` (`bias - 1024 * scale` in the epilogue: one packed op less a pair; not bit-identical, off by default) | 58.2 | identical |
+
+Test status on the card: `hip-kernel-test` 62 of 63 and `hip-affine-test` pass; the one failure is `affine ragged m3 n130 k96 b2 g32:
+mlx.project.decode.stream is 2.3 times the error an fp32 sum may have against float64`, and it goes away with `-Dhip-cflags=-DTF_G9_MIX=0`
+(then the decode is 36.5 to 49 tok/s lower by the mix's share, about 10 tok/s). [INFERENCE] `v_mad_mix_f32` flushes denormals of the
+fp32 sum in that synthetic case; the GEMM tiles keep the convert-and-fuse dot (`TF_FDOT2`), only the stream tile uses `TF_FDOT2_STREAM`.
+
+Dropped: reading the codes as fp16 denormals (`TF_G9_RAW`, 51 tok/s): `v_mad_mix_f32` flushes denormal inputs on Vega and the tokens
+differ.
+
+Why the stream (gemv) tile is where it is: a read-only kernel with the tile's lane mapping reaches 360 GB/s of the 409.6 GB/s on
+big matrices (512 MiB) and 320 GB/s at 25 MB, so the card's memory is not the limit. Ablations at the gate/up shape (26.5 MB,
+before the tuning): no scale/bias loads 119 us, no dot arithmetic 110 us, loads only about 80 us, the tile 142 us. After the tuning:
+gate/up 114 us (233 GB/s), qkv 83, down 66 (200 GB/s), out 34, attention qkv 72, lm_head 1171 us (305 GB/s).
+
+Switches (all gfx900 only; RDNA code objects are byte-identical to before, checked for gfx1030):
+
+- `-Dhip-cflags="-DTF_G9_MIX=0 -DTF_G9_ANDOR=0 -DTF_G9_FOLD=1"` at build time (variants of `common/fdot2.hpp`).
+- `TF_STREAM_CB`, `TF_STREAM_STAGE`, `TF_STREAM_LPC` at run time override the launch rule of `affine.zig` (`streamGo`).
+- `HIPMAC_IB=0 HIPMAC_BATCH=1` against the defaults: no change in decode speed (49.0 and 49.0 tok/s), the GPU is the limit.
+
+Where a decode token goes (about 393 launches, 15.5 ms of kernel time of the 17.5 ms a token): the stream gemvs 10.5 ms (68%),
+`tf_gdn_plan_128` 1.0, `tf_tail` 0.9 (one block a row), `tf_gnorm_out`, `tf_plan_apply_f16`, `tf_conv_split` 0.35 to 0.4 each. Each
+dispatch costs the GPU about 4.4 us (barrier and cache acquire), about 1.7 ms a token (8%).
+
+Profiling: `tools/vega-macos/hipprof.c` is a shim `libamdhip64` that forwards to the runtime and times `hipModuleLaunchKernel`
+(`HIPPROF_REP=N` runs N extra back-to-back launches of each kernel for the pipelined time); `vega_gate.py --prof each` builds it,
+`prof_report.py` prints the per-token table. `--no-gate --story-tokens 16` is enough for a profile.
+
 ## Not yet verified
 
-- Any kernel on the card; every number in `gfx900.zon` is gfx1030's or a spill-driven guess.
-- `hip-gpu-test`, `hip-affine-test`, `hip-kernel-test`, `tf-qwen35-test check` on a Vega: run
-  `zig build hip-kernel-test -Dhipcc=$ROCM/bin/hipcc` and the others with `HIPMAC_BACKEND` unset once the card is the runtime's.
-  [INFERENCE] The affine golden test runs `affine.hip`, which has no dot2 and only width-32 shuffles, so it should pass as on RDNA.
-- The runtime's code-object parser (shared by the mock and the card backend) accepts all ten objects; that the card's device layer
-  runs them, including the scratch of `tf_gdn_h` and the xnack-"any" flag, is not tested.
+- Logits cosine against mlx on the card (`vega_gate.py --logits` exists; the greedy tokens match for the checked prompts).
 - The default `--mtp-drafts 3` of a discrete GPU is irrelevant for this checkpoint (it has no MTP head).

@@ -109,7 +109,38 @@ __device__ void tail_body(void* x, const void* y, const float* wts, const float*
     const int row = blockIdx.x;
     const long long at = static_cast<long long>(row) * width;
     float sum = 0.f;
+#if defined(__gfx900__)
+    // gfx900, no slots: a block's loads go out together (the stores to x could alias y and weight, so a loop would load one
+    // element, store, load the next: five latencies for a 2560-wide row). Same values, same order of the sum.
+    if (slots == 0) {
+        constexpr int kU = 8;
+        for (int base = threadIdx.x; base < width; base += kU * kTailThreads) {
+            float xv[kU], tv[kU];
+#pragma unroll
+            for (int u = 0; u < kU; ++u) {
+                const int i = base + u * kTailThreads;
+                if (i < width) {
+                    xv[u] = load_kind(x, kind, at + i);
+                    tv[u] = load_kind(y, kind, at + i);
+                }
+            }
+#pragma unroll
+            for (int u = 0; u < kU; ++u) {
+                const int i = base + u * kTailThreads;
+                if (i < width) {
+                    const float v = round_kind(xv[u] + tv[u], kind);
+                    store_kind(x, kind, at + i, v);
+                    row_v[i] = v;
+                    sum += v * v;
+                }
+            }
+        }
+    }
+#endif
     for (int i = threadIdx.x; i < width; i += kTailThreads) {
+#if defined(__gfx900__)
+        if (slots == 0) break;
+#endif
         float t;
         if (slots > 0) {
             float acc = 0.f;
@@ -134,6 +165,25 @@ __device__ void tail_body(void* x, const void* y, const float* wts, const float*
 #pragma unroll
     for (int w = 0; w < kTailThreads / 32; ++w) total += part[w];
     const float inv = rsqrtf(total / static_cast<float>(width) + eps);
+#if defined(__gfx900__)
+    if (weight != nullptr) {
+        constexpr int kU = 8;
+        for (int base = threadIdx.x; base < width; base += kU * kTailThreads) {
+            float wv[kU];
+#pragma unroll
+            for (int u = 0; u < kU; ++u) {
+                const int i = base + u * kTailThreads;
+                if (i < width) wv[u] = weight[i];
+            }
+#pragma unroll
+            for (int u = 0; u < kU; ++u) {
+                const int i = base + u * kTailThreads;
+                if (i < width) store_kind(normed, kind, at + i, row_v[i] * inv * wv[u]);
+            }
+        }
+        return;
+    }
+#endif
     for (int i = threadIdx.x; i < width; i += kTailThreads) {
         float value = row_v[i] * inv;
         if (weight != nullptr) value *= weight[i];

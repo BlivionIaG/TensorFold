@@ -24,6 +24,13 @@ __device__ inline uint32_t stream_pick(uint32_t a, uint32_t b, int parity) {
 }
 
 // x of one row in the order of the code pairs: pair I takes the halves of the codes it is multiplied with.
+// The stream tile's dot: a Dot may have its own form of it (gfx900 fp16: v_mad_mix_f32), else its dot.
+template <typename T>
+__device__ __forceinline__ float stream_dot(typename T::pair x, typename T::pair q, float acc) {
+    if constexpr (requires { T::dot_stream(x, q, acc); }) return T::dot_stream(x, q, acc);
+    else return T::dot(x, q, acc);
+}
+
 template <class Dec, typename T, int... I>
 __device__ inline void stream_x_pairs(const uint32_t (&xn)[16], typename T::pair (&xp)[16],
                                       std::integer_sequence<int, I...>) {
@@ -46,7 +53,7 @@ __device__ inline void stream_dots(const typename T::pair (&xp)[RG][16], const u
     (([&] {
          const typename T::pair q = Dec::template stream_pair<T, I>(w);
 #pragma unroll
-         for (int r = 0; r < RG; ++r) d[r] = T::dot(xp[r][I], q, d[r]);
+         for (int r = 0; r < RG; ++r) d[r] = stream_dot<T>(xp[r][I], q, d[r]);
      }()),
      ...);
 }
@@ -71,7 +78,7 @@ __device__ inline void stream_stage(const typename Dec::Args& a, int row0, uint3
         }
         float s = 0.f;
 #pragma unroll
-        for (int i = 0; i < 16; ++i) s = T::dot(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, T::ones), s);
+        for (int i = 0; i < 16; ++i) s = stream_dot<T>(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, T::ones), s);
         sums[at] = s;
         pair xp[16];
         stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
@@ -122,9 +129,15 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         for (int c = 0; c < CB; ++c) acc[r][c] = 0.f;
     }
 
-    // SHARED: the lanes read x pairs and sums of x from the block's stage instead of loading x (same values, same bits); the stage is
-    // written after the first round's weights are requested, so the weights' latency runs under the stage's.
+    // SHARED: the lanes read x pairs and sums of x from the block's stage instead of loading x (same values, same bits). On gfx900 at
+    // one row the stage is written after the first round's weights are requested, so the weights' latency runs under the stage's.
+#if defined(__gfx900__)
+    constexpr bool kStageLate = R == 1;
+#else
+    constexpr bool kStageLate = false;
+#endif
     extern __shared__ uint32_t stage[];
+    if constexpr (SHARED && !kStageLate) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
     const uint32_t* xs = stage;
     const float* sums = reinterpret_cast<const float*>(stage + R * nch * 16);
     const typename Dec::StreamTerms terms(a);
@@ -182,7 +195,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                 float s = 0.f;
 #pragma unroll
                 for (int i = 0; i < 16; ++i) {
-                    s = T::dot(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, kOne), s);
+                    s = stream_dot<T>(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, kOne), s);
                 }
                 sx[r] = s;
                 stream_x_pairs<Dec, T>(xn, xp[r], std::make_integer_sequence<int, 16>{});
@@ -215,7 +228,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         uint32_t wb[CB][Dec::kWords];
         unsigned short sbb[CB], bbb[CB];
         fetch(at(0), wa, sa, ba);
-        if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
+        if constexpr (SHARED && kStageLate) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
         for (int r = 0; r < rounds; r += 2) {
             if (r + 1 < rounds) fetch(at(r + 1), wb, sbb, bbb);
             work(at(r), wa, sa, ba);
@@ -225,7 +238,6 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         }
     } else {
         // several rows: the dots cover the loads' latency, and registers go to the rows' x
-        if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
         for (int r = 0; r < rounds; ++r) {
             fetch(at(r), wa, sa, ba);
             work(at(r), wa, sa, ba);

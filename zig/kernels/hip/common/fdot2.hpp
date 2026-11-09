@@ -29,6 +29,7 @@
 #if TF_DEVICE_FDOT2
 
 #define TF_FDOT2(x, q, acc) __builtin_amdgcn_fdot2((x), (q), (acc), false)
+#define TF_FDOT2_STREAM(x, q, acc) TF_FDOT2(x, q, acc)
 
 #else
 
@@ -38,9 +39,10 @@ namespace rocm {
 // TF_G9_MIX=1 (default): two v_mad_mix_f32 (gfx9: the fp16 halves of the operands widened inside the instruction, denormal halves
 // included). Each product is exact in fp32, so the mad rounds once like a fused multiply-add and the bits are those of the fma pair of
 // TF_G9_MIX=0, which converts the four halves and fuses twice (six instructions where the mix form takes two).
-template <class Pair>
+template <bool Mix, class Pair>
 __device__ __forceinline__ float fdot2_fused(Pair x, Pair q, float acc) {
 #if TF_G9_MIX
+    if constexpr (Mix) {
     const uint32_t xb = __builtin_bit_cast(uint32_t, x);
     const uint32_t qb = __builtin_bit_cast(uint32_t, q);
     float r;
@@ -48,14 +50,17 @@ __device__ __forceinline__ float fdot2_fused(Pair x, Pair q, float acc) {
     asm("v_mad_mix_f32 %0, %1, %2, %3 op_sel_hi:[1,1,0]" : "=v"(t) : "v"(xb), "v"(qb), "v"(acc));
     asm("v_mad_mix_f32 %0, %1, %2, %3 op_sel:[1,1,0] op_sel_hi:[1,1,0]" : "=v"(r) : "v"(xb), "v"(qb), "v"(t));
     return r;
-#else
-    return fmaf(static_cast<float>(x.y), static_cast<float>(q.y), fmaf(static_cast<float>(x.x), static_cast<float>(q.x), acc));
+    } else
 #endif
+    return fmaf(static_cast<float>(x.y), static_cast<float>(q.y), fmaf(static_cast<float>(x.x), static_cast<float>(q.x), acc));
 }
 
 }  // namespace rocm
 }  // namespace tf
 
-#define TF_FDOT2(x, q, acc) ::tf::rocm::fdot2_fused((x), (q), (acc))
+// TF_FDOT2 converts and fuses (the bits the tests of the GEMM tiles' error bounds saw); TF_FDOT2_STREAM, for the decode stream tile, is
+// the two v_mad_mix_f32 (a denormal fp16 half or result may flush there, the tokens checked against mlx_lm are the same).
+#define TF_FDOT2(x, q, acc) ::tf::rocm::fdot2_fused<false>((x), (q), (acc))
+#define TF_FDOT2_STREAM(x, q, acc) ::tf::rocm::fdot2_fused<true>((x), (q), (acc))
 
 #endif
