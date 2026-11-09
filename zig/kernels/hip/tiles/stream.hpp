@@ -134,6 +134,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         for (int c = 0; c < CB; ++c) acc[r][c] = 0.f;
     }
 
+
     const typename Dec::StreamTerms terms(a);
 
     // The loads of one round: every column's chunk and its scale and bias, none waited for before the dots.
@@ -158,6 +159,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         for (int c = 0; c < CB; ++c) {
             sc[c] = live ? terms.widen(sr[c]) : 0.f;
             bi[c] = live ? terms.widen(br[c]) : 0.f;
+            if constexpr (Dec::kDeferSub) bi[c] = fmaf(-Dec::kStreamMark, sc[c], bi[c]);
         }
         if constexpr (stream_pairs_per_group<Dec, R, CB>()) {
             constexpr int RG = R < 4 ? R : 4;  // rows a pass keeps in registers
