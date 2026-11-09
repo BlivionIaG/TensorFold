@@ -27,7 +27,6 @@ const native_serves: []const []const u8 = if (@hasDecl(@import("root"), "serves"
 fn served(comptime name: []const u8) bool {
     return servedBy(native_serves, name);
 }
-
 fn servedBy(list: []const []const u8, name: []const u8) bool {
     for (list) |x| if (std.mem.eql(u8, x, name)) return true;
     return false;
@@ -133,8 +132,7 @@ pub const flags = [_]Flag{
     .{ .name = "--rank", .native = served("--tp") },
     .{ .name = "--master", .native = served("--tp") },
     .{ .name = "--master-port", .native = served("--tp") },
-    // the GPU engine's policy switches as key=value pairs, repeatable
-    .{ .name = "--policy", .kind = .append, .native = served("--policy") },
+    .{ .name = "--policy", .kind = .append, .native = served("--policy") }, // the GPU engine's key=value switches
     .{ .name = "--kv-dtype", .choices = &.{ "bf16", "int8", "int4" } },
     .{ .name = "--prefill-fp8", .kind = .store_true },
     .{ .name = "--no-prefill-fp8", .kind = .store_true },
@@ -157,7 +155,7 @@ pub const flags = [_]Flag{
     .{ .name = "--recall-read-only", .kind = .store_true, .native = true },
     // the native server's own: Cortheon's reasoning program and server-run web research for every chat request
     .{ .name = "--cortheon", .kind = .store_true, .native = true },
-};
+} ++ @import("cli_remote.zig").flags(Flag, served("--mcdma-produce"));
 
 /// The variables this binary honours as the Python engine does, then the CUDA build's or the Metal build's.
 pub const env = [_][]const u8{ "TENSORFOLD_API_KEY", "TENSORFOLD_NO_LIVE", "TENSORFOLD_SEED_SALT", "TENSORFOLD_REQUEST_LOG", "TENSORFOLD_TOOL_ID_KEY_FILE", "TENSORFOLD_PHASE_METRICS", "TENSORFOLD_LIBPDFIUM", "TENSORFOLD_MAX_PDF_PAGES", "HF_HOME", "HF_HUB_CACHE", "BRAVE_SEARCH_API_KEY" } ++
@@ -193,6 +191,7 @@ pub const Args = struct {
     ssd_experts_gib: ?f64 = null,
     ple_on_ssd: bool = false,
     fsr_trace: ?[]const u8 = null,
+    remote_prefill: api.LaneHost.Remote.Flags = .{}, // --prefill-from and --mcdma-link (cli_remote.zig)
     decode_share: ?f64 = null, // the reply's share x: the prompt owes 1 - x and only the flag offers the chunk cap (null: env time share only)
     prompt_cache_over_cap: bool = false, // a --prompt-cache-gib past that is kept, not refused
     learn: bool = false, // keep shared prompt states on disk (--learn-dir: where; it implies --learn)
@@ -410,7 +409,7 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
         return repeated.origins.append(a, v);
     }
     if (try cudaFlag(a, out, name, v, u) or try gpuFlag(a, out, name, v, u)) return;
-    if (try recallFlag(a, out, name, v, u)) return;
+    if (try recallFlag(a, out, name, v, u) or try @import("cli_remote.zig").flag(a, &out.remote_prefill, name, v, u)) return;
     if (out.cfg.set(name, v) catch return fail(u, a, "--cfg-gamma must be 0 (off) or 1 (unguided) through 5", .{})) return;
     if (@import("cli_fsr.zig").apply(out, name, v) catch |err| return fail(u, a, "argument {s}: {s}", .{ name, @errorName(err) })) return;
     if (is(name, "--voices")) {
@@ -552,6 +551,7 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .ssd_experts_gib = args.ssd_experts_gib,
         .ple_on_ssd = args.ple_on_ssd,
         .fsr_trace = args.fsr_trace,
+        .remote_prefill = args.remote_prefill,
         .learn = if (args.learn) args.learn_dir orelse try api.prompt_imprint.defaultRoot(a) else if (spills(args)) try api.prompt_cache.rows.spillRoot(a) else null,
         .learn_gib = if (spills(args)) @min(args.spill_gib.?, if (args.learn) args.learn_gib else std.math.inf(f64)) else args.learn_gib,
         .learn_min_free_gib = args.learn_min_free_gib,
