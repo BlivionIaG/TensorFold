@@ -30,6 +30,8 @@ struct DotF16 {
     __device__ static float lo(pair p) { return __low2float(p); }
     __device__ static float hi(pair p) { return __high2float(p); }
     __device__ static float dot(pair x, pair q, float acc) { return TF_FDOT2(x, q, acc); }
+    // The stream tile's dot (gfx900: v_mad_mix_f32 pairs; elsewhere the same instruction as dot)
+    __device__ static float dot_stream(pair x, pair q, float acc) { return TF_FDOT2_STREAM(x, q, acc); }
     // On RDNA2 the DPP form of v_dot2c_f32_f16 does it in one instruction at full rate (row_share would halve it).
     // Elsewhere the x word is moved across the quad first (a GPU without the instruction, gfx900, takes fdot2's fused pair).
     template <int I>
