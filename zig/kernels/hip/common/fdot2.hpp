@@ -8,12 +8,16 @@
 
 // Variant switches of gfx900 (-Dhip-cflags=-DTF_G9_MIX=0 ... builds the others, to compare on the card; RDNA ignores them):
 //   TF_G9_MIX  1: the dot2 is two v_mad_mix_f32 (below)      0: converts and fuses
-//   TF_G9_RAW  1: the stream tile feeds the codes as fp16 denormals (quant/mlx_decoder.hpp)     0: 1024 + c, then minus 1024
+//   TF_G9_FOLD  1: the stream tile leaves the 1024 of its code pairs to the group's bias (not the same bits)    0: subtracts it per pair
+//   TF_G9_ANDOR 1: the stream tile's code pairs by v_and_or_b32 (quant/mlx_decoder.hpp)     0: the compiler's and + or
 #ifndef TF_G9_MIX
 #define TF_G9_MIX 1
 #endif
-#ifndef TF_G9_RAW
-#define TF_G9_RAW 1
+#ifndef TF_G9_FOLD
+#define TF_G9_FOLD 0
+#endif
+#ifndef TF_G9_ANDOR
+#define TF_G9_ANDOR 1
 #endif
 
 #if defined(__gfx900__)

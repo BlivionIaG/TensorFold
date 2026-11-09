@@ -160,17 +160,24 @@ struct MlxDecoder {
         else return 1;
     }
 
-    // gfx900 (TF_G9_RAW=1, the default): the stream tile does not turn a code into 1024 + c and subtract 1024 (three instructions a pair). The
-    // code's bits are already an fp16: a denormal worth c * 2^-24, and v_mad_mix_f32 (TF_FDOT2) reads denormal halves. Every product x * c * 2^-24
-    // is exact in fp32 and so are the sums' roundings, those of the sums of x * c scaled by the power of two (nothing reaches fp32's
-    // denormals), so the dot of a chunk comes out as its value times 2^-24, and the scale's 2^24 below puts that back exactly.
-#if defined(__gfx900__) && TF_G9_RAW
-    static constexpr bool kRawCodes = true;
-    static constexpr float kStreamGain = 16777216.0f;
+    // gfx900 (TF_G9_ANDOR=1, the default): the mask and the 1024 mark of a code pair are one v_and_or_b32 (the compiler emits two instructions, as
+    // gfx9's VOP3 has no literal operand): shift, and-or, then the packed subtract. (Feeding the codes raw as fp16 denormals to v_mad_mix_f32,
+    // a pair in two instructions, was tried: the instruction flushes denormal fp16 inputs on the Vega and the tokens come out wrong.)
+#if defined(__gfx900__) && TF_G9_ANDOR
+    static constexpr bool kAndOr = true;
 #else
-    static constexpr bool kRawCodes = false;
-    static constexpr float kStreamGain = 1.0f;
+    static constexpr bool kAndOr = false;
 #endif
+
+    // gfx900 (TF_G9_FOLD=1): the stream tile's code pairs stay 1024 + c, the dot is the sum of x * (1024 + c), and the 1024 of every code comes
+    // out in the group's bias instead (bias - 1024 * scale): one packed subtract a pair less. The sums are 1024 times larger, so the result is
+    // not the bits of TF_G9_FOLD=0 (a rounding error of 2^-14 of the group's sum of x where the dot of the codes has 2^-24 of itself).
+#if defined(__gfx900__) && TF_G9_FOLD
+    static constexpr bool kDeferSub = true;
+#else
+    static constexpr bool kDeferSub = false;
+#endif
+    static constexpr float kStreamMark = 1024.0f;
 
     // Pair I of the chunk's codes as the activation type's pair (the codes are below 256, exact in both types).
     template <typename T, int I>
@@ -181,17 +188,21 @@ struct MlxDecoder {
         if constexpr (kGapPairs) {
             constexpr int per = 32 / BITS;
             constexpr uint32_t mask = ((1u << BITS) - 1u) * 0x00010001u;
-            bits = (w[low / per] >> (BITS * (low % per))) & mask;
+            const uint32_t shifted = w[low / per] >> (BITS * (low % per));
+            if constexpr (kAndOr && std::is_same_v<typename T::elem, __half>) {
+                uint32_t r;
+                asm("v_and_or_b32 %0, %1, %2, %3" : "=v"(r) : "v"(shifted), "v"(mask), "v"(0x64006400u));
+                if constexpr (kDeferSub) return __builtin_bit_cast(__half2, r);
+                return __hsub2(__builtin_bit_cast(__half2, r), __builtin_bit_cast(__half2, 0x64006400u));
+            }
+            bits = shifted & mask;
         } else {
             bits = piece_bits<BITS>(w, low) | (piece_bits<BITS>(w, high) << 16);
         }
         if constexpr (std::is_same_v<typename T::elem, __half>) {
-            if constexpr (kRawCodes) {
-                return __builtin_bit_cast(__half2, bits);  // the code as an fp16 denormal: c * 2^-24 (see kStreamGain)
-            } else {
-                bits |= 0x64006400u;
-                return __hsub2(__builtin_bit_cast(__half2, bits), __builtin_bit_cast(__half2, 0x64006400u));
-            }
+            bits |= 0x64006400u;
+            if constexpr (kDeferSub) return __builtin_bit_cast(__half2, bits);
+            return __hsub2(__builtin_bit_cast(__half2, bits), __builtin_bit_cast(__half2, 0x64006400u));
         } else {
             // The float of an integer below 256 has its low 16 bits clear, so its top half is the BF16.
             const uint32_t a = __builtin_bit_cast(uint32_t, static_cast<float>(bits & 0xffffu));

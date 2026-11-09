@@ -122,9 +122,9 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         for (int c = 0; c < CB; ++c) acc[r][c] = 0.f;
     }
 
-    // SHARED: the lanes read x pairs and sums of x from the block's stage instead of loading x (same values, same bits)
+    // SHARED: the lanes read x pairs and sums of x from the block's stage instead of loading x (same values, same bits); the stage is
+    // written after the first round's weights are requested, so the weights' latency runs under the stage's.
     extern __shared__ uint32_t stage[];
-    if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
     const uint32_t* xs = stage;
     const float* sums = reinterpret_cast<const float*>(stage + R * nch * 16);
     const typename Dec::StreamTerms terms(a);
@@ -149,8 +149,9 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         float bi[CB];
 #pragma unroll
         for (int c = 0; c < CB; ++c) {
-            sc[c] = live ? terms.widen(sr[c]) * Dec::kStreamGain : 0.f;
+            sc[c] = live ? terms.widen(sr[c]) : 0.f;
             bi[c] = live ? terms.widen(br[c]) : 0.f;
+            if constexpr (Dec::kDeferSub) bi[c] = fmaf(-Dec::kStreamMark, sc[c], bi[c]);
         }
 #pragma unroll
         for (int g = 0; g < NG; ++g) {
@@ -214,6 +215,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         uint32_t wb[CB][Dec::kWords];
         unsigned short sbb[CB], bbb[CB];
         fetch(at(0), wa, sa, ba);
+        if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
         for (int r = 0; r < rounds; r += 2) {
             if (r + 1 < rounds) fetch(at(r + 1), wb, sbb, bbb);
             work(at(r), wa, sa, ba);
@@ -223,6 +225,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         }
     } else {
         // several rows: the dots cover the loads' latency, and registers go to the rows' x
+        if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
         for (int r = 0; r < rounds; ++r) {
             fetch(at(r), wa, sa, ba);
             work(at(r), wa, sa, ba);

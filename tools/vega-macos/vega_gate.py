@@ -14,7 +14,7 @@ The mlx_lm references come from `uvx --from mlx-lm python tools/vega-macos/mlx_r
 Env TF_POLICY / --policy and --env K=V reach the engine, which is how a kernel variant is switched on (see docs/recipes/vega-macos.md).
 Exit status 0 when every check passed. Results are also appended as JSON lines to OUT/results.jsonl.
 """
-import argparse, json, os, signal, subprocess, sys, time, urllib.request, re, shutil
+import argparse, hashlib, json, os, signal, subprocess, sys, time, urllib.request, re, shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -37,8 +37,9 @@ ap.add_argument("--context", type=int, default=4096)
 ap.add_argument("--speed", type=int, default=3, help="decode speed runs (0 skips)")
 ap.add_argument("--story-tokens", type=int, default=128)
 ap.add_argument("--logits", action="store_true", help="also compare decode-path logits with mlx_lm (needs uv, numpy)")
-ap.add_argument("--prof", choices=("each", "graph"), help="run behind hipprof")
-ap.add_argument("--rep", type=int, default=16, help="hipprof: replays of each affine launch (pipelined time)")
+ap.add_argument("--prof", choices=("each", "events", "graph"), help="run behind hipprof")
+ap.add_argument("--rep", type=int, default=16, help="hipprof: replays of each matching launch (pipelined time)")
+ap.add_argument("--rep-match", default="affine_", help="hipprof: kernel names to replay ('' all: state is garbage afterwards, the timing is not)")
 ap.add_argument("--policy", default="", help="TF_POLICY, e.g. stream=reference")
 ap.add_argument("--env", action="append", default=[], help="K=V for the engine")
 ap.add_argument("--no-gate", action="store_true", help="skip the token checks (speed / profile only)")
@@ -58,8 +59,8 @@ def engine_env(shim=None):
     e = dict(os.environ)
     e["HIPMAC_BACKEND"] = a.backend
     e["TF_HIP_LIB"] = shim or a.lib
-    if a.policy or a.prof == "each":
-        pol = [p for p in (a.policy, "graphs=off" if a.prof == "each" else "") if p]
+    if a.policy or a.prof in ("each", "events"):
+        pol = [p for p in (a.policy, "graphs=off" if a.prof in ("each", "events") else "") if p]
         e["TF_POLICY"] = ",".join(pol)
     for kv in a.env:
         k, v = kv.split("=", 1)
@@ -100,9 +101,13 @@ if a.prof:
     env = engine_env(shim)
     env["HIPPROF_REAL"] = a.lib
     env["HIPPROF_REP"] = str(a.rep if a.prof == "each" else 0)
+    env["HIPPROF_REP_MATCH"] = a.rep_match
+    env["HIPPROF_START"] = "1"
     env["HIPPROF_LOG"] = os.path.join(a.out, f"{a.tag}.prof.txt")
     if a.prof == "graph":
         env["HIPPROF_GRAPH"] = "1"
+    if a.prof == "events":
+        env["HIPPROF_EVENTS"] = "1"
 log = os.path.join(a.out, f"{a.tag}.server.log")
 cmd = [a.bin, "serve", a.model, "--parallel", "1", "--context", str(a.context), "--port", str(a.port), "--no-thinking", "--temperature", "0", "--no-drafts"]
 print("$", " ".join(cmd), "  env:", {k: v for k, v in env.items() if k.startswith(("HIP", "TF_"))}, flush=True)
@@ -124,7 +129,7 @@ try:
             r = chat(QUESTION, n, think)
             time.sleep(0.3)
             sha = sha_of(log, r["id"])
-            want = ref[name]["sha"]
+            want = ref[name].get("sha") or hashlib.sha256(",".join(map(str, ref[name]["tokens"])).encode()).hexdigest()[:12]
             results[name] = {"sha": sha, "want": want, "tokens": r["usage"]["completion_tokens"]}
             if sha != want:
                 fail(f"{name}: token sha {sha} != mlx_lm {want}")

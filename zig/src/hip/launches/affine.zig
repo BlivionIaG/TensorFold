@@ -364,6 +364,10 @@ pub const Kernels = struct {
         const pair_div: c_int = if (sides.pair_cols > 0) 2 else 1;
         var lpc_log2: u5 = 0;
         while ((@as(c_int, 1) << lpc_log2) < (a.k >> 5) and lpc_log2 < 5) lpc_log2 += 1;
+        // gcn5: the most lanes a column that leave none idle in the last round (k = 2560 is 80 chunks: 16 lanes, 5 rounds, not 32 lanes with 3 rounds of 2.5)
+        if (k.caps.generation == .gcn5) {
+            while (lpc_log2 > 2 and @rem(a.k >> 5, @as(c_int, 1) << lpc_log2) != 0) lpc_log2 -= 1;
+        }
         if (k.tune.lpc >= 4 and k.tune.lpc < 32 and std.math.isPowerOfTwo(@as(u32, @intCast(k.tune.lpc)))) lpc_log2 = @min(lpc_log2, std.math.log2_int(u32, @intCast(k.tune.lpc)));
         const ri: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else 2;
         // the widest column count that still fills the card with waves, within the registers the lane's code words take
@@ -372,6 +376,8 @@ pub const Kernels = struct {
         while (c > 0) {
             c -= 1;
             if (stream_cbs[c] * stream_rows[ri] > 16 or stream_cbs[c] * a.bits > stream_code_words) continue;
+            // gcn5: 8 columns a lane take 215 VGPRs, one wave a SIMD; 4 or 2 keep two or four waves (measured: lm_head 2363 -> 1529 us)
+            if (k.caps.generation == .gcn5 and stream_cbs[c] > 4) continue;
             pick = c;
             const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * @divExact(stream_cbs[c], pair_div);
             if (@as(u64, cdiv(total_n, per_block)) * stream_waves * @as(u64, @intCast(items)) * cdiv(a.m, stream_rows[ri]) >= k.waves_wanted) break;

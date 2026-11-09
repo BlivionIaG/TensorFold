@@ -8,8 +8,11 @@
 //   rep    HIPPROF_REP=N (default 16): after the timed launch, the same launch N more times back to back, one sync: the pipelined time of
 //          a kernel in a stream (what a graph replay pays). Only kernels whose name contains HIPPROF_REP_MATCH (default "affine_") and
 //          that rewrite the same bytes each time (stream and row tiles, not the recurrences).
+//   events HIPPROF_EVENTS=1: no sync; hipEventRecord on the stream before and after every launch, read back later (hipmac's GPU timestamps, 100 MHz):
+//          the GPU time of each kernel in the pipeline (each record costs about 1.5 us of GPU time) and the gap to the previous kernel
 //   graph  HIPPROF_GRAPH=1: hipGraphLaunch is followed by a stream sync and timed (a whole decode round).
-// SIGUSR1 clears the table, SIGUSR2 writes it to HIPPROF_LOG (default hipprof.txt; also written at exit).
+// HIPPROF_START=1: nothing is timed (or replayed) until the first SIGUSR1, so a model load runs at full speed.
+// SIGUSR1 clears the table (and starts the timing), SIGUSR2 writes it to HIPPROF_LOG (default hipprof.txt; also written at exit).
 // Launches inside a stream capture are never timed (the sync would end the capture).
 // For the affine tiles the table also gives m, n, k of the launch (the first kernel argument is quant/mlx.hpp's Affine; the second,
 // of the stream tile, its StreamSides) and the bytes of weights and group tables that read.
@@ -32,6 +35,7 @@ static int rep_n = 16;
 static const char *rep_match = "affine_";
 static int graph_on;
 static volatile int capturing;
+static volatile int active = 1;  // HIPPROF_START: off until the first SIGUSR1
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
 static int selfpipe[2];
 
@@ -52,11 +56,27 @@ typedef struct {
     unsigned g[3], b[3], sh;
     int m, n, k, sides;  // affine launches
     long long count;
-    double total, min, rep_total;
+    double total, min, rep_total, gap_total;
+    long long gap_count;
     long long rep_count;
 } Row;
 static Row rows[1024];
 static int nrows;
+
+
+// ---- event timing ----
+#define EVN 2048
+typedef struct {
+    int fi;  // index into fm (the kernel's name)
+    unsigned g[3], b[3], sh;
+    int m, n, k, sides;
+    u e0, e1;
+    u stream;
+} Pend;
+static Pend pend[EVN];
+static int npend;
+static int events_on, ev_ready;
+static fn ev_create, ev_record, ev_sync, ev_elapsed;
 
 static fn get(const char *n) {
     if (!lib) {
@@ -94,6 +114,32 @@ static Row *row_for(const char *name, const unsigned *g, const unsigned *b, unsi
     return r;
 }
 
+
+// the pending event pairs of the launches, read back (mu held): GPU time of each kernel and the gap to the one before it
+static void drain(void) {
+    u prev_e1 = 0, prev_stream = 0;
+    for (int i = 0; i < npend; i++) {
+        Pend *p = &pend[i];
+        float ms = 0, gap = 0;
+        ev_sync(p->e1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        ev_elapsed((u)&ms, p->e0, p->e1, 0, 0, 0, 0, 0, 0, 0, 0);
+        Row *r = row_for(fm[p->fi].n, p->g, p->b, p->sh, p->m, p->n, p->k, p->sides);
+        r->count++;
+        r->total += ms * 1000.0;
+        if (ms * 1000.0 < r->min) r->min = ms * 1000.0;
+        if (prev_e1 && prev_stream == p->stream) {
+            ev_elapsed((u)&gap, prev_e1, p->e0, 0, 0, 0, 0, 0, 0, 0, 0);
+            if (gap >= 0 && gap < 5) {
+                r->gap_total += gap * 1000.0;
+                r->gap_count++;
+            }
+        }
+        prev_e1 = p->e1;
+        prev_stream = p->stream;
+    }
+    npend = 0;
+}
+
 static int cmp_rows(const void *a, const void *b) {
     double x = ((const Row *)a)->total + ((const Row *)a)->rep_total, y = ((const Row *)b)->total + ((const Row *)b)->rep_total;
     return x < y ? 1 : x > y ? -1 : 0;
@@ -104,17 +150,18 @@ static void dump(void) {
     FILE *f = fopen(path ? path : "hipprof.txt", "w");
     if (!f) return;
     pthread_mutex_lock(&mu);
+    if (events_on && ev_ready) drain();
     Row *copy = malloc(sizeof rows[0] * (nrows ? nrows : 1));
     int n = nrows;
     memcpy(copy, rows, sizeof rows[0] * n);
     pthread_mutex_unlock(&mu);
     qsort(copy, n, sizeof *copy, cmp_rows);
-    fprintf(f, "# name\tcount\tgrid\tblock\tshared\tm\tn\tk\tsides\tavg_us\tmin_us\ttotal_ms\trep_avg_us\tweight_bytes\n");
+    fprintf(f, "# name\tcount\tgrid\tblock\tshared\tm\tn\tk\tsides\tavg_us\tmin_us\ttotal_ms\trep_avg_us\tweight_bytes\tgap_us\n");
     for (int i = 0; i < n; i++) {
         Row *r = &copy[i];
         double bytes = r->k > 0 ? (double)r->n * r->k * 0.5625 : 0;  // 4-bit codes + a 2-byte scale and bias a group of 64
-        fprintf(f, "%s\t%lld\t%u,%u,%u\t%u,%u,%u\t%u\t%d\t%d\t%d\t%d\t%.2f\t%.2f\t%.3f\t%.2f\t%.0f\n", r->name, r->count, r->g[0], r->g[1], r->g[2], r->b[0], r->b[1], r->b[2], r->sh, r->m,
-                r->n, r->k, r->sides, r->count ? r->total / r->count : 0, r->count ? r->min : 0, r->total / 1000, r->rep_count ? r->rep_total / r->rep_count : 0, bytes);
+        fprintf(f, "%s\t%lld\t%u,%u,%u\t%u,%u,%u\t%u\t%d\t%d\t%d\t%d\t%.2f\t%.2f\t%.3f\t%.2f\t%.0f\t%.2f\n", r->name, r->count, r->g[0], r->g[1], r->g[2], r->b[0], r->b[1], r->b[2], r->sh, r->m,
+                r->n, r->k, r->sides, r->count ? r->total / r->count : 0, r->count ? r->min : 0, r->total / 1000, r->rep_count ? r->rep_total / r->rep_count : 0, bytes, r->gap_count ? r->gap_total / r->gap_count : 0);
     }
     free(copy);
     fclose(f);
@@ -133,6 +180,8 @@ static void *watcher(void *arg) {
         if (c == 'c') {
             pthread_mutex_lock(&mu);
             nrows = 0;
+            npend = 0;
+            active = 1;
             pthread_mutex_unlock(&mu);
         } else {
             dump();
@@ -145,6 +194,8 @@ __attribute__((constructor)) static void init(void) {
     if (getenv("HIPPROF_REP")) rep_n = atoi(getenv("HIPPROF_REP"));
     if (getenv("HIPPROF_REP_MATCH")) rep_match = getenv("HIPPROF_REP_MATCH");
     graph_on = getenv("HIPPROF_GRAPH") != NULL;
+    events_on = getenv("HIPPROF_EVENTS") != NULL;
+    if (getenv("HIPPROF_START")) active = 0;
     if (pipe(selfpipe)) return;
     signal(SIGUSR1, on_signal);
     signal(SIGUSR2, on_signal);
@@ -203,7 +254,7 @@ __attribute__((visibility("default"))) u hipGraphLaunch(u a, u b, u c, u d, u e,
 // hipModuleLaunchKernel(f, gx, gy, gz, bx, by, bz, shared, stream, params, extra)
 __attribute__((visibility("default"))) u hipModuleLaunchKernel(u a, u b, u c, u d, u e, u f, u g, u h, u i, u j, u k) {
     NEXT(hipModuleLaunchKernel);
-    if (capturing) return p(a, b, c, d, e, f, g, h, i, j, k);
+    if (capturing || !active) return p(a, b, c, d, e, f, g, h, i, j, k);
     fn sync = get("hipStreamSynchronize");
     const char *name = name_of(a);
     int m = 0, n = 0, kk = 0, sides = 0;
@@ -224,6 +275,34 @@ __attribute__((visibility("default"))) u hipModuleLaunchKernel(u a, u b, u c, u 
                 sides = cnt;
             }
         }
+    }
+    if (events_on) {
+        pthread_mutex_lock(&mu);
+        if (!ev_ready) {
+            ev_create = get("hipEventCreate");
+            ev_record = get("hipEventRecord");
+            ev_sync = get("hipEventSynchronize");
+            ev_elapsed = get("hipEventElapsedTime");
+            for (int x = 0; x < EVN; x++) {
+                ev_create((u)&pend[x].e0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+                ev_create((u)&pend[x].e1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            }
+            ev_ready = 1;
+        }
+        if (npend == EVN) drain();
+        Pend *pp = &pend[npend++];
+        int fi = 0;
+        for (; fi < nf; fi++)
+            if (fm[fi].h == a) break;
+        pp->fi = fi < nf ? fi : 0;
+        memcpy(pp->g, (unsigned[3]){(unsigned)b, (unsigned)c, (unsigned)d}, 12);
+        memcpy(pp->b, (unsigned[3]){(unsigned)e, (unsigned)f, (unsigned)g}, 12);
+        pp->sh = (unsigned)h, pp->m = m, pp->n = n, pp->k = kk, pp->sides = sides, pp->stream = i;
+        ev_record(pp->e0, i, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        u r = p(a, b, c, d, e, f, g, h, i, j, k);
+        ev_record(pp->e1, i, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        pthread_mutex_unlock(&mu);
+        return r;
     }
     double t0 = now();
     u r = p(a, b, c, d, e, f, g, h, i, j, k);
