@@ -9,6 +9,12 @@
 #include "common/vec.hpp"
 #include "tiles/plan.hpp"
 
+#include "common/fdot2.hpp"
+
+#if TF_STREAM_SCALED_X
+#include "tiles/stream_scaled.hpp"
+#else
+
 namespace tf {
 namespace rocm {
 
@@ -23,30 +29,11 @@ __device__ inline uint32_t stream_pick(uint32_t a, uint32_t b, int parity) {
     return __builtin_amdgcn_perm(b, a, parity ? 0x07060302u : 0x05040100u);
 }
 
-// What the stream tile keeps of an x pair: the pair, or (a Dot with kStreamWideX: gfx900's v_mad_mix_f32 flushes the denormal fp16 halves
-// of its operands, an fp32 operand it does not) the two halves widened.
-struct StreamWideX {
-    float lo, hi;
-};
-template <typename T>
-inline constexpr bool kWideX = requires { requires T::kStreamWideX; };
-template <typename T>
-using xval_t = std::conditional_t<kWideX<T>, StreamWideX, typename T::pair>;
-// Words an x pair takes in the stage.
-template <typename T>
-inline constexpr int kXWords = sizeof(xval_t<T>) / 4;
-
-template <typename T>
-__device__ __forceinline__ xval_t<T> stream_xval(typename T::pair p) {
-    if constexpr (kWideX<T>) return {T::lo(p), T::hi(p)};
-    else return p;
-}
-
+// x of one row in the order of the code pairs: pair I takes the halves of the codes it is multiplied with.
 // The stream tile's dot: a Dot may have its own form of it (gfx900 fp16: v_mad_mix_f32), else its dot.
 template <typename T>
-__device__ __forceinline__ float stream_dot(xval_t<T> x, typename T::pair q, float acc) {
-    if constexpr (kWideX<T>) return T::dot_stream_wide(x.lo, x.hi, q, acc);
-    else if constexpr (requires { T::dot_stream(x, q, acc); }) return T::dot_stream(x, q, acc);
+__device__ __forceinline__ float stream_dot(typename T::pair x, typename T::pair q, float acc) {
+    if constexpr (requires { T::dot_stream(x, q, acc); }) return T::dot_stream(x, q, acc);
     else return T::dot(x, q, acc);
 }
 
@@ -67,7 +54,7 @@ __device__ inline void stream_x_pairs(const uint32_t (&xn)[16], typename T::pair
 
 // One column's chunk against RG rows: each code pair is made once and dotted with every row's x.
 template <class Dec, typename T, int RG, int... I>
-__device__ inline void stream_dots(const xval_t<T> (&xp)[RG][16], const uint32_t (&w)[Dec::kWords], float (&d)[RG],
+__device__ inline void stream_dots(const typename T::pair (&xp)[RG][16], const uint32_t (&w)[Dec::kWords], float (&d)[RG],
                                    std::integer_sequence<int, I...>) {
     (([&] {
          const typename T::pair q = Dec::template stream_pair<T, I>(w);
@@ -97,26 +84,14 @@ __device__ inline void stream_stage(const typename Dec::Args& a, int row0, uint3
         }
         float s = 0.f;
 #pragma unroll
-        for (int i = 0; i < 16; ++i) s = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(pair, xn[i])), __builtin_bit_cast(pair, T::ones), s);
+        for (int i = 0; i < 16; ++i) s = stream_dot<T>(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, T::ones), s);
         sums[at] = s;
         pair xp[16];
         stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
         // word by word: a u32x4 built from the pairs' bit casts lost a lane on gfx1100 (hipcc 7.14)
-        if constexpr (kWideX<T>) {
 #pragma unroll
-            for (int i = 0; i < 16; ++i) {
-                const xval_t<T> xv = stream_xval<T>(xp[i]);
-                const uint32_t w0 = __builtin_bit_cast(uint32_t, xv.lo);
-                const uint32_t w1 = __builtin_bit_cast(uint32_t, xv.hi);
-                const int at2 = (((r * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)) * 2;
-                pairs[at2] = w0;
-                pairs[at2 + 1] = w1;
-            }
-        } else {
-#pragma unroll
-            for (int i = 0; i < 16; ++i)
-                pairs[((r * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)] = __builtin_bit_cast(uint32_t, xp[i]);
-        }
+        for (int i = 0; i < 16; ++i)
+            pairs[((r * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)] = __builtin_bit_cast(uint32_t, xp[i]);
     }
     __syncthreads();
 }
@@ -168,9 +143,9 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
     constexpr bool kStageLate = false;
 #endif
     extern __shared__ uint32_t stage[];
-    if constexpr (SHARED && !kStageLate) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16 * kXWords<T>));
+    if constexpr (SHARED && !kStageLate) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
     const uint32_t* xs = stage;
-    const float* sums = reinterpret_cast<const float*>(stage + R * nch * 16 * kXWords<T>);
+    const float* sums = reinterpret_cast<const float*>(stage + R * nch * 16);
     const typename Dec::StreamTerms terms(a);
 
     // The loads of one round: every column's chunk and its scale and bias, none waited for before the dots.
@@ -200,20 +175,15 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
 #pragma unroll
         for (int g = 0; g < NG; ++g) {
             if (row0 + g * RG >= a.m) break;
-            xval_t<T> xp[RG][16];
+            pair xp[RG][16];
             float sx[RG];
 #pragma unroll
             for (int r = 0; r < RG; ++r) {
                 if constexpr (SHARED) {
                     const int row = g * RG + r;
 #pragma unroll
-                    for (int i = 0; i < 16; ++i) {
-                        const int at2 = (((row * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)) * kXWords<T>;
-                        if constexpr (kWideX<T>)
-                            xp[r][i] = StreamWideX{__builtin_bit_cast(float, xs[at2]), __builtin_bit_cast(float, xs[at2 + 1])};
-                        else
-                            xp[r][i] = __builtin_bit_cast(pair, xs[at2]);
-                    }
+                    for (int i = 0; i < 16; ++i)
+                        xp[r][i] = __builtin_bit_cast(pair, xs[((row * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)]);
                     sx[r] = sums[row * nch + q];
                     continue;
                 }
@@ -231,17 +201,10 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                 float s = 0.f;
 #pragma unroll
                 for (int i = 0; i < 16; ++i) {
-                    s = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(pair, xn[i])), __builtin_bit_cast(pair, kOne), s);
+                    s = stream_dot<T>(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, kOne), s);
                 }
                 sx[r] = s;
-                if constexpr (kWideX<T>) {
-                    pair xq[16];
-                    stream_x_pairs<Dec, T>(xn, xq, std::make_integer_sequence<int, 16>{});
-#pragma unroll
-                    for (int i = 0; i < 16; ++i) xp[r][i] = stream_xval<T>(xq[i]);
-                } else {
-                    stream_x_pairs<Dec, T>(xn, xp[r], std::make_integer_sequence<int, 16>{});
-                }
+                stream_x_pairs<Dec, T>(xn, xp[r], std::make_integer_sequence<int, 16>{});
             }
 #pragma unroll
             for (int c = 0; c < CB; ++c) {
@@ -271,7 +234,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         uint32_t wb[CB][Dec::kWords];
         unsigned short sbb[CB], bbb[CB];
         fetch(at(0), wa, sa, ba);
-        if constexpr (SHARED && kStageLate) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16 * kXWords<T>));
+        if constexpr (SHARED && kStageLate) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
         for (int r = 0; r < rounds; r += 2) {
             if (r + 1 < rounds) fetch(at(r + 1), wb, sbb, bbb);
             work(at(r), wa, sa, ba);
@@ -341,3 +304,5 @@ __device__ inline void stream_tile(typename Dec::Args& a, const Sides& sides, in
 
 }  // namespace rocm
 }  // namespace tf
+
+#endif  // TF_STREAM_SCALED_X

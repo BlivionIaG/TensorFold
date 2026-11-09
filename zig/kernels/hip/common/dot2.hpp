@@ -30,8 +30,8 @@ struct DotF16 {
     __device__ static float lo(pair p) { return __low2float(p); }
     __device__ static float hi(pair p) { return __high2float(p); }
     __device__ static float dot(pair x, pair q, float acc) { return TF_FDOT2(x, q, acc); }
-#if TF_STREAM_FLUSH_MIX
-    // gfx900, TF_G9_MIX=2: two v_mad_mix_f32 on the fp16 pair of x (its denormal halves read as zero)
+#if TF_STREAM_MIX_F16
+    // gfx900: two v_mad_mix_f32 on the fp16 pair of x (a denormal half of x reads as zero: the stream tile scales or widens x first)
     __device__ static float dot_stream(pair x, pair q, float acc) {
         const uint32_t xb = __builtin_bit_cast(uint32_t, x);
         const uint32_t qb = __builtin_bit_cast(uint32_t, q);
@@ -41,10 +41,9 @@ struct DotF16 {
         return r;
     }
 #endif
-#if TF_STREAM_WIDE_X
-    // gfx900: the stream tile's x is two fp32 (a denormal fp16 half would be flushed by the mix), q the pair of codes: two v_mad_mix_f32,
-    // each product exact in fp32, so the bits are those of the convert-and-fuse pair.
-    static constexpr bool kStreamWideX = true;
+#if TF_STREAM_SCALED_X
+    // x as two fp32 (not flushed), q the pair of codes: each product is exact in fp32, so the bits are those of the convert-and-fuse pair
+    static constexpr bool kStreamScaledX = true;
     __device__ static float dot_stream_wide(float xl, float xh, pair q, float acc) {
         const uint32_t qb = __builtin_bit_cast(uint32_t, q);
         float t, r;

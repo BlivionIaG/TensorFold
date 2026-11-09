@@ -189,6 +189,13 @@ identical in the gate, but `hip-kernel-test` 62/63 (that case). `-DTF_G9_MIX=0` 
 tok/s). Logits against mlx_lm (87 rows through the decode path, `vega_gate.py --logits`, MIX=1): cosine min 0.99857, mean 0.99988,
 argmax equal 87/87.
 
+Scaled-x form of `TF_G9_MIX=1` (written offline, not yet run on the card; `tiles/stream_scaled.hpp`): the staged x are fp16 pairs scaled by
+2^10 (every nonzero fp16 x, 2^-24 and up, becomes normal) while the block's x are all below 32 in magnitude, the lanes undo the scale in
+the group's scale and bias (a power of two), so the mix sees no denormal; a block with a larger x (or a NaN/inf) takes the unstaged path,
+where x is widened to fp32. `/tmp`-free check of the arithmetic: 2 million random 32-code chunks (1.3 million denormal x) give the
+fused pair's bits with the scaled x. The gfx900 tile text is `stream_scaled.hpp` only for `TF_G9_MIX=1`, all other code objects use
+`stream.hpp` unchanged (RDNA2 checked byte-identical).
+
 Dropped: reading the codes as fp16 denormals (`TF_G9_RAW`, 51 tok/s): `v_mad_mix_f32` flushes denormal inputs on Vega and the tokens
 differ.
 
