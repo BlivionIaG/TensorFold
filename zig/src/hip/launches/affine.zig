@@ -98,6 +98,24 @@ pub const Tile = enum { gemm, block };
 /// Which 128-row GEMM tile a launch runs: matrix cores (padded or skewed rows), the dot2 tile, or the reference tile.
 pub const BlockKind = enum { matrix, skew, gemm, block };
 
+/// Stream tile experiments, read from the environment once per `load` (the defaults are the launch rules below):
+///   TF_STREAM_CB=2|4|8       columns a lane carries (where the registers allow)
+///   TF_STREAM_LPC=4|8|16|32  most lanes a column (32 is the most; fewer leaves no lane idle where k / 32 is not a multiple of 32)
+/// Same arithmetic as the defaults except LPC, which reorders a column's sum.
+pub const StreamTune = struct {
+    cb: c_int = 0,
+    lpc: c_int = 0,
+
+    fn env(name: [*:0]const u8) ?c_int {
+        const text = @import("sys").getenv(name) orelse return null;
+        return std.fmt.parseInt(c_int, text, 10) catch null;
+    }
+
+    pub fn fromEnv() StreamTune {
+        return .{ .cb = env("TF_STREAM_CB") orelse 0, .lpc = env("TF_STREAM_LPC") orelse 0 };
+    }
+};
+
 pub const Kernels = struct {
     /// Whether block shape `tier` can take `m` rows: a tile that does not loop over its rows holds rb * r of them.
     pub fn tierTakes(tier: usize, m: c_int) bool {
@@ -125,6 +143,7 @@ pub const Kernels = struct {
     stream_on: bool,
     /// Off lays a round's stream row blocks on the grid's y: the reference layout the interleaved one must equal.
     stream_interleave: bool,
+    tune: StreamTune,
     block: [bit_widths.len]Function,
     gemm: [bit_widths.len]Function,
     wmma_gemm: [bit_widths.len]Function,
@@ -150,6 +169,7 @@ pub const Kernels = struct {
         k.tile = if (choices.gemm) .gemm else .block;
         k.stream_on = choices.stream;
         k.stream_interleave = true;
+        k.tune = StreamTune.fromEnv();
         k.reg = Registry.init(tableFor(caps), &mlx_entries.all);
         k.reg.verify(k.env(), .mlx) catch return error.Invalid;
         // the GEMM tile's rows of x a lane keeps (tiles/gemm.hpp GemmShape): 8 for BF16, 16 for FP16
@@ -341,8 +361,9 @@ pub const Kernels = struct {
         var sides = sides_in;
         var lpc_log2: u5 = 0;
         while ((@as(c_int, 1) << lpc_log2) < (a.k >> 5) and lpc_log2 < 5) lpc_log2 += 1;
+        if (k.tune.lpc >= 4 and k.tune.lpc < 32 and std.math.isPowerOfTwo(@as(u32, @intCast(k.tune.lpc)))) lpc_log2 = @min(lpc_log2, std.math.log2_int(u32, @intCast(k.tune.lpc)));
         const ri = stream_pick.rowTile(a.m);
-        const tile = stream_pick.pick(k.caps.generation, a.m, lpc_log2, a.bits, total_n, items, sides.pair_cols > 0);
+        const tile = stream_pick.pickWanted(k.tune.cb, k.caps.generation, a.m, lpc_log2, a.bits, total_n, items, sides.pair_cols > 0);
         const per_block = tile.per_block;
         var blocks: c_uint = cdiv(total_n, per_block);
         if (sides.count > 0) {
