@@ -12,6 +12,7 @@ const interior = @import("prompt_interior.zig");
 const index = @import("prompt_cache_index.zig");
 const forks = @import("prompt_cache_fork.zig");
 pub const others = @import("prompt_cache_others.zig");
+const recalls = @import("prompt_cache_recall.zig");
 pub const rows = @import("rows_store.zig");
 /// A family's copy of one state.
 pub const Saved = *anyopaque;
@@ -93,6 +94,7 @@ pub const Entry = struct {
     borrowers: u32 = 0, // outstanding lookups: released by resumed or release, never evicted while borrowed
     ext: std.ArrayList(*Entry) = .empty, // entries extending its tokens, born later (policy.link): `extended` reads them
     own: []u32 = &.{}, // the kept prompt's one copy, which `tokens` and at first `last` slice (empty: they own theirs)
+    remote: bool = false, // built on another machine's prefix (#1594 step 2b): a stream resuming it is remote too
 };
 pub const Counts = struct { hits: u64 = 0, misses: u64 = 0, kept: u64 = 0, evicted: u64 = 0, refused: u64 = 0, failed: u64 = 0 };
 pub const RestoreDetails = @import("prompt_cache_restore.zig").Details;
@@ -104,6 +106,7 @@ pub const Lookup = struct { entry: ?*Entry = null, marks: []const u32 = &.{} };
 pub const Store = struct {
     image_frame: u32 = 0,
     image_query: ?[]const @import("lanes").stream.Image = null, // scoped to one serial lookup or keep
+    keep_remote: bool = false, // scoped to one keep: the state was built on another machine's prefix (#1594 step 2b)
     restore_log: ?RestoreLog = null,
     gpa: Allocator,
     family: Snapshots,
@@ -161,7 +164,7 @@ pub const Store = struct {
         const e = s.entries.orderedRemove(i);
         policy.unlink(s, e);
         s.held -= e.bytes;
-        if (s.disk) |r| if (!e.expired) rows.write.evicted(r, e); // --spill-gib: stage an owned copy before the entry goes
+        if (s.disk) |r| if (!e.expired and !e.remote) rows.write.evicted(r, e); // --spill-gib: own states only
         s.free(e);
     }
 
@@ -304,7 +307,7 @@ pub const Store = struct {
             s.active_rewind_at = at; // a state kept under min_gap before it is the rewind state: no new copy
         };
         const e = if (disk)
-            rows.read.recall(s, prompt, born, starts, spans, s.recall(prompt, born, starts, spans, s.find(prompt, starts, spans)))
+            rows.read.recall(s, prompt, born, starts, spans, recalls.recall(s, prompt, born, starts, spans, s.find(prompt, starts, spans)))
         else
             s.find(prompt, starts, spans);
         if (e == null) s.counts.misses += 1;
@@ -460,10 +463,10 @@ pub const Store = struct {
         if (at == 0 or n > prompt.len or s.hold) return false;
         s.clock += 1;
         const shared = std.mem.indexOfScalar(u64, s.shared_keys.items, sharedKey(prompt[0..n])) != null;
-        for (s.entries.items) |e| if (!e.expired and e.at == at and std.mem.eql(u32, e.tokens, prompt[0..n]) and modes.equal(e.decode_spans, spans, at) and images.matches(s, e)) {
+        for (s.entries.items) |e| if (!e.expired and e.at == at and (!e.remote or s.keep_remote) and std.mem.eql(u32, e.tokens, prompt[0..n]) and modes.equal(e.decode_spans, spans, at) and images.matches(s, e)) {
             e.used = s.clock; // the same state again: no copy
             e.shared = e.shared or shared;
-            if (shared) learned.learn(s, e, starts);
+            if (shared and !e.remote) learned.learn(s, e, starts);
             return true;
         };
         const image_ids = images.prefix(s.gpa, s.image_query orelse &.{}, @intCast(n)) catch |err| return s.fail(at, err);
@@ -501,7 +504,7 @@ pub const Store = struct {
             return s.fail(at, err);
         };
         const charged = if (s.family.vtable.charged) |f| f(s.family.ptr, saved) else bytes;
-        e.* = .{ .tokens = last[0..n], .images = image_ids, .image_frame = s.image_frame, .decode_spans = decoded, .at = at, .saved = saved, .bytes = charged, .born = born, .used = s.clock, .last = last, .shared = shared, .own = last };
+        e.* = .{ .tokens = last[0..n], .images = image_ids, .image_frame = s.image_frame, .decode_spans = decoded, .at = at, .saved = saved, .bytes = charged, .born = born, .used = s.clock, .last = last, .shared = shared, .own = last, .remote = s.keep_remote };
         owns_decoded = false;
         owns_images = false;
         index.add(s, e) catch {
@@ -511,50 +514,11 @@ pub const Store = struct {
         policy.link(s, e);
         s.held += charged;
         s.counts.kept += 1;
-        if (shared) learned.learn(s, e, starts);
-        if (s.disk) |r| rows.write.queued(r, e, starts);
+        if (!e.remote) @import("prompt_cache_remote.zig").retireTwins(s, e); // the engine's own copy hides remote twins
+        if (shared and !e.remote) learned.learn(s, e, starts);
+        if (s.disk) |r| if (!e.remote) rows.write.queued(r, e, starts); // a remote state is never written to disk
         if (s.family.vtable.trim) |f| f(s.family.ptr, s.budget -| s.held); // spare storage only inside what the budget leaves
         return true;
-    }
-
-    /// A learned state on disk longer than `have`, read back as a shared entry; else `have` (none, or reading failed).
-    fn recall(s: *Store, prompt: []const u32, born: u32, starts: []const u32, spans: []const modes.Span, have: ?*Entry) ?*Entry {
-        const im = s.imprint orelse return have;
-        const read = s.family.vtable.read orelse return have;
-        const m = im.best(prompt, starts, s.rules.planned, if (have) |x| x.at else 0) orelse return have;
-        if (s.image_frame != 0 or !images.diskSafe(m.tokens) or !images.equal(&.{}, s.image_query orelse &.{}, @intCast(m.tokens.len))) return have;
-        if (!modes.equal(&.{}, spans, m.at)) return have; // the request decodes rows the learned prompt pass prefilled
-        const bytes = s.family.vtable.bytes(s.family.ptr, m.at);
-        while (bytes <= s.budget and (s.held + s.spare() + bytes > s.budget or s.entries.items.len >= s.most)) {
-            s.remove(others.victim(s, have, prompt, born, bytes, 1) orelse return have);
-            s.counts.evicted += 1;
-        }
-        if (bytes > s.budget) return have;
-        const e = s.gpa.create(Entry) catch return have;
-        e.* = .{ .tokens = &.{}, .at = m.at, .saved = undefined, .bytes = bytes, .born = born, .used = s.clock, .last = &.{}, .shared = true };
-        e.tokens = s.gpa.dupe(u32, m.tokens) catch return s.drop(e, have, false);
-        e.last = s.gpa.dupe(u32, prompt) catch return s.drop(e, have, false);
-        const key = m.key;
-        e.saved = read(s.family.ptr, im.dir, key, m.at) catch |err| {
-            note("reading the learned {d} tokens failed ({s}); forgotten, a later pass learns them again", .{ e.at, @errorName(err) });
-            learned.unlearn(s, im, key);
-            return s.drop(e, have, false);
-        };
-        im.touch(key);
-        index.add(s, e) catch return s.drop(e, have, true);
-        policy.link(s, e);
-        s.held += bytes;
-        if (!@import("builtin").is_test) std.log.info("prompt cache: read {d} learned tokens from disk", .{m.at});
-        return e;
-    }
-
-    /// A half-made recalled entry undone (`saved` once read); the lookup goes on with `have`.
-    fn drop(s: *Store, e: *Entry, have: ?*Entry, saved: bool) ?*Entry {
-        if (saved) s.family.vtable.drop(s.family.ptr, e.saved);
-        s.gpa.free(e.tokens);
-        s.gpa.free(e.last);
-        s.gpa.destroy(e);
-        return have;
     }
 
     /// One log line after a prompt pass: where it resumed, how many states it kept, and what the store holds.
@@ -597,4 +561,5 @@ test {
     _ = @import("prompt_cache_repeat_test.zig");
     _ = @import("prompt_cache_tail_test.zig");
     _ = @import("prompt_cache_others_test.zig");
+    _ = @import("prompt_cache_remote_test.zig");
 }
