@@ -169,15 +169,23 @@ the mlx_lm references of `tools/vega-macos/mlx_ref.py`, then runs story decodes 
 | Step | decode tok/s | Tokens vs mlx_lm |
 | --- | --- | --- |
 | port as of the first run (two fused fp16 steps a pair, 32 lanes a column, 2 to 8 columns a lane) | 36.5 | identical (France 8 tokens, 96-token thinking) |
-| `v_mad_mix_f32` for the stream tile's fp16 pair (`TF_G9_MIX`; the products are exact, the story tokens equal the fused pair's) | 46.7 | identical |
+| `v_mad_mix_f32` for the stream tile's fp16 pair on fp16 x (`TF_G9_MIX=2` today; the products are exact, the story tokens equal the fused pair's) | 46.7 | identical |
 | `v_and_or_b32` builds a code pair in one op (`TF_G9_ANDOR`, bit-identical) | 49.3 | identical |
-| lanes a column that leave none idle (80 chunks at k = 2560: 16 lanes, 5 rounds), at most 4 columns a lane; the measured run also staged x in LDS up to k = 4096 with the weights requested before the stage, which this branch's tile does not (see Status) | 57.5 | identical |
+| lanes a column that leave none idle (80 chunks at k = 2560: 16 lanes, 5 rounds), at most 4 columns a lane; the measured run also staged x in LDS up to k = 4096 (k = 3072 with fp32 x) with the weights requested before the stage, which this branch's tile does not (see Status) | 57.5 (`TF_G9_MIX=2`: 56.4) | identical |
+| the same with x widened to fp32 for the mix (`TF_G9_MIX=1`, default: exact, 63/63 tests) | 52.7 | identical |
 | `TF_G9_FOLD=1` (`bias - 1024 * scale` in the epilogue: one packed op less a pair; not bit-identical, off by default) | 58.2 | identical |
 
-Test status on the card: `hip-kernel-test` 62 of 63 and `hip-affine-test` pass; the one failure is `affine ragged m3 n130 k96 b2 g32:
-mlx.project.decode.stream is 2.3 times the error an fp32 sum may have against float64`, and it goes away with `-Dhip-cflags=-DTF_G9_MIX=0`
-(then the decode is 36.5 to 49 tok/s lower by the mix's share, about 10 tok/s). [INFERENCE] `v_mad_mix_f32` flushes denormals of the
-fp32 sum in that synthetic case; the GEMM tiles keep the convert-and-fuse dot (`TF_FDOT2`), only the stream tile uses `TF_FDOT2_STREAM`.
+Cause of the one failing test of the first mad_mix version (`affine ragged m3 n130 k96 b2 g32: mlx.project.decode.stream is 2.3 times
+the error an fp32 sum may have against float64`), measured with a 4096-lane micro kernel on the card (fused pair against two
+`v_mad_mix_f32`, random fp16 x with and without values below 2^-14): with every fp16 operand normal the two are bit-identical; with
+denormal x halves 56 of 4096 dots differ, by up to 5.9e-6 of the terms' magnitude (the bound is 1.6e-6). `v_mad_mix_f32` flushes a denormal
+fp16 *source* whatever MODE.FP_DENORM holds (setreg of all four denorm bits changed nothing); an fp32 source is not flushed. So
+`TF_G9_MIX=1` (default) keeps x as two fp32 in the stream tile (widened with v_cvt; the measured run staged them in LDS as fp32 pairs) and the dots
+are the fused pair's bits: `hip-kernel-test` 63/63, `hip-affine-test` pass, 52.7 tok/s. `TF_G9_MIX=2` keeps x as fp16 pairs and flushes
+a denormal x (|x| < 6.1e-5; a term that small is below the fp32 rounding of a sum of terms of ordinary size): 56.4 tok/s, tokens
+identical in the gate, but `hip-kernel-test` 62/63 (that case). `-DTF_G9_MIX=0` is the fused pair without the mix (about 36 to 49
+tok/s). Logits against mlx_lm (87 rows through the decode path, `vega_gate.py --logits`, MIX=1): cosine min 0.99857, mean 0.99988,
+argmax equal 87/87.
 
 Dropped: reading the codes as fp16 denormals (`TF_G9_RAW`, 51 tok/s): `v_mad_mix_f32` flushes denormal inputs on Vega and the tokens
 differ.

@@ -23,10 +23,27 @@ __device__ inline uint32_t stream_pick(uint32_t a, uint32_t b, int parity) {
     return __builtin_amdgcn_perm(b, a, parity ? 0x07060302u : 0x05040100u);
 }
 
+// What the stream tile keeps of an x pair: the pair, or (a Dot with kStreamWideX: gfx900's v_mad_mix_f32 flushes the denormal fp16 halves
+// of its operands, an fp32 operand it does not) the two halves widened.
+struct StreamWideX {
+    float lo, hi;
+};
+template <typename T>
+inline constexpr bool kWideX = requires { requires T::kStreamWideX; };
+template <typename T>
+using xval_t = std::conditional_t<kWideX<T>, StreamWideX, typename T::pair>;
+
+template <typename T>
+__device__ __forceinline__ xval_t<T> stream_xval(typename T::pair p) {
+    if constexpr (kWideX<T>) return {T::lo(p), T::hi(p)};
+    else return p;
+}
+
 // The stream tile's dot: a Dot may have its own form of it (gfx900 fp16: v_mad_mix_f32), else its dot.
 template <typename T>
-__device__ __forceinline__ float stream_dot(typename T::pair x, typename T::pair q, float acc) {
-    if constexpr (requires { T::dot_stream(x, q, acc); }) return T::dot_stream(x, q, acc);
+__device__ __forceinline__ float stream_dot(xval_t<T> x, typename T::pair q, float acc) {
+    if constexpr (kWideX<T>) return T::dot_stream_wide(x.lo, x.hi, q, acc);
+    else if constexpr (requires { T::dot_stream(x, q, acc); }) return T::dot_stream(x, q, acc);
     else return T::dot(x, q, acc);
 }
 
@@ -54,7 +71,7 @@ constexpr bool stream_pairs_per_group() {
 
 // One column's chunk against RG rows: each code pair is made once and dotted with every row's x.
 template <class Dec, typename T, int RG, int... I>
-__device__ inline void stream_dots(const typename T::pair (&xp)[RG][16], const uint32_t (&w)[Dec::kWords], float (&d)[RG],
+__device__ inline void stream_dots(const xval_t<T> (&xp)[RG][16], const uint32_t (&w)[Dec::kWords], float (&d)[RG],
                                    std::integer_sequence<int, I...>) {
     (([&] {
          const typename T::pair q = Dec::template stream_pair<T, I>(w);
@@ -174,7 +191,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
 #pragma unroll
             for (int g = 0; g < NG; ++g) {
                 if (row0 + g * RG >= a.m) break;
-                pair xp[RG][16];
+                xval_t<T> xp[RG][16];
                 float sx[RG];
 #pragma unroll
                 for (int r = 0; r < RG; ++r) {
@@ -192,10 +209,17 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                     float s = 0.f;
 #pragma unroll
                     for (int i = 0; i < 16; ++i) {
-                        s = stream_dot<T>(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, kOne), s);
+                        s = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(pair, xn[i])), __builtin_bit_cast(pair, kOne), s);
                     }
                     sx[r] = s;
-                    stream_x_pairs<Dec, T>(xn, xp[r], std::make_integer_sequence<int, 16>{});
+                    if constexpr (kWideX<T>) {
+                        pair xq[16];
+                        stream_x_pairs<Dec, T>(xn, xq, std::make_integer_sequence<int, 16>{});
+#pragma unroll
+                        for (int i = 0; i < 16; ++i) xp[r][i] = stream_xval<T>(xq[i]);
+                    } else {
+                        stream_x_pairs<Dec, T>(xn, xp[r], std::make_integer_sequence<int, 16>{});
+                    }
                 }
 #pragma unroll
                 for (int c = 0; c < CB; ++c) {
@@ -219,7 +243,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
 #pragma unroll
         for (int r = 0; r < R; ++r) {
             if (row0 + r >= a.m) break;
-            pair xp[16];
+            xval_t<T> xp[16];
             uint32_t xn[16];
             const u32x4* src = reinterpret_cast<const u32x4*>(xr[r] + static_cast<long long>(q) * 32);
 #pragma unroll
@@ -233,9 +257,16 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
             float sx = 0.f;
 #pragma unroll
             for (int i = 0; i < 16; ++i) {
-                sx = stream_dot<T>(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, kOne), sx);
+                sx = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(pair, xn[i])), __builtin_bit_cast(pair, kOne), sx);
             }
-            stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
+            if constexpr (kWideX<T>) {
+                pair xq[16];
+                stream_x_pairs<Dec, T>(xn, xq, std::make_integer_sequence<int, 16>{});
+#pragma unroll
+                for (int i = 0; i < 16; ++i) xp[i] = stream_xval<T>(xq[i]);
+            } else {
+                stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
+            }
 #pragma unroll
             for (int c = 0; c < CB; ++c) {
                 float d = 0.f;
