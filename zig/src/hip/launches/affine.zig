@@ -359,8 +359,7 @@ pub const Kernels = struct {
     ) Error!void {
         const b = bitIndex(a.bits).?;
         var sides = sides_in;
-        var lpc_log2: u5 = 0;
-        while ((@as(c_int, 1) << lpc_log2) < (a.k >> 5) and lpc_log2 < 5) lpc_log2 += 1;
+        var lpc_log2 = stream_pick.lanesLog2(k.caps.generation, a.k);
         if (k.tune.lpc >= 4 and k.tune.lpc < 32 and std.math.isPowerOfTwo(@as(u32, @intCast(k.tune.lpc)))) lpc_log2 = @min(lpc_log2, std.math.log2_int(u32, @intCast(k.tune.lpc)));
         const ri = stream_pick.rowTile(a.m);
         const tile = stream_pick.pickWanted(k.tune.cb, k.caps.generation, a.m, lpc_log2, a.bits, total_n, items, sides.pair_cols > 0);
