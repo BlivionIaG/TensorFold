@@ -111,6 +111,30 @@ pub const Tile = enum { gemm, block };
 /// The GEMM tile of the 128-row family a launch runs: matrix cores, dot2 on 128, 64 or 32 rows a block, or reference.
 pub const BlockKind = enum { matrix, gemm, gemm64, gemm32, block };
 
+/// Stream tile experiments, read from the environment once per `load` (the defaults are the launch rules below):
+///   TF_STREAM_CB=2|4|8     columns a lane carries (where the registers allow)
+///   TF_STREAM_STAGE=0|1    x staged in LDS for no stream launch / for every one that fits (the default stages from 4 columns a lane)
+///   TF_STREAM_LPC=4|8|16|32  most lanes a column (32 is the most; fewer leaves no lane idle where k / 32 is not a multiple of 32)
+/// Same arithmetic as the defaults except LPC, which reorders a column's sum.
+pub const StreamTune = struct {
+    cb: c_int = 0,
+    stage: i8 = -1,
+    lpc: c_int = 0,
+
+    fn env(name: [*:0]const u8) ?c_int {
+        const text = std.c.getenv(name) orelse return null;
+        return std.fmt.parseInt(c_int, std.mem.span(text), 10) catch null;
+    }
+
+    pub fn fromEnv() StreamTune {
+        return .{
+            .cb = env("TF_STREAM_CB") orelse 0,
+            .stage = if (env("TF_STREAM_STAGE")) |v| @intFromBool(v != 0) else -1,
+            .lpc = env("TF_STREAM_LPC") orelse 0,
+        };
+    }
+};
+
 pub const Kernels = struct {
     /// Whether block shape `tier` can take `m` rows: a tile that does not loop over its rows holds rb * r of them.
     pub fn tierTakes(tier: usize, m: c_int) bool {
@@ -135,6 +159,7 @@ pub const Kernels = struct {
     stream_on: bool,
     /// Off (the tests' comparison) keeps every lane of the stream tile loading its own x: the staged x's bits.
     stage_on: bool,
+    tune: StreamTune,
     /// The waves a stream launch wants: fewer columns a lane until it has them (a choice of speed, not of bits).
     waves_wanted: u64,
     block: [bit_widths.len]Function,
@@ -162,6 +187,7 @@ pub const Kernels = struct {
         k.tile = if (choices.gemm) .gemm else .block;
         k.stream_on = choices.stream;
         k.stage_on = true;
+        k.tune = StreamTune.fromEnv();
         k.waves_wanted = wavesWanted(choices.cus);
         k.reg = Registry.init(tableFor(caps), &mlx_entries.all);
         k.reg.verify(k.env(), .mlx) catch return error.Invalid;
@@ -238,7 +264,7 @@ pub const Kernels = struct {
     /// LDS bytes a block stages its rows of x in, 0 for none: it repays one row at 4+ columns, two at 8 on a small GPU.
     pub fn stageBytes(k: *const Kernels, rows: c_int, depth: c_int, cb: c_int) u32 {
         const bytes = @as(i64, rows) * (2 * @as(i64, depth) + @divTrunc(depth, 32) * 4);
-        const repays = if (rows == 1) cb >= 4 else rows == 2 and cb == 8 and k.waves_wanted < streams_wanted;
+        const repays = if (k.tune.stage >= 0) k.tune.stage == 1 and rows <= 2 else if (rows == 1) cb >= 4 else rows == 2 and cb == 8 and k.waves_wanted < streams_wanted;
         return if (k.stage_on and repays and bytes <= stage_bytes_max) @intCast(bytes) else 0;
     }
 
@@ -338,6 +364,7 @@ pub const Kernels = struct {
         const pair_div: c_int = if (sides.pair_cols > 0) 2 else 1;
         var lpc_log2: u5 = 0;
         while ((@as(c_int, 1) << lpc_log2) < (a.k >> 5) and lpc_log2 < 5) lpc_log2 += 1;
+        if (k.tune.lpc >= 4 and k.tune.lpc < 32 and std.math.isPowerOfTwo(@as(u32, @intCast(k.tune.lpc)))) lpc_log2 = @min(lpc_log2, std.math.log2_int(u32, @intCast(k.tune.lpc)));
         const ri: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else 2;
         // the widest column count that still fills the card with waves, within the registers the lane's code words take
         var pick: usize = 0;
@@ -348,6 +375,11 @@ pub const Kernels = struct {
             pick = c;
             const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * @divExact(stream_cbs[c], pair_div);
             if (@as(u64, cdiv(total_n, per_block)) * stream_waves * @as(u64, @intCast(items)) * cdiv(a.m, stream_rows[ri]) >= k.waves_wanted) break;
+        }
+        if (k.tune.cb != 0) {
+            for (stream_cbs, 0..) |cb, i| {
+                if (cb == k.tune.cb and cb * stream_rows[ri] <= 16 and cb * a.bits <= stream_code_words) pick = i;
+            }
         }
         const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * @divExact(stream_cbs[pick], pair_div);
         var blocks: c_uint = cdiv(total_n, per_block);

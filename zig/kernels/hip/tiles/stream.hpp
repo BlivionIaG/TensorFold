@@ -149,7 +149,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         float bi[CB];
 #pragma unroll
         for (int c = 0; c < CB; ++c) {
-            sc[c] = live ? terms.widen(sr[c]) : 0.f;
+            sc[c] = live ? terms.widen(sr[c]) * Dec::kStreamGain : 0.f;
             bi[c] = live ? terms.widen(br[c]) : 0.f;
         }
 #pragma unroll

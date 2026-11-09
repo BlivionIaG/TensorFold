@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "common/fdot2.hpp"
 #include "common/vec.hpp"
 #include "quant/mlx.hpp"
 #include "quant/mlx_pieces.hpp"
@@ -159,6 +160,18 @@ struct MlxDecoder {
         else return 1;
     }
 
+    // gfx900 (TF_G9_RAW=1, the default): the stream tile does not turn a code into 1024 + c and subtract 1024 (three instructions a pair). The
+    // code's bits are already an fp16: a denormal worth c * 2^-24, and v_mad_mix_f32 (TF_FDOT2) reads denormal halves. Every product x * c * 2^-24
+    // is exact in fp32 and so are the sums' roundings, those of the sums of x * c scaled by the power of two (nothing reaches fp32's
+    // denormals), so the dot of a chunk comes out as its value times 2^-24, and the scale's 2^24 below puts that back exactly.
+#if defined(__gfx900__) && TF_G9_RAW
+    static constexpr bool kRawCodes = true;
+    static constexpr float kStreamGain = 16777216.0f;
+#else
+    static constexpr bool kRawCodes = false;
+    static constexpr float kStreamGain = 1.0f;
+#endif
+
     // Pair I of the chunk's codes as the activation type's pair (the codes are below 256, exact in both types).
     template <typename T, int I>
     __device__ static typename T::pair stream_pair(const uint32_t (&w)[BITS]) {
@@ -173,8 +186,12 @@ struct MlxDecoder {
             bits = piece_bits<BITS>(w, low) | (piece_bits<BITS>(w, high) << 16);
         }
         if constexpr (std::is_same_v<typename T::elem, __half>) {
-            bits |= 0x64006400u;
-            return __hsub2(__builtin_bit_cast(__half2, bits), __builtin_bit_cast(__half2, 0x64006400u));
+            if constexpr (kRawCodes) {
+                return __builtin_bit_cast(__half2, bits);  // the code as an fp16 denormal: c * 2^-24 (see kStreamGain)
+            } else {
+                bits |= 0x64006400u;
+                return __hsub2(__builtin_bit_cast(__half2, bits), __builtin_bit_cast(__half2, 0x64006400u));
+            }
         } else {
             // The float of an integer below 256 has its low 16 bits clear, so its top half is the BF16.
             const uint32_t a = __builtin_bit_cast(uint32_t, static_cast<float>(bits & 0xffffu));

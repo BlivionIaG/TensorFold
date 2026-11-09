@@ -41,6 +41,12 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const hipcc_resolved = b.findProgram(.{ .names = &.{hipcc} }) orelse hipcc;
     const hip_include = b.option([]const u8, "hip-include", "HIP header directory") orelse
         b.pathResolve(&.{ std.fs.path.dirname(hipcc_resolved) orelse "/opt/rocm/bin", "..", "include" });
+    if (b.option([]const u8, "hip-cflags", "Extra compiler flags for every kernel code object, space separated (variant switches such as -DTF_G9_MIX=0)")) |extra| {
+        var list: std.ArrayList([]const u8) = .empty;
+        var it = std.mem.tokenizeScalar(u8, extra, ' ');
+        while (it.next()) |flag| list.append(b.allocator, flag) catch @panic("OOM");
+        extra_flags = list.items;
+    }
     const hip_arch = b.option([]const u8, "hip-arch", "Exact GPU architecture for the probe code object (default gfx900 on macOS, gfx1151 elsewhere)") orelse
         if (builtin.os.tag == .macos) "gfx900" else "gfx1151";
     if (caps.Caps.of(hip_arch) == null or std.mem.indexOfScalar(u8, hip_arch, ':') != null)
@@ -176,6 +182,9 @@ const headers = [_][]const u8{
 /// The flags of the kernels' first build: no contraction, C++20; RDNA also gets `-mno-wavefrontsize64` (wave32), added by `kernelObjects` for wave32 caps only (gfx9 has no wave32 mode).
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-ffp-contract=off" };
 
+/// `-Dhip-cflags`: appended to every kernel compile.
+var extra_flags: []const []const u8 = &.{};
+
 const stub = "pub const arch = \"\";\npub const images: [10][]align(8) const u8 = @splat(&.{});\n";
 
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
@@ -195,6 +204,7 @@ fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, d
         run.addArg(b.fmt("-DTF_SDOT4={d}", .{@intFromBool(c.sdot4)}));
         run.addArg(b.fmt("-DTF_SDOT8={d}", .{@intFromBool(c.sdot8)}));
         run.addArg(b.fmt("-DTF_MATRIX={d}", .{@intFromBool(c.matrix != .none)}));
+        run.addArgs(extra_flags);
         run.addArg(b.fmt("--rocm-path={s}", .{root}));
         run.addArg(b.fmt("--rocm-device-lib-path={s}", .{device_lib orelse b.fmt("{s}/lib/llvm/amdgcn/bitcode", .{root})}));
         run.addArg(b.fmt("--offload-arch={s}", .{arch}));
