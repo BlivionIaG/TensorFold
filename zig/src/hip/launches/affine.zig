@@ -93,6 +93,7 @@ const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 16
 const stream_waves = 4; // kStreamWaves
 const streams_wanted = 3000; // the waves a stream launch fills a large GPU with
 const stream_waves_cu = 96; // and a small one with, a compute unit
+const gcn5_stage_bytes = 12 << 10; // the most a gcn5 block stages at one row
 const stage_bytes_max = 32 << 10; // the most LDS the stream tile stages a block's x in (two blocks a CU still fit)
 const stream_code_words = 32; // kStreamCodeWords
 
@@ -264,7 +265,8 @@ pub const Kernels = struct {
     /// LDS bytes a block stages its rows of x in, 0 for none: it repays one row at 4+ columns, two at 8 on a small GPU.
     pub fn stageBytes(k: *const Kernels, rows: c_int, depth: c_int, cb: c_int) u32 {
         const bytes = @as(i64, rows) * (2 * @as(i64, depth) + @divTrunc(depth, 32) * 4);
-        const repays = if (k.tune.stage >= 0) k.tune.stage == 1 and rows <= 2 else if (rows == 1) cb >= 4 else rows == 2 and cb == 8 and k.waves_wanted < streams_wanted;
+        // gcn5: x staged for every width while it is small (up to k = 4096 at one row: 8.7 KB, many blocks a CU), not at k = 9216 (19.5 KB: 3 blocks a CU)
+        const repays = if (k.caps.generation == .gcn5 and k.tune.stage < 0) rows == 1 and bytes <= gcn5_stage_bytes else if (k.tune.stage >= 0) k.tune.stage == 1 and rows <= 2 else if (rows == 1) cb >= 4 else rows == 2 and cb == 8 and k.waves_wanted < streams_wanted;
         return if (k.stage_on and repays and bytes <= stage_bytes_max) @intCast(bytes) else 0;
     }
 
