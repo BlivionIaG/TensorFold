@@ -11,6 +11,9 @@ const prod = @import("product.zig");
 
 /// The bytes every launch below writes, hashed in order, as the stream tile before the stage wrote them.
 const pinned_f16: u64 = 0x36ef53355d892c81;
+/// gfx900 has no dot2: each fp16 pair is two fused steps, which rounds differently from RDNA2's dot2, so its bytes differ and have their own pin
+/// (recorded on a Vega 56 through hipmac, after the staged-x and float64-bound checks of this and the other affine tests passed on it).
+const pinned_f16_gfx900: u64 = 0x4ac20df95d45bee7;
 const pinned_bf16: u64 = 0x6b703ab847138aad;
 
 /// Row counts: one and two rows a block (the staged tiles), a partial block of four, and the y blocks above.
@@ -140,6 +143,7 @@ test "the stream tile writes the same bytes with x staged in LDS as with each la
     defer b.close();
     var rig = prod.Rig.open(b);
     const hash = try sweep(&rig);
-    const pinned = if (rig.fp16) pinned_f16 else pinned_bf16;
+    const gcn5 = std.mem.startsWith(u8, @import("../../kernels.zig").arch, "gfx900");
+    const pinned = if (!rig.fp16) pinned_bf16 else if (gcn5) pinned_f16_gfx900 else pinned_f16;
     try base.expect(hash == pinned, "stream: the bytes hash to 0x{x}, the tile before the stage wrote 0x{x}", .{ hash, pinned });
 }
