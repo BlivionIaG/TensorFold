@@ -141,7 +141,7 @@ fn check(r: Receipt, diag: *Diag) strict.Error!void {
 
 /// A receipt shaped like the proposal's measurements, for tests: M4 Pro and an RX Vega 56 over Thunderbolt 4. Latencies are
 /// the hop costs the placement model assumes (hop to host 90 us, to device 15 us).
-const sample: Receipt = .{
+pub const sample: Receipt = .{
     .os_build = "25A0000",
     .mac = .{
         .name = "Apple M4 Pro",
