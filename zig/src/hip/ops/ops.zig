@@ -16,6 +16,8 @@ const tp = @import("tp.zig");
 pub const mamba = @import("mamba.zig");
 /// The DFlash2 drafter's ops (tap gathers, key ring, dynamic conv, block attention).
 pub const draft = @import("draft.zig");
+/// The split offload's boundary rows: fp32 window rows to and from the activation kind, and the stamped consume.
+pub const split_rows = @import("split_rows.zig");
 
 pub const Kind = types.Kind;
 pub const Error = types.Error;
@@ -125,4 +127,5 @@ test "dtype numberings of the three kernel families" {
 test "every launch compiles" {
     std.testing.refAllDecls(Ops);
     std.testing.refAllDecls(draft);
+    std.testing.refAllDecls(split_rows);
 }
