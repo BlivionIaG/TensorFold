@@ -216,6 +216,7 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const check = engineModules(b, check_target, .Debug, stub_kernels, null);
     b.step("check-native-hip-host", "Compile the real native HIP server with inert kernels, without GPU execution").dependOn(&server(b, check_target, check, build_options).step);
     const gpu = engineModules(b, target, optimize, objects, hip_include);
+    cardProgram(b, target, optimize, gpu);
     const qwen3_gpu = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("zig/src/families/qwen3/forward_test.zig"),
         .target = target,
@@ -301,6 +302,20 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         .lighton_host = host.lighton,
         .test_step = test_step,
     });
+}
+
+/// `tf-offload-card`: the HIP side of a model split between this Mac's GPU and a card, one process of two. The Mac's
+/// side is `tf-offload-metal` (zig/build/qwen27.zig); they meet over a socket and the window's shared memory, because one
+/// program cannot hold both engines (a source file belongs to one module of a program).
+pub fn cardProgram(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, e: Engine) void {
+    const exe = b.addExecutable(.{ .name = "tf-offload-card", .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/tests/qwen27/split_card.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "hip", .module = e.hip }, .{ .name = "qwen3_5", .module = e.family }, .{ .name = "split", .module = e.hip.import_table.get("split").? } },
+    }) });
+    b.step("tf-offload-card", "The HIP half of the Qwen3.5-4B split between this Mac's GPU and a card (opens the card)").dependOn(&b.addInstallArtifact(exe, .{}).step);
 }
 
 /// `tf-offload-hip`: tf-offload with a HIP card as an external device, over hipmac's runtime (TENSORFOLD_HIP or the search path).
