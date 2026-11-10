@@ -127,6 +127,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     _ = program(b, "tf-qwen27-dflash-refine", "Build the drafter refinement probe (top-1 by block position, masked versus given)", "zig/tests/qwen27/dflash_refine.zig", target, false, engine_only);
     // the split gate: one engine instance for the family, `split` and the pipeline's own mock device beside it
     const split_imports: []const std.Build.Module.Import = &.{ .{ .name = "tensorfold", .module = engine }, .{ .name = "metal", .module = metal }, .{ .name = "split", .module = s.split }, .{ .name = "tokenizer", .module = qwen_core.import_table.get("tokenizer").? } };
+    _ = program(b, "tf-offload-metal", "Build the Mac's side of the Qwen3.5-4B split with a card in another process (TF_SPLIT_QWEN_DIR)", "zig/tests/qwen27/split_metal.zig", target, false, split_imports);
     const split_synthetic = program(b, "tf-qwen27-split-synthetic", "Build the layer-range split gate on generated weights over the mock window, no models", "zig/tests/qwen27/split_synthetic.zig", target, false, split_imports);
     const split_real = program(b, "tf-qwen27-split", "Build the layer-range split gate on a real dense checkpoint (TF_SPLIT_QWEN_DIR)", "zig/tests/qwen27/split.zig", target, false, split_imports);
     const run_synthetic = b.addRunArtifact(split_synthetic);
