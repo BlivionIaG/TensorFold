@@ -191,6 +191,8 @@ pub fn mlpRows(o: Ops, m: *const view.Model, mlp: view.Mlp, x: Tensor, rows: usi
     switch (mlp) {
         .moe => |r| return moe.run(o, m.act, r, x, rows, prefill and rows > 1),
         .dense => |d| {
+            // gfx900: gate and up stacked, silu(gate) * up as the epilogue (the same bytes as the two products and silu_mul)
+            if (d.gate_up) |gu| if (try o.projectGateUp(x, gu, rows)) |act| return o.project(act, d.down, rows, d.down.partial);
             var outs: [4]Tensor = undefined;
             const gate, const up = if (try o.projectGroup(x, &.{ d.gate, d.up }, rows, &outs))
                 .{ outs[0], outs[1] }

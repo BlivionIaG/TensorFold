@@ -19,7 +19,7 @@ pub const Experts = hip.moe.Experts;
 pub const Routed = hip.moe.Routed;
 
 pub const Mlp = union(enum) {
-    dense: struct { gate: Projection, up: Projection, down: Projection },
+    dense: struct { gate: Projection, up: Projection, down: Projection, gate_up: ?Projection = null },
     moe: Routed,
 };
 
