@@ -174,11 +174,11 @@ fn compare(g: Gpu, dir: []const u8, stem: []const u8, act: view.Kind, ptr: u64, 
 fn logitsToken(g: Gpu, o: hip.ops.Ops, m: *const view.Model, dir: []const u8, stem: []const u8, act: view.Kind, dtype: qwen35.sample.Dtype, hidden: Tensor, row: usize) !u32 {
     const s = m.spec;
     const x: Tensor = .{ .ptr = hidden.ptr + row * s.hidden * 2, .kind = act };
-    var logits = try o.project(x, m.head, 1, false);
+    var logits = try o.project(x, m.head.?, 1, false);
     if (m.tp) |c| {
         // one row: the ranks' slices in rank order are the vocabulary
-        const parts = try o.arena.take(c.world * m.head.n * 2);
-        try qwen35.reduce.gather(o, c, logits, parts, m.head.n);
+        const parts = try o.arena.take(c.world * m.head.?.n * 2);
+        try qwen35.reduce.gather(o, c, logits, parts, m.head.?.n);
         logits.ptr = parts;
     }
     try hip.runtime.check(g.d.api.hipStreamSynchronize(o.stream));

@@ -5,7 +5,8 @@ const plan = @import("../forward/plan.zig");
 const graph_cache = hip.graph_cache;
 
 /// What a replay hands back: the forward's outputs and where the arena stands after it.
-pub const Out = struct { hidden: hip.ops.Tensor, y: hip.ops.Tensor, used: usize };
+/// `y` (the logits rows) is null for a stage whose range does not end at the last layer.
+pub const Out = struct { hidden: hip.ops.Tensor, y: ?hip.ops.Tensor, used: usize };
 
 pub const Graphs = graph_cache.CacheOf(plan.Shape, Out, hip.graph_split.Split);
 

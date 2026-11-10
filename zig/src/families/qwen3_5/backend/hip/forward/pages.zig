@@ -30,7 +30,7 @@ pub const Pool = struct {
     pub fn deviceBytes(m: *const view.Model, count: usize) usize {
         const s = m.spec;
         var full: usize = 0;
-        for (0..s.n_layers) |i| full += @intFromBool(s.full(i));
+        for (0..s.n_layers) |i| full += @intFromBool(m.range.owns(i) and s.full(i));
         return 2 * full * count * s.kv_heads * tokens * s.head_dim * m.act.size();
     }
 
@@ -47,7 +47,7 @@ pub const Pool = struct {
         };
         const per_layer = count * s.kv_heads * tokens * s.head_dim * m.act.size();
         for (0..s.n_layers) |i| {
-            const bytes = if (s.full(i)) per_layer else 0;
+            const bytes = if (m.range.owns(i) and s.full(i)) per_layer else 0;
             keys[i] = try hip.DeviceBuffer.alloc(d, bytes);
             errdefer keys[i].free();
             values[i] = try hip.DeviceBuffer.alloc(d, bytes);
