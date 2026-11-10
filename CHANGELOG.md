@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- DeepSeek V4.1 on Metal: `--prefill-from` with `--mcdma-link` pulls a prompt prefix a GB10 pair prefilled (MKVH protocol 2, bf16 and f32 parts) and lands it in a blank Snapshot of the served lane: the window rings, fp4 pool rows and index keys, the compressor carry and the Engram record are packed with the engine's own quantisers, the drafter's rings are dropped, and the Mac prefills the tail and decodes. An imported prefix is outside the exactness contract and is kept only as a remote state. `TF_DSV41_HANDOFF_CHECK` (`roundtrip`, or a hand-off file with `TF_DSV41_HANDOFF_TOKENS`) lands one with no network and reports top-1 agreement and logit NRMS against a local prefill; the hand-off library gains the Metal-to-neutral export and a file carrier (docs/deepseek-v41-handoff.md).
+
 - Evidence index: reads saved native capabilities, including unknown and XPU chip labels; advertised facts stay unqualified, and invalid supplied input stops with a bounded error (#2708).
 
 - `--instruct-sampling card` (or `field=value` pairs) serves the model card's instruct sampling to chat requests with thinking off that leave those fields unset; request fields, then the serve flags, then the pairs decide, and the server's own requests never take it (#2626). Thanks to @BobClawblaw.

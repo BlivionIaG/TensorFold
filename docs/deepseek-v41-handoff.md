@@ -73,6 +73,29 @@ exactly what the Metal engine itself applies to a bf16 row: the fp4 pool (served
 * A ratio-2 carry is the projection of position `upto-1`; only the odd-`upto` case occupies a slot on Metal (the other is
   reset: kv 0, score `-inf`).
 
+## The Mac side
+
+`serve --prefill-from URL --mcdma-link NAME` on the DeepSeek V4.1 Metal lane (`native/deepseek_v41_remote.zig`, modelled
+on the Qwen3.8-27B pull) gives the lane host a `lane_remote.Source`: `wants` is the shared prefix policy
+(`TF_PREFILL_MIN`, `TF_PREFILL_CHUNK`), `fill` asks the GB10 over HTTP, pulls protocol 2 into a **blank Snapshot**
+(`Model.snapshotBlank`: zeroed `storage`, `live` and taps) through `landing.Landing` (the Packed layout over the Snapshot's own
+host slices, so nothing is staged), seals it (`Model.snapshotSeal`: position, the Engram record of the last three tokens'
+compressed ids, taps with no rows) and returns `{ saved, at }`. `Backend.prefill` restores it with `snapshotRestore` and
+prefills the tail, exactly as for a kept prompt state. `drop` frees the Snapshot; `TF_PREFILL_KEEP` decides whether states
+built on it are kept (marked remote). The drafter's rings are not in a Snapshot (the lane holds them in a state of its own), so
+`ring` parts are read and dropped; the drafter has no conditioning rows until local forwards fill the taps, which can lower
+draft acceptance and nothing else.
+
+### Without a network
+
+`TF_DSV41_HANDOFF_CHECK=roundtrip` (the Metal lane's own prefill exported through `export_metal.zig`, written as a hand-off
+file, landed through the same sink) or `TF_DSV41_HANDOFF_CHECK=<file>` (a `blob.zig` file: tokens, protocol 2 manifest, parts
+in delivery order; a synthetic one from `synth.zig`, or a producer's parts dumped) runs at load. With
+`TF_DSV41_HANDOFF_TOKENS=<ids>` (the full prompt; the file covers its first `upto` tokens, at least one more must follow) and
+`TF_DSV41_HANDOFF_STEPS=N` (default 16) it prefills locally, restores the native snapshot as a control (must be exact),
+lands the hand-off in a blank Snapshot, then compares the next N logit rows (the reference's tokens fed to both): top-1
+agreement and NRMS, and the free-running token streams. Agreement is reported, not required.
+
 ## Tests
 
 `zig build test-dsv41-handoff` (host only): codec exhaustively against independent tables, packers against independent
