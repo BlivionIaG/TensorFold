@@ -40,7 +40,7 @@ pub fn split(r: Role) Split {
     };
 }
 
-/// Classify a checkpoint tensor by its name (DeepSeek, Kimi and GLM naming, with or without a language_model prefix).
+/// Classify a checkpoint tensor by its name (DeepSeek, Kimi, GLM and Qwen3.5/3.6 naming, with or without a language_model prefix).
 pub fn classify(name: []const u8) Class {
     const layer_at = std.mem.indexOf(u8, name, "layers.") orelse return top(name);
     if (has(name[0..layer_at], "vision") or has(name[0..layer_at], "mtp")) return top(name);
@@ -69,7 +69,8 @@ fn inLayer(rest: []const u8) Role {
         if (std.mem.endsWith(u8, seg, "_a_proj") or eql(seg, "kv_a_proj_with_mqa") or has(seg, "norm")) return .attn_rep;
         return .attn_col;
     }
-    if (std.mem.startsWith(u8, rest, "mlp.experts.") or std.mem.startsWith(u8, rest, "block_sparse_moe.experts.")) return .expert;
+    if (std.mem.startsWith(u8, rest, "mlp.experts.") or std.mem.startsWith(u8, rest, "mlp.switch_mlp.") or std.mem.startsWith(u8, rest, "block_sparse_moe.experts.")) return .expert;
+    if (std.mem.startsWith(u8, rest, "mlp.shared_expert_gate")) return .router;
     if (std.mem.startsWith(u8, rest, "mlp.shared_expert")) return if (has(rest, "down_proj")) .shared_row else .shared_col;
     if (std.mem.startsWith(u8, rest, "mlp.gate.") or std.mem.startsWith(u8, rest, "mlp.router")) return .router;
     if (std.mem.startsWith(u8, rest, "mlp.")) {
@@ -148,4 +149,42 @@ test "Kimi, DeepSeek and GLM names land in their roles" {
     try std.testing.expectEqual(Split.row, split(.attn_row));
     try std.testing.expectEqual(Split.column, split(.head));
     try std.testing.expectEqual(Split.replicate, split(.router));
+}
+
+test "Qwen3.5 and 3.6 names land in their roles" {
+    const cases = [_]struct { []const u8, Role, ?u32, ?u32 }{
+        .{ "language_model.model.embed_tokens.weight", .embed, null, null },
+        .{ "language_model.lm_head.weight", .head, null, null },
+        .{ "language_model.model.norm.weight", .final_norm, null, null },
+        .{ "language_model.model.layers.3.self_attn.q_proj.weight", .attn_col, 3, null },
+        .{ "language_model.model.layers.3.self_attn.o_proj.weight", .attn_row, 3, null },
+        .{ "language_model.model.layers.3.self_attn.q_norm.weight", .attn_rep, 3, null },
+        .{ "language_model.model.layers.0.linear_attn.in_proj_qkv.weight", .attn_col, 0, null },
+        .{ "language_model.model.layers.0.linear_attn.conv1d.weight", .attn_col, 0, null },
+        .{ "language_model.model.layers.0.linear_attn.out_proj.weight", .attn_row, 0, null },
+        .{ "language_model.model.layers.0.linear_attn.norm.weight", .attn_rep, 0, null },
+        .{ "language_model.model.layers.0.mlp.gate_proj.weight", .dense_col, 0, null },
+        .{ "language_model.model.layers.0.mlp.down_proj.weight", .dense_row, 0, null },
+        .{ "language_model.model.layers.0.mlp.switch_mlp.gate_proj.weight", .expert, 0, null },
+        .{ "language_model.model.layers.0.mlp.switch_mlp.down_proj.scales", .expert, 0, null },
+        .{ "language_model.model.layers.0.mlp.shared_expert.up_proj.weight", .shared_col, 0, null },
+        .{ "language_model.model.layers.0.mlp.shared_expert.down_proj.weight", .shared_row, 0, null },
+        .{ "language_model.model.layers.0.mlp.gate.weight", .router, 0, null },
+        .{ "language_model.model.layers.0.mlp.shared_expert_gate.weight", .router, 0, null },
+        .{ "language_model.model.layers.0.input_layernorm.weight", .norm, 0, null },
+        .{ "language_model.model.layers.0.post_attention_layernorm.weight", .norm, 0, null },
+        .{ "vision_tower.blocks.0.attn.qkv.weight", .vision, null, null },
+        .{ "vision_tower.patch_embed.proj.weight", .vision, null, null },
+        .{ "mtp.layers.0.self_attn.q_proj.weight", .draft, null, null },
+        .{ "mtp.fc.weight", .draft, null, null },
+    };
+    for (cases) |c| {
+        const got = classify(c[0]);
+        std.testing.expectEqual(c[1], got.role) catch |err| {
+            std.debug.print("{s}: {s}\n", .{ c[0], @tagName(got.role) });
+            return err;
+        };
+        try std.testing.expectEqual(c[2], got.layer);
+        try std.testing.expectEqual(c[3], got.expert);
+    }
 }

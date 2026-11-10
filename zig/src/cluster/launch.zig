@@ -108,6 +108,7 @@ fn probeOut(a: Allocator, r: Runner, c: config.Config, n: config.Node, local: bo
 
 /// One node's inventory from its tools over ssh (or locally when `local`); a CUDA node with Linux tools, not macOS's.
 pub fn inventory(a: Allocator, r: Runner, c: config.Config, n: config.Node, local: bool) !node.Inventory {
+    if (!n.backend.launchable()) return error.UnlaunchableBackend;
     if (n.backend == .cuda) {
         var inv = probe.inventoryLinux(.{
             .name = n.name,
@@ -171,6 +172,7 @@ pub fn launch(a: Allocator, r: Runner, c: config.Config, json: []const u8, model
     for (model.nodes) |name| {
         if (std.mem.eql(u8, name, leader)) continue;
         const n = c.nodes[c.find(name) orelse return error.UnknownNode];
+        if (!n.backend.launchable()) return error.UnlaunchableBackend;
         const argv = try sshArgv(a, c, n, try nodeCommand(a, json, n.bin orelse "tensorfold", name, leader, model.id));
         var ok = true;
         if (!dry) {

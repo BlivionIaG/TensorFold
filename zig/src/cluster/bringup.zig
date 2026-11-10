@@ -32,7 +32,7 @@ pub fn simulate(gpa: std.mem.Allocator, invs: []const node.Inventory, edges: []c
     for (edges) |e| if (e.up) net.cable(@intCast(e.a), e.a_port, @intCast(e.b), e.b_port);
     const ms = try gpa.alloc(membership.Membership, n);
     defer gpa.free(ms);
-    for (ms, invs) |*m, inv| m.* = membership.Membership.init(gpa, .{}, inv, 1);
+    for (ms, invs) |*m, inv| m.* = try membership.Membership.init(gpa, .{}, inv, 1);
     defer for (ms) |*m| m.deinit();
     var now: u64 = 0;
     const step = 10 * std.time.ns_per_ms;
