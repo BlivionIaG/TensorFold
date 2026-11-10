@@ -72,7 +72,7 @@ def build_shim():
     out = os.path.join(a.out, "libhipprof.dylib")
     src = os.path.join(HERE, "hipprof.c")
     if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(src):
-        subprocess.check_call(["clang", "-O2", "-dynamiclib", "-I", HERE, "-o", out, src])
+        subprocess.check_call(os.environ.get("TF_CC", "clang").split() + ["-O2", "-dynamiclib", "-I", HERE, "-o", out, src])
     return out
 
 

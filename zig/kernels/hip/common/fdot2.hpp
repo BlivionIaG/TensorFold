@@ -12,7 +12,7 @@
 //   TF_G9_FOLD  1: the stream tile leaves the 1024 of its code pairs to the group's bias (not the same bits)    0: subtracts it per pair
 //   TF_G9_ANDOR 1: the stream tile's code pairs by v_and_or_b32 (quant/mlx_decoder.hpp)     0: the compiler's and + or
 #ifndef TF_G9_MIX
-#define TF_G9_MIX 1
+#define TF_G9_MIX 2
 #endif
 #ifndef TF_G9_FOLD
 #define TF_G9_FOLD 0

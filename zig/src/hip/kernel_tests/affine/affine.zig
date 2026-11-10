@@ -37,7 +37,15 @@ pub const Totals = struct { products: usize = 0, launches: usize = 0, worst: f64
 const Ref = struct { row: usize, col: usize, v: @import("reference.zig").Value };
 
 /// Largest error of the sampled outputs of `out`, over the bound that holds it.
-fn worstOf(p: *const Product, out: Buffer, rounded: bool, refs: []const Ref) !f64 {
+/// Whether an entry's outputs may leave out the terms of denormal fp16 x: gfx900's stream tile with TF_G9_MIX=2 mixes on the fp16 x as they
+/// are (v_mad_mix_f32 reads a denormal operand as zero, common/fdot2.hpp); its error is then the sum of those terms' magnitudes on top of
+/// the fp32 sum's. Every other entry, and every other GPU or variant, keeps the plain bound.
+fn flushes(e: *const Entry) bool {
+    const k = @import("../../kernels.zig");
+    return std.mem.startsWith(u8, k.arch, "gfx900") and k.g9_mix == 2 and e.family == .stream;
+}
+
+fn worstOf(p: *const Product, out: Buffer, rounded: bool, refs: []const Ref, flushed: bool) !f64 {
     var worst: f64 = 0;
     const lim = bound(p.c.k);
     for (refs) |r| {
@@ -53,12 +61,12 @@ fn worstOf(p: *const Product, out: Buffer, rounded: bool, refs: []const Ref) !f6
                 y = @as(f32, @bitCast(@as(u32, b) << 16));
             }
             // the activation type's own rounding, and the fp32 sum below it
-            const allowed = roundBound(p.rig.fp16) * @abs(r.v.y) + lim * r.v.norm + 1e-7;
+            const allowed = roundBound(p.rig.fp16) * @abs(r.v.y) + lim * r.v.norm + 1e-7 + if (flushed) r.v.flush else 0;
             worst = @max(worst, @abs(y - r.v.y) / allowed);
         } else {
             var f: f32 = 0;
             try out.download(at_ * 4, std.mem.asBytes(&f));
-            worst = @max(worst, @abs(@as(f64, f) - r.v.y) / (lim * @max(r.v.norm, 1e-30)));
+            worst = @max(worst, @abs(@as(f64, f) - r.v.y) / (lim * @max(r.v.norm, 1e-30) + if (flushed) r.v.flush else 0));
         }
     }
     return worst;
@@ -107,7 +115,7 @@ pub fn product(rig: *Rig, c: Case, tot: *Totals) !void {
             try out.fill8(0xA5, null);
             try prod.launchEntry(&p, e, out, rounded, partial.ptr, 0);
             try rig.base.stream.synchronize();
-            const worst = try worstOf(&p, out, rounded, refs[0..n_refs]);
+            const worst = try worstOf(&p, out, rounded, refs[0..n_refs], flushes(e));
             tot.worst = @max(tot.worst, worst);
             try base.expect(worst <= 1, "affine {s}: {s}{s} is {d:.1} times the error an fp32 sum may have against float64", .{ label, e.id, if (rounded) " (rounded)" else "", worst });
             const digest = try prod.digestOf(out, p.outBytes(rounded));
@@ -162,6 +170,13 @@ pub fn sweep(rig: *Rig) !void {
     var tot: Totals = .{};
     for (ragged(.prefill)) |c| try product(rig, c, &tot);
     for (ragged(.decode)) |c| try product(rig, c, &tot);
+    // x past 32 in magnitude: the scaled stage of gfx900's TF_G9_MIX=1 gives way to fp32 x, still within the plain bound
+    for ([_]Case{
+        .{ .name = "big x", .rows = 1, .n = 130, .k = 2560, .bits = 4, .group = 64, .big_x = true },
+        .{ .name = "big x", .rows = 1, .n = 33, .k = 4096, .bits = 4, .group = 64, .big_x = true },
+        .{ .name = "big x", .rows = 3, .n = 130, .k = 96, .bits = 2, .group = 32, .big_x = true },
+        .{ .name = "big x", .rows = 2, .n = 257, .k = 9216, .bits = 4, .group = 64, .big_x = true },
+    }) |c| try product(rig, c, &tot);
 }
 
 test "every affine entry on the served decode shapes sits within an fp32 sum of float64; picked entries write equal bytes" {

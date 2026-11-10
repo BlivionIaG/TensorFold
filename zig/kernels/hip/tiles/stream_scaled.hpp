@@ -68,25 +68,27 @@ __device__ inline void stream_x_pairs(const uint32_t (&xn)[16], typename T::pair
 }
 
 // One column's chunk against RG rows: each code pair is made once and dotted with every row's x.
-template <class Dec, typename T, class X, int RG, int... I>
-__device__ inline void stream_dots(const X (&xp)[RG][16], const uint32_t (&w)[Dec::kWords], float (&d)[RG],
+template <class Dec, typename T, bool WIDE, int RG, int... I>
+__device__ inline void stream_dots(const typename T::pair (&xp)[RG][16], const uint32_t (&w)[Dec::kWords], float (&d)[RG],
                                    std::integer_sequence<int, I...>) {
     (([&] {
          const typename T::pair q = Dec::template stream_pair<T, I>(w);
 #pragma unroll
-         for (int r = 0; r < RG; ++r) d[r] = stream_dot<T>(xp[r][I], q, d[r]);
+         for (int r = 0; r < RG; ++r) {
+             if constexpr (WIDE) d[r] = stream_dot<T>(stream_wide<T>(xp[r][I]), q, d[r]);  // widened where used: no 32 registers of x
+             else d[r] = stream_dot<T>(xp[r][I], q, d[r]);
+         }
      }()),
      ...);
 }
 
-// The block's R rows of x into LDS (R * (2k + k / 8) bytes, 16 more for kScaledX): chunk q of row r as pairs at [r][v][q][4], sums after,
-// then (kScaledX) one word a virtual wave: the largest magnitude of its x (fp16 bits). The x pairs are scaled by 2^10 when every x of the
-// block is below 32 (flag read by stream_staged_ok), else the block does not use the stage.
+// The block's R rows of x into LDS (R * (2k + k / 4) bytes): chunk q of row r as pairs at [r][v][q][4], then the sums of x, then (kScaledX)
+// the chunk's unscale factor. A chunk whose x are all below 32 in magnitude is staged scaled by 2^10 (every nonzero fp16 x, 2^-24 and up,
+// becomes normal, so the mix does not flush it) and its sum of x and its unscale factor (2^-10, else 1) are stored for the lane to undo it.
 template <class Dec, class Act, class T, int R>
 __device__ inline void stream_stage(const typename Dec::Args& a, int row0, uint32_t* pairs, float* sums) {
     using pair = typename T::pair;
     const int nch = a.k >> 5;
-    uint32_t top = 0;
     for (int at = threadIdx.x; at < R * nch; at += 32 * kStreamWaves) {
         const int r = at / nch;
         const int q = at - r * nch;
@@ -100,19 +102,27 @@ __device__ inline void stream_stage(const typename Dec::Args& a, int row0, uint3
             xn[4 * v + 2] = t.z;
             xn[4 * v + 3] = t.w;
         }
+        float unscale = 1.f;
         if constexpr (kScaledX<T>) {
+            uint32_t top = 0;
 #pragma unroll
-            for (int i = 0; i < 16; ++i) {
-                top = max(top, max(xn[i] & 0x7fffu, (xn[i] >> 16) & 0x7fffu));
-                // widened (the conversion keeps a denormal half), scaled and narrowed again: exact for an x below 32
-                const pair p = __builtin_bit_cast(pair, xn[i]);
-                xn[i] = __builtin_bit_cast(uint32_t, __floats2half2_rn(T::lo(p) * 1024.f, T::hi(p) * 1024.f));
+            for (int i = 0; i < 16; ++i) top = max(top, max(xn[i] & 0x7fffu, (xn[i] >> 16) & 0x7fffu));
+            // below 32 (0x5000): a NaN or an infinity is not
+            if (top < 0x5000u) {
+                unscale = 0x1p-10f;
+#pragma unroll
+                for (int i = 0; i < 16; ++i) {
+                    // widened (the conversion keeps a denormal half), scaled and narrowed again: exact
+                    const pair p = __builtin_bit_cast(pair, xn[i]);
+                    xn[i] = __builtin_bit_cast(uint32_t, __floats2half2_rn(T::lo(p) * 1024.f, T::hi(p) * 1024.f));
+                }
             }
         }
         float s = 0.f;
 #pragma unroll
         for (int i = 0; i < 16; ++i) s = stream_dot<T>(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, T::ones), s);
-        sums[at] = s;
+        sums[at] = s * unscale;
+        if constexpr (kScaledX<T>) sums[R * nch + at] = unscale;
         pair xp[16];
         stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
         // word by word: a u32x4 built from the pairs' bit casts lost a lane on gfx1100 (hipcc 7.14)
@@ -120,22 +130,7 @@ __device__ inline void stream_stage(const typename Dec::Args& a, int row0, uint3
         for (int i = 0; i < 16; ++i)
             pairs[((r * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)] = __builtin_bit_cast(uint32_t, xp[i]);
     }
-    if constexpr (kScaledX<T>) {
-#pragma unroll
-        for (int d = 16; d > 0; d >>= 1) top = max(top, static_cast<uint32_t>(__shfl_xor(static_cast<int>(top), d, 32)));
-        if ((threadIdx.x & 31) == 0) reinterpret_cast<uint32_t*>(sums + R * nch)[threadIdx.x >> 5] = top;
-    }
     __syncthreads();
-}
-
-// Whether the stage holds usable (scaled) x: every x of the block below 32 in magnitude (fp16 0x5000), a NaN or an infinity not.
-template <int R>
-__device__ inline bool stream_staged_ok(const float* sums, int nch) {
-    const uint32_t* top = reinterpret_cast<const uint32_t*>(sums + R * nch);
-    uint32_t m = 0;
-#pragma unroll
-    for (int w = 0; w < kStreamWaves; ++w) m = max(m, top[w]);
-    return m < 0x5000u;
 }
 
 // Epi::kPair: a lane's CB columns are CB / 2 gate columns and the same up columns; out is silu(gate) * up.
@@ -206,7 +201,6 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                     const unsigned short (&br)[CB]) {
         constexpr bool ST = decltype(staged)::value;
         // kScaledX: the staged x are scaled by 2^10 (pairs), the others are widened to fp32
-        using X = std::conditional_t<kScaledX<T> && !ST, StreamWideX, pair>;
         const bool live = base + j < nch;
         const int q = live ? base + j : nch - 1;
         float sc[CB];
@@ -216,16 +210,13 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
             sc[c] = live ? terms.widen(sr[c]) : 0.f;
             bi[c] = live ? terms.widen(br[c]) : 0.f;
             if constexpr (Dec::kDeferSub) bi[c] = fmaf(-Dec::kStreamMark, sc[c], bi[c]);
-            if constexpr (kScaledX<T> && ST) {
-                sc[c] *= 0x1p-10f;
-                bi[c] *= 0x1p-10f;
-            }
         }
 #pragma unroll
         for (int g = 0; g < NG; ++g) {
             if (row0 + g * RG >= a.m) break;
-            X xp[RG][16];
+            pair xp[RG][16];
             float sx[RG];
+            float un[RG];
 #pragma unroll
             for (int r = 0; r < RG; ++r) {
                 if constexpr (ST) {
@@ -234,6 +225,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                     for (int i = 0; i < 16; ++i)
                         xp[r][i] = __builtin_bit_cast(pair, xs[((row * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)]);
                     sx[r] = sums[row * nch + q];
+                    if constexpr (kScaledX<T>) un[r] = sums[R * nch + row * nch + q];
                 } else {
                 uint32_t xn[16];
                 const u32x4* src =
@@ -255,14 +247,8 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                         s = stream_dot<T>(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, kOne), s);
                 }
                 sx[r] = s;
-                if constexpr (kScaledX<T>) {
-                    pair xq[16];
-                    stream_x_pairs<Dec, T>(xn, xq, std::make_integer_sequence<int, 16>{});
-#pragma unroll
-                    for (int i = 0; i < 16; ++i) xp[r][i] = stream_wide<T>(xq[i]);
-                } else {
-                    stream_x_pairs<Dec, T>(xn, xp[r], std::make_integer_sequence<int, 16>{});
-                }
+                un[r] = 1.f;
+                stream_x_pairs<Dec, T>(xn, xp[r], std::make_integer_sequence<int, 16>{});
                 }
             }
 #pragma unroll
@@ -270,10 +256,10 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                 float d[RG];
 #pragma unroll
                 for (int r = 0; r < RG; ++r) d[r] = 0.f;
-                stream_dots<Dec, T, std::remove_cvref_t<decltype(xp[0][0])>, RG>(xp, w[c], d, std::make_integer_sequence<int, 16>{});
+                stream_dots<Dec, T, kScaledX<T> && !ST, RG>(xp, w[c], d, std::make_integer_sequence<int, 16>{});
 #pragma unroll
                 for (int r = 0; r < RG; ++r) {
-                    acc[g * RG + r][c] = Dec::fold_scale(acc[g * RG + r][c], d[r], sc[c]);
+                    acc[g * RG + r][c] = Dec::fold_scale(acc[g * RG + r][c], d[r], kScaledX<T> && ST ? sc[c] * un[r] : sc[c]);
                     acc[g * RG + r][c] = Dec::fold_bias(acc[g * RG + r][c], sx[r], bi[c]);
                 }
             }
@@ -311,12 +297,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
     };
     if constexpr (R == 1) fetch(at(0), wa, sa, ba);
     if constexpr (SHARED && kStageLate) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
-    if constexpr (SHARED && kScaledX<T>) {
-        if (stream_staged_ok<R>(sums, nch)) run(std::true_type{});
-        else run(std::false_type{});
-    } else {
-        run(std::bool_constant<SHARED>{});
-    }
+    run(std::bool_constant<SHARED>{});
 
 #pragma unroll
     for (int r = 0; r < R; ++r) {

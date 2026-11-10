@@ -19,6 +19,8 @@ pub const Case = struct {
     item_rows: usize = 8,
     /// Every expert takes the same number of pairs.
     even: bool = false,
+    /// fp16 x up to 256 in magnitude (the stream tile of gfx900 scales x by 2^10 only below 32).
+    big_x: bool = false,
 
     pub fn routed(c: Case) bool {
         return c.experts > 0;

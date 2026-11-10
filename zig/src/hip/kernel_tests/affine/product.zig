@@ -70,7 +70,7 @@ pub const Product = struct {
         p.copies = 1;
         _ = copy_bytes;
         const x_rows: usize = if (!c.routed()) c.rows else if (c.down) pairs else c.rows;
-        p.hx = try data.fill(gpa, u16, x_rows * c.k, &rig.rng, if (rig.fp16) data.makeX16 else data.makeXB);
+        p.hx = try data.fill(gpa, u16, x_rows * c.k, &rig.rng, if (rig.fp16 and c.big_x) data.makeX16Big else if (rig.fp16) data.makeX16 else data.makeXB);
         errdefer gpa.free(p.hx);
         p.hw = try data.fill(gpa, u32, p.copy_words, &rig.rng, data.makeWord);
         errdefer gpa.free(p.hw);

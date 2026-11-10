@@ -14,6 +14,8 @@ const pinned_f16: u64 = 0x36ef53355d892c81;
 /// gfx900 has no dot2: each fp16 pair is two fused steps, which rounds differently from RDNA2's dot2, so its bytes differ and have their own pin
 /// (recorded on a Vega 56 through hipmac, after the staged-x and float64-bound checks of this and the other affine tests passed on it).
 const pinned_f16_gfx900: u64 = 0x19fdf3b06c3a5b4f;
+/// With TF_G9_MIX=2 (the default) a denormal fp16 x counts as zero in the stream tile: its own pin (recorded on the card).
+const pinned_f16_gfx900_flush: u64 = 0xbfd29f54a3b90d6a;
 const pinned_bf16: u64 = 0x6b703ab847138aad;
 
 /// Row counts: one and two rows a block (the staged tiles), a partial block of four, and the y blocks above.
@@ -144,6 +146,7 @@ test "the stream tile writes the same bytes with x staged in LDS as with each la
     var rig = prod.Rig.open(b);
     const hash = try sweep(&rig);
     const gcn5 = std.mem.startsWith(u8, @import("../../kernels.zig").arch, "gfx900");
-    const pinned = if (!rig.fp16) pinned_bf16 else if (gcn5) pinned_f16_gfx900 else pinned_f16;
+    const flush = gcn5 and @import("../../kernels.zig").g9_mix == 2;
+    const pinned = if (!rig.fp16) pinned_bf16 else if (flush) pinned_f16_gfx900_flush else if (gcn5) pinned_f16_gfx900 else pinned_f16;
     try base.expect(hash == pinned, "stream: the bytes hash to 0x{x}, the tile before the stage wrote 0x{x}", .{ hash, pinned });
 }

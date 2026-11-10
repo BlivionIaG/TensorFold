@@ -63,6 +63,11 @@ pub fn makeX16(r: *Rng) u16 {
     return f16Bits(fine(r));
 }
 
+/// fp16 activations up to 256 in magnitude (and still the small ones below 2^-14): a stream tile that scales x by 2^10 must not overflow it.
+pub fn makeX16Big(r: *Rng) u16 {
+    return f16Bits(fine(r) * std.math.ldexp(@as(f32, 1), @as(i32, @intCast(r.next() >> 33 & 7)) + 1));
+}
+
 pub fn makeXB(r: *Rng) u16 {
     return bf16Bits(fine(r));
 }
