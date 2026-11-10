@@ -167,6 +167,8 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8, c
     const got = try decode(m, a, got_first, ref_picks, steps, try a.alloc(u32, steps));
     compare("hand-off, the reference's tokens fed", ref, got, steps);
 
+    if (envText("TF_DSV41_HANDOFF_BISECT") != null) try bisect(m, a, native, snap, prompt, upto, ref_picks, ref, steps);
+
     // free-running greedy on the imported prefix
     try m.reset();
     try m.snapshotRestore(0, snap);
@@ -191,4 +193,49 @@ fn stream(a: std.mem.Allocator, checkpoint: []const u8, tokens: []const u32, par
     var out: std.Io.Writer.Allocating = .init(a);
     try ho.file.write(a, &out.writer, &exp, checkpoint, 0, 1);
     return out.written();
+}
+
+const Part = enum { swa, carry, comp, ixk };
+
+/// `native` with only `part`'s regions replaced by the landed hand-off's: which part of the import carries the difference.
+fn graft(m: *ds.Model, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, part: Part, upto: u32) !*ds.Model.Snapshot {
+    const out = try m.snapshotBlank();
+    errdefer m.snapshotDrop(out);
+    @memcpy(out.storage, native.storage);
+    @memcpy(out.live, native.live);
+    @memcpy(out.taps, native.taps);
+    out.position = native.position;
+    out.history = native.history;
+    out.taps_row = native.taps_row;
+    out.taps_n = native.taps_n;
+    out.taps_rows_last = native.taps_rows_last;
+    out.taps_rows_valid = native.taps_rows_valid;
+    out.taps_base = native.taps_base;
+    const pk = remote.packedOf(m, landed);
+    const P = ho.metal.Packed;
+    switch (part) {
+        .swa => @memcpy(out.live[0..pk.ringBytes()], landed.live[0..pk.ringBytes()]),
+        .carry => @memcpy(out.live[pk.ringBytes()..pk.liveBytes()], landed.live[pk.ringBytes()..pk.liveBytes()]),
+        .comp, .ixk => for (P.ratios, 0..) |ratio, i| {
+            const rows = @as(usize, upto) / ratio;
+            const main = pk.mainOff(i);
+            const index = main + @as(usize, pk.capacity / ratio) * P.main_stride;
+            if (part == .comp) @memcpy(out.storage[main..][0 .. rows * P.main_stride], landed.storage[main..][0 .. rows * P.main_stride]) else @memcpy(out.storage[index..][0 .. rows * P.index_stride], landed.storage[index..][0 .. rows * P.index_stride]);
+        },
+    }
+    return out;
+}
+
+/// TF_DSV41_HANDOFF_BISECT: the native state with one part kind (window rings, carries, pool rows, index keys) taken from the
+/// hand-off and the rest the local prefill's own, each compared with the local run: which part moves the logits.
+fn bisect(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, prompt: []const u32, upto: u32, ref_picks: []const u32, ref: []const f32, steps: usize) !void {
+    inline for (comptime std.meta.tags(Part)) |part| {
+        const hybrid = try graft(m, native, landed, part, upto);
+        defer m.snapshotDrop(hybrid);
+        try m.reset();
+        try m.snapshotRestore(0, hybrid);
+        const first = (try feed(m, a, prompt[upto..], true)).?;
+        const rows = try decode(m, a, first, ref_picks, steps, try a.alloc(u32, steps));
+        compare("only " ++ @tagName(part) ++ " from the hand-off", ref, rows, steps);
+    }
 }
