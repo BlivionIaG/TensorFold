@@ -1,0 +1,86 @@
+# 2026-11-10T08:11Z  Apple M4 Pro (Mac16,7), macOS 27.2 (26B123), 48 GiB, load average at start: 4.25, 4.93, 4.68
+# other agents' builds ran on this Mac during the measurement (load average about 5, mostly CPU)
+# build: DEVELOPER_DIR=/Library/Developer/CommandLineTools clang -O2 -fobjc-arc -framework Metal -framework Foundation metal_probe.m -o metal_probe
+
+$ ./metal_probe wrap
+== wrap: newBufferWithBytesNoCopy over shm-backed memory (page size 16384)
+device Apple M4 Pro, recommendedMaxWorkingSetSize 37.4 GiB, maxBufferLength 28.1 GiB, hasUnifiedMemory 1
+shm MAP_SHARED      16384 B: wrap OK  , contents==ptr 1, wrap time 8.3 us, GPU r/w roundtrip mismatches 0, cb status 4
+shm MAP_SHARED    1048576 B: wrap OK  , contents==ptr 1, wrap time 13.4 us, GPU r/w roundtrip mismatches 0, cb status 4
+shm MAP_SHARED   67108864 B: wrap OK  , contents==ptr 1, wrap time 15.3 us, GPU r/w roundtrip mismatches 0, cb status 4
+shm MAP_SHARED 1073741824 B: wrap OK  , contents==ptr 1, wrap time 43.3 us, GPU r/w roundtrip mismatches 0, cb status 4
+ptr 4 KiB past a 16 KiB boundary: OK;  length 20 KiB (not a page multiple): OK;  ptr 16 KiB-aligned inside block: OK
+  +4 KiB buffer: contents()==ptr 1, length 16384, CPU store visible through contents: 1
+  20 KiB buffer: contents()==ptr 1, length 20480, CPU store visible through contents: 1
+MAP_FIXED shm block inside a PROT_NONE arena (hipmac layout): mmap OK, wrap OK
+alias mapping store seen through wrapped buffer: yes
+wrap of whole block incl. head table page: OK (the table page stays CPU-visible; payload offsets start at a page boundary)
+wrap with MTLResourceHazardTrackingModeUntracked: OK
+
+$ ./metal_probe latency
+== latency: Metal submit/complete/wait costs on this GPU
+1 dispatch: encode+commit+waitUntilCompleted               n=2000  p10    82.8  p50    86.4  p90    93.0  p99   153.1  max    185.8 us
+1 dispatch: commit + completion handler -> semaphore       n=2000  p10    81.8  p50    85.1  p90    91.0  p99   152.0  max    219.0 us
+commit -> kernel's store seen by CPU poll (commit..visible) n=2000  p10    62.3  p50    66.1  p90    69.4  p99   136.3  max    181.0 us
+event: CPU signaledValue= -> waiting cb's kernel store visible n=500   p10    62.0  p50    64.3  p90    68.2  p99   142.0  max    399.1 us
+   1 dependent 1-thread dispatches, one encoder, commit..completed n=12    p10    87.2  p50    92.1  p90    94.5  p99    94.8  max     94.8 us
+  10 dependent 1-thread dispatches, one encoder, commit..completed n=12    p10   122.2  p50   126.6  p90   128.5  p99   131.7  max    131.7 us
+ 100 dependent 1-thread dispatches, one encoder, commit..completed n=12    p10   408.3  p50   424.8  p90   431.2  p99   443.1  max    443.1 us
+1000 dependent 1-thread dispatches, one encoder, commit..completed n=12    p10   994.1  p50  1287.8  p90  3363.0  p99  3482.3  max   3482.3 us
+MoE layer on Metal: event signal -> 13.5 MiB expert stream (2 dispatches) -> ack seen n=800   p10   140.3  p50   187.7  p90   192.4  p99   474.5  max    556.8 us
+  13.5 MiB / median = 75.4 GB/s effective including wake and launch
+host store -> GPU read, cb pre-committed, gated on an event signalled after the store: 0 stale words (0 of 3000 trials)
+host store -> GPU read, cb committed after the store: 0 stale words (0 of 3000 trials)
+flag after data, same kernel, barrier(mem_device): 80 stale words of 24576000 seen by the CPU right after the flag (2 of 3000 trials)
+flag after data, separate dispatch: 224 stale words of 24576000 seen by the CPU right after the flag (1 of 3000 trials)
+
+$ ./metal_probe poll
+== poll: chain of dependent 1-thread poll kernels in one command buffer; CPU stores the flag mid-flight
+  trial  0: kernel index at store ~2848, first kernel that saw the flag 20000 (never), chain period ~1.73 us
+  trial  1: kernel index at store ~5483, first kernel that saw the flag 20000 (never), chain period ~0.90 us
+  trial  2: kernel index at store ~5687, first kernel that saw the flag 20000 (never), chain period ~0.87 us
+  trial  3: kernel index at store ~5467, first kernel that saw the flag 20000 (never), chain period ~0.90 us
+  trial  4: kernel index at store ~5669, first kernel that saw the flag 20000 (never), chain period ~0.87 us
+  trial 39: kernel index at store ~5485, first kernel that saw the flag 20000 (never), chain period ~0.90 us
+  mid-cb visibility trial 0: marker seen at 54150.5 us after commit; command buffer completed at 54211.4 us
+  mid-cb visibility trial 1: marker seen at 51441.7 us after commit; command buffer completed at 51513.7 us
+  mid-cb visibility trial 2: marker seen at 54199.5 us after commit; command buffer completed at 54257.9 us
+  mid-cb visibility trial 3: marker seen at 51447.8 us after commit; command buffer completed at 51507.3 us
+  mid-cb visibility trial 4: marker seen at 54181.7 us after commit; command buffer completed at 54237.0 us
+  no poll kernel ever saw the flag
+
+$ ./metal_probe vis
+== vis: CPU store -> resident GPU thread (flag, ack, iters on separate 64-byte lines), by load flavour
+spin_load 109.91 ns/iteration (calibrated)
+    first miss: after the cb ended ack=0xffffffff iters=3639444 of bound 3639444
+spin_load flush=0 CPU store -> GPU ack (missed 8/8 within 1 s): never seen by the resident thread
+    first miss: after the cb ended ack=0xffffffff iters=3639444 of bound 3639444
+spin_load flush=1 CPU store -> GPU ack (missed 8/8 within 1 s): never seen by the resident thread
+spin_rmw  134.56 ns/iteration (calibrated)
+    first miss: after the cb ended ack=0xffffffff iters=2972694 of bound 2972694
+spin_rmw  flush=0 CPU store -> GPU ack (missed 8/8 within 1 s): never seen by the resident thread
+    first miss: after the cb ended ack=0xffffffff iters=2972694 of bound 2972694
+spin_rmw  flush=1 CPU store -> GPU ack (missed 8/8 within 1 s): never seen by the resident thread
+spin_vol  50.82 ns/iteration (calibrated)
+    first miss: after the cb ended ack=0xffffffff iters=7870347 of bound 7870347
+spin_vol  flush=0 CPU store -> GPU ack (missed 5/8 within 1 s) n=3     p10  3540.3  p50 27717.3  p90 338248.8  p99 338248.8  max 338248.8 us
+spin_vol  flush=1 CPU store -> GPU ack (missed 0/8 within 1 s) n=8     p10   465.7  p50  5687.3  p90 15220.2  p99 15220.2  max  15220.2 us
+spin_coh  113.45 ns/iteration (calibrated)
+spin_coh  flush=0 CPU store -> GPU ack (missed 0/8 within 1 s) n=8     p10   376.1  p50 10975.8  p90 24005.2  p99 24005.2  max  24005.2 us
+spin_coh  flush=1 CPU store -> GPU ack (missed 0/8 within 1 s) n=8     p10   224.5  p50 16638.5  p90 28586.9  p99 28586.9  max  28586.9 us
+
+$ /tmp/mlxenv/bin/python mlx_expert_probe.py 40   # mlx 0.32.4
+bytes per expert 1769472 (1.6875 MiB); per layer 8 experts 13.50 MiB
+40-layer routed chain, decode row: median 4.49 ms (min 3.60, max 7.08), 540 MiB weights -> 126.2 GB/s, 112 us per layer
+single layer, eval() each (graph build + submit + wait): median 205 us, p10 188, p90 250
+4-row window (32 (row,expert) pairs a layer, random picks, gather_qmm per pair): median 13.55 ms for 40 layers -> 339 us per layer
+
+$ python -m mlx_lm generate --model mlx-community/Qwen3.6-35B-A3B-4bit@38740b847e4cb78f352aba30aa41c76e08e6eb46 --max-tokens 256 --temp 0 --ignore-chat-template   # mlx_lm 0.32.2, mlx 0.32.4, 20-token prompt, run twice
+Prompt: 20 tokens, 16.215 tokens-per-sec        |  Prompt: 20 tokens, 17.845 tokens-per-sec
+Generation: 256 tokens, 91.239 tokens-per-sec   |  Generation: 256 tokens, 91.987 tokens-per-sec
+Peak memory: 19.671 GB                          |  Peak memory: 19.671 GB
+
+# mlx-community/Qwen3.5-4B-MLX-4bit @32f3e8ecf65426fc3306969496342d504bfa13f3, mlx_lm 0.32.2 / mlx 0.32.4, greedy,
+# `python -m mlx_lm generate --max-tokens 256 --temp 0 --ignore-chat-template`, 20-token prompt, two runs, same load as above
+# Generation: 256 tokens, 65.406 tokens-per-sec ; 66.048 tokens-per-sec ; Peak memory: 2.567 GB
+# placement_model.py output: see placement_results.txt (calibration lines first)

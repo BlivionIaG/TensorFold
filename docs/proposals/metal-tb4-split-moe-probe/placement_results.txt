@@ -1,0 +1,90 @@
+calibration Qwen3.6-35B-A3B 4-bit: model 94 tok/s, measured 91.6 tok/s
+calibration Qwen3.5-4B 4-bit (dense): model 68 tok/s, measured 66.0 tok/s
+calibration 4B on Vega 56: model 55 tok/s, measured 52-57 tok/s (recipe)
+reverse break-even on RX Vega 56 8 GiB (today): never, its decode bandwidth is below the Mac's
+reverse break-even on RX 7900 XTX 24 GiB: routed bytes read per layer per token >= 40 MiB (Qwen3.6-A3B reads 13.5 MiB)
+reverse break-even on RTX 5090 32 GiB: routed bytes read per layer per token >= 30 MiB (Qwen3.6-A3B reads 13.5 MiB)
+
+### Qwen3.6-35B-A3B 4-bit: weights 18.17 GiB; Mac working-set budget 37 GiB
+RX Vega 56 8 GiB (today), ctx 8k, streams 1:
+  all-Metal                                  86 tok/s ( 11.6 ms)  Mac 18.8 GiB
+  eGPU-resident                          does not fit (VRAM 18.8 GiB)
+  pipeline                                   84 tok/s ( 11.8 ms)  1 layers on the eGPU, VRAM 1.1 GiB, Mac 18.1 GiB; stages 0.4+11.4 ms
+  pipeline, 2+ streams                      131 tok/s (  7.6 ms)  16 layers on the eGPU, VRAM 7.8 GiB, Mac 11.4 GiB; stages 6.0+7.6 ms
+  expert split (A)                           52 tok/s ( 19.3 ms)  VRAM 7.8 GiB, 14 expert layers resident, 26 crossings
+  reverse (Mac attention, eGPU experts)      85 tok/s ( 11.8 ms)  VRAM 0.8 GiB, 1 expert layers on the eGPU, 2 crossings
+RX Vega 56 8 GiB (today), ctx 128k, streams 1:
+  all-Metal                                  38 tok/s ( 26.5 ms)  Mac 21.1 GiB
+  eGPU-resident                          does not fit (VRAM 21.1 GiB)
+  pipeline                                   37 tok/s ( 26.7 ms)  1 layers on the eGPU, VRAM 1.1 GiB, Mac 20.4 GiB; stages 0.4+26.2 ms
+  pipeline, 2+ streams                       54 tok/s ( 18.6 ms)  14 layers on the eGPU, VRAM 7.6 GiB, Mac 13.9 GiB; stages 10.2+18.6 ms
+  expert split (A)                           27 tok/s ( 36.5 ms)  VRAM 7.6 GiB, 8 expert layers resident, 32 crossings
+  reverse (Mac attention, eGPU experts)      38 tok/s ( 26.6 ms)  VRAM 0.8 GiB, 1 expert layers on the eGPU, 2 crossings
+RX 7900 XTX 24 GiB, ctx 8k, streams 1:
+  all-Metal                                  86 tok/s ( 11.6 ms)  Mac 18.8 GiB
+  eGPU-resident                             158 tok/s (  6.3 ms)  VRAM 18.8 GiB
+  pipeline                                  131 tok/s (  7.6 ms)  39 layers on the eGPU, VRAM 18.1 GiB, Mac 1.1 GiB; stages 5.5+2.0 ms
+  pipeline, 2+ streams                      234 tok/s (  4.3 ms)  30 layers on the eGPU, VRAM 14.0 GiB, Mac 5.1 GiB; stages 4.3+4.2 ms
+  expert split (A)                          159 tok/s (  6.3 ms)  VRAM 18.8 GiB, 40 expert layers resident, 0 crossings
+  reverse (Mac attention, eGPU experts)      85 tok/s ( 11.7 ms)  VRAM 0.8 GiB, 1 expert layers on the eGPU, 2 crossings
+RX 7900 XTX 24 GiB, ctx 128k, streams 1:
+  all-Metal                                  38 tok/s ( 26.5 ms)  Mac 21.1 GiB
+  eGPU-resident                              86 tok/s ( 11.6 ms)  VRAM 21.1 GiB
+  pipeline                                   72 tok/s ( 13.8 ms)  39 layers on the eGPU, VRAM 20.2 GiB, Mac 1.3 GiB; stages 10.3+3.5 ms
+  pipeline, 2+ streams                      119 tok/s (  8.4 ms)  31 layers on the eGPU, VRAM 16.1 GiB, Mac 5.4 GiB; stages 8.1+8.4 ms
+  expert split (A)                           87 tok/s ( 11.5 ms)  VRAM 21.1 GiB, 40 expert layers resident, 0 crossings
+  reverse (Mac attention, eGPU experts)      38 tok/s ( 26.6 ms)  VRAM 0.8 GiB, 1 expert layers on the eGPU, 2 crossings
+RTX 5090 32 GiB, ctx 8k, streams 1:
+  all-Metal                                  86 tok/s ( 11.6 ms)  Mac 18.8 GiB
+  eGPU-resident                             299 tok/s (  3.3 ms)  VRAM 18.8 GiB
+  pipeline                                  199 tok/s (  5.0 ms)  39 layers on the eGPU, VRAM 18.1 GiB, Mac 1.1 GiB; stages 2.9+2.0 ms
+  pipeline, 2+ streams                      367 tok/s (  2.7 ms)  36 layers on the eGPU, VRAM 16.7 GiB, Mac 2.4 GiB; stages 2.7+2.7 ms
+  expert split (A)                          301 tok/s (  3.3 ms)  VRAM 18.8 GiB, 40 expert layers resident, 0 crossings
+  reverse (Mac attention, eGPU experts)      86 tok/s ( 11.7 ms)  VRAM 0.8 GiB, 1 expert layers on the eGPU, 2 crossings
+RTX 5090 32 GiB, ctx 128k, streams 1:
+  all-Metal                                  38 tok/s ( 26.5 ms)  Mac 21.1 GiB
+  eGPU-resident                             169 tok/s (  5.9 ms)  VRAM 21.1 GiB
+  pipeline                                  114 tok/s (  8.8 ms)  39 layers on the eGPU, VRAM 20.2 GiB, Mac 1.3 GiB; stages 5.2+3.5 ms
+  pipeline, 2+ streams                      199 tok/s (  5.0 ms)  36 layers on the eGPU, VRAM 18.8 GiB, Mac 2.7 GiB; stages 5.0+4.2 ms
+  expert split (A)                          170 tok/s (  5.9 ms)  VRAM 21.1 GiB, 40 expert layers resident, 0 crossings
+  reverse (Mac attention, eGPU experts)      38 tok/s ( 26.6 ms)  VRAM 0.8 GiB, 1 expert layers on the eGPU, 2 crossings
+
+### Qwen3.6-35B-A3B 4-bit: weights 18.17 GiB; Mac working-set budget 16 GiB (24 GiB Mac)
+RX Vega 56 8 GiB (today), ctx 32k, streams 1:
+  all-Metal                              does not fit (Mac 19.2 GiB)
+  eGPU-resident                          does not fit (VRAM 19.2 GiB)
+  pipeline                                   64 tok/s ( 15.6 ms)  7 layers on the eGPU, VRAM 3.8 GiB, Mac 15.8 GiB; stages 2.9+12.6 ms
+  pipeline, 2+ streams                      100 tok/s ( 10.0 ms)  15 layers on the eGPU, VRAM 7.5 GiB, Mac 12.2 GiB; stages 6.6+10.0 ms
+  expert split (A)                           44 tok/s ( 22.7 ms)  VRAM 7.9 GiB, 13 expert layers resident, 27 crossings
+  reverse (Mac attention, eGPU experts)      64 tok/s ( 15.7 ms)  VRAM 3.3 GiB, 7 expert layers on the eGPU, 14 crossings
+RX 7900 XTX 24 GiB, ctx 32k, streams 1:
+  all-Metal                              does not fit (Mac 19.2 GiB)
+  eGPU-resident                             135 tok/s (  7.4 ms)  VRAM 19.2 GiB
+  pipeline                                  113 tok/s (  8.9 ms)  39 layers on the eGPU, VRAM 18.5 GiB, Mac 1.2 GiB; stages 6.5+2.3 ms
+  pipeline, 2+ streams                      196 tok/s (  5.1 ms)  30 layers on the eGPU, VRAM 14.4 GiB, Mac 5.3 GiB; stages 5.0+5.1 ms
+  expert split (A)                          136 tok/s (  7.4 ms)  VRAM 19.2 GiB, 40 expert layers resident, 0 crossings
+  reverse (Mac attention, eGPU experts)      66 tok/s ( 15.2 ms)  VRAM 3.3 GiB, 7 expert layers on the eGPU, 14 crossings
+RTX 5090 32 GiB, ctx 32k, streams 1:
+  all-Metal                              does not fit (Mac 19.2 GiB)
+  eGPU-resident                             259 tok/s (  3.9 ms)  VRAM 19.2 GiB
+  pipeline                                  173 tok/s (  5.8 ms)  39 layers on the eGPU, VRAM 18.5 GiB, Mac 1.2 GiB; stages 3.4+2.3 ms
+  pipeline, 2+ streams                      314 tok/s (  3.2 ms)  36 layers on the eGPU, VRAM 17.1 GiB, Mac 2.5 GiB; stages 3.2+3.0 ms
+  expert split (A)                          261 tok/s (  3.8 ms)  VRAM 19.2 GiB, 40 expert layers resident, 0 crossings
+  reverse (Mac attention, eGPU experts)      66 tok/s ( 15.1 ms)  VRAM 3.3 GiB, 7 expert layers on the eGPU, 14 crossings
+
+### Qwen3.5-4B 4-bit (dense): weights 2.20 GiB; Mac working-set budget 37 GiB
+RX Vega 56 8 GiB (today), ctx 8k, streams 1:
+  all-Metal                                  62 tok/s ( 16.2 ms)  Mac 2.8 GiB
+  eGPU-resident                              51 tok/s ( 19.8 ms)  VRAM 2.8 GiB
+  pipeline                                   61 tok/s ( 16.4 ms)  1 layers on the eGPU, VRAM 0.7 GiB, Mac 2.4 GiB; stages 0.5+15.8 ms
+  pipeline, 2+ streams                      109 tok/s (  9.1 ms)  16 layers on the eGPU, VRAM 1.7 GiB, Mac 1.4 GiB; stages 8.7+9.1 ms
+RX 7900 XTX 24 GiB, ctx 8k, streams 1:
+  all-Metal                                  62 tok/s ( 16.2 ms)  Mac 2.8 GiB
+  eGPU-resident                             149 tok/s (  6.7 ms)  VRAM 2.8 GiB
+  pipeline                                  118 tok/s (  8.5 ms)  31 layers on the eGPU, VRAM 2.7 GiB, Mac 0.4 GiB; stages 5.7+2.7 ms
+  pipeline, 2+ streams                      207 tok/s (  4.8 ms)  26 layers on the eGPU, VRAM 2.4 GiB, Mac 0.7 GiB; stages 4.8+4.8 ms
+RTX 5090 32 GiB, ctx 8k, streams 1:
+  all-Metal                                  62 tok/s ( 16.2 ms)  Mac 2.8 GiB
+  eGPU-resident                             295 tok/s (  3.4 ms)  VRAM 2.8 GiB
+  pipeline                                  177 tok/s (  5.7 ms)  31 layers on the eGPU, VRAM 2.7 GiB, Mac 0.4 GiB; stages 2.9+2.7 ms
+  pipeline, 2+ streams                      347 tok/s (  2.9 ms)  31 layers on the eGPU, VRAM 2.7 GiB, Mac 0.4 GiB; stages 2.9+2.7 ms
