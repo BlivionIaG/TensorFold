@@ -1,8 +1,8 @@
 # TB4 external-GPU offload for Metal hosts: layer split, expert split, computed placement
 
 Status: proposal. The offline part of the first pull request is implemented on this branch (see
-[Implementation status](#implementation-status-pull-request-1-offline)); the card-gated parts, the engines' layer range
-and everything for MoE models are not. The measurements are real and reproducible
+[Implementation status](#implementation-status-pull-request-1-offline)), including the engines' layer range; the
+card-gated parts and everything for MoE models are not. The measurements are real and reproducible
 (commands and raw output under [metal-tb4-split-moe-probe](metal-tb4-split-moe-probe/)); everything marked
 [INFERENCE] is a model or an assumption that a named milestone replaces with a measurement.
 The companion [issue draft](metal-tb4-split-moe.issue.md) follows `.github/ISSUE_TEMPLATE/proposal.yml`.
@@ -500,24 +500,29 @@ Each milestone has a stop criterion; none needs more than one Mac and one card.
 
 ## Implementation status (pull request 1, offline)
 
-Implemented on `feat/tb4-offload-pr1`, tested without the card (the Mac's GPU is real, the external device is the CPU
-mock or hipmac's mock backend). Run on macOS arm64 only (the `split` module has no platform imports, so
-[INFERENCE] it builds elsewhere; it was not built elsewhere); a card has not been used by this work.
+Implemented on `feat/tb4-offload-pr1-up` (on upstream main) and tested without the card: the Mac's GPU is real, the
+external device is the CPU mock or hipmac's mock backend, which executes streams in order but does not compute. Run on
+macOS arm64 only (the `split` module has no platform imports, so [INFERENCE] it builds elsewhere; it was not built
+elsewhere). The card has not been used by this work. For a card run, `tb4-offload-card` is this branch merged with the
+gfx900 port `vega-macos-up` (below).
 
 | Piece | Where | State |
 |---|---|---|
 | `ExternalDevice` (alloc/upload/download, host windows, stream wait/write on window words, bounded sync, timestamp), `Caps` | `zig/src/split/device.zig` | tested through the mock and the HIP adapter on hipmac's mock |
 | Window protocol: 64-byte header with the sequence stamp written last, 16-byte stamped payload rows | `wire.zig` | tested, including stale and late stamps |
 | CPU mock device (own stream thread, injectable latency, `kill`) | `mock.zig` | tested |
-| Layer pipeline (`external_first`, `metal_first`, `external_only`; level A and level B) | `pipeline.zig` | tested on the toy model |
+| Layer pipeline (`external_first`, `metal_first`, `external_only`; level A and level B) | `pipeline.zig` | tested on the toy model and on the real engine (Metal+Metal) |
 | Exact integer toy model, split at every layer, either order, both levels | `toy.zig`, `metal_toy.zig` | token-identical to the unsplit run, on the CPU peer and on a real Metal GPU peer |
 | Metal `HostWindow` (`newBufferWithBytesNoCopy`, 16 KiB alignment refused otherwise), `Relay` (event-gated handoff), wake probe | `zig/src/metal/window.zig`, `relay.zig`, `wake_probe.zig` | tested on an M4 Pro |
 | `tf-offload probe` (receipt `tensorfold-offload-probe/1`) | `probe.zig`, `metal_probe.zig`, `cli.zig` | runs against the mock; against hipmac's mock through the HIP adapter; card: not run |
 | `tf-offload plan` (placement `tensorfold-split/1`) | `geometry.zig`, `planner.zig`, `placement.zig`, `cli.zig` | reproduces `placement_results.txt` within 1%; dense configs executable, MoE only `all_metal` |
-| HIP adapter: `HipExternal` over `hipStreamWaitValue32`/`WriteValue32` | `zig/src/hip/offload.zig` | passes on hipmac's mock backend; card: not run |
+| HIP adapter: `HipExternal` over `hipStreamWaitValue32`/`WriteValue32`, optional shared engine stream | `zig/src/hip/offload.zig` | passes on hipmac's mock backend (with the gfx900 caps row); card: not run |
+| Metal engine runs the tied-head Qwen3.5-4B and a layer range `[first,last)` (embed first, final norm/head/argmax last, KV and linear state only for owned layers); stamped-row pack kernels | `families/qwen27/` (`range.zig`, `stage_pass.zig`, `stage_rows.zig`, `split_peer.zig`) | real 4B on the M4 Pro: whole-model decode 74-75 tok/s; Metal+Metal split through the pipeline token-identical over 32 tokens at cuts 1, 8, 16, 31, both orders, both levels (16 runs); synthetic-weights version of the same test; 13.9 ms/position split against 13.4 unsplit (two engine instances in one process) |
+| HIP engine layer range (`Range`, ranged weights/caches, prompt span and decode step, `HipLayerStage` as `ExternalStage`) | `families/qwen3_5/backend/hip/` | plumbing tests only: ranged launch sequences equal the matching slice of the unsplit step, pool bytes of the halves sum to the whole, refusals (MTP, draft, tp, vision, bf16 checkpoints); no token computed |
+| Boundary kernels on HIP: `importRow`, `exportRow`, `consumeStamped` (level B: 16-byte stamped groups, bounded re-read, status word) | `zig/kernels/hip/split/rows.hip`, `zig/src/hip/ops/split_rows.zig` | host references; compiled to code objects for gfx900, gfx1030, gfx1100, gfx1151, gfx1201; contract records (gate 5) identical on four chips; gates 1-4 on a GPU not run |
 | `Backend.hip`, `LinkKind.tb_gpu`, hop costs in `fabric/cost.zig` | `zig/src/cluster`, `zig/src/fabric` | tested; a hip node is planned but never launched |
 
-Commands (no card):
+Commands (no card; the machine this was developed on has no working Metal compiler, so a local `xcrun` shim stood in for it when building; the shim is not part of the change):
 
 ```sh
 zig build test-split            # protocol, planner, mock, pipeline, CLI, Metal window/relay/toy, Metal host
@@ -525,21 +530,53 @@ zig build tf-offload            # zig-out/bin/tf-offload
 tf-offload demo --order metal_first --level b --split 5   # toy model across the mock device and Metal
 tf-offload probe --device mock --out receipt.json
 tf-offload plan --config config.json --receipt receipt.json --context 8192 --streams 2 --out placement.json
-zig build tf-offload-hip        # same, with `--device hip` (its `--device hip` opens the card)
+zig build tf-qwen27-split-synthetic && zig-out/bin/tf-qwen27-split-synthetic   # synthetic weights, Metal+Metal split
+zig build tf-qwen27-split && TF_SPLIT_QWEN_DIR=<Qwen3.5-4B-MLX-4bit> zig-out/bin/tf-qwen27-split   # the real 4B
+zig build -Dhip=true test-qwen35-split-host      # HIP layer range and HipLayerStage plumbing (no device)
+zig build -Dhip=true tf-offload-hip   # same CLI with `--device hip`, which opens the card
 ```
 
-On the M4 Pro, `demo` equals the unsplit toy tokens for both orders and both levels; `plan` on the Qwen3.5-4B config
-with a mock receipt picks the pipelined layer split (115 tok/s predicted at two streams, 62 all-Metal) and on the 35B-A3B
-config picks all-Metal (87 tok/s predicted); the mock receipt's link numbers are the mock's, not a card's.
+On the M4 Pro, `plan` on the Qwen3.5-4B config with a mock receipt picks the pipelined layer split (115 tok/s
+predicted at two streams, 62 all-Metal) and on the 35B-A3B config picks all-Metal (87 tok/s predicted); the mock
+receipt's link numbers are the mock's, not a card's.
 
-Not in this pull request, and why:
+### Rebase onto upstream main
 
-* **The real Qwen3.5-4B layer range.** The HIP forward path runs `m.layers` as one span and the Metal Qwen3.5 backend of
-  this base is the 2B's; a layer range on both, and the cross-device hidden hand-off, need the upstream Metal change on
-  `main` and the card. The toy model stands in until then; the gate ("token-identical to all-Metal and all-external")
-  is therefore met on the toy model only.
-* **Level B's consume kernel on HIP** (the GPU validating stamps itself) and **GPU-side waits on the card**
-  (`WAIT_REG_MEM` on a host word is implemented by hipmac, [INFERENCE] correct on the card until M1 runs).
+The first version of this work sat on a base 6,207 commits behind `ashhart/TensorFold` main. The pull-request commits
+were cherry-picked onto upstream main (21ea8dee4 at the time) and the gfx900 work of the Vega branch was ported
+separately (`vega-macos-up`: seven commits, the conflicts and the dropped commits are in its commit messages).
+Conflicts in this series and how they were resolved:
+
+* `cluster/launch.zig`, `launch_test.zig`: upstream added CUDA probes and a per-node `bin`; both kept, and the
+  `launchable()` refusal added in front of them. `build.zig`: upstream moved the Metal targets to `zig/build/`; the
+  split steps live in the new `zig/build/split.zig`, called from `metal_targets.zig`. `hip/root.zig`, `docs/recipes/README.md`:
+  both sides kept.
+* New compile errors after the rebase, fixed at the source: `bringup.Live.init` (a new upstream caller of
+  `Membership.init`, now `try`) and `fabric/mcdma.zig` (an exhaustive switch over `LinkKind`).
+* Upstream's HIP runtime reads `TENSORFOLD_HIP` (not the fork's `TF_HIP_LIB`) and its caps table has no gfx900 row: the
+  adapter's mock test skips on a base without the Vega port, runs on `tb4-offload-card`.
+* Upstream's Metal Qwen3.5 backend is still the pinned 2B's; dense geometry and untied heads go through the `qwen27`
+  engine, which could not run a tied head. This series adds the tied head and the layer range there instead of in the 2B
+  engine.
+
+Cluster tests (`zig test` on the cluster root with stand-in modules, because `test-cluster` needs the Metal compiler):
+115 pass, 6 skip, 0 fail on the rebased tree.
+
+### Not in this pull request, and why
+
+* **Batch prefill across the window.** The split prefills token by token through both sides (one row per step), which
+  is exact but runs at decode speed; a prompt of N tokens costs N pipeline steps. Chunked prefill (rows > 1 per window
+  slot) and Metal-prefill-then-state-handoff are the next change.
+* **Tokens on the card.** The HIP layer range is verified by launch accounting only; the numerics of a ranged HIP step
+  (the unfused residual add before the boundary against the fused tail, f16 against bf16 activations, the consume
+  kernel's memory reads of host-mapped memory) are [INFERENCE] until M1-M3 run on the card. Metal-to-HIP drift has no
+  measured bound yet; the fidelity gate for it is the first card measurement.
+* **Graph replay of the ranged HIP step**: the stage is eager (a graph would bake the sequence number and window
+  addresses in); `seq` through a device-side word is the follow-up.
+* **Level B on the Metal side as consumer**: Metal reads stamped rows on the CPU (`wire.readStamped`), the GPU consume
+  kernel exists only for HIP.
+* **One-process driver**: a command that loads both engines and a tokenizer and runs a prompt end to end
+  (`tensorfold serve --device-split`) is not in this change; the tests drive the pipeline directly.
 * Milestones M1 and M2 (see below) need the card; the receipt's `hop_*` fields are the first numbers they produce.
 
 ## Pull requests
@@ -547,7 +584,7 @@ Not in this pull request, and why:
 One behaviour each, stacked, each against `main`, each linking the issue with `Refs #N`. Items marked *hipmac* depend
 on out-of-tree runtime work; everything else is generic.
 
-1. **Transport, interface, dense layer split.** (Offline half implemented, see above; the engines' layer range remains.) `core/split` (window protocol, `ExternalDevice`, fakes), Metal
+1. **Transport, interface, dense layer split.** (Offline half implemented, see above; card runs and the `--device-split` serving driver remain.) `core/split` (window protocol, `ExternalDevice`, fakes), Metal
    `HostWindow` and `Relay`, `tensorfold offload probe`, the planner for dense models and `placement.json`, a layer range
    in the HIP and Metal engines, `--device-split` for dense checkpoints, cluster `Backend.hip` and the link kind.
    Tests: protocol, planner, toy dense family split/unsplit. *hipmac*: window allocation (exists) and optional
