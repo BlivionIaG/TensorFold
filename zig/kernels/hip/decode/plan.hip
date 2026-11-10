@@ -94,6 +94,13 @@ __device__ void plan_apply_body(const float* __restrict__ scores, const float* _
         return;
     }
     const int stop = min(key0 + 128, visible);
+#if defined(__gfx900__)
+    // gfx900: the descriptor, its value pointer, page table and the first page's entry are loaded before the weights' exponentials.
+    const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
+    const void* values = reinterpret_cast<const void*>(desc[plan_second(layer)]);
+    const unsigned* table = plan_pages(plan, desc);
+    const unsigned first_page = table[key0 / kPageTokens];
+#endif
     for (int i = threadIdx.x; i < group * 128; i += blockDim.x) {
         const long long h = first + i / 128;
         const int key = key0 + i % 128;
@@ -101,15 +108,34 @@ __device__ void plan_apply_body(const float* __restrict__ scores, const float* _
     }
     __syncthreads();
     if (lane >= d) return;
+#if !defined(__gfx900__)
     const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
     const void* values = reinterpret_cast<const void*>(desc[plan_second(layer)]);
     const unsigned* table = plan_pages(plan, desc);
+#endif
     const int kv = head0 / (heads / kv_heads);
     float acc[kMaxGroup] = {};
     // a page at a time: its table entry is read once, and the keys are summed in order
     for (int key = key0; key < stop;) {
         const int edge = min((key / kPageTokens + 1) * kPageTokens, stop);
+#if defined(__gfx900__)
+        const long long slot0 = page_row(key == key0 ? first_page : table[key / kPageTokens], plan.pool, kv, 0, d) + lane;
+        // eight values loaded together, summed in key order
+        for (; key + 8 <= edge; key += 8) {
+            float vv[8];
+#pragma unroll
+            for (int u = 0; u < 8; ++u) vv[u] = load(values, KIND, slot0 + static_cast<long long>((key + u) % kPageTokens) * d);
+#pragma unroll
+            for (int u = 0; u < 8; ++u) {
+#pragma unroll
+                for (int g = 0; g < kMaxGroup; ++g) {
+                    if (g < group) acc[g] += weights[g * 128 + key + u - key0] * vv[u];
+                }
+            }
+        }
+#else
         const long long slot0 = page_row(table[key / kPageTokens], plan.pool, kv, 0, d) + lane;
+#endif
         for (; key < edge; ++key) {
             const float value = load(values, KIND, slot0 + static_cast<long long>(key % kPageTokens) * d);
 #pragma unroll
