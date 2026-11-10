@@ -535,7 +535,7 @@ const headers = [_][]const u8{
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-ffp-contract=off" };
 /// `-Dhip-cflags`: appended to every kernel compile (set by `options`).
 var extra_flags: []const []const u8 = &.{};
-const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
+const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const g9_mix: u8 = 2;\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, relax_branches: bool, arch: []const u8) *std.Build.Module {
     const files = objectFiles(b, .{ .name = hipcc, .resolved = hipcc_resolved, .device_lib = device_lib, .relax_branches = relax_branches }, arch);
@@ -545,7 +545,12 @@ pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u
         decls = b.fmt("{s}const g{d} align(8) = @embedFile(\"group{d}.hsaco\").*;\n", .{ decls, i, i });
         refs = b.fmt("{s}&g{d}, ", .{ refs, i });
     }
-    return b.createModule(.{ .root_source_file = files.add("kernels.zig", b.fmt("pub const arch = \"{s}\";\n{s}pub const images = [_][]align(8) const u8{{ {s}}};\n", .{ arch, decls, refs })) });
+    // the gfx900 stream tile's dot variant (TF_G9_MIX in common/fdot2.hpp, 2 unless -Dhip-cflags says otherwise): the tests' bound follows it
+    var mix: u8 = 2;
+    for (extra_flags) |flag| {
+        if (std.mem.startsWith(u8, flag, "-DTF_G9_MIX=")) mix = std.fmt.parseInt(u8, flag["-DTF_G9_MIX=".len..], 10) catch mix;
+    }
+    return b.createModule(.{ .root_source_file = files.add("kernels.zig", b.fmt("pub const arch = \"{s}\";\npub const g9_mix: u8 = {d};\n{s}pub const images = [_][]align(8) const u8{{ {s}}};\n", .{ arch, mix, decls, refs })) });
 }
 
 /// The HIP compiler as the build found it, the device bitcode it links, and whether gfx1100 relaxes branches earlier.
