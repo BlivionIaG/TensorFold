@@ -165,15 +165,23 @@ Run on the older base before the rebase, not repeated on upstream main:
 
 ## Status
 
-The branch was rebased onto upstream main, whose stream tile, GEMM tile set and tail kernel differ from the older base the numbers
-below were measured on:
+The branch is on upstream main. What the older base (`vega-macos`) had and what is here:
 
-- The older base staged x in LDS for the decode stream tile and had 32- and 64-row dot2 GEMM tiles. Upstream main has neither, so the
-  stream tile here loads x directly (widened to fp32 for `TF_G9_MIX=1`) and prompts past the K-parallel tiles run `block`, which spills
-  on gfx900 (see the scratch figures above). The x-staging commits of the older base are not part of this branch.
-- Upstream's tail kernel already loads several elements ahead on every architecture, so the gfx900-only batched loads are not needed.
-- The other tuning (v_mad_mix_f32 on fp32 x, `v_and_or_b32` code pairs, lanes a column that leave none idle, at most 4 columns a lane,
-  the `TF_G9_*` and `TF_STREAM_*` switches) is ported. It has been compiled for gfx900 offline; no kernel has run on the rebased branch.
+- x staged in LDS for the one-row decode stream tile, gfx900 only (`stream_stage` in `tiles/stream.hpp`, switched by bit 8 of the launch's
+  `lpc_log2` and the launch's dynamic LDS, so no kernel signature and no RDNA code object changes; up to 12 KB, `TF_STREAM_STAGE=0|1`),
+  with the one-row tile's code pairs made where they are dotted (`stream_pairs_per_group` for gfx900 at R == 1: the hoisted pairs of upstream's
+  tile cost a wave a SIMD). Tests: `kernel_tests/affine/stream.zig` (staged against unstaged bytes at every width, group, row count and
+  columns a lane, pinned by hash).
+- The 64- and 32-row dot2 GEMM tiles (`affine_gemm_rows`, `gemm_tile`'s `M`), instantiated for gfx900 only (`TF_ROWS` in `dot2_tiles.hip`), in the
+  registry behind `Env.gemm_rows` and gfx900's table: 25 to 32 rows `gemm32`, 33 and more `gemm64` (the 128-row tile spills 195+ VGPRs there).
+  gfx1030's table does not list them, so RDNA2 keeps upstream's choice.
+- `TF_G9_MIX=2` is the default again (the stream tile mixes on fp16 x, a denormal x counts as zero), the kernel tests bound the flushed terms.
+- The fused gate/up + silu_mul launch (below), the kernel tests of the commit before it, and the small-kernel tuning below (`tf_gdn_plan_128`,
+  `tf_tail`, `tf_conv_split`, `tf_gnorm_out`, `tf_argmax`, the descriptor chain of `tf_plan_apply_f16`; upstream's tail, gnorm and plan_apply
+  already had some of the batching, the gfx900 paths are in front of them).
+- Offline here: all 16 gfx900 groups compile (`hip-kernel-build -Dhip-arch=gfx900`), `hip-host-test` passes (mock), and the gfx1030 `.text` of all
+  16 groups is byte for byte upstream main's. Not run: any kernel on the card, `hip-kernel-test`, `hip-affine-test`, the sha gate, tok/s,
+  prefill tok/s on this branch.
 
 ## Decode on the card (Vega 56 through hipmac, TinyGPU)
 
@@ -229,6 +237,73 @@ Profiling: `tools/vega-macos/hipprof.c` is a shim `libamdhip64` that forwards to
 
 - Logits cosine against mlx on the card (`vega_gate.py --logits` exists; the greedy tokens match for the checked prompts).
 - The default `--mtp-drafts 3` of a discrete GPU is irrelevant for this checkpoint (it has no MTP head).
-- Everything in the decode section on upstream main: tokens against mlx_lm, tok/s, the stream tile without staged x, prefill with
-  `block`, and the hardware tests (`hip-kernel-test`, `hip-affine-test`, `hip-gpu-test`).
-- The gfx900 pin of the stream tile: upstream's stream golden test covers BF16 only and has no recorded hash for gfx900.
+- Everything above on the card with this branch: tokens against mlx_lm (the sha gate), decode tok/s (the older base's 64.8), prefill tok/s
+  (the older base's ~200), the hardware tests (`hip-kernel-test`, `hip-affine-test`, `hip-gpu-test`), and the recorded hash pins of the stream
+  test (`pinned_f16_gfx900_flush` was recorded on the older base's tile).
+
+## Dense MLP gate/up + silu_mul in one launch (gfx900)
+
+The loader stacks a dense layer's gate and up rows into one MLX matrix (`quant.fuseRows`, host copy of 12 MB a layer through the scratch arena;
+`gate` and `up` of the view are the two halves of the same device bytes, `quant.splitRows`, so prefill and the unfused path read them as before)
+and the decode path (`Ops.projectGateUp`) runs the stream tile's pair mode (`Epi::kPair`, the routed experts' one) over it with `limit = -1`: the
+epilogue (`swiglu` in `tiles/epilogue.hpp`, gfx900 only) rounds gate and up to fp16, then silu(gate) to fp16, then the product: the bytes of the two
+products and `tf_silu_mul`, so the tokens do not change. `TF_FUSE_GU=0` (at load) keeps the separate matrices; `TF_GU_F32=1` runs the fp32 sums into
+one rounding (also passes the sha gate; an option, not the default).
+
+| | decode tok/s (median of 3) | launches a token | gate/up kernel |
+| --- | --- | --- | --- |
+| `TF_FUSE_GU=0` | 57.45 | 393 | 114.5 us + `tf_silu_mul` |
+| fused, silu_mul rounding (default) | 57.90 | 363 | 111.8 us |
+| fused, fp32 epilogue (`TF_GU_F32=1`) | 57.67 | 363 | 111.8 us |
+
+## Small-kernel tuning of the decode (gfx900)
+
+The gate/up fusion's kernel test is `the stacked gate and up with silu_mul's rounding as the epilogue write the bytes of the two products and
+silu_mul` (`zig/src/hip/kernel_tests/decode.zig`; byte for byte against the group kernel and `tf_silu_mul`; `hip-kernel-test` is 64 tests).
+Every change below is `#if defined(__gfx900__)` and keeps the arithmetic and its order (the same bits); the gfx1030 code objects' `.text` is
+identical to the commit before (only the symbol table's order moves).
+
+Why the small kernels were slow: a wave's loads were issued one dependent step after the other (a descriptor, then a pointer, then the data), with
+a `waitcnt` in between, and a 32-thread block used a quarter of a CU's wave slots. The changes issue every independent load first.
+
+| Kernel | Before (us a launch) | After | Change |
+| --- | --- | --- | --- |
+| `tf_gdn_plan_128` | 43.9 | 25.5 | LDS staging steps 16 -> 4 (3 blocks a CU -> all 512 resident), window loaded ahead of the state, no `threadIdx` bound branches |
+| `tf_tail` | 15.6 | 11.1 | `tail_dense`: x, y, weight in one batch, the row in registers |
+| `tf_conv_split` | 16.2 | 11.6 | `conv_split_plan`: plan, taps, sample, norm weight in one batch |
+| `tf_gnorm_out` | 16.8 | 9.8 | `gnorm_out_small` (width <= 128): y, weight, z in one batch |
+| `tf_argmax` | 202 | 140-156 | 16-byte loads, four in flight (the order of a thread's values does not change the result: `better` is a total order) |
+| `tf_plan_apply_f16` | 51 | 46 | descriptor chain before the exponentials (eight values loaded together is upstream's own on this branch; the 51 -> 46 us was measured on the older base with both) |
+
+Decode tok/s (median of 3, sha gate passing at each step): 57.7 (`f8904b4af`) -> 58.29 (plan steps only) -> 59.46 (gdn scan) -> 61.5 (tail) -> 62.35 (conv) ->
+63.23 (gnorm) -> 64.8 (argmax and plan_apply).
+
+Tried and not kept (all pass the sha gate; tok/s or kernel time not better):
+
+| Experiment | Result |
+| --- | --- |
+| 3-deep weight prefetch (`stream.hpp`, R == 1) | 58.57 tok/s; gate/up unchanged (113 us), lm_head 1605 us |
+| `__launch_bounds__(128, 4)` on the stream tile (<= 64 VGPR) | 53.66 tok/s; gate/up 141 us, down 102 us (spills) |
+| `TF_STREAM_STAGE=0`, `TF_STREAM_LPC=8`, `TF_STREAM_CB=4` | gate/up 125 / 132 / 112 us (default 112), down 152 for LPC=8 |
+| 8 waves a block (256 threads) | gate/up 111.5, down 66.6, lm_head 1180: no change |
+| non-temporal weight loads (`slc`) | the profile shows -4 % on gate/up and qkv, the graph decodes 63.3 tok/s (63.23 before): not kept |
+| tail folded into the next GEMV | not built: the residual is updated in place while other blocks read it, and every block would redo the row norm |
+
+Where the stream tile's time goes (ablations of the stream kernel, a profile of the decode with the tile changed; not kept in the tree): with the
+dot arithmetic removed gate/up takes 95.6 us (112), down 59, qkv 72.5, lm_head 1035 (1170); with the scale/bias loads removed 91.9 / 66.3 / 64.7 / 906;
+with both removed (the weights' loads only) 78.0 / 53.0 / 57.6 / 902 us (302 / 223 / 274 / 352 GB/s of weight bytes). The tile's floor is then 78 us for
+gate/up, and the dot arithmetic and the table loads cost 34 us of it: this is what a faster GEMV has to win back, mostly the table loads (an
+interleaved scale-and-bias table, one 32-bit load a group, is the idea not tried). Down (k = 9216, 320 blocks) is at 223 GB/s with the loads alone, and
+halving its blocks does not move it, so its limit is the access pattern, not the number of waves. Note that `--prof` replays one kernel back to
+back (the same weights twice in the L2's reach), so a profile's gain from a load change can be absent in the decode: the tok/s decides.
+
+## Building on a Mac whose Xcode license is not accepted
+
+`clang`, `xcrun` and `make` stop with "You have not agreed to the Xcode license agreements" until the license is accepted (needs sudo). The builds
+here do not need Xcode, only the command line tools' SDK and Zig's C compiler:
+
+    export PATH=$HOME/.local/zig-0.17.0:$PATH
+    export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk TF_SDKROOT=$SDKROOT
+    export TF_CC="zig cc"                      # tools/vega-macos/vega_gate.py builds the hipprof shim with it (default clang)
+
+`zig build test` (the Metal tests) and `make -C hipmac` (clang) do not work without it.

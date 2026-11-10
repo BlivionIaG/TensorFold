@@ -45,6 +45,7 @@ pub const Ops = struct {
     pub const projectSilu = products.projectSilu;
     pub const projectGroup = products.projectGroup;
     pub const projectRoutedAct = products.projectRoutedAct;
+    pub const projectGateUp = products.projectGateUp;
     pub const projectRouted = products.projectRouted;
     pub const projectRelu2 = products.projectRelu2;
     pub const projectRoutedRelu2 = products.projectRoutedRelu2;

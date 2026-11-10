@@ -34,7 +34,9 @@ fn code(row: []const u32, k: usize, bits: usize) u32 {
     return v & ((@as(u32, 1) << @intCast(bits)) - 1);
 }
 
-pub const Value = struct { y: f64, norm: f64 };
+/// `flush`: the sum of the magnitudes of the terms whose fp16 activation is denormal (nonzero, below 2^-14): what a stream tile that
+/// mixes on fp16 x (gfx900's v_mad_mix_f32 reads a denormal operand as zero) may leave out.
+pub const Value = struct { y: f64, norm: f64, flush: f64 = 0 };
 
 /// The product of x row `row` with column `col` of expert `expert`, and the sum of the magnitudes of its terms.
 pub fn reference(p: Problem, row: usize, expert: usize, col: usize) Value {
@@ -44,6 +46,7 @@ pub fn reference(p: Problem, row: usize, expert: usize, col: usize) Value {
     const w = p.words[col_at * words_row ..][0..words_row];
     var y: f64 = 0;
     var norm: f64 = 0;
+    var flush: f64 = 0;
     for (0..p.k) |k| {
         const g = k / p.group;
         const s = bf16(p.scale[col_at * groups + g]);
@@ -51,8 +54,10 @@ pub fn reference(p: Problem, row: usize, expert: usize, col: usize) Value {
         const term = activation(p, p.x[row * p.k + k]) * (@as(f64, @floatFromInt(code(w, k, p.bits))) * s + b);
         y += term;
         norm += @abs(term);
+        const xv = @abs(activation(p, p.x[row * p.k + k]));
+        if (p.fp16 and xv != 0 and xv < 0x1p-14) flush += @abs(term);
     }
-    return .{ .y = y, .norm = norm };
+    return .{ .y = y, .norm = norm, .flush = flush };
 }
 
 /// Errors of one kernel's outputs: largest |y - ref| / norm (norm: what the terms could sum to), largest and rms.

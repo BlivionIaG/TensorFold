@@ -82,6 +82,9 @@ pub const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 1
 pub const stream_waves = 4; // kStreamWaves
 pub const streams_wanted = 3000; // kStreamWavesWanted
 pub const stream_code_words = 32; // kStreamCodeWords
+const gcn5_stage_bytes = 12 << 10; // the most a gfx900 block stages at one row
+const stage_bytes_max = 32 << 10; // the most LDS a block stages x in
+const stage_flag: c_int = 0x100; // the bit of the launch's lpc_log2 that tells the gfx900 stream tile to stage x
 
 /// The K-parallel tiles of a short prompt: cb columns a lane set, r rows a pass over up to rb row blocks.
 pub const KpTile = struct { cb: c_int, r: c_int, waves: c_int, rb: c_int, loop: bool = true };
@@ -95,16 +98,19 @@ pub const kp_tiles = [_]KpTile{
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the reference `block`.
 pub const Tile = enum { gemm, block };
 
-/// Which 128-row GEMM tile a launch runs: matrix cores (padded or skewed rows), the dot2 tile, or the reference tile.
-pub const BlockKind = enum { matrix, skew, gemm, block };
+/// Which GEMM tile of the 128-row family a launch runs: matrix cores (padded or skewed rows), the dot2 tile, on gfx900 the dot2 tile on 64 or 32
+/// rows a block (the 128-row one spills there), or the reference tile.
+pub const BlockKind = enum { matrix, skew, gemm, gemm64, gemm32, block };
 
 /// Stream tile experiments, read from the environment once per `load` (the defaults are the launch rules below):
 ///   TF_STREAM_CB=2|4|8       columns a lane carries (where the registers allow)
 ///   TF_STREAM_LPC=4|8|16|32  most lanes a column (32 is the most; fewer leaves no lane idle where k / 32 is not a multiple of 32)
+///   TF_STREAM_STAGE=0|1      gfx900: x staged in LDS for no one-row launch / for every one that fits (the default stages up to 12 KB)
 /// Same arithmetic as the defaults except LPC, which reorders a column's sum.
 pub const StreamTune = struct {
     cb: c_int = 0,
     lpc: c_int = 0,
+    stage: c_int = -1,
 
     fn env(name: [*:0]const u8) ?c_int {
         const text = @import("sys").getenv(name) orelse return null;
@@ -112,7 +118,7 @@ pub const StreamTune = struct {
     }
 
     pub fn fromEnv() StreamTune {
-        return .{ .cb = env("TF_STREAM_CB") orelse 0, .lpc = env("TF_STREAM_LPC") orelse 0 };
+        return .{ .cb = env("TF_STREAM_CB") orelse 0, .lpc = env("TF_STREAM_LPC") orelse 0, .stage = env("TF_STREAM_STAGE") orelse -1 };
     }
 };
 
@@ -143,9 +149,13 @@ pub const Kernels = struct {
     stream_on: bool,
     /// Off lays a round's stream row blocks on the grid's y: the reference layout the interleaved one must equal.
     stream_interleave: bool,
+    /// Off (the tests' comparison) keeps every lane of the gfx900 stream tile loading its own x: the staged x's bits.
+    stage_on: bool,
     tune: StreamTune,
     block: [bit_widths.len]Function,
     gemm: [bit_widths.len]Function,
+    /// The dot2 GEMM tile on 64 and 32 rows a block: the same bits as the 128-row one.
+    gemm_rows: [bit_widths.len][2]Function,
     wmma_gemm: [bit_widths.len]Function,
     wmma_skew: [bit_widths.len]Function,
     item: @import("matrix_item.zig").Functions,
@@ -169,6 +179,7 @@ pub const Kernels = struct {
         k.tile = if (choices.gemm) .gemm else .block;
         k.stream_on = choices.stream;
         k.stream_interleave = true;
+        k.stage_on = true;
         k.tune = StreamTune.fromEnv();
         k.reg = Registry.init(tableFor(caps), &mlx_entries.all);
         k.reg.verify(k.env(), .mlx) catch return error.Invalid;
@@ -192,6 +203,11 @@ pub const Kernels = struct {
             if (k.matrix) k.wmma_skew[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_wmma_skewILi{d}EEEvNS0_6AffineE", .{bits}));
             if (k.matrix) k.item[b] = try @import("matrix_item.zig").load(m, bits);
             k.gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_gemm_blockINS0_{s}ELi{d}E{s}EEvNS0_6AffineE", .{ dot, bits, shape }));
+            if (k.caps.generation == .gcn5) {
+                inline for (.{ 64, 32 }, 0..) |rows, i| {
+                    k.gemm_rows[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_gemm_rowsINS0_{s}ELi{d}E{s}Li{d}EEEvNS0_6AffineE", .{ dot, bits, shape, rows }));
+                }
+            }
             inline for (kp_tiles, 0..) |t, i| {
                 k.kp[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm14affine_gemm_kpINS0_{s}ELi{d}ELi{d}ELi{d}ELi{d}ELi{d}ELb{d}EEEvNS0_6AffineE", .{ dot, bits, t.cb, t.r, t.waves, t.rb, @intFromBool(t.loop) }));
             }
@@ -242,8 +258,21 @@ pub const Kernels = struct {
 
     /// Launches on `s`; the counting stream runs nothing.
     fn go(r: *const runtime.Runtime, f: Function, grid: hl.Dim3, block: hl.Dim3, s: abi.Stream, args: *hl.Args) Error!void {
+        return goShared(r, f, grid, block, 0, s, args);
+    }
+
+    fn goShared(r: *const runtime.Runtime, f: Function, grid: hl.Dim3, block: hl.Dim3, shared: u32, s: abi.Stream, args: *hl.Args) Error!void {
         if (s == util.counting) return;
-        try hl.launch(f, .{ .grid = grid, .block = block }, .{ .r = r, .handle = s }, args);
+        try hl.launch(f, .{ .grid = grid, .block = block, .shared = shared }, .{ .r = r, .handle = s }, args);
+    }
+
+    /// LDS bytes a gfx900 block stages its row of x in, 0 for none (tiles/stream.hpp stream_stage): a one-row launch while the stage is small
+    /// (5.8 KB at k = 2560, 9.2 KB at 4096; not at k = 9216, 19.5 KB: 3 blocks a CU, 92 us staged, 66 unstaged). Other GPUs' tiles do not stage.
+    pub fn stageBytes(k: *const Kernels, rows: c_int, depth: c_int) u32 {
+        if (k.caps.generation != .gcn5 or !k.stage_on or rows != 1) return 0;
+        const bytes = @as(i64, rows) * (2 * @as(i64, depth) + @divTrunc(depth, 32) * 4);
+        const repays = if (k.tune.stage >= 0) k.tune.stage == 1 else bytes <= gcn5_stage_bytes;
+        return if (repays and bytes <= stage_bytes_max) @intCast(bytes) else 0;
     }
 
     fn refuse(what: []const u8) Error {
@@ -293,7 +322,7 @@ pub const Kernels = struct {
 
     /// The GPU and the run's switches as the registry reads them.
     pub fn env(k: *const Kernels) registry.Env {
-        return .{ .bf16 = k.wmma, .matrix = k.matrix, .matrix_on = k.matrix and k.mode != .off, .stream_on = k.stream_on, .gemm_on = k.tile == .gemm };
+        return .{ .bf16 = k.wmma, .matrix = k.matrix, .matrix_on = k.matrix and k.mode != .off, .stream_on = k.stream_on, .gemm_on = k.tile == .gemm, .gemm_rows = k.caps.generation == .gcn5 };
     }
 
     /// The MLX entry that takes a product, or null.
@@ -363,6 +392,7 @@ pub const Kernels = struct {
         if (k.tune.lpc >= 4 and k.tune.lpc < 32 and std.math.isPowerOfTwo(@as(u32, @intCast(k.tune.lpc)))) lpc_log2 = @min(lpc_log2, std.math.log2_int(u32, @intCast(k.tune.lpc)));
         const ri = stream_pick.rowTile(a.m);
         const tile = stream_pick.pickWanted(k.tune.cb, k.caps.generation, a.m, lpc_log2, a.bits, total_n, items, sides.pair_cols > 0);
+        const stage = k.stageBytes(a.m, a.k);
         const per_block = tile.per_block;
         var blocks: c_uint = cdiv(total_n, per_block);
         if (sides.count > 0) {
@@ -376,7 +406,7 @@ pub const Kernels = struct {
         var args: hl.Args = .{};
         try args.add(a);
         try args.add(sides);
-        try args.add(@as(c_int, lpc_log2));
+        try args.add(@as(c_int, lpc_log2) | if (stage > 0) stage_flag else 0);
         try args.add(@as(c_int, switch (a.group) {
             32 => 0,
             64 => 1,
@@ -386,7 +416,7 @@ pub const Kernels = struct {
         const f = table[b][ri][tile.at].?;
         // a column block's row blocks run next to each other on x, so the later ones read its weights from cache
         const grid = stream_layout.grid(k.stream_interleave, blocks, cdiv(a.m, stream_rows[ri]), items);
-        try go(r, f, grid, .{ .x = 32 * stream_waves }, s, &args);
+        try goShared(r, f, grid, .{ .x = 32 * stream_waves }, stage, s, &args);
     }
 
     /// One row on the row tile: a lane owns a group, a wave reads a column's row in one run.
@@ -447,7 +477,7 @@ pub const Kernels = struct {
         try go(r, k.fold, .{ .x = cdiv(a.n, fast_n), .y = @intCast(a.m) }, .{ .x = fast_n }, s, &fold);
     }
 
-    /// The 128 x 128 tile of a kind over every item of a plan (or the plain product).
+    /// The GEMM tile of a kind over every item of a plan (or the plain product): 128 (or 64, 32) rows x 128 a block.
     pub fn blockGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream, items: c_int, kind: BlockKind) Error!void {
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
@@ -456,9 +486,16 @@ pub const Kernels = struct {
             .matrix => k.wmma_gemm[b],
             .skew => k.wmma_skew[b],
             .gemm => k.gemm[b],
+            .gemm64 => k.gemm_rows[b][0],
+            .gemm32 => k.gemm_rows[b][1],
             .block => k.block[b],
         };
-        try go(r, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
+        const rows: c_int = switch (kind) {
+            .gemm64 => 64,
+            .gemm32 => 32,
+            else => 128,
+        };
+        try go(r, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, rows), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
     }
 
     /// K-parallel tile `tier` (an index of kp_tiles) of a short prompt.

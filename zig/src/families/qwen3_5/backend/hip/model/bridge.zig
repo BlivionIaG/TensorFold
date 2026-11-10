@@ -22,7 +22,7 @@ fn share(p: weights.Projection, sliced: bool) Error!view.Projection {
 /// An uploaded MLP as the forward reads it: a dense one's projections, or the routed experts (rank share if `sliced`).
 pub fn mlpView(m: weights.Mlp, sliced: bool) Error!view.Mlp {
     return switch (m) {
-        .dense => |d| .{ .dense = .{ .gate = try projection(d.gate), .up = try projection(d.up), .down = try share(d.down, sliced) } },
+        .dense => |d| .{ .dense = .{ .gate = try projection(d.gate), .up = try projection(d.up), .down = try share(d.down, sliced), .gate_up = if (d.gate_up) |g| try projection(g) else null } },
         .routed => |r| .{ .moe = .{
             .rows32 = r.rows32.ptr,
             .rows16 = r.router.ptr,
