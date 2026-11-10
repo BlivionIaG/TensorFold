@@ -68,4 +68,5 @@ test {
     _ = split_stage;
     _ = @import("backend/hip/split_test.zig");
     _ = @import("backend/hip/split_stage_test.zig");
+    _ = @import("backend/hip/split_stage_batch_test.zig");
 }

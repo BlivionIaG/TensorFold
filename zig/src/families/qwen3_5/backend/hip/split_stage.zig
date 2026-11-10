@@ -12,18 +12,25 @@
 //!   otherwise:             the residual sums after the range's last layer, before the next input norm, land in the
 //!                          output payload as `rows` f32 rows.
 //!
-//! One row runs the engine's decode round (`Engine.stage`), more rows its prompt span (`Engine.spanStage`, the prompt
-//! kernels), so a prompt chunk costs one forward and one hand-off pair for all its rows. A stage's KV pages and linear
-//! state live only on the stage that owns the layer. Both are recorded eagerly, not replayed from a captured graph: a
-//! graph would bake in the stamp's sequence number and the window addresses [INFERENCE: patchable graph edges are the
-//! follow-up once the card's launch cost is measured].
+//! One row runs the engine's decode round (`Engine.stage`), more rows of one sequence its prompt span
+//! (`Engine.spanStage`, the prompt kernels), so a prompt chunk costs one forward and one hand-off pair for all its rows.
+//! A stage's KV pages and linear state live only on the stage that owns the layer. All are recorded eagerly, not
+//! replayed from a captured graph: a graph would bake in the stamp's sequence number and the window addresses
+//! [INFERENCE: patchable graph edges are the follow-up once the card's launch cost is measured].
 //!
-//! Several sequences over one engine: every sequence has its own `HipLayerStage` (own caches, status words and plan
-//! buffers), their steps are recorded on the engine's one stream in the order the pipelines queue them. Invariant the
-//! stage relies on: a sequence has at most `Options.plans - 1` earlier steps recorded and not collected when it records
-//! another (a pipeline collects a step's token before it queues the sequence's next step, so the default of two is
-//! slack), which is what keeps a plan buffer's pinned words from being refilled before the stream's copy of them ran.
-//! Open the engine with `batch_rows = 1` (a step is one row) and `prompt_rows >= max_rows`.
+//! A stage serves `Options.slots` sequences, slot i = sequence i of the pipeline's lane: its own caches and position.
+//! A step names its slots (`StepIo.slots`): one slot, and its `rows` are consecutive positions of that sequence (a prompt
+//! chunk or one decode position); `rows` slots, and row i is the next position of the sequence `slots[i]` at its own
+//! position (a decode batch). A batch is ONE decode round over `rows` windows of different caches
+//! (`Engine.stageRows`): the weights are read once for all of them, each row's hand-off is its own consume launch and
+//! its head writes a u32 token a row (rows * 4 bytes in the output payload). Only the named slots advance, by one.
+//!
+//! Several lanes over one engine: every lane has its own `HipLayerStage` (own caches, status words and plan buffers),
+//! their steps are recorded on the engine's one stream in the order the pipelines queue them. Invariant the stage
+//! relies on: a lane has at most `Options.plans - 1` earlier steps recorded and not collected when it records another
+//! (a pipeline collects a step's tokens before it queues the lane's next step, so the default of two is slack), which is
+//! what keeps a plan buffer's pinned words from being refilled before the stream's copy of them ran. Open the engine
+//! with `batch_rows >= slots` and `prompt_rows >= max_rows`; the pool holds the caches of every slot of every stage.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -32,24 +39,29 @@ const Engine = @import("engine/engine.zig").Engine;
 const state = @import("forward/state.zig");
 const plan = @import("forward/plan.zig");
 const fwd = @import("forward/forward.zig");
+const stage_steps = @import("engine/stage.zig");
 
 const pipeline = split.pipeline;
 const wire = split.wire;
 
-pub const Error = error{ BadStep, NotSized };
+pub const Error = error{ BadStep, NotSized, TooManySlots };
 
 pub const Options = struct {
     /// The most rows one step carries: the pipeline's `Config.max_rows`; at most the engine's `prompt_rows`.
     max_rows: usize = 1,
     /// Decode plan buffers taken in turn (see the invariant above).
     plans: usize = 2,
+    /// Sequences the stage serves (the lane's); at most `pipeline.max_slots` and the engine's `batch_rows`.
+    slots: usize = 1,
 };
+
+/// One sequence's state: its caches and the next position they take.
+pub const Seq = struct { caches: state.Caches, pos: usize = 0 };
 
 pub const HipLayerStage = struct {
     e: *Engine,
-    caches: state.Caches,
-    /// The next position this stage's caches take: `rows` more after every recorded step.
-    pos: usize = 0,
+    /// One per slot; a slot's position advances by the rows a step of its own gives it (a batch: one).
+    seqs: []Seq,
     max_rows: usize,
     /// One u32 a row: what the stamped consume kernel stores for that row of the last step (0: every group arrived,
     /// 1: a stamp stayed stale).
@@ -63,12 +75,17 @@ pub const HipLayerStage = struct {
     /// of the engine is recorded.
     logits: ?hip.ops.Tensor = null,
 
-    /// A stage over the sized engine `e` for sequences of up to `positions` positions (at most the engine's capacity).
+    /// A stage over the sized engine `e` for `opts.slots` sequences of up to `positions` positions each (at most the
+    /// engine's capacity).
     pub fn init(e: *Engine, positions: usize, opts: Options) !HipLayerStage {
         if (!e.sized) return error.NotSized;
         if (opts.max_rows == 0 or opts.max_rows > @min(e.o.prompt_rows, pipeline.max_rows_limit) or opts.plans == 0) return error.BadStep;
-        var caches = try e.newCaches(positions);
-        errdefer caches.deinit(e.gpa);
+        if (opts.slots == 0 or opts.slots > @min(pipeline.max_slots, e.o.batch_rows)) return error.TooManySlots;
+        const seqs = try e.gpa.alloc(Seq, opts.slots);
+        errdefer e.gpa.free(seqs);
+        var opened: usize = 0;
+        errdefer for (seqs[0..opened]) |*q| q.caches.deinit(e.gpa);
+        while (opened < seqs.len) : (opened += 1) seqs[opened] = .{ .caches = try e.newCaches(positions) };
         var status = try hip.DeviceBuffer.alloc(&e.driver, 4 * opts.max_rows);
         errdefer status.free();
         try status.fill8(0);
@@ -77,7 +94,7 @@ pub const HipLayerStage = struct {
         var made: usize = 0;
         errdefer for (plans[0..made]) |*b| b.deinit();
         while (made < plans.len) : (made += 1) plans[made] = try e.newPlan();
-        return .{ .e = e, .caches = caches, .max_rows = opts.max_rows, .status = status, .plans = plans };
+        return .{ .e = e, .seqs = seqs, .max_rows = opts.max_rows, .status = status, .plans = plans };
     }
 
     /// Waits for the stream, then frees the caches.
@@ -86,16 +103,28 @@ pub const HipLayerStage = struct {
         for (s.plans) |*b| b.deinit();
         s.e.gpa.free(s.plans);
         s.status.free();
-        s.caches.deinit(s.e.gpa);
+        for (s.seqs) |*q| q.caches.deinit(s.e.gpa);
+        s.e.gpa.free(s.seqs);
     }
 
-    /// A new sequence: zeroed linear state, the first position again. The stream is waited for first.
-    pub fn reset(s: *HipLayerStage) !void {
+    /// The next position slot `slot`'s caches take: the positions its sequence has run.
+    pub fn position(s: *const HipLayerStage, slot: usize) usize {
+        return s.seqs[slot].pos;
+    }
+
+    /// A new sequence in `slot`: zeroed linear state, the first position again. The stream is waited for first.
+    pub fn resetSlot(s: *HipLayerStage, slot: usize) !void {
         s.e.drain();
-        const total = s.caches.total;
-        s.caches.deinit(s.e.gpa);
-        s.caches = try s.e.newCaches(total);
-        s.pos = 0;
+        const q = &s.seqs[slot];
+        const total = q.caches.total;
+        q.caches.deinit(s.e.gpa);
+        q.caches = try s.e.newCaches(total);
+        q.pos = 0;
+    }
+
+    /// Every slot a new sequence, and the plan buffers and status words as new.
+    pub fn reset(s: *HipLayerStage) !void {
+        for (0..s.seqs.len) |slot| try s.resetSlot(slot);
         s.stamped_rows = 0;
         s.turn = 0;
         try s.status.fill8(0);
@@ -132,11 +161,12 @@ pub const HipLayerStage = struct {
 
     /// Pays the first launches' costs before the pipeline queues its first wait on the window: a kernel that needs more
     /// scratch than the queue holds makes the runtime wait for the queue to drain, and a queue that is waiting on the
-    /// window never does. So every kernel and shape a step can take runs once here: the decode step and the prompt
-    /// span at each row count of `ladder` up to `max_rows`, plain and stamped (not stamped for the first stage), at
+    /// window never does. So every kernel and shape a step can take runs once here: the decode step, the decode
+    /// batches of 2 to `slots` rows and the prompt span at each row count of `ladder` up to `max_rows`, plain and stamped (not stamped for the first stage), at
     /// the start of the caches and (plain) at their far end, with the head where the range has it; then the stage
     /// starts over.
     pub fn warm(s: *HipLayerStage) !void {
+        var warm_rows: [pipeline.max_slots]stage_steps.Row = undefined;
         const e = s.e;
         const m = e.model();
         const embeds = m.range.embeds();
@@ -150,7 +180,9 @@ pub const HipLayerStage = struct {
         const out_at = at + in_bytes;
         var lad: [64]usize = undefined;
         const counts = ladder(s.max_rows, &lad);
-        const far = s.caches.total;
+        const caches = &s.seqs[0].caches;
+        const far = caches.total;
+        const batches = s.seqs.len;
         for ([2]bool{ false, true }) |stamped| {
             if (embeds and stamped) continue;
             const hand: fwd.Handoff = .{
@@ -159,11 +191,17 @@ pub const HipLayerStage = struct {
                 .dst = if (heads) 0 else out_at,
             };
             const argmax = if (heads) out_at else 0;
-            _ = try e.stage(&s.plans[0], &s.caches, 0, if (embeds) at else 0, hand, argmax);
-            for (counts) |n| _ = try e.spanStage(&s.caches, if (embeds) at else 0, n, 0, hand, argmax);
+            const tokens = if (embeds) at else 0;
+            _ = try e.stage(&s.plans[0], caches, 0, tokens, hand, argmax);
+            // a decode batch of every row count from 2 to the slots (rows from distinct sequences at their own positions)
+            for (2..batches + 1) |n| _ = try e.stageRows(&s.plans[0], s.batchRows(n, 0, &warm_rows), tokens, hand, argmax);
+            for (counts) |n| _ = try e.spanStage(caches, tokens, n, 0, hand, argmax);
             if (stamped) continue;
+            // and the far end of the caches: the longest attention walk, one row and the widest batch
+            _ = try e.stage(&s.plans[0], caches, far - 1, tokens, hand, argmax);
+            if (batches > 1) _ = try e.stageRows(&s.plans[0], s.batchRows(batches, far - 1, &warm_rows), tokens, hand, argmax);
             for (counts) |n| if (n == counts[0] or n == s.max_rows) {
-                if (far >= n) _ = try e.spanStage(&s.caches, if (embeds) at else 0, n, far - n, hand, argmax);
+                if (far >= n) _ = try e.spanStage(caches, tokens, n, far - n, hand, argmax);
             };
         }
         try s.reset();
@@ -201,6 +239,12 @@ pub const HipLayerStage = struct {
         return s.record(io);
     }
 
+    /// The first `n` slots as the rows of a decode round, each at position `pos`.
+    fn batchRows(s: *HipLayerStage, n: usize, pos: usize, buf: *[pipeline.max_slots]stage_steps.Row) []const stage_steps.Row {
+        for (buf[0..n], s.seqs[0..n]) |*r, *q| r.* = .{ .caches = &q.caches, .pos = pos };
+        return buf[0..n];
+    }
+
     /// Records one step on the engine's stream.
     pub fn record(s: *HipLayerStage, io: pipeline.StepIo) !void {
         const e = s.e;
@@ -208,17 +252,25 @@ pub const HipLayerStage = struct {
         const embeds = m.range.embeds();
         const heads = m.headed();
         const hidden_bytes = 4 * m.spec.hidden;
-        if (io.slots.len != 1 or io.slots[0] != 0) return error.BadStep;
-        const rows: usize = io.rows;
-        if (io.hidden_bytes != hidden_bytes or rows == 0 or rows > s.max_rows) return error.BadStep;
+        const rows_n: usize = io.rows;
+        if (io.hidden_bytes != hidden_bytes or rows_n == 0 or rows_n > s.max_rows) return error.BadStep;
+        // one slot: `rows` positions of that sequence; else a decode batch, a row each of `rows` different sequences
+        const batch = io.slots.len > 1;
+        if (io.slots.len == 0 or (batch and (io.slots.len != rows_n or rows_n > e.o.batch_rows))) return error.BadStep;
+        for (io.slots, 0..) |slot, i| {
+            if (slot >= s.seqs.len) return error.BadStep;
+            for (io.slots[0..i]) |other| if (other == slot) return error.BadStep;
+        }
         // a token is not a stamped row, and every other stage has hidden rows to read
         if (embeds and io.stamped) return error.BadStep;
         const in = io.in.data();
         const out = io.out.data();
-        if (embeds and in.len < 4 * rows) return error.BadStep;
-        if (!embeds and in.len < if (io.stamped) wire.stampedRowsLen(rows, hidden_bytes) else rows * hidden_bytes) return error.BadStep;
-        if (out.len < if (heads) 4 else rows * hidden_bytes) return error.BadStep;
-        if (s.pos + rows > s.caches.total) return error.ContextFull;
+        if (embeds and in.len < 4 * rows_n) return error.BadStep;
+        if (!embeds and in.len < if (io.stamped) wire.stampedRowsLen(rows_n, hidden_bytes) else rows_n * hidden_bytes) return error.BadStep;
+        // a head writes one token for a single slot, one a row for a batch
+        if (out.len < if (heads) (if (batch) 4 * rows_n else 4) else rows_n * hidden_bytes) return error.BadStep;
+        const advance: usize = if (batch) 1 else rows_n;
+        for (io.slots) |slot| if (s.seqs[slot].pos + advance > s.seqs[slot].caches.total) return error.ContextFull;
         const in_at = @intFromPtr(in.ptr);
         const out_at = @intFromPtr(out.ptr);
         const hand: fwd.Handoff = .{
@@ -228,14 +280,20 @@ pub const HipLayerStage = struct {
         };
         const tokens = if (embeds) in_at else 0;
         const argmax = if (heads) out_at else 0;
-        if (rows == 1) {
-            s.logits = try e.stage(&s.plans[s.turn], &s.caches, s.pos, tokens, hand, argmax);
+        const first = &s.seqs[io.slots[0]];
+        if (batch) {
+            var seqs: [pipeline.max_slots]stage_steps.Row = undefined;
+            for (io.slots, seqs[0..io.slots.len]) |slot, *r| r.* = .{ .caches = &s.seqs[slot].caches, .pos = s.seqs[slot].pos };
+            s.logits = try e.stageRows(&s.plans[s.turn], seqs[0..io.slots.len], tokens, hand, argmax);
+            s.turn = (s.turn + 1) % s.plans.len;
+        } else if (rows_n == 1) {
+            s.logits = try e.stage(&s.plans[s.turn], &first.caches, first.pos, tokens, hand, argmax);
             s.turn = (s.turn + 1) % s.plans.len;
         } else {
-            s.logits = try e.spanStage(&s.caches, tokens, rows, s.pos, hand, argmax);
+            s.logits = try e.spanStage(&first.caches, tokens, rows_n, first.pos, hand, argmax);
         }
-        s.stamped_rows = if (io.stamped) rows else 0;
-        s.pos += rows;
+        s.stamped_rows = if (io.stamped) rows_n else 0;
+        for (io.slots) |slot| s.seqs[slot].pos += advance;
     }
 };
 
