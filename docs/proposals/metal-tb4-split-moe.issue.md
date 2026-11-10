@@ -14,7 +14,8 @@ Draft for `.github/ISSUE_TEMPLATE/proposal.yml`. Not posted. Title: `Proposal: T
 Should a Mac host be able to serve one model across Metal and an external GPU reached over Thunderbolt 4, inside the
 native engine, under these terms?
 
-1. A device-agnostic offload layer, in-process, that reuses the cluster planner, budget, admission and cost code and the
+1. A device-agnostic offload layer inside the native engine (the host stage in the Mac's process, the card's runtime in a second
+   process over a unix socket, the window shared memory both map; one binary cannot link both engines today), that reuses the cluster planner, budget, admission and cost code and the
    fabric framing, but not the cluster transport or SSH launch.
 2. A boundary rule between stages of different activation types (bf16 Metal, fp16 gfx900 HIP; bf16 on RDNA3 and newer
    and on NVIDIA): fp32 hidden row across the boundary, round-to-nearest-even into the consumer's type, same-engine
@@ -49,7 +50,8 @@ split is modelled at or below that (84 tok/s layer split, 52 expert split); the 
 (measured), so every handoff costs a command-buffer wake of about 65 us on an idle Mac and 149 us (p50) with the card in
 use; the layer split pays it once a token, the expert split forty times. First card run (Qwen3.5-4B, 32 layers): a split
 at any of five cuts, Metal first or card first, gives the unsplit run's tokens (40 of 40) and logits cosine 0.9996-0.99999;
-one stream takes 15-24 ms a position against 14 ms all-Metal and 19 ms all-card, as the one-stream model says.
+one stream takes 15-24 ms a position against 14 ms all-Metal and 19 ms all-card, as the one-stream model says. The 2-stream pipeline (which the model says reaches 113 tok/s on the 4B) and chunked prefill are implemented and
+tested offline, not yet run on the card.
 
 ## Checkpoint, revision and licence
 
