@@ -533,7 +533,7 @@ Each milestone has a stop criterion; none needs more than one Mac and one card.
 | M0 (done offline) | the probes above | window wrap works, wake cost known: yes, 65 us idle (149 us with the card in use) |
 | M1 (receipt measured; relay round trips at 4 KiB / 64 KiB not separately) | on the card: flag round trip each way through the relay at 4 KiB and 64 KiB, `hipStreamWaitValue32`-class wait latency, GPU read of a 64 KiB host window; 4B dispatch counts with fused boundary kernels | eGPU to Metal to eGPU at 8 KiB p50 <= 250 us, p99 <= 500 us |
 | M2 | Level B stamped replies: stale-stamp rate and retry cost against the card's PCIe reads | zero accepted stale words in 10^6 replies, else stay at Level A |
-| M3 (one stream done: tokens identical, cosine >= 0.9996, 16-24 ms against 14 ms all-Metal; 2 streams not run) | Qwen3.5-4B layer split Metal + Vega, tokens against the unsplit runs (gate 4) and fidelity (gate 3); single stream and 2 streams | 2-stream throughput >= 1.5x one Metal queue (model 1.7x); single stream within 5% of all-Metal |
+| M3 (one stream done: tokens identical, cosine >= 0.9996, 16-24 ms against 14 ms all-Metal; 2 streams written and tested offline, not run on the card) | Qwen3.5-4B layer split Metal + Vega, tokens against the unsplit runs (gate 4) and fidelity (gate 3); single stream and 2 streams | 2-stream throughput >= 1.5x one Metal queue (model 1.7x); single stream within 5% of all-Metal |
 | M4 | 35B-A3B layer split, KV hand-off after Metal prefill, 24 GiB-class memory cap emulated with a lower budget | fits the cap; 2-stream tok/s within 15% of the model |
 | M5 | expert split on the card with resident layers | 14 crossings fewer than all-split, tok/s within 15% of the model; if single-stream is below 50 tok/s it stays opt-in |
 | M6 | hot-expert cache: per-layer routing histograms on real prompts (code, prose), hit rate versus cache size | an all-hit layer rate that pays the cache's copy cost; otherwise drop PR 3 |
@@ -553,7 +553,7 @@ the probe and the Qwen3.5-4B split. That run used `tb4-offload-card`, this branc
 | `ExternalDevice` (alloc/upload/download, host windows, stream wait/write on window words, bounded sync, timestamp), `Caps` | `zig/src/split/device.zig` | tested through the mock and the HIP adapter on hipmac's mock |
 | Window protocol: 64-byte header with the sequence stamp written last, 16-byte stamped payload rows | `wire.zig` | tested, including stale and late stamps |
 | CPU mock device (own stream thread, injectable latency, `kill`) | `mock.zig` | tested |
-| Layer pipeline (`external_first`, `metal_first`, `external_only`; level A and level B) | `pipeline.zig` | tested on the toy model and on the real engine (Metal+Metal) |
+| Layer pipeline (`external_first`, `metal_first`, `external_only`; level A and level B; steps of several rows; one pipeline a sequence over one device, `streams.zig`) | `pipeline.zig`, `streams.zig` | tested on the toy model and on the real engine (Metal+Metal), chunked prompts and two sequences included; the overlap itself only on the mock with injected delays |
 | Exact integer toy model, split at every layer, either order, both levels | `toy.zig`, `metal_toy.zig` | token-identical to the unsplit run, on the CPU peer and on a real Metal GPU peer |
 | Metal `HostWindow` (`newBufferWithBytesNoCopy`, 16 KiB alignment refused otherwise), `Relay` (event-gated handoff), wake probe | `zig/src/metal/window.zig`, `relay.zig`, `wake_probe.zig` | tested on an M4 Pro |
 | `tf-offload probe` (receipt `tensorfold-offload-probe/1`) | `probe.zig`, `metal_probe.zig`, `cli.zig` | runs against the mock; against hipmac's mock through the HIP adapter; on the card: run once (First card run) |
@@ -654,8 +654,8 @@ the card costs about 0.52 ms a layer plus 2.1 ms for the head (4.3 ms for 4 laye
 0.25 to 0.55 ms a layer in a burst plus a fixed 3-4 ms (embedding, command buffer, wake, socket). The halves never overlap
 in one stream, so a split is slower than the Mac alone by about the card's share of the work: the one-stream model. Recording
 the card's step takes 0.04-0.13 ms. The crossing itself (hop to device 10 us, hop to host 160 us) is under 2% of a
-position. The 2-stream pipeline that would overlap the halves is not in this change, so the 113 tok/s prediction is
-still [INFERENCE].
+position. The 2-stream pipeline that overlaps the halves was written after this run (below, [Streams and chunked
+prefill](#streams-and-chunked-prefill)); the 113 tok/s prediction stays [INFERENCE] until it is run on the card.
 
 **A first-launch hang the pipeline cannot see.** The first split run hung in the card's runtime: the first launch of a
 kernel that needs more scratch than the queue holds makes `hipModuleLaunchKernel` wait for the queue to drain
@@ -676,6 +676,43 @@ zig-out/bin/tf-offload-card $M ref.bin s.sock metal_first 16                   #
 TF_SPLIT_QWEN_DIR=$M zig-out/bin/tf-offload-metal serve s.sock 16 32 &         # Metal [16,32)
 zig-out/bin/tf-offload-card $M ref.bin s.sock external_first 16                # card [0,16)
 ```
+
+### Streams and chunked prefill
+
+Written after the first card run, tested offline (CPU mock device, hipmac's mock backend, Metal+Metal on the 4B); not yet
+run on the card.
+
+* **A step carries rows.** `StepIo.rows` and `Peer.step(.., rows, ..)`: a step is one decode position or up to
+  `Config.max_rows` (at most 256) consecutive positions of one sequence, a prompt chunk. A token step carries `rows` u32;
+  a hidden step `rows` plain f32 rows or, at level B, `rows` stamped rows, each on its own 16-byte groups (`wire.packStampedRows`;
+  the stamp is per row so a consumer re-reads only the row that is late). A stage that ends the model answers with one
+  token, the greedy pick after the last row. The tokens a host stage reads are staged in the window, behind the room
+  the device's token reply has, so the socket protocol carries only offsets, a row count and a stream number.
+* **Sequences share a device.** One `Pipeline` a sequence, over its own two slots of one window (`Config.window_offset`,
+  `Pipeline.windowBytes(cfg, n)`), its own stage on each side (a stage owns the state of its layers for one sequence).
+  `Pipeline.step` is `submit` then `collect`; `split/streams.zig` runs the skewed schedule (collect A, submit A's next
+  step, collect B, submit B's next step), so a token costs about the slower side instead of the sum: with 3 ms
+  per side the mock run of two sequences takes under 1.8x one (serial would be 2x, ideal 1x). The device queue is in order, so
+  publication order is device order; no new device primitive.
+* **Metal side.** `stage_pass.launch` takes the ids of `rows` positions: one is the decode kernels, more are the prompt
+  kernels (`Session.promptChunk`'s path), output stored as stamped rows by the existing row-store kernel; the head draws
+  on the last row. Stages of one model share its frame and prompt scratch and are serialized (`Serial`), so two sequences
+  on one Mac model take turns on the GPU while the other half runs.
+* **HIP side.** `HipLayerStage` takes `rows`: decode round for one, the engine's prompt span for more, one
+  `consumeStamped` launch a row, one export or head projection of the last row. Each stage owns its caches and a ring of
+  plan buffers (the decode step's plan words are copied asynchronously from pinned host memory, so a second recorded step must not
+  overwrite the first's), over one engine and one stream; `warm` covers the row-count ladder, because the first launch of a
+  new shape can wait for the queue to drain.
+* **Remote.** `Request` carries `rows` and `stream`; `Host.peers` is one stage a sequence.
+
+Tests (all offline): the toy model, every order and level, prompt chunks of 2..16 and three sequences on one device, token-identical
+to the reference; the Metal+Metal real 4B at cuts 1, 8, 16, 31, both orders, both levels: decode, chunked prefill (17-token prompts
+in chunks of 5) and two sequences all identical to the unsplit run (and chunked equal to token by token); HIP launch
+sequences for rows 3 and 4 and for two sequences over one engine (disjoint plan buffers, per-row stamp words).
+
+Measurements to take on the card: `tf-offload-card MODEL REF SOCKET metal_first CUT streams=2` against `streams=1`
+(the planner's 2-stream figure for the 4B is 113 tok/s, 62.8 at one stream), and `chunk=C repeat=R` for the prefill rate. These
+are the next card run, not results.
 
 ### Rebase onto upstream main
 
@@ -701,9 +738,11 @@ Cluster tests (`zig test` on the cluster root with stand-in modules, because `te
 
 ### Not in this pull request, and why
 
-* **Batch prefill across the window.** The split prefills token by token through both sides (one row per step), which
-  is exact but runs at decode speed; a prompt of N tokens costs N pipeline steps. Chunked prefill (rows > 1 per window
-  slot) and Metal-prefill-then-state-handoff are the next change.
+* **Metal-prefill-then-state-handoff.** Chunked prefill through the split exists (rows > 1 per step, above) but both sides
+  prefill their own layers; having the Mac prefill the whole model and ship the card's layers' KV and linear state
+  across is the next change, and the one that matters for long prompts [INFERENCE].
+* **Prefill speed.** Chunked prefill is tested for exactness only; no rate is measured, and the head draws on every chunk on
+  the Metal side (one extra head pass per intermediate chunk).
 * **Tokens on the card beyond one prompt.** One 49-position sequence on one 4B checkpoint (First card run) bounds the
   Metal-to-HIP drift at logits cosine >= 0.9996 and one tie-break; more prompts, long contexts and the 35B-A3B are not
   measured.
@@ -711,11 +750,10 @@ Cluster tests (`zig test` on the cluster root with stand-in modules, because `te
   addresses in); `seq` through a device-side word is the follow-up.
 * **Level B on the Metal side as consumer**: Metal reads stamped rows on the CPU (`wire.readStamped`), the GPU consume
   kernel exists only for HIP.
-* **One-process driver**: a command that loads both engines and a tokenizer and runs a prompt end to end
-  (`tensorfold serve --device-split`) is not in this change. The card run is two processes (First card run), because one
-  program cannot hold both engines until the `core` file sets of the two builds are disjoint; the tests drive the
-  pipeline directly.
-* Milestone M2 (stale stamps over 10^6 replies) and the 2-stream runs of M3 are not done; the receipt's `hop_*` fields are
+* **A serving driver**: a command that spawns the card process as a child, loads a tokenizer and runs a prompt end to end
+  (`tensorfold serve --device-split`) is not in this change. The two-process design is deliberate ([One process or
+  two](#one-process-or-two)); the tests and the card programs drive the pipeline directly.
+* Milestone M2 (stale stamps over 10^6 replies) and the 2-stream card runs of M3 are not done; the receipt's `hop_*` fields are
   the card's numbers from the first run.
 
 ## Pull requests
