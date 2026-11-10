@@ -216,24 +216,26 @@ pub const MetalPeer = struct {
     }
 };
 
-const Fixture = struct {
+/// The toy model's parameters (seed 42), built on the heap.
+pub const Fixture = struct {
     params: *toy.Params,
 
-    fn init() !Fixture {
-        const p = try std.testing.allocator.create(toy.Params);
+    pub fn init(gpa: std.mem.Allocator) !Fixture {
+        const p = try gpa.create(toy.Params);
         p.* = .init(42);
         return .{ .params = p };
     }
 
-    fn deinit(f: Fixture) void {
-        std.testing.allocator.destroy(f.params);
+    pub fn deinit(f: Fixture, gpa: std.mem.Allocator) void {
+        gpa.destroy(f.params);
     }
 };
 
-fn runSplit(f: Fixture, order: pipeline.Order, level: pipeline.Level, k: usize, prompt: []const u32, out: []u32) !void {
+/// Run the toy model over the mock device (window protocol) and Metal, `k` layers on one side and the rest on the other.
+pub fn runSplit(gpa: std.mem.Allocator, f: Fixture, order: pipeline.Order, level: pipeline.Level, k: usize, prompt: []const u32, out: []u32) !void {
     const pool = metal.objc.Pool.push();
     defer pool.pop();
-    const m = try split.mock.Mock.create(std.testing.allocator, .{ .wait_delay_ns = 1_000, .write_delay_ns = 1_000 });
+    const m = try split.mock.Mock.create(gpa, .{ .wait_delay_ns = 1_000, .write_delay_ns = 1_000 });
     const dev = m.external();
     defer dev.deinit();
     const cfg: pipeline.Config = .{ .order = order, .level = level, .hidden_bytes = toy.hidden_bytes };
@@ -258,15 +260,15 @@ fn runSplit(f: Fixture, order: pipeline.Order, level: pipeline.Level, k: usize, 
 
 test "metal on either side of the split reproduces the unsplit tokens" {
     _ = metal.Device.init() catch return error.SkipZigTest;
-    const f = try Fixture.init();
-    defer f.deinit();
+    const f = try Fixture.init(std.testing.allocator);
+    defer f.deinit(std.testing.allocator);
     const prompt = [_]u32{ 5, 17, 3, 90 };
     var want: [24]u32 = undefined;
     try toy.reference(f.params, &prompt, &want);
     for ([_]pipeline.Order{ .external_first, .metal_first }) |order| {
         for ([_]usize{ 1, 6, 11 }) |k| {
             var got: [24]u32 = undefined;
-            try runSplit(f, order, .a, k, &prompt, &got);
+            try runSplit(std.testing.allocator, f, order, .a, k, &prompt, &got);
             try std.testing.expectEqualSlices(u32, &want, &got);
         }
     }
@@ -274,20 +276,20 @@ test "metal on either side of the split reproduces the unsplit tokens" {
 
 test "metal's stamped hidden row is accepted with the flag stored before the kernel finishes" {
     _ = metal.Device.init() catch return error.SkipZigTest;
-    const f = try Fixture.init();
-    defer f.deinit();
+    const f = try Fixture.init(std.testing.allocator);
+    defer f.deinit(std.testing.allocator);
     const prompt = [_]u32{ 8, 8, 61, 2 };
     var want: [40]u32 = undefined;
     try toy.reference(f.params, &prompt, &want);
     var got: [40]u32 = undefined;
-    try runSplit(f, .metal_first, .b, 4, &prompt, &got);
+    try runSplit(std.testing.allocator, f, .metal_first, .b, 4, &prompt, &got);
     try std.testing.expectEqualSlices(u32, &want, &got);
 }
 
 test "all layers on metal alone equal the unsplit reference" {
     _ = metal.Device.init() catch return error.SkipZigTest;
-    const f = try Fixture.init();
-    defer f.deinit();
+    const f = try Fixture.init(std.testing.allocator);
+    defer f.deinit(std.testing.allocator);
     const pool = metal.objc.Pool.push();
     defer pool.pop();
     const prompt = [_]u32{ 11, 2, 77 };

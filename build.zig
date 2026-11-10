@@ -510,12 +510,14 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     // TB4 offload: the device-agnostic module (no GPU imports) and its Metal half, which joins Metal's window and relay to it.
     const split = b.createModule(.{ .root_source_file = b.path("zig/src/split/split.zig"), .target = target, .optimize = optimize, .link_libc = true });
     const split_metal = b.createModule(.{
-        .root_source_file = b.path("zig/src/split/metal_toy.zig"),
+        .root_source_file = b.path("zig/src/split/offload_main.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
         .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "split", .module = split } },
     });
+    const offload_exe = b.addExecutable(.{ .name = "tf-offload", .root_module = split_metal });
+    b.step("tf-offload", "tf-offload probe | plan | demo: TB4 external-GPU offload (mock device on this build)").dependOn(&b.addInstallArtifact(offload_exe, .{}).step);
     const split_tests = b.step("test-split", "TB4 offload: protocol, planner, mock device, layer pipeline, Metal window and relay");
     for ([_]*std.Build.Module{ split, split_metal }) |m| {
         const run = b.addRunArtifact(b.addTest(.{ .root_module = m }));
