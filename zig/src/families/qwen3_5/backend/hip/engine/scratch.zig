@@ -27,6 +27,8 @@ pub fn prompts(e: *Engine, rows: usize, capacity: usize) !usize {
     if (m.head) |head| {
         const y = try o.project(fwd.at(hidden, (rows - 1) * m.spec.hidden), head, 1, false);
         _ = try e.wholeRows(o, y, 1);
+        // a stage ends the span with the pick over the projected row: its partials are taken beside the logits
+        try o.argmaxRows(y, 1, head.n, 0);
     }
     return arena.peak;
 }
