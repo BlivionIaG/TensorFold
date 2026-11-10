@@ -2,7 +2,10 @@
 //! directory). `ref FILE [TOKENS]` runs the model unsplit on this GPU and writes the tokens and predictions the card's
 //! process compares with (split.reference). `serve SOCKET FIRST LAST [SEQUENCES]` holds layers [FIRST, LAST), a stage for
 //! each of SEQUENCES (default 1), and is the host stage of the pipeline that process runs (split.remote): the window is
-//! the card's pinned memory, mapped here and wrapped for Metal.
+//! the card's pinned memory, mapped here and wrapped for Metal. `parallel REFERENCE SEQUENCES [CHUNK [REPEAT]]` is the baseline the
+//! split is compared with: the Mac alone serving SEQUENCES concurrent copies of the reference's prompt in one shared
+//! decode round (one row a sequence, one engine), each prompt (REPEAT times over, default 1) prefilled in steps of CHUNK positions (default 24). With REPEAT above 1 the
+//! sequences are compared with the first, not with the reference.
 const std = @import("std");
 const tokenizer = @import("tokenizer");
 const split = @import("split");
@@ -61,6 +64,87 @@ fn keepLogits(r: *q.decode_round.Runner, out: []f32) void {
     for (out, bits) |*o, b| o.* = @bitCast(@as(u32, b) << 16);
 }
 
+/// One shared decode round, one row a slot: `pending` the slots' next tokens in and out.
+fn sharedRound(a: std.mem.Allocator, m: *q.model.Model, r: *q.decode_round.Runner, pending: []u32) !void {
+    const most = q.attention_plan.max_streams;
+    const n = pending.len;
+    const vocab = m.config.vocab;
+    var inputs: [most]q.round_plan.Input = undefined;
+    var ids: [most][1]u32 = undefined;
+    for (0..n) |k| {
+        ids[k] = .{pending[k]};
+        inputs[k] = .{ .slot = @intCast(k), .start = r.offsets[k], .capacity = r.capacity, .ids = &ids[k] };
+    }
+    var plan = try q.round_plan.Round.init(a, inputs[0..n], @intCast(m.config.conv_kernel), r.slots, @intCast(vocab));
+    defer plan.deinit();
+    try r.verifyHead(&plan, .all);
+    const words = m.frame.get(.logits).buffer.slice(u16, n * vocab);
+    for (0..n) |k| pending[k] = try q.session.argmax(words[k * vocab ..][0..vocab]);
+    const zero = [_]u32{0};
+    var paths: [most][]const u32 = @splat(&zero);
+    try r.keep(&plan, paths[0..n]);
+}
+
+/// The Mac alone with `n` sequences: prefill each in chunks, then decode them together in shared rounds. Prints both
+/// rates (decode is timed alone) and whether every sequence made the reference's tokens.
+fn parallel(a: std.mem.Allocator, io: std.Io, dir: []const u8, ref: split.reference.Reference, n: usize, chunk: usize, repeat: usize) !void {
+    const prompt = try a.alloc(u32, ref.prompt.len * repeat);
+    defer a.free(prompt);
+    for (0..repeat) |i| @memcpy(prompt[i * ref.prompt.len ..][0..ref.prompt.len], ref.prompt);
+    const m = try q.model.Model.load(a, io, dir, 128, null);
+    defer m.deinit();
+    const out = try a.alloc(u32, n * ref.want.len);
+    defer a.free(out);
+    const pending = try a.alloc(u32, n);
+    defer a.free(pending);
+    var best: [2]u64 = .{ std.math.maxInt(u64), std.math.maxInt(u64) };
+    // three passes, the first warms the pipelines; the best of the others is kept
+    for (0..3) |pass| {
+        var r = try q.decode_round.Runner.init(a, m, @intCast(n), h.capacity);
+        defer r.deinit();
+        const t0 = split.device.nowNs();
+        for (pending, 0..) |*p, k| {
+            const s = q.session.Session{ .runner = &r, .slot = @intCast(k) };
+            try s.prefill(prompt, chunk);
+            p.* = try s.greedy();
+        }
+        const t1 = split.device.nowNs();
+        for (0..ref.want.len) |i| {
+            for (pending, 0..) |p, k| out[k * ref.want.len + i] = p;
+            try sharedRound(a, m, &r, pending);
+        }
+        const t2 = split.device.nowNs();
+        if (pass > 0) {
+            best[0] = @min(best[0], t1 - t0);
+            best[1] = @min(best[1], t2 - t1);
+        }
+    }
+    var same: usize = 0;
+    const want = if (repeat > 1) out[0..ref.want.len] else ref.want;
+    for (0..n) |k| same += @intFromBool(std.mem.eql(u32, out[k * ref.want.len ..][0..ref.want.len], want));
+    const nf: f64 = @floatFromInt(n);
+    const sec = struct {
+        fn of(ns: u64) f64 {
+            return @as(f64, @floatFromInt(ns)) / 1e9;
+        }
+    }.of;
+    std.debug.print("metal alone: {d} sequences, chunk {d}: prefill {d} positions x {d} in {d:.1} ms = {d:.1} tok/s; decode {d} tokens x {d} in {d:.1} ms = {d:.1} tok/s ({d:.1} a stream); {d}/{d} sequences token-identical\n", .{
+        n,
+        chunk,
+        prompt.len,
+        n,
+        sec(best[0]) * 1e3,
+        nf * @as(f64, @floatFromInt(prompt.len)) / sec(best[0]),
+        ref.want.len,
+        n,
+        sec(best[1]) * 1e3,
+        nf * @as(f64, @floatFromInt(ref.want.len)) / sec(best[1]),
+        @as(f64, @floatFromInt(ref.want.len)) / sec(best[1]),
+        same,
+        n,
+    });
+}
+
 fn ready() void {
     std.debug.print("split metal: serving\n", .{});
 }
@@ -85,6 +169,17 @@ pub fn main(init: std.process.Init) !void {
         defer s.deinit(a);
         try split.remote.serve(args[2], s.host(), ready);
         return;
+    }
+    if (std.mem.eql(u8, args[1], "parallel")) {
+        if (args.len < 4) return error.MissingArgument;
+        const ref = try split.reference.load(a, args[2]);
+        defer ref.deinit(a);
+        const n = try std.fmt.parseInt(usize, args[3], 10);
+        const chunk: usize = if (args.len > 4) try std.fmt.parseInt(usize, args[4], 10) else 24;
+        if (n == 0 or n > q.attention_plan.max_streams or chunk == 0) return error.BadSequenceCount;
+        const repeat: usize = if (args.len > 5) try std.fmt.parseInt(usize, args[5], 10) else 1;
+        if (repeat == 0 or ref.prompt.len * repeat + ref.want.len > h.capacity) return error.BadSequenceCount;
+        return parallel(a, io, dir, ref, n, chunk, repeat);
     }
     if (!std.mem.eql(u8, args[1], "ref")) return error.UnknownCommand;
     const n_tokens: usize = if (args.len > 3) try std.fmt.parseInt(usize, args[3], 10) else 40;

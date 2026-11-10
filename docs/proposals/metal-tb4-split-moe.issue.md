@@ -50,8 +50,11 @@ split is modelled at or below that (84 tok/s layer split, 52 expert split); the 
 (measured), so every handoff costs a command-buffer wake of about 65 us on an idle Mac and 149 us (p50) with the card in
 use; the layer split pays it once a token, the expert split forty times. First card run (Qwen3.5-4B, 32 layers): a split
 at any of five cuts, Metal first or card first, gives the unsplit run's tokens (40 of 40) and logits cosine 0.9996-0.99999;
-one stream takes 15-24 ms a position against 14 ms all-Metal and 19 ms all-card, as the one-stream model says. Two sequences pipelined over the split decode 120 tok/s at the planner's cut (113 predicted) and 129-130 at the best cuts, 1.6-1.8x
-the Mac's own 72 tok/s, every sequence token-identical; chunked prefill is 3x the one-position-a-step rate (156-251 tok/s).
+one stream takes 15-24 ms a position against 14 ms all-Metal and 19 ms all-card, as the one-stream model says. Two sequences pipelined over the split decode 120 tok/s at the planner's cut (113 predicted) and 129-130 at the best cuts, every
+sequence token-identical; the fair baseline, the Mac alone batching two sequences in one engine, decodes 116 tok/s (155 at three, 198 at four, where the
+split stays at 120), so on the 4B the split is level at two sequences and behind beyond, and its value is capacity. Chunked prefill through the split is 3x the
+one-position-a-step rate (156-251 tok/s) but the Mac alone prefills at 415-494. Whether the split pays on the 35B-A3B (where a batched
+round reads more experts) is not measured.
 
 ## Checkpoint, revision and licence
 
@@ -115,7 +118,7 @@ Proposed here, not agreed.
 - Performance: repository clients on the same machine, revision and prompts as the unsplit baseline; decode and cold
   prefill; the planner's prediction within 15%; `auto` never selects a placement it predicts slower than all-Metal.
   Targets for the first card receipt: link round trip at 8 KiB p50 <= 250 us and p99 <= 500 us; Qwen3.5-4B split with
-  two streams >= 1.5x one Metal queue; single stream within 5% of all-Metal.
+  two streams at least level with the Mac alone batching two sequences (measured: 120-130 against 116); single stream within 5% of all-Metal (not met, 16-24 ms against 14).
 - Memory: peak on both devices, window bytes, RAM class and context; a run under a 24 GiB-class budget.
 - Platforms: M4 Pro run; other Apple chips unrun. gfx900 run; RDNA3/4 and NVIDIA unrun.
 - Kernel-contract records for any new kernel; `zig build test test-golden`, `dev-tools`, lean base and head counts.
