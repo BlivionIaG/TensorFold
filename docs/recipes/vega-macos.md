@@ -353,3 +353,37 @@ kernels use 119 and 107 VGPRs (1 and 2 waves a SIMD).
   every row count (N = 2, 4, 8: 23.9, 43.8, 81.8: no change, so the weight latency is not what the rows wait for), `TF_STREAM_CB=1|4`, `TF_STREAM_LPC=8`.
 - Open: what bounds the 4-row tile (per-wave VALU of the x preparation and the code pairs against LDS and L1 traffic needs counters or a
   kernel with one of them removed); b <= 2 ms is not reached.
+
+### Several rows, redesigned launch shape (gfx900), and the clock
+
+Measured at DPM clocks (boot with `AM_SMU_DPM=1`, sclk 1590 MHz) unless a row says 852: ut4g-boot's default leaves the VBIOS bootup clocks (852 MHz),
+and a VALU microbenchmark (8 independent chains of v_fma_f32 / v_mad_mix_f32, 8 waves a SIMD) runs 2.46 T lane-ops/s there, 4.46 T under DPM; the 4B's
+one-row decode goes 64.1 -> 81.6 tok/s on the clock alone.
+
+Round time (ms), `--parallel N` with N concurrent 128-token requests, same code at each clock:
+
+| clock | build | N=1 | N=2 | N=4 | N=8 |
+| --- | --- | --- | --- | --- | --- |
+| 852 MHz | before (d80741d36d) | 15.7 | 27.9 | 43.3 | 80.1 |
+| 852 MHz | after | 15.4 | 25.5 | 41.1 | 70.6 |
+| 1590 MHz | before (d80741d36d) | 12.4 | 16.6 | 29.5 | 53.0 |
+| 1590 MHz | after | 12.3 | 17.1 | 25.2 | 44.6 |
+
+b (a round's extra ms a row): 9 -> about 8.5 at 852 MHz; 5.5 -> 4.3 at 1590 MHz (N = 4 / 8). Target b <= 2 ms is not met.
+
+What the ablations say (the 4-row tile, 18432 x 2560, 852 MHz, 265 us against 109 us at one row): without the stage 250, with LDS reads of x replaced by
+constants 242, with no x at all 241, with a quarter of the dots 172 (so the dots are about 125 us, the other VALU and the weight stream the rest), without
+x loads at k = 9216 (unstaged) 223 -> 123. The tile is VALU-bound: the FMA count is fixed by keeping every row's sum order (4 rows of 189 M
+v_mad_mix is 125 us at 1.5 T/s), 1.5 VALU a FMA with the code pairs, 2 waves a SIMD (forcing 3 or 4 waves: slower or spilled, `amdgpu_waves_per_eu`).
+The floor for a row at perfect VALU use is about 1.7 ms a round at 852 MHz.
+
+Kept:
+- gfx900 several-row tiles of at most 8 accumulators a lane (R * CB <= 8) run 16 wave groups a block (512 threads, `stream_threads`, launch_bounds) and
+  stage x in LDS for 4 rows (k <= 4096, up to 40 KB) as well as 2 and 1: the stage is read by 4 times the columns: 4-row gate/up 396 -> 269 us at 852 MHz.
+- Rows 3 and above pick a tile of at most 8 accumulators (4 rows x 4 columns took 195 VGPRs, one wave a SIMD: 8 rows 672 -> 485 us).
+- Rows 3 and above whose 4-row stage does not fit (k = 9216: 78 KB) take 2-row blocks, which stage in 39 KB: down at 4 rows 142 -> 94 us (DPM).
+- `kernel_tests/affine/stream.zig`: row r of a several-row launch is bit-identical to the launch of row r alone at m = 2, 3, 4, 5, 8, 16 (k = 2560, 4096, 9216);
+  `TF_STREAM_BENCH=1` times the tile by rows.
+Not kept: the one-row tile's weight prefetch at every row count (no change), `TF_STREAM_CB`, `TF_STREAM_LPC`, forced occupancy.
+Open: at DPM the 2-row k = 9216 launch measured 106 us after dropping an `amdgpu_waves_per_eu(1)` experiment attribute (67 us with it; whether that launch
+ran at 195 VGPRs and 512 threads is unchecked) and N = 2 is 17.1 against 16.6 ms; the per-row small kernels (gdn plan, conv split, plan apply) are not batched.

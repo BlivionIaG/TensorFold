@@ -83,8 +83,9 @@ pub const stream_waves = 4; // kStreamWaves
 pub const streams_wanted = 3000; // kStreamWavesWanted
 pub const stream_code_words = 32; // kStreamCodeWords
 const gcn5_stage_bytes = 12 << 10; // the most a gfx900 block stages at one row
-const gcn5_stage_rows_bytes = 22 << 10; // and at two or four rows
-const stage_bytes_max = 32 << 10; // the most LDS a block stages x in
+const gcn5_stage_rows_bytes = 22 << 10; // and at two or four rows of 4 wave groups
+const gcn5_stage_wide_bytes = 40 << 10; // and of 16 wave groups
+const stage_bytes_max = 40 << 10; // the most LDS a block stages x in
 const stage_flag: c_int = 0x100; // the bit of the launch's lpc_log2 that tells the gfx900 stream tile to stage x
 
 /// The K-parallel tiles of a short prompt: cb columns a lane set, r rows a pass over up to rb row blocks.
@@ -262,6 +263,11 @@ pub const Kernels = struct {
         return goShared(r, f, grid, block, 0, s, args);
     }
 
+    /// The wave groups a stream block runs (kStreamWaves, or stream_threads(rows, cb) / 32 on gfx900's several-row tiles of cb columns a lane).
+    fn streamGroups(k: *const Kernels, rows: u8, cb: c_int) c_int {
+        return if (k.caps.generation == .gcn5 and rows > 1 and rows * cb <= 8) 16 else stream_waves;
+    }
+
     fn goShared(r: *const runtime.Runtime, f: Function, grid: hl.Dim3, block: hl.Dim3, shared: u32, s: abi.Stream, args: *hl.Args) Error!void {
         if (s == util.counting) return;
         try hl.launch(f, .{ .grid = grid, .block = block, .shared = shared }, .{ .r = r, .handle = s }, args);
@@ -269,12 +275,13 @@ pub const Kernels = struct {
 
     /// LDS bytes a gfx900 block stages its `rows` rows of x in, 0 for none (tiles/stream.hpp stream_stage): while the stage is small. One row:
     /// 5.8 KB at k = 2560, 9.2 KB at 4096; not at k = 9216, 19.5 KB: 3 blocks a CU, 92 us staged, 66 unstaged. Several rows (`rows` the row
-    /// tile's, 2 or 4): up to 22 KB, two blocks a CU. Other GPUs' tiles do not stage.
-    pub fn stageBytes(k: *const Kernels, rows: c_int, depth: c_int) u32 {
-        // four rows measured slower staged (N = 4 streams 43 -> 48 ms a round): their 107 VGPRs and the stage's barrier outweigh the x loads saved
-        if (k.caps.generation != .gcn5 or !k.stage_on or (rows > 2 and k.tune.stage < 0)) return 0;
+    /// tile's, 2 or 4): up to 22 KB at 4 wave groups a block, 36 KB at 16 (one block a CU). Other GPUs' tiles do not stage.
+    pub fn stageBytes(k: *const Kernels, rows: c_int, depth: c_int, groups: c_int) u32 {
+        // a four-row tile's 4 wave groups a block measured slower staged (N = 4 streams 43 -> 48 ms a round): every block stages x for 8 columns a wave
+        // group; its 16-group blocks read it for four times the columns
+        if (k.caps.generation != .gcn5 or !k.stage_on or (rows > 2 and groups == stream_waves and k.tune.stage < 0)) return 0;
         const bytes = @as(i64, rows) * (2 * @as(i64, depth) + @divTrunc(depth, 32) * 4);
-        const limit: i64 = if (rows == 1) gcn5_stage_bytes else gcn5_stage_rows_bytes;
+        const limit: i64 = if (rows == 1) gcn5_stage_bytes else if (groups > stream_waves) gcn5_stage_wide_bytes else gcn5_stage_rows_bytes;
         const repays = if (k.tune.stage >= 0) k.tune.stage == 1 else bytes <= limit;
         return if (repays and bytes <= stage_bytes_max) @intCast(bytes) else 0;
     }
@@ -394,10 +401,13 @@ pub const Kernels = struct {
         var sides = sides_in;
         var lpc_log2 = stream_pick.lanesLog2(k.caps.generation, a.k);
         if (k.tune.lpc >= 4 and k.tune.lpc < 32 and std.math.isPowerOfTwo(@as(u32, @intCast(k.tune.lpc)))) lpc_log2 = @min(lpc_log2, std.math.log2_int(u32, @intCast(k.tune.lpc)));
-        const ri = stream_pick.rowTile(a.m);
-        const tile = stream_pick.pickWanted(k.tune.cb, k.caps.generation, a.m, lpc_log2, a.bits, total_n, items, sides.pair_cols > 0);
-        const stage = k.stageBytes(stream_rows[ri], a.k);
-        const per_block = tile.per_block;
+        var ri = stream_pick.rowTile(a.m);
+        // gfx900: three rows and more whose four-row stage does not fit take two-row blocks when those do (k = 9216: 78 KB and 39 KB)
+        if (ri == 2 and k.caps.generation == .gcn5 and k.stageBytes(4, a.k, 16) == 0 and k.stageBytes(2, a.k, 16) > 0) ri = 1;
+        const tile = stream_pick.pickWantedAt(k.tune.cb, k.caps.generation, ri, a.m, lpc_log2, a.bits, total_n, items, sides.pair_cols > 0);
+        const groups = k.streamGroups(stream_rows[ri], stream_cbs[tile.at]);
+        const stage = k.stageBytes(stream_rows[ri], a.k, groups);
+        const per_block = tile.per_block * @divExact(groups, stream_waves);
         var blocks: c_uint = cdiv(total_n, per_block);
         if (sides.count > 0) {
             blocks = 0;
@@ -420,7 +430,7 @@ pub const Kernels = struct {
         const f = table[b][ri][tile.at].?;
         // a column block's row blocks run next to each other on x, so the later ones read its weights from cache
         const grid = stream_layout.grid(k.stream_interleave, blocks, cdiv(a.m, stream_rows[ri]), items);
-        try goShared(r, f, grid, .{ .x = 32 * stream_waves }, stage, s, &args);
+        try goShared(r, f, grid, .{ .x = @intCast(32 * groups) }, stage, s, &args);
     }
 
     /// One row on the row tile: a lane owns a group, a wave reads a column's row in one run.

@@ -140,3 +140,135 @@ test "the stream tile writes the same bytes with x staged in LDS as with each la
     const pinned = if (!rig.fp16) pinned_bf16 else if (flush) pinned_f16_gfx900_flush else if (gcn5) pinned_f16_gfx900 else pinned_f16;
     try base.expect(hash == pinned, "stream: the bytes hash to 0x{x}, the tile before the stage wrote 0x{x}", .{ hash, pinned });
 }
+
+fn wall_ns() u64 {
+    var ts: std.c.timespec = undefined;
+    _ = std.c.clock_gettime(.MONOTONIC, &ts);
+    return @intCast(@as(i64, ts.sec) * 1_000_000_000 + ts.nsec);
+}
+
+// TF_STREAM_BENCH=1: the stream tile's time at the 4B's decode shapes by row count, back to back on a stream (what a graph replay pays).
+test "time the stream tile by rows" {
+    if (std.c.getenv("TF_STREAM_BENCH") == null) return error.SkipZigTest;
+    const b = try base.Rig.open(1 << 20);
+    defer b.close();
+    var t = prod.Rig.open(b);
+    var rng: data.Rng = .{ .state = 0x51ED270B27C1F5E3 };
+    const shapes = [_][2]usize{ .{ 18432, 2560 }, .{ 2560, 9216 }, .{ 12352, 2560 }, .{ 2560, 4096 }, .{ 248320, 2560 } };
+    const rows = [_]usize{ 1, 2, 3, 4, 8, 16 };
+    const most = 16;
+    for (shapes) |sh| {
+        const n = sh[0];
+        const k = sh[1];
+        const hx = try data.fill(gpa, u16, most * k, &rng, if (t.fp16) data.makeX16 else data.makeXB);
+        defer gpa.free(hx);
+        const hw = try data.fill(gpa, u32, n * k / 8, &rng, data.makeWord);
+        defer gpa.free(hw);
+        const hs = try data.fill(gpa, u16, n * k / 64, &rng, data.makeScale);
+        defer gpa.free(hs);
+        const hb = try data.fill(gpa, u16, n * k / 64, &rng, data.makeBias);
+        defer gpa.free(hb);
+        var x = try Buffer.fromHost(t.base, hx);
+        defer x.free();
+        var words = try Buffer.fromHost(t.base, hw);
+        defer words.free();
+        var scale = try Buffer.fromHost(t.base, hs);
+        defer scale.free();
+        var bias = try Buffer.fromHost(t.base, hb);
+        defer bias.free();
+        var out = try Buffer.alloc(t.base, most * n * 4);
+        defer out.free();
+        for (rows) |m| {
+            const a: affine.Arg = .{
+                .x = x.ptr,
+                .words = words.ptr,
+                .scale = .{ .p = scale.ptr, .kind = 1 },
+                .bias = .{ .p = bias.ptr, .kind = 1 },
+                .out = out.ptr,
+                .m = @intCast(m),
+                .n = @intCast(n),
+                .k = @intCast(k),
+                .bits = 4,
+                .group = 64,
+                .fp16 = @intFromBool(t.fp16),
+            };
+            for (0..4) |_| try t.kernels.streamGo(&t.base.r, a, .{}, @intCast(n), 1, t.base.stream.handle);
+            try t.base.stream.synchronize();
+            const t0 = wall_ns();
+            for (0..40) |_| try t.kernels.streamGo(&t.base.r, a, .{}, @intCast(n), 1, t.base.stream.handle);
+            try t.base.stream.synchronize();
+            const us = @as(f64, @floatFromInt(wall_ns() - t0)) / 1000.0 / 40.0;
+            const bytes = @as(f64, @floatFromInt(n * k)) * 0.5625;
+            std.debug.print("  stream n{d} k{d} m{d}: {d:.1} us  {d:.0} GB/s of weights\n", .{ n, k, m, us, bytes / us / 1000.0 });
+        }
+    }
+}
+
+// Row r of a several-row launch is the launch of row r alone, bit for bit: the tiles' sums go in the order a row alone takes, at every row tile.
+test "a row of a several-row stream launch writes the bytes of that row alone" {
+    const b = try base.Rig.open(1 << 20);
+    defer b.close();
+    var t = prod.Rig.open(b);
+    var rng: data.Rng = .{ .state = 0x6A09E667F3BCC908 };
+    const rows = [_]usize{ 2, 3, 4, 5, 8, 16 };
+    const most = rows[rows.len - 1];
+    var bad: usize = 0;
+    for ([_][2]usize{ .{ 1006, 2560 }, .{ 202, 4096 }, .{ 300, 9216 } }) |sh| {
+        const n = sh[0];
+        const k = sh[1];
+        const hx = try data.fill(gpa, u16, most * k, &rng, if (t.fp16) data.makeX16 else data.makeXB);
+        defer gpa.free(hx);
+        const hw = try data.fill(gpa, u32, n * k / 8, &rng, data.makeWord);
+        defer gpa.free(hw);
+        const hs = try data.fill(gpa, u16, n * k / 64, &rng, data.makeScale);
+        defer gpa.free(hs);
+        const hb = try data.fill(gpa, u16, n * k / 64, &rng, data.makeBias);
+        defer gpa.free(hb);
+        var x = try Buffer.fromHost(t.base, hx);
+        defer x.free();
+        var words = try Buffer.fromHost(t.base, hw);
+        defer words.free();
+        var scale = try Buffer.fromHost(t.base, hs);
+        defer scale.free();
+        var bias = try Buffer.fromHost(t.base, hb);
+        defer bias.free();
+        var outs: [2]Buffer = .{ try Buffer.alloc(t.base, most * n * 4), try Buffer.alloc(t.base, most * n * 4) };
+        defer for (&outs) |*o| o.free();
+        const got = try gpa.alloc(u8, 2 * most * n * 4);
+        defer gpa.free(got);
+        for (rows) |m| {
+            const arg: affine.Arg = .{
+                .x = x.ptr,
+                .words = words.ptr,
+                .scale = .{ .p = scale.ptr, .kind = 1 },
+                .bias = .{ .p = bias.ptr, .kind = 1 },
+                .out = outs[0].ptr,
+                .m = @intCast(m),
+                .n = @intCast(n),
+                .k = @intCast(k),
+                .bits = 4,
+                .group = 64,
+                .fp16 = @intFromBool(t.fp16),
+            };
+            try outs[0].fill8(0xA5, null);
+            try outs[1].fill8(0xA5, null);
+            try t.kernels.streamGo(&t.base.r, arg, .{}, @intCast(n), 1, t.base.stream.handle);
+            for (0..m) |r| {
+                var one = arg;
+                one.m = 1;
+                one.x = x.ptr + r * k * 2;
+                one.out = outs[1].ptr + r * n * 4;
+                try t.kernels.streamGo(&t.base.r, one, .{}, @intCast(n), 1, t.base.stream.handle);
+            }
+            try t.base.stream.synchronize();
+            const len = m * n * 4;
+            try outs[0].download(0, got[0..len]);
+            try outs[1].download(0, got[len..][0..len]);
+            if (!std.mem.eql(u8, got[0..len], got[len..][0..len])) {
+                std.debug.print("  stream n{d} k{d} m{d}: a row differs from its launch alone\n", .{ n, k, m });
+                bad += 1;
+            }
+        }
+    }
+    try base.expect(bad == 0, "stream: {d} several-row launches differ from their rows alone", .{bad});
+}
