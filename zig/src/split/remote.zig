@@ -8,6 +8,9 @@ const pipeline = @import("pipeline.zig");
 
 const c = std.c;
 
+/// The most sequences one server hosts.
+pub const max_streams = 8;
+
 pub const Error = error{ Socket, PeerClosed, BadMessage, PeerFailed, Timeout, MapFailed };
 
 const magic: u32 = 0x5350_4c54;
@@ -17,11 +20,12 @@ const Op = enum(u8) { hello, step, finish, reset, bye };
 /// One request: `a`..`d` carry the operation's words (hello: window offset in the object, window length, object size;
 /// step: input offset and length, output offset; the output length, the rows and the sequence ride in `len`, `rows` and
 /// `seq`). A step's input and output are in the window: the pipeline stages the tokens it hands the stage there.
+/// `stream` names the sequence's stage when the server hosts several.
 const Request = extern struct {
     magic: u32 = magic,
     op: u8,
     level: u8 = 0,
-    pad: u16 = 0,
+    stream: u16 = 0,
     rows: u32 = 1,
     seq: u32 = 0,
     len: u32 = 0,
@@ -91,6 +95,9 @@ fn unixAddr(path: []const u8) Error!c.sockaddr.un {
 pub const Client = struct {
     fd: c_int,
     window: []u8,
+    lanes: [max_streams]Lane = undefined,
+
+    const Lane = struct { client: *Client, stream: u16 };
 
     /// Connects to the server at `path` (it may still be starting: retried until `timeout_ns`) and hands it the window
     /// as `shm_fd`: the object's descriptor, where the window starts in it, and the object's size.
@@ -135,19 +142,28 @@ pub const Client = struct {
         return at - base;
     }
 
+    /// The host stage of sequence 0.
     pub fn peer(cl: *Client) pipeline.Peer {
-        return .{ .ptr = cl, .step = stepFn, .finish = finishFn };
+        return cl.peerOf(0);
+    }
+
+    /// A `Peer` for the server's stage `stream`; the stream's number rides in a context the client keeps.
+    pub fn peerOf(cl: *Client, stream: u16) pipeline.Peer {
+        std.debug.assert(stream < max_streams);
+        cl.lanes[stream] = .{ .client = cl, .stream = stream };
+        return .{ .ptr = &cl.lanes[stream], .step = stepFn, .finish = finishFn };
     }
 
     fn stepFn(ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
-        const cl: *Client = @ptrCast(@alignCast(ptr));
-        const req: Request = .{ .op = @backingInt(Op.step), .level = @backingInt(level), .rows = rows, .seq = seq, .len = @intCast(out.len), .a = try cl.offsetOf(input), .b = input.len, .d = try cl.offsetOf(out) };
+        const lane: *Lane = @ptrCast(@alignCast(ptr));
+        const cl = lane.client;
+        const req: Request = .{ .op = @backingInt(Op.step), .level = @backingInt(level), .stream = lane.stream, .rows = rows, .seq = seq, .len = @intCast(out.len), .a = try cl.offsetOf(input), .b = input.len, .d = try cl.offsetOf(out) };
         return (try cl.call(req)).n;
     }
 
     fn finishFn(ptr: *anyopaque, seq: u32) anyerror!void {
-        const cl: *Client = @ptrCast(@alignCast(ptr));
-        _ = try cl.call(.{ .op = @backingInt(Op.finish), .seq = seq });
+        const lane: *Lane = @ptrCast(@alignCast(ptr));
+        _ = try lane.client.call(.{ .op = @backingInt(Op.finish), .stream = lane.stream, .seq = seq });
     }
 
     /// The server's stage back to position 0 (before a new pipeline runs over the window).
@@ -161,14 +177,14 @@ pub const Client = struct {
     }
 };
 
-/// The server's stage: `bind` is told the window as this process maps it (it may keep it until `unbind`), `reset`
-/// returns the stage to position 0, `peer` is the stage itself.
+/// The server's stages: `bind` is told the window as this process maps it (it may keep it until `unbind`), `reset`
+/// returns every stage to position 0, `peers` are the stages themselves, one a sequence.
 pub const Host = struct {
     ptr: *anyopaque,
     bind: *const fn (ptr: *anyopaque, window: []u8) anyerror!void,
     unbind: *const fn (ptr: *anyopaque) void,
     reset: *const fn (ptr: *anyopaque) anyerror!void,
-    peer: pipeline.Peer,
+    peers: []const pipeline.Peer,
 };
 
 /// Listens at `path` for one client and serves it until it says bye or hangs up. `ready` is called once the socket
@@ -223,12 +239,14 @@ pub fn serveOver(fd: c_int, host: Host) Error!void {
                 const w = window orelse return error.BadMessage;
                 if (req.d + req.len > w.len or req.a + req.b > w.len) return error.BadMessage;
                 const level: pipeline.Level = if (req.level == 0) .a else .b;
-                if (host.peer.step(host.peer.ptr, req.seq, req.rows, w[req.a..][0..req.b], w[req.d..][0..req.len], level)) |n| reply.n = @intCast(n) else |err| {
+                if (req.stream >= host.peers.len) return error.BadMessage;
+                const pe = host.peers[req.stream];
+                if (pe.step(pe.ptr, req.seq, req.rows, w[req.a..][0..req.b], w[req.d..][0..req.len], level)) |n| reply.n = @intCast(n) else |err| {
                     std.debug.print("split remote: step {d}: {s}\n", .{ req.seq, @errorName(err) });
                     reply.status = 1;
                 }
             },
-            .finish => if (host.peer.finish(host.peer.ptr, req.seq)) |_| {} else |err| {
+            .finish => if (req.stream >= host.peers.len) return error.BadMessage else if (host.peers[req.stream].finish(host.peers[req.stream].ptr, req.seq)) |_| {} else |err| {
                 std.debug.print("split remote: finish {d}: {s}\n", .{ req.seq, @errorName(err) });
                 reply.status = 1;
             },
@@ -272,8 +290,11 @@ const Adder = struct {
     last_rows: u32 = 0,
     finished: u32 = 0,
 
+    peers: [2]pipeline.Peer = undefined,
+
     fn host(a: *Adder) Host {
-        return .{ .ptr = a, .bind = bind, .unbind = unbind, .reset = reset, .peer = .{ .ptr = a, .step = step, .finish = finish } };
+        a.peers = .{ .{ .ptr = a, .step = step, .finish = finish }, .{ .ptr = a, .step = step, .finish = finish } };
+        return .{ .ptr = a, .bind = bind, .unbind = unbind, .reset = reset, .peers = &a.peers };
     }
     fn bind(ptr: *anyopaque, w: []u8) anyerror!void {
         @as(*Adder, @ptrCast(@alignCast(ptr))).window = w;
@@ -339,13 +360,18 @@ test "a step, a finish and a reset cross a socket pair; the window is the same m
     // the rows of a chunk travel as a count
     try std.testing.expectEqual(@as(usize, 4), try p.step(p.ptr, 8, 3, cl.window[0..4], cl.window[64..68], .a));
     try std.testing.expectEqual(@as(u32, 3), adder.last_rows);
+    // a second stage answers to its own number
+    const p1 = cl.peerOf(1);
+    try std.testing.expectEqual(@as(usize, 4), try p1.step(p1.ptr, 1, 1, cl.window[0..4], cl.window[64..68], .a));
+    try p1.finish(p1.ptr, 1);
+    try std.testing.expectEqual(@as(u32, 2), adder.finished);
     // bytes outside the window are refused before they are sent
     var stray: [4]u8 = undefined;
     try std.testing.expectError(error.BadMessage, p.step(p.ptr, 9, 1, &stray, cl.window[64..68], .a));
     _ = c.shutdown(pair[0], c.SHUT.WR);
     thread.join();
     try std.testing.expectEqual(@as(u32, 1), adder.resets);
-    try std.testing.expectEqual(@as(u32, 1), adder.finished);
+    try std.testing.expectEqual(@as(u32, 2), adder.finished);
     try std.testing.expectEqual(pipeline.Level.a, adder.last_level);
     try std.testing.expect(adder.window == null);
 }
