@@ -4,7 +4,7 @@
 //   HIPPROF_REAL=<hipmac>/build/libamdhip64.dylib TENSORFOLD_HIP=<this>.dylib TF_POLICY=graphs=off tensorfold-native serve ...
 // Every symbol of zig/src/hip/abi.zig (and the two it looks up besides) is forwarded unchanged (the arguments are integers and pointers,
 // at most 11 of them, so one signature carries them all). hipModuleLaunchKernel is timed:
-//   HIPPROF_TRACE=file lists the first 3000 launches (name, grid, block, m n k) in order
+//   HIPPROF_TRACE=file lists the first 3000 launches (HIPPROF_TRACE_N=n: the first n) (name, grid, block, m n k) in order
 //   each   (default) launch, then hipStreamSynchronize, wall clock of both: one kernel's time + the runtime's fixed submit/complete cost
 //   rep    HIPPROF_REP=N (default 16): after the timed launch, the same launch N more times back to back, one sync: the pipelined time of
 //          a kernel in a stream (what a graph replay pays). Only kernels whose name contains HIPPROF_REP_MATCH (default "affine_") and
@@ -280,7 +280,7 @@ __attribute__((visibility("default"))) u hipModuleLaunchKernel(u a, u b, u c, u 
     static FILE *trace;
     static int trace_n;
     if (!trace && getenv("HIPPROF_TRACE")) trace = fopen(getenv("HIPPROF_TRACE"), "w");
-    if (trace && trace_n < 3000) {
+    if (trace && trace_n < (getenv("HIPPROF_TRACE_N") ? atoi(getenv("HIPPROF_TRACE_N")) : 3000)) {
         fprintf(trace, "%s g=%u,%u,%u b=%u,%u,%u m=%d n=%d k=%d\n", name, (unsigned)b, (unsigned)c, (unsigned)d, (unsigned)e, (unsigned)f,
                 (unsigned)g, m, n, kk);
         fflush(trace);
@@ -314,10 +314,31 @@ __attribute__((visibility("default"))) u hipModuleLaunchKernel(u a, u b, u c, u 
         pthread_mutex_unlock(&mu);
         return r;
     }
+    if (getenv("HIPPROF_XCHK") && strstr(name, "affine_dot2_stream") && j && m * kk <= 16384) {
+        static int seen;
+        if (seen++ < 60) {
+            static uint16_t xb[16384];
+            u xp;
+            memcpy(&xp, ((char **)j)[0], 8);
+            get("hipMemcpyDtoH")((u)xb, xp, (u)(2 * m * kk), 0, 0, 0, 0, 0, 0, 0, 0);
+            int bad = 0;
+            float mx = 0;
+            for (int x = 0; x < m * kk; x++) {
+                int ex = (xb[x] >> 10) & 31;
+                if (ex == 31) bad++;
+                else {
+                    float v = (xb[x] & 0x3ff) / 1024.f * (ex ? 1 << (ex > 15 ? ex - 15 : 0) : 0) + 0;
+                    if (v > mx) mx = v;
+                }
+            }
+            fprintf(stderr, "hipprof: #%d %s k=%d n=%d m=%d x non-finite %d of %d, rough max %g\n", seen, name, kk, n, m, bad, m * kk, mx);
+        }
+    }
     double t0 = now();
     u r = p(a, b, c, d, e, f, g, h, i, j, k);
     sync(i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     double dt = now() - t0;
+    if (getenv("HIPPROF_SLOW_US") && dt > atof(getenv("HIPPROF_SLOW_US"))) fprintf(stderr, "hipprof: %.0f us  %s g=%u,%u,%u b=%u,%u,%u m=%d n=%d k=%d\n", dt, name, (unsigned)b, (unsigned)c, (unsigned)d, (unsigned)e, (unsigned)f, (unsigned)g, m, n, kk);
     double rep = 0;
     if (rep_n > 0 && strstr(name, rep_match)) {
         double t1 = now();
