@@ -52,6 +52,7 @@ fn batch(order: pipeline.Order, level: pipeline.Level, range: view.Range, n: usi
     const m = t.e.model();
     const stamped = order == .metal_first;
 
+    const refilled = fake.refills();
     const tokens = [8]u32{ 11, 12, 13, 14, 15, 16, 17, 18 };
     var positions: [8]usize = undefined;
     for (0..8) |i| {
@@ -124,6 +125,7 @@ fn batch(order: pipeline.Order, level: pipeline.Level, range: view.Range, n: usi
         const named = std.mem.indexOfScalar(u8, even[0..k], @intCast(i)) != null;
         try T.expectEqual(before[i] + @intFromBool(named), lane.st.position(i));
     }
+    try T.expectEqual(refilled, fake.refills());
     // the first batch's words are still where it left them: the second filled the other buffer
     try expectWindows(lane.st.plans[turn].host.slice(u32), n, slots[0..n], &first_positions, &lane);
 }
@@ -181,12 +183,15 @@ test "split stage: warm-up runs a decode batch of every size up to the slots" {
     var one = try stage.HipLayerStage.init(t.e, 16, .{ .max_rows = 4 });
     defer one.deinit();
     fake.clear();
+    const refilled = fake.refills();
     try one.warm();
     const single = fake.launches().len;
     var four = try stage.HipLayerStage.init(t.e, 16, .{ .max_rows = 4, .slots = 4 });
     defer four.deinit();
     fake.clear();
     try four.warm();
+    // no step's plan words were refilled before the stream's copy of the step before had run
+    try T.expectEqual(refilled, fake.refills());
     // the batches of 2, 3 and 4 rows, plain and stamped, and the widest at the far end add rounds of their own
     try T.expect(fake.launches().len > single);
     var consumes: usize = 0;
@@ -215,10 +220,13 @@ test "split stage: lanes of several sequences over one engine keep their own pla
     var works: [5]split.streams.Work = undefined;
     for (&works, prompts, &outs) |*w, p, *o| w.* = .{ .prompt = p, .out = o };
     fake.clear();
+    const refilled = fake.refills();
     try split.streams.generateLanes(&.{
         .{ .pipe = &lanes[0].p, .works = works[0..3] },
         .{ .pipe = &lanes[1].p, .works = works[3..5] },
     }, 2);
+    // a lane's steps took their plan buffers in turn, each refilled only after a step collected since its last copy
+    try T.expectEqual(refilled, fake.refills());
     // every sequence ran its prompt and its two decode steps in its own slot
     const lens = [5]usize{ 3, 2, 4, 3, 1 };
     for (lens[0..3], 0..) |len, slot| try T.expectEqual(len + 2, lanes[0].st.position(slot));
