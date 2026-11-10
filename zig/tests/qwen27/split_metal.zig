@@ -1,7 +1,8 @@
 //! The Mac's side of a model split with a card in another process (TF_SPLIT_QWEN_DIR, the Qwen3.5-4B MLX 4-bit
 //! directory). `ref FILE [TOKENS]` runs the model unsplit on this GPU and writes the tokens and predictions the card's
-//! process compares with (split.reference). `serve SOCKET FIRST LAST [SEQUENCES]` holds layers [FIRST, LAST), a stage for
-//! each of SEQUENCES (default 1), and is the host stage of the pipeline that process runs (split.remote): the window is
+//! process compares with (split.reference). `serve SOCKET FIRST LAST [LANES [SEQS_PER_LANE]]` holds layers [FIRST, LAST), a
+//! stage for each of LANES (default 1; one pipeline each, the peers of split.remote.Host) holding the state of SEQS_PER_LANE
+//! sequences (default 1), and is the host stage of the pipeline that process runs (split.remote): the window is
 //! the card's pinned memory, mapped here and wrapped for Metal. `parallel REFERENCE SEQUENCES [CHUNK [REPEAT]]` is the baseline the
 //! split is compared with: the Mac alone serving SEQUENCES concurrent copies of the reference's prompt in one shared
 //! decode round (one row a sequence, one engine), each prompt (REPEAT times over, default 1) prefilled in steps of CHUNK positions (default 24). With REPEAT above 1 the
@@ -159,13 +160,15 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     if (args.len < 3) return error.MissingArgument;
     if (std.mem.eql(u8, args[1], "serve")) {
-        if (args.len != 5 and args.len != 6) return error.MissingArgument;
+        if (args.len < 5 or args.len > 7) return error.MissingArgument;
         const range: q.range.Range = .{ .first = try std.fmt.parseInt(usize, args[3], 10), .last = try std.fmt.parseInt(usize, args[4], 10) };
-        // one stage a sequence the client may run at once (the optional sixth argument, default 1)
-        const count: usize = if (args.len == 6) try std.fmt.parseInt(usize, args[5], 10) else 1;
-        if (count == 0 or count > split.streams.max_streams) return error.BadSequenceCount;
+        // one stage a lane the client runs (the optional fifth argument), a slot in it a sequence of the lane (the sixth)
+        const lanes: usize = if (args.len >= 6) try std.fmt.parseInt(usize, args[5], 10) else 1;
+        const per_lane: usize = if (args.len == 7) try std.fmt.parseInt(usize, args[6], 10) else 1;
+        if (lanes == 0 or lanes > split.streams.max_streams) return error.BadLaneCount;
+        if (per_lane == 0 or per_lane > h.max_sequences) return error.BadSequenceCount;
         const src: h.Source = .{ .ctx = &io, .load = loadRange, .layers = 0 };
-        var s = try Served.init(a, try h.Half.initSequences(a, src, range, count));
+        var s = try Served.init(a, try h.Half.initLanes(a, src, range, lanes, @intCast(per_lane)));
         defer s.deinit(a);
         try split.remote.serve(args[2], s.host(), ready);
         return;
