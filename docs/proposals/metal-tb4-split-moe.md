@@ -712,7 +712,7 @@ sequences for rows 3 and 4 and for two sequences over one engine (disjoint plan 
 
 **Second card run (2026-11-10; Qwen3.5-4B MLX 4-bit, the same card, M4 Pro; `tb4-offload-card` = this branch merged with
 the gate-passing `vega-macos-up`).** `tf-offload-card MODEL REF SOCKET ORDER CUT streams=N chunk=C repeat=R` with
-`tf-offload-metal serve SOCKET FIRST LAST N` (commands in the card scripts below). One prompt of 9 tokens
+`tf-offload-metal serve SOCKET FIRST LAST N` (FIRST..LAST the Mac's layer range; raw lines in [card_streams.txt](metal-tb4-split-moe-probe/card_streams.txt)). One prompt of 9 tokens
 (or 72, the same prompt repeated 8 times) and 40 generated tokens a sequence; decode time is the run with the tokens minus the run with the
 prompt only, so a rate is good to a few tok/s (repeats of the same run vary by that much). Every run's tokens were checked: 9-token prompts
 against the reference file, 72-token prompts against the same run one position a step. Every sequence of every run was token-identical.
