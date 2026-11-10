@@ -46,7 +46,7 @@ pub const Packed = struct {
     pub const owners = [_]u32{ 2, 8, 14, 20 };
     pub const ratios = [_]u32{ 2, 2, 2, 1 };
 
-    fn ringBytes(p: Packed) usize {
+    pub fn ringBytes(p: Packed) usize {
         return @as(usize, p.layers) * window * ring_stride;
     }
     pub const partial_bytes = 7 * 2 * 512 * 4;
@@ -59,17 +59,17 @@ pub const Packed = struct {
         for (ratios) |r| n += @as(usize, capacity / r) * (main_stride + index_stride);
         return n;
     }
-    fn mainOff(p: Packed, id: usize) usize {
+    pub fn mainOff(p: Packed, id: usize) usize {
         var off: usize = 0;
         for (ratios[0..id]) |r| off += @as(usize, p.capacity / r) * (main_stride + index_stride);
         return off;
     }
-    fn partialOff(p: Packed, id: usize) usize {
+    pub fn partialOff(p: Packed, id: usize) usize {
         var off = p.ringBytes();
         for (ratios[0..id]) |r| off += 2 * r * 512 * 4;
         return off;
     }
-    fn captureOff(p: Packed, id: usize) usize {
+    pub fn captureOff(p: Packed, id: usize) usize {
         return p.ringBytes() + partial_bytes + id * capture_bytes;
     }
 };

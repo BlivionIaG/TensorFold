@@ -6,3 +6,6 @@ pub const plan = @import("plan.zig");
 pub const export_cuda = @import("export.zig");
 pub const metal = @import("metal.zig");
 pub const import_metal = @import("import.zig");
+pub const export_metal = @import("export_metal.zig");
+pub const blob = @import("blob.zig");
+pub const landing = @import("landing.zig");

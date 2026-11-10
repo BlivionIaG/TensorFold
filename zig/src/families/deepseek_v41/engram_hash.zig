@@ -130,6 +130,15 @@ pub const History = struct {
     }
 };
 
+/// The GPU history record (`EngramHistory`: three i32 tail slots then the count, as four words) after `tokens[0..upto]`:
+/// the last three COMPRESSED ids, newest first, then how many exist (3 at most). A restored prefix sets it directly.
+pub fn resumeRecord(map: TokenMap, tokens: []const u32, upto: u32) ![4]u32 {
+    if (upto > tokens.len) return error.InvalidPrefix;
+    var record: [4]u32 = .{ 0, 0, 0, @min(upto, 3) };
+    for (0..@min(upto, 3)) |k| record[k] = try map.get(tokens[upto - 1 - k]);
+    return record;
+}
+
 /// Single sequence, token mask bytes (0=DEAD), output [tokens,24], no allocations or lost chunk history.
 pub fn hashChunk(history: *History, map: TokenMap, meta: Layer, ids: []const u32, mask: ?[]const u8, out: [][columns]u32) !void {
     if (out.len != ids.len or (mask != null and mask.?.len != ids.len)) return error.InvalidEngramChunk;

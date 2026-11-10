@@ -6,9 +6,12 @@ test {
     std.testing.refAllDecls(@import("fp4.zig"));
     std.testing.refAllDecls(@import("plan.zig"));
     std.testing.refAllDecls(@import("export.zig"));
+    std.testing.refAllDecls(@import("export_metal.zig"));
     std.testing.refAllDecls(@import("metal.zig"));
     std.testing.refAllDecls(@import("import.zig"));
     std.testing.refAllDecls(@import("p2.zig"));
+    std.testing.refAllDecls(@import("blob.zig"));
+    std.testing.refAllDecls(@import("landing.zig"));
 }
 test {
     std.testing.refAllDecls(@import("synth.zig"));
@@ -30,4 +33,10 @@ test {
 }
 test {
     _ = @import("guard_test.zig");
+}
+test {
+    _ = @import("export_metal_test.zig");
+}
+test {
+    _ = @import("landing_test.zig");
 }
