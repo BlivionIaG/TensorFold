@@ -59,6 +59,7 @@ test {
     _ = @import("rope_test.zig");
     _ = @import("attention_pick_test.zig");
     _ = state;
+    _ = @import("range.zig");
     _ = projection;
     _ = model;
     _ = quant_gpu;
