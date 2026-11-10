@@ -1,5 +1,6 @@
 //! HIP, built only with -Dhip=true: admission tests in `test`, GPU steps; options on every target (#1165).
 const std = @import("std");
+const offload = @import("offload_hip.zig");
 const builtin = @import("builtin");
 const caps = @import("../src/hip/caps.zig");
 const exlr8_build = @import("exlr8.zig");
@@ -188,12 +189,6 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const family_host = b.addRunArtifact(b.addTest(.{ .root_module = host.family }));
     test_step.dependOn(&family_host.step);
     b.step("test-qwen35-hip-host", "Qwen HIP family CPU tests with inert kernels").dependOn(&family_host.step);
-    // the layer-range and split-stage plumbing runs a recording stand-in for the HIP runtime on kernels that name gfx1030
-    const split_kernels = b.createModule(.{ .root_source_file = b.addWriteFiles().add("kernels.zig", split_stub) });
-    const split_host = engineModules(b, b.graph.host, .Debug, split_kernels, null);
-    const family_split = b.addRunArtifact(b.addTest(.{ .root_module = split_host.family, .filters = &.{"split stage:"} }));
-    test_step.dependOn(&family_split.step);
-    b.step("test-qwen35-split-host", "Qwen HIP layer ranges and the split stage: dry-run launches and plumbing, no device").dependOn(&family_split.step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.flashnext })).step);
     b.step("test-flashnext-proposal-hip-host", "Original Flash Next HIP IDs and head-row spans without device runtime").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.flashnext, .filters = &.{"Flash Next proposal:"} })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.nemotron })).step);
@@ -216,7 +211,7 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const check = engineModules(b, check_target, .Debug, stub_kernels, null);
     b.step("check-native-hip-host", "Compile the real native HIP server with inert kernels, without GPU execution").dependOn(&server(b, check_target, check, build_options).step);
     const gpu = engineModules(b, target, optimize, objects, hip_include);
-    cardProgram(b, target, optimize, gpu);
+    offload.steps(b, target, optimize, gpu, test_step);
     const qwen3_gpu = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("zig/src/families/qwen3/forward_test.zig"),
         .target = target,
@@ -303,41 +298,6 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         .test_step = test_step,
     });
 }
-
-/// `tf-offload-card`: the HIP side of a model split between this Mac's GPU and a card, one process of two. The Mac's
-/// side is `tf-offload-metal` (zig/build/qwen27.zig); they meet over a socket and the window's shared memory, because one
-/// program cannot hold both engines (a source file belongs to one module of a program).
-pub fn cardProgram(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, e: Engine) void {
-    const exe = b.addExecutable(.{ .name = "tf-offload-card", .root_module = b.createModule(.{
-        .root_source_file = b.path("zig/tests/qwen27/split_card.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .imports = &.{ .{ .name = "hip", .module = e.hip }, .{ .name = "qwen3_5", .module = e.family }, .{ .name = "split", .module = e.hip.import_table.get("split").? } },
-    }) });
-    b.step("tf-offload-card", "The HIP half of the Qwen3.5-4B split between this Mac's GPU and a card (opens the card)").dependOn(&b.addInstallArtifact(exe, .{}).step);
-}
-
-/// `tf-offload-hip`: tf-offload with a HIP card as an external device, over hipmac's runtime (TENSORFOLD_HIP or the search path).
-/// Compiles on any macOS host against stub kernels; running it against a card is a step of its own.
-pub fn offloadExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, metal: *std.Build.Module) void {
-    const stub_kernels = b.createModule(.{ .root_source_file = b.addWriteFiles().add("kernels.zig", stub) });
-    const e = engineModules(b, target, optimize, stub_kernels, null);
-    const offload = b.addOptions();
-    offload.addOption(bool, "with_hip", true);
-    const module = b.createModule(.{
-        .root_source_file = b.path("zig/src/split/offload_main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        // hip's own split instance: the device types must be the very ones the adapter returns
-        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "split", .module = e.hip.import_table.get("split").? }, .{ .name = "hip", .module = e.hip } },
-    });
-    module.addOptions("offload_options", offload);
-    const exe = b.addExecutable(.{ .name = "tf-offload-hip", .root_module = module });
-    b.step("tf-offload-hip", "tf-offload probe | plan | demo with the HIP card as an external device (macOS)").dependOn(&b.addInstallArtifact(exe, .{}).step);
-}
-
 /// `tf-qwen35-test`: the model checks on a real checkpoint and GPU.
 fn checksExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, e: Engine) *std.Build.Step.Compile {
     return b.addExecutable(.{ .name = "tf-qwen35-test", .root_module = b.createModule(.{
@@ -411,8 +371,7 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
     });
     const qwen_vision = @import("lighton_hip.zig").vision(b, target, optimize, hip, core, lanes, serve);
     family.addImport("qwen_hip_vision", qwen_vision);
-    // the very split instance hip uses: the external stage implements its types
-    family.addImport("split", hip.import_table.get("split").?);
+    family.addImport("split", hip.import_table.get("split").?); // the very instance hip uses: the external stage implements its types
     const lighton = @import("lighton_hip.zig").module(b, target, optimize, hip, core, lanes, api, serve);
     const flashnext = b.createModule(.{
         .root_source_file = b.path("zig/src/families/flashnext/hip.zig"),
@@ -539,7 +498,7 @@ fn exactTool(b: *std.Build, target: std.Build.ResolvedTarget, e: Engine, family_
 /// A group's source and whether it compiles with IEEE arithmetic (`strict`: -O2 -fno-fast-math, IEEE denormals).
 const Source = struct { path: []const u8, strict: bool = false };
 /// The model-free kernels' source groups, in zig/src/hip/kernels.zig's Group order.
-const groups = [_]Source{
+pub const groups = [_]Source{
     .{ .path = "ops/ops.hip" },
     .{ .path = "ops/act.hip" },
     .{ .path = "attention/attention.hip" },
@@ -572,9 +531,7 @@ const headers = [_][]const u8{
 };
 /// The flags of the kernels' first build: no contraction, wave32 on RDNA, C++20.
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-mno-wavefrontsize64", "-ffp-contract=off" };
-/// `stub` naming gfx1030 (RDNA2: the caps table row with fp16 activations, as the gfx900 target has) with a code object that is eight bytes (a stand-in runtime loads anything): the launcher loads.
-const split_stub = std.fmt.comptimePrint("pub const arch = \"gfx1030\";\nconst blob align(8) = [8]u8{{ 0, 1, 2, 3, 4, 5, 6, 7 }};\npub const images: [{d}][]align(8) const u8 = @splat(&blob);\n", .{groups.len});
-const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
+pub const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, relax_branches: bool, arch: []const u8) *std.Build.Module {
     const files = objectFiles(b, .{ .name = hipcc, .resolved = hipcc_resolved, .device_lib = device_lib, .relax_branches = relax_branches }, arch);
