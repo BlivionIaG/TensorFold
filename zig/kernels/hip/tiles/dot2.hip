@@ -4,6 +4,8 @@
 
 #include <hip/hip_fp16.h>
 
+#include "common/fdot2.hpp"
+
 namespace tf {
 namespace rocm {
 
@@ -30,7 +32,7 @@ __global__ void __launch_bounds__(32) affine_dot2_kernel(Affine a) {
             __half x1 = xrow[base + t + 1];
             __half q0 = code_f16(affine_code(wrow, base + t, a.bits, words));
             __half q1 = code_f16(affine_code(wrow, base + t + 1, a.bits, words));
-            dot = __builtin_amdgcn_fdot2(__halves2half2(x0, x1), __halves2half2(q0, q1), dot, false);
+            dot = TF_FDOT2(__halves2half2(x0, x1), __halves2half2(q0, q1), dot);
             sum += static_cast<float>(x0);
             sum += static_cast<float>(x1);
         }
@@ -171,7 +173,7 @@ __global__ void affine_dot2_tiled(Affine a) {
                 __half x1 = xrow[t + 1];
                 __half q0 = wrow[t];
                 __half q1 = wrow[t + 1];
-                dot = __builtin_amdgcn_fdot2(__halves2half2(x0, x1), __halves2half2(q0, q1), dot, false);
+                dot = TF_FDOT2(__halves2half2(x0, x1), __halves2half2(q0, q1), dot);
                 sum += static_cast<float>(x0);
                 sum += static_cast<float>(x1);
             }
@@ -244,7 +246,7 @@ __global__ void __launch_bounds__(kFastN, 1) affine_dot2_span(Affine a, float* p
                     for (int m = 0; m < Rows; ++m) {
                         __half x0 = xs[m * kFastLd + t];
                         __half x1 = xs[m * kFastLd + t + 1];
-                        dot[m] = __builtin_amdgcn_fdot2(__halves2half2(x0, x1), q, dot[m], false);
+                        dot[m] = TF_FDOT2(__halves2half2(x0, x1), q, dot[m]);
                         sumx[m] += static_cast<float>(x0);
                         sumx[m] += static_cast<float>(x1);
                     }
@@ -314,7 +316,7 @@ __device__ void dot_wide_chunk(float dot[kWideRows], float sumx[kWideRows], cons
             int r = row_group * kWideRows + m;
             __half x0 = xs[r * kFastLd + t];
             __half x1 = xs[r * kFastLd + t + 1];
-            dot[m] = __builtin_amdgcn_fdot2(__halves2half2(x0, x1), q, dot[m], false);
+            dot[m] = TF_FDOT2(__halves2half2(x0, x1), q, dot[m]);
             sumx[m] += static_cast<float>(x0);
             sumx[m] += static_cast<float>(x1);
         }

@@ -1,6 +1,7 @@
 #pragma once
 
-// RDNA2 (dot2), RDNA3 / 3.5 (gfx11 WMMA), RDNA4 (gfx12 WMMA) from the build's TF_* cap macros; RDNA1 is refused.
+// RDNA2 (dot2), RDNA3 / 3.5 (gfx11 WMMA), RDNA4 (gfx12 WMMA) and Vega 10 (gfx900: wave64, no dot instructions) from the build's TF_* cap macros;
+// RDNA1 is refused.
 
 #if !defined(TF_WAVE) || !defined(TF_MATRIX)
 #error "the caps macros come from the build"
@@ -9,7 +10,7 @@
 namespace tf {
 namespace rocm {
 
-enum class Gen { rdna2, rdna3, rdna4 };
+enum class Gen { gcn5, rdna2, rdna3, rdna4 };
 
 // Device code only: host dispatch reads TF_MATRIX from the build.
 #if defined(__gfx1200__) || defined(__gfx1201__) || defined(__gfx12_generic__)
@@ -24,11 +25,27 @@ inline constexpr bool kWmma = true;
     || defined(__gfx1034__) || defined(__gfx1035__) || defined(__gfx1036__)
 inline constexpr Gen kGen = Gen::rdna2;
 inline constexpr bool kWmma = false;
+#elif defined(__gfx900__)
+inline constexpr Gen kGen = Gen::gcn5;
+inline constexpr bool kWmma = false;
 #elif defined(__gfx1010__) || defined(__gfx1011__) || defined(__gfx1012__)
 static_assert(false, "RDNA1 (gfx101x) is not a TensorFold target");
 #else
 inline constexpr Gen kGen = Gen::rdna2;
 inline constexpr bool kWmma = false;
+#endif
+
+// The wavefront width of the build (the caps table's `wave`): 32 on RDNA, 64 on gfx900. The tiles are written in groups of 32 lanes
+// (shuffles take width 32), which on wave64 are the two halves of a wavefront; code that sees the whole wavefront (ballots,
+// readfirstlane of a per-32-lane value) uses this.
+inline constexpr int kWave = TF_WAVE;
+#if defined(__HIP_DEVICE_COMPILE__)
+// gfx9 has wave64 only; the RDNA builds pass -mno-wavefrontsize64 (clang no longer predefines the width: __AMDGCN_WAVEFRONT_SIZE__ is gone)
+#if defined(__GFX9__)
+static_assert(kWave == 64, "gfx9 runs wave64");
+#else
+static_assert(kWave == 32, "the RDNA builds are wave32 (-mno-wavefrontsize64)");
+#endif
 #endif
 
 }  // namespace rocm
