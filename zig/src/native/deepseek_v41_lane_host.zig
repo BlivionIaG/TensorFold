@@ -6,6 +6,7 @@ const tf = @import("tensorfold");
 const ds = tf.deepseek_v41;
 const lanes = tf.lanes;
 const cache_fit = @import("cache_fit.zig");
+const remote = @import("deepseek_v41_remote.zig");
 const Allocator = std.mem.Allocator;
 
 pub const Host = struct {
@@ -20,6 +21,8 @@ pub const Host = struct {
     rec: ?tf.deepseek_v41_profiler.Recorder,
     /// Kept prompt states (the retained prompt cache); null when no budget was asked for.
     cache: ?api.prompt_cache.Store = null,
+    /// --prefill-from's link and pull (null: every prompt is prefilled here).
+    link: ?*remote.Link = null,
 
     pub fn engine(h: *Host) api.Engine {
         return h.host.engine();
@@ -185,12 +188,18 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
             h.host.info_.prompt_cache = true;
         }
     };
+    if (o.remote_prefill.on()) {
+        const id = try remote.checkpointId(a, io, o.dir);
+        try remote.attach(h, io, a, o.remote_prefill, id, problem);
+    }
     h.host.explain = .{ .text = words };
     h.warm = .{ .queue = model_ptr.queue };
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
     try h.host.start();
     errdefer h.host.stop();
     std.log.info("DeepSeek V4.1 resident loaded in {d:.1} s, {d:.2} GB admitted, {d} lane slots, context {d} tokens, greedy only", .{ model_ptr.load_seconds, @as(f64, @floatFromInt(model_ptr.admitted_bytes)) / 1e9, model_ptr.lanes, window });
+    if (std.c.getenv("TF_DSV41_HANDOFF_CHECK")) |spec| @import("deepseek_v41_handoff_check.zig").run(gpa, io, model_ptr, std.mem.span(spec)) catch |err|
+        std.log.err("handoff-check: did not complete: {s}", .{@errorName(err)});
     if (std.c.getenv("TF_DSV41_KROW_CHECK") != null) krowCheck(model_ptr) catch |err|
         std.log.err("krow: the check did not run: {s}", .{@errorName(err)});
     return .{ .engine = h.host.engine(), .close = close, .ctx = h };
@@ -236,6 +245,7 @@ fn krowCheck(m: *ds.Model) !void {
 pub fn close(ctx: *anyopaque) void {
     const h: *Host = @ptrCast(@alignCast(ctx));
     h.host.stop();
+    if (h.link) |l| l.stop(h.gpa);
     if (h.cache) |*store| store.deinit();
     h.core.deinit();
     h.cfg.deinit(h.gpa);
