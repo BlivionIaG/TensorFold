@@ -296,6 +296,27 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         .test_step = test_step,
     });
 }
+
+/// `tf-offload-hip`: tf-offload with a HIP card as an external device, over hipmac's runtime (TF_HIP_LIB or the search path).
+/// Compiles on any macOS host against stub kernels; running it against a card is a step of its own.
+pub fn offloadExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, metal: *std.Build.Module) void {
+    const stub_kernels = b.createModule(.{ .root_source_file = b.addWriteFiles().add("kernels.zig", stub) });
+    const e = engineModules(b, target, optimize, stub_kernels, null);
+    const options = b.addOptions();
+    options.addOption(bool, "with_hip", true);
+    const module = b.createModule(.{
+        .root_source_file = b.path("zig/src/split/offload_main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        // hip's own split instance: the device types must be the very ones the adapter returns
+        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "split", .module = e.hip.import_table.get("split").? }, .{ .name = "hip", .module = e.hip } },
+    });
+    module.addOptions("offload_options", options);
+    const exe = b.addExecutable(.{ .name = "tf-offload-hip", .root_module = module });
+    b.step("tf-offload-hip", "tf-offload probe | plan | demo with the HIP card as an external device (macOS)").dependOn(&b.addInstallArtifact(exe, .{}).step);
+}
+
 /// `tf-qwen35-test`: the model checks on a real checkpoint and GPU.
 fn checksExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, e: Engine) *std.Build.Step.Compile {
     return b.addExecutable(.{ .name = "tf-qwen35-test", .root_module = b.createModule(.{
