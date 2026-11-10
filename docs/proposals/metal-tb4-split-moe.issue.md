@@ -50,8 +50,8 @@ split is modelled at or below that (84 tok/s layer split, 52 expert split); the 
 (measured), so every handoff costs a command-buffer wake of about 65 us on an idle Mac and 149 us (p50) with the card in
 use; the layer split pays it once a token, the expert split forty times. First card run (Qwen3.5-4B, 32 layers): a split
 at any of five cuts, Metal first or card first, gives the unsplit run's tokens (40 of 40) and logits cosine 0.9996-0.99999;
-one stream takes 15-24 ms a position against 14 ms all-Metal and 19 ms all-card, as the one-stream model says. The 2-stream pipeline (which the model says reaches 113 tok/s on the 4B) and chunked prefill are implemented and
-tested offline, not yet run on the card.
+one stream takes 15-24 ms a position against 14 ms all-Metal and 19 ms all-card, as the one-stream model says. Two sequences pipelined over the split decode 120 tok/s at the planner's cut (113 predicted) and 129-130 at the best cuts, 1.6-1.8x
+the Mac's own 72 tok/s, every sequence token-identical; chunked prefill is 3x the one-position-a-step rate (156-251 tok/s).
 
 ## Checkpoint, revision and licence
 
