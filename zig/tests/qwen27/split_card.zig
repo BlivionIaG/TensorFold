@@ -5,7 +5,7 @@
 //! running. Opens the card: run it only with the card to yourself.
 //!   tf-offload-card MODEL_DIR REF_FILE unsplit
 //!   tf-offload-card MODEL_DIR REF_FILE SOCKET metal_first|external_first CUT [streams=N] [chunk=C] [repeat=R]
-//! With `streams`, `chunk` or `repeat` the run is the pipelined one instead: N sequences share the card and the Mac's GPU
+//! With `streams`, `chunk` or `repeat` (any of them, `streams=1` too) the run is the pipelined one instead: N sequences share the card and the Mac's GPU
 //! (`tf-offload-metal serve SOCKET FIRST LAST N`), each prompt (the reference's, repeated R times) goes through in steps of
 //! C positions, then the reference's tokens are generated; the prefill and the decode rates are printed, and every sequence's
 //! tokens are checked (R = 1: against the reference file; else against the same run with one position a step).
@@ -291,7 +291,7 @@ pub fn main(init: std.process.Init) !void {
     const n_streams = try option(extra, "streams", 1);
     const chunk = try option(extra, "chunk", 1);
     const repeat = try option(extra, "repeat", 1);
-    const piped = n_streams > 1 or chunk > 1 or repeat > 1;
+    const piped = n_streams > 1 or chunk > 1 or repeat > 1 or try option(extra, "streams", 0) > 0;
     if (piped and unsplit) return error.PipelinedNeedsASplit;
     if (n_streams == 0 or n_streams > split.streams.max_streams or chunk == 0 or repeat == 0) return error.BadOption;
     const half = try Half.init(a, io, dir, range, n_streams, chunk);
