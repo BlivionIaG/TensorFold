@@ -177,24 +177,29 @@ the mlx_lm references of `tools/vega-macos/mlx_ref.py`, then runs story decodes 
 | the same with x widened to fp32 for the mix (`TF_G9_MIX=1`, default: exact, 63/63 tests) | 52.7 | identical |
 | `TF_G9_FOLD=1` (`bias - 1024 * scale` in the epilogue: one packed op less a pair; not bit-identical, off by default) | 58.2 | identical |
 
-Cause of the one failing test of the first mad_mix version (`affine ragged m3 n130 k96 b2 g32: mlx.project.decode.stream is 2.3 times
-the error an fp32 sum may have against float64`), measured with a 4096-lane micro kernel on the card (fused pair against two
-`v_mad_mix_f32`, random fp16 x with and without values below 2^-14): with every fp16 operand normal the two are bit-identical; with
-denormal x halves 56 of 4096 dots differ, by up to 5.9e-6 of the terms' magnitude (the bound is 1.6e-6). `v_mad_mix_f32` flushes a denormal
-fp16 *source* whatever MODE.FP_DENORM holds (setreg of all four denorm bits changed nothing); an fp32 source is not flushed. So
-`TF_G9_MIX=1` (default) keeps x as two fp32 in the stream tile (staged in LDS as fp32 pairs, widened with v_cvt unstaged) and the dots
-are the fused pair's bits: `hip-kernel-test` 63/63, `hip-affine-test` pass, 52.7 tok/s. `TF_G9_MIX=2` keeps x as fp16 pairs and flushes
-a denormal x (|x| < 6.1e-5; a term that small is below the fp32 rounding of a sum of terms of ordinary size): 56.4 tok/s, tokens
-identical in the gate, but `hip-kernel-test` 62/63 (that case). `-DTF_G9_MIX=0` is the fused pair without the mix (about 36 to 49
-tok/s). Logits against mlx_lm (87 rows through the decode path, `vega_gate.py --logits`, MIX=1): cosine min 0.99857, mean 0.99988,
-argmax equal 87/87.
+`TF_G9_MIX` (gfx900 stream tile; default 2, the user's decision): the stream tile's fp16 dot2 is two `v_mad_mix_f32`, which on gfx900 reads a
+denormal fp16 operand (|x| < 6.1e-5) as zero whatever MODE.FP_DENORM holds (measured with a 4096-lane micro kernel on the card: 56 of 4096
+random 96-term dots differ from the fused pair, by up to 5.9e-6 of the terms' magnitude; all fp16 operands normal: bit-identical; an fp32
+operand is not flushed).
 
-Scaled-x form of `TF_G9_MIX=1` (written offline, not yet run on the card; `tiles/stream_scaled.hpp`): the staged x are fp16 pairs scaled by
-2^10 (every nonzero fp16 x, 2^-24 and up, becomes normal) while the block's x are all below 32 in magnitude, the lanes undo the scale in
-the group's scale and bias (a power of two), so the mix sees no denormal; a block with a larger x (or a NaN/inf) takes the unstaged path,
-where x is widened to fp32. `/tmp`-free check of the arithmetic: 2 million random 32-code chunks (1.3 million denormal x) give the
-fused pair's bits with the scaled x. The gfx900 tile text is `stream_scaled.hpp` only for `TF_G9_MIX=1`, all other code objects use
-`stream.hpp` unchanged (RDNA2 checked byte-identical).
+| `TF_G9_MIX` | stream tile | decode tok/s (median of 3, two runs) | `hip-kernel-test` / `hip-affine-test` | tokens |
+| --- | --- | --- | --- | --- |
+| 2 (default) | mix on the fp16 x as they are, a denormal x counts as zero | 57.32, 57.36 | 63/63, pass (bound with the flushed terms, below) | identical (sha gate) |
+| 1 | x staged scaled by 2^10 per 32-chunk when the chunk is below 32 in magnitude (exact: the fused pair's bits), unstaged x widened to fp32 | 50.53, 50.54 | 63/63, pass (includes x up to 256) | identical (sha gate) |
+| 0 | convert and fuse | about 36 to 49 | pass | identical |
+
+MIX=2 in the kernel tests: for gfx900 stream entries (`flushes` in `kernel_tests/affine/affine.zig`) the allowed error is the fp32 sum's bound
+plus the sum of the magnitudes of the terms whose fp16 x is denormal (`Value.flush` of `reference.zig`); every other entry, GPU and variant
+keeps the plain bound. The stream hash has its own pin for MIX=2 (`pinned_f16_gfx900_flush`, recorded on the card); MIX=0 and 1 share the
+fused pair's pin. The tests learn the variant from `-Dhip-cflags` (`kernels.g9_mix`).
+
+MIX=1 is 12% slower than MIX=2 (ISA: 127 / 183 VGPRs at 2 / 4 columns for the first version, a block flag and an unstaged fallback in one
+kernel, against 65 / 113 for MIX=2; the per-chunk version has the same speed, so the cost is in the stage, where each chunk is widened,
+scaled and narrowed by one thread: serial latency a block). [INFERENCE] a packed scale (v_pk_mul_f16, if it keeps denormals) and a packed max
+spread over more threads would bring it nearer; not done.
+
+Logits against mlx_lm (87 rows through the decode path, `vega_gate.py --logits`, MIX=1 as first built): cosine min 0.99857, mean 0.99988,
+argmax equal 87/87.
 
 Dropped: reading the codes as fp16 denormals (`TF_G9_RAW`, 51 tok/s): `v_mad_mix_f32` flushes denormal inputs on Vega and the tokens
 differ.
