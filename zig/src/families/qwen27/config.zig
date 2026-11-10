@@ -40,6 +40,8 @@ pub const Config = struct {
     moe_intermediate: usize = 0,
     /// Whether a row's top-k softmax weights are renormalized to sum to one (`norm_topk_prob`).
     renorm: bool = false,
+    /// `tie_word_embeddings`: the head is the embedding table, read a second time in the head's projection layout.
+    tied: bool = false,
 
     pub fn moe(c: Config) bool {
         return c.experts != 0;
@@ -285,7 +287,7 @@ pub fn parse(gpa: std.mem.Allocator, json: []const u8, generation: ?[]const u8) 
     } else return error.NotQwenDense;
     const experts = if (t.get("num_experts")) |v| try integer(v, true) else 0;
     if (routed != (experts != 0)) return error.NotQwenDense;
-    if (try rules.tied(root, t, .metal27)) return error.TiedEmbeddingHead;
+    const tied = try rules.tied(root, t, .metal27);
     try rules.check(t, .metal27);
     const heads = try required(t, "num_attention_heads");
     const hidden = try required(t, "hidden_size");
@@ -314,6 +316,7 @@ pub fn parse(gpa: std.mem.Allocator, json: []const u8, generation: ?[]const u8) 
         .eps = @floatCast(try optional(t, "rms_norm_eps", 1e-6)),
         .rope_dims = @intFromFloat(@as(f64, @floatFromInt(head_dim)) * factor),
         .rope_theta = if (rope) |r| try optional(r, "rope_theta", try optional(t, "rope_theta", 10000000)) else try optional(t, "rope_theta", 10000000),
+        .tied = tied,
     };
     if (routed) {
         c.experts = experts;
