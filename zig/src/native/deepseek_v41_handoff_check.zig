@@ -256,6 +256,7 @@ fn compareRows(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snaps
         var worst: f64 = 0;
         var worst_layer: u32 = 0;
         var n: usize = 0;
+        var each: std.Io.Writer.Allocating = .init(a);
         for (want, got) |w, g| {
             if (!std.mem.eql(u8, @tagName(w.spec.kind), @tagName(kind))) continue;
             var err: f64 = 0;
@@ -276,11 +277,12 @@ fn compareRows(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snaps
             const r = if (ref_sq > 0) @sqrt(err / ref_sq) else 0;
             sum += r;
             n += 1;
+            try each.writer.print(" {d}:{d:.3}", .{ w.spec.layer, r });
             if (r > worst) {
                 worst = r;
                 worst_layer = w.spec.layer;
             }
         }
-        if (n > 0) log.info("rows {s}: {d} parts, relative RMS vs the local prefill's: mean {d:.4}, worst {d:.4} (layer {d})", .{ @tagName(kind), n, sum / @as(f64, @floatFromInt(n)), worst, worst_layer });
+        if (n > 0) log.info("rows {s}: {d} parts, relative RMS vs the local prefill's: mean {d:.4}, worst {d:.4} (layer {d}); by layer{s}", .{ @tagName(kind), n, sum / @as(f64, @floatFromInt(n)), worst, worst_layer, each.written() });
     }
 }
