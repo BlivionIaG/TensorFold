@@ -522,7 +522,7 @@ gfx900 port `vega-macos-up` (below).
 | Boundary kernels on HIP: `importRow`, `exportRow`, `consumeStamped` (level B: 16-byte stamped groups, bounded re-read, status word) | `zig/kernels/hip/split/rows.hip`, `zig/src/hip/ops/split_rows.zig` | host references; compiled to code objects for gfx900, gfx1030, gfx1100, gfx1151, gfx1201; contract records (gate 5) identical on four chips; gates 1-4 on a GPU not run |
 | `Backend.hip`, `LinkKind.tb_gpu`, hop costs in `fabric/cost.zig` | `zig/src/cluster`, `zig/src/fabric` | tested; a hip node is planned but never launched |
 
-Commands (no card; `/tmp`-style shims for the Metal compiler are environment workarounds and not part of the change):
+Commands (no card; the machine this was developed on has no working Metal compiler, so a local `xcrun` shim stood in for it when building; the shim is not part of the change):
 
 ```sh
 zig build test-split            # protocol, planner, mock, pipeline, CLI, Metal window/relay/toy, Metal host
