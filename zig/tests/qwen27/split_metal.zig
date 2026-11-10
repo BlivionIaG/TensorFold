@@ -1,7 +1,8 @@
 //! The Mac's side of a model split with a card in another process (TF_SPLIT_QWEN_DIR, the Qwen3.5-4B MLX 4-bit
 //! directory). `ref FILE [TOKENS]` runs the model unsplit on this GPU and writes the tokens and predictions the card's
-//! process compares with (split.reference). `serve SOCKET FIRST LAST` holds layers [FIRST, LAST) and is the host stage of
-//! the pipeline that process runs (split.remote): the window is the card's pinned memory, mapped here and wrapped for Metal.
+//! process compares with (split.reference). `serve SOCKET FIRST LAST [SEQUENCES]` holds layers [FIRST, LAST), a stage for
+//! each of SEQUENCES (default 1), and is the host stage of the pipeline that process runs (split.remote): the window is
+//! the card's pinned memory, mapped here and wrapped for Metal.
 const std = @import("std");
 const tokenizer = @import("tokenizer");
 const split = @import("split");
@@ -16,25 +17,41 @@ fn loadRange(ctx: *const anyopaque, a: std.mem.Allocator, range: q.range.Range) 
     return q.model.Model.loadRange(a, io.*, std.mem.span(std.c.getenv("TF_SPLIT_QWEN_DIR").?), 128, range);
 }
 
-/// The stage as the remote host: the pipeline binds the window it maps, resets between runs.
+/// The stages as the remote host, one a sequence: the pipeline binds the window it maps, resets between runs.
 const Served = struct {
     half: h.Half,
-    lp: peer.LayerPeer,
+    lps: []peer.LayerPeer,
+    peers: []split.pipeline.Peer,
 
+    fn init(a: std.mem.Allocator, half: h.Half) !Served {
+        const lps = try a.alloc(peer.LayerPeer, half.stages.len);
+        errdefer a.free(lps);
+        const peers = try a.alloc(split.pipeline.Peer, half.stages.len);
+        for (lps, peers, half.stages) |*lp, *p, stage| {
+            lp.* = .{ .stage = stage };
+            p.* = lp.peer();
+        }
+        return .{ .half = half, .lps = lps, .peers = peers };
+    }
+    fn deinit(s: Served, a: std.mem.Allocator) void {
+        a.free(s.peers);
+        a.free(s.lps);
+        s.half.deinit();
+    }
     fn host(s: *Served) split.remote.Host {
-        return .{ .ptr = s, .bind = bind, .unbind = unbind, .reset = reset, .peer = s.lp.peer() };
+        return .{ .ptr = s, .bind = bind, .unbind = unbind, .reset = reset, .peers = s.peers };
     }
     fn me(ptr: *anyopaque) *Served {
         return @ptrCast(@alignCast(ptr));
     }
     fn bind(ptr: *anyopaque, window: []u8) anyerror!void {
-        try me(ptr).half.stage.bindWindow(window);
+        for (me(ptr).half.stages) |stage| try stage.bindWindow(window);
     }
     fn unbind(ptr: *anyopaque) void {
-        me(ptr).half.stage.unbindWindow();
+        for (me(ptr).half.stages) |stage| stage.unbindWindow();
     }
     fn reset(ptr: *anyopaque) anyerror!void {
-        try me(ptr).half.stage.reset();
+        try me(ptr).half.reset();
     }
 };
 
@@ -58,12 +75,14 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     if (args.len < 3) return error.MissingArgument;
     if (std.mem.eql(u8, args[1], "serve")) {
-        if (args.len != 5) return error.MissingArgument;
+        if (args.len != 5 and args.len != 6) return error.MissingArgument;
         const range: q.range.Range = .{ .first = try std.fmt.parseInt(usize, args[3], 10), .last = try std.fmt.parseInt(usize, args[4], 10) };
+        // one stage a sequence the client may run at once (the optional sixth argument, default 1)
+        const count: usize = if (args.len == 6) try std.fmt.parseInt(usize, args[5], 10) else 1;
+        if (count == 0 or count > split.streams.max_streams) return error.BadSequenceCount;
         const src: h.Source = .{ .ctx = &io, .load = loadRange, .layers = 0 };
-        var s: Served = .{ .half = try h.Half.init(a, src, range), .lp = undefined };
-        defer s.half.deinit();
-        s.lp = .{ .stage = s.half.stage };
+        var s = try Served.init(a, try h.Half.initSequences(a, src, range, count));
+        defer s.deinit(a);
         try split.remote.serve(args[2], s.host(), ready);
         return;
     }
