@@ -882,15 +882,26 @@ Cluster tests (`zig test` on the cluster root with stand-in modules, because `te
 One behaviour each, stacked, each against `main`, each linking the issue with `Refs #N`. Items marked *hipmac* depend
 on out-of-tree runtime work; everything else is generic.
 
-1. **Transport, interface, dense layer split.** (Offline half implemented, see above; card runs and the `--device-split` serving driver remain.) `core/split` (window protocol, `ExternalDevice`, fakes), Metal
-   `HostWindow` and `Relay`, `tensorfold offload probe`, the planner for dense models and `placement.json`, a layer range
-   in the HIP and Metal engines, `--device-split` for dense checkpoints, cluster `Backend.hip` and the link kind.
-   Tests: protocol, planner, toy dense family split/unsplit. *hipmac*: window allocation (exists) and optional
-   wait/write symbols with mock support; the card gate (M3) needs the runtime change.
-2. **MoE.** Layer split for `qwen3_5_moe` (stage hooks in `moe.zig`, KV/state hand-off after Metal prefill), then the
-   expert split and reverse split behind the same planner; Metal expert service reusing upstream kernels; boundary
-   kernels with contract entries. Needs upstream Metal MoE on `main` (present).
-3. **Hot-expert cache and adaptive placement.** Routing histograms, resident-expert sets chosen from measured hit rates,
+1. **Transport, interface, dense placements: resident, layer split.** (Offline half implemented, see above; card runs and the
+   `--device-split` serving driver remain.) `core/split` (window protocol, `ExternalDevice`, fakes), Metal `HostWindow` and
+   `Relay`, `tensorfold offload probe`, the planner for dense models and `placement.json`, a layer range in the HIP and Metal
+   engines, `--device-split` for dense checkpoints, cluster `Backend.hip` and the link kind. **Resident on the external device,
+   tokens over Thunderbolt, is a first-class placement here, not a corner of the split**: for a 24-32 GiB card that holds the model
+   it is the primary win (it decodes at the card's speed and moves 4 B a token; see M4 groundwork), the planner picks it when it
+   fits and is faster, and `tf-offload-card MODEL REF unsplit` is its end-to-end smoke test (the pipeline order `external_only`).
+   Tests: protocol, planner, toy dense family split/unsplit, resident on the toy and on the real engine. *hipmac*: window
+   allocation (exists) and optional wait/write symbols with mock support; the card gate (M3) needs the runtime change.
+2. **Stages that step rows of several sequences.** A step names its sequences (`StepIo.slots`): one slot is a prompt chunk or a
+   decode position, several slots are a decode batch, one row of each sequence at its own position, in one round on each side
+   (the engines' shared rounds: Metal `Runner` slots, HIP `batch_rows`). A lane serves up to eight sequences; lanes pipeline over
+   one device (`streams.zig`); the resident placement batches the same way. Why it comes before the MoE split: the Mac alone
+   batches, and a split of single-row steps cannot beat it beyond two sequences (M4 groundwork). Tests: token-identical per
+   sequence against its own unsplit run for 1 to 8 sequences (Metal+Metal on the real 4B, the toy model, HIP plumbing on the mock).
+3. **MoE.** Layer split for `qwen3_5_moe` (stage hooks in `moe.zig`, KV/state hand-off after Metal prefill) on top of PR 2's
+   batched stages, then the expert split and reverse split behind the same planner; Metal expert service reusing upstream
+   kernels; boundary kernels with contract entries. Needs the native Metal engine to admit the 35B-A3B's shape (it does
+   not today) or a baseline outside it.
+4. **Hot-expert cache and adaptive placement.** Routing histograms, resident-expert sets chosen from measured hit rates,
    re-planning between requests (never inside a round), MTP head placement. Only after M6.
 
 Documentation (recipe page, README row) lands with the first pull request that has receipts for it. The optimization
