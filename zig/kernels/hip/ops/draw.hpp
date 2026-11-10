@@ -30,6 +30,39 @@ extern "C" __global__ void tf_argmax(const uint16_t* logits, int kind, int n, in
     const uint16_t* row = logits + static_cast<long long>(blockIdx.x) * n;
     float top = 0.0f;
     int at = -1;
+#if defined(__gfx900__)
+    // gfx900: 16-byte loads (8 values), four in flight a thread, for rows that allow them. The order a thread visits its values in does not matter:
+    // `better` is a strict total order on (value, index), so the largest is the same one whichever way it is looked for.
+    const bool wide = (n & 7) == 0 && (reinterpret_cast<uintptr_t>(row) & 15) == 0;
+    if (wide) {
+        constexpr int kU = 4;
+        const int nv = n >> 3;
+        const uint4* rv = reinterpret_cast<const uint4*>(row);
+        for (int base = threadIdx.x; base < nv; base += kU * kThreads) {
+            uint4 v[kU];
+#pragma unroll
+            for (int u = 0; u < kU; ++u) {
+                const int idx = base + u * kThreads;
+                v[u] = rv[idx < nv ? idx : nv - 1];
+            }
+#pragma unroll
+            for (int u = 0; u < kU; ++u) {
+                const int idx = base + u * kThreads;
+                if (idx >= nv) continue;
+                const uint32_t words[4] = {v[u].x, v[u].y, v[u].z, v[u].w};
+#pragma unroll
+                for (int w = 0; w < 8; ++w) {
+                    const int i = idx * 8 + w;
+                    const float x = widen(static_cast<uint16_t>((words[w >> 1] >> (16 * (w & 1))) & 0xffffu), kind);
+                    if (at < 0 || better(x, i, top, at)) {
+                        top = x;
+                        at = i;
+                    }
+                }
+            }
+        }
+    } else
+#endif
     for (int i = threadIdx.x; i < n; i += kThreads) {
         float v = widen(row[i], kind);
         if (at < 0 || better(v, i, top, at)) {
