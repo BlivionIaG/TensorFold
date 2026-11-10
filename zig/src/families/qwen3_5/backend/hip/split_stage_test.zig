@@ -29,6 +29,8 @@ pub const Eng = struct {
 
     pub fn open(range: view.Range, capacity: usize, rows: usize) !Eng {
         if (!fake.available()) return error.SkipZigTest;
+        // another engine's pinned words may sit where this one's will
+        fake.retire();
         const e = try gpa.create(Engine);
         errdefer gpa.destroy(e);
         var f = try fake.Fixture.init(gpa, range, .f16);
@@ -217,6 +219,8 @@ pub const Recorder = struct {
 
     fn enqueueWrite(p: *anyopaque, w: split.device.Window, offset: usize, value: u32) split.device.Error!void {
         me(p).ops.append(gpa, .{ .write = .{ .offset = offset, .value = value } }) catch return error.OutOfMemory;
+        // the release write follows the stage's work in the stream: everything before it has run
+        fake.retire();
         @atomicStore(u32, w.word(offset), value, .release);
     }
 
@@ -493,7 +497,9 @@ test "split stage: warm-up runs every row count's span and the decode step, plai
     var st = try stage.HipLayerStage.init(t.e, 16, .{ .max_rows = 4 });
     defer st.deinit();
     fake.clear();
+    const refilled = fake.refills();
     try st.warm();
+    try T.expectEqual(refilled, fake.refills());
     var imports: usize = 0;
     var consumes: usize = 0;
     for (fake.boundaries()) |b| switch (b.kind) {
