@@ -41,7 +41,7 @@ pub fn forward(ops: Ops, m: *const view.Model, r: Round, trace: ?fwd.Trace) fwd.
     const s = m.spec;
     const total = r.plan.rows;
     const x = try fwd.take(o, m.act, total * s.hidden);
-    if (m.range.embeds()) try o.embedRows(m.embed.?, r.tokens, total, x) else try fwd.takeRows(o, r.hand, x, total * s.hidden);
+    if (m.range.embeds()) try o.embedRows(m.embed.?, r.tokens, total, x) else try fwd.takeRows(o, r.hand, x, total, s.hidden);
     const normed = try fwd.take(o, m.act, total * s.hidden);
     // a stage that stops short of the head has no final norm to write
     const out = if (m.headed()) try fwd.take(o, m.act, total * s.hidden) else x;
