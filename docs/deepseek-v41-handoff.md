@@ -123,6 +123,14 @@ in delivery order; a synthetic one from `synth.zig`, or a producer's parts dumpe
 lands the hand-off in a blank Snapshot, then compares the next N logit rows (the reference's tokens fed to both): top-1
 agreement and NRMS, and the free-running token streams. Agreement is reported, not required.
 
+A file may also be a producer's stream, `<id>.mkvh2` (`TF_DSV41_HANDOFF_DUMP` on the GB10 pair): its `<id>.tokens.json` beside it
+gives the exported prefix's ids, and the stream is replayed through the decoder's checks for this checkpoint's name
+(`blob.fromStream`) before it is landed; `TF_DSV41_HANDOFF_FILE` takes the same. `TF_DSV41_HANDOFF_UPTO=N` sets a round trip's
+prefix (default the last whole 128 below the prompt), for an odd one, where the carries matter. `TF_DSV41_HANDOFF_BISECT=1`
+also takes each part kind alone (window rings, carries, pool rows, index keys) from the hand-off and the rest from the local
+prefill, compares the logits as above, and prints the landed rows' relative RMS error against the local prefill's per part
+and per layer.
+
 `TF_DSV41_HANDOFF_DUMP=<path>` keeps the round trip's file (a path ending in `.mkvh2` keeps it as a producer's stream instead,
 the body `GET /v1/handoff/<id>` serves, for the checkpoint's own name: a fake producer can serve it to the HTTP decoder); `TF_DSV41_HANDOFF_FILE=<path>` serves such a file as the lane
 host's remote source (instead of `--prefill-from`): a request whose prompt extends the file's tokens gets that prefix landed

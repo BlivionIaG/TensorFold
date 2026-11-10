@@ -115,7 +115,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8, c
             prompt = joined;
         }
     }
-    const upto: u32 = if (file) |f| @intCast(f.tokens.len) else @intCast(@max(1, (prompt.len - 1) / 128 * 128));
+    const upto: u32 = if (file) |f| @intCast(f.tokens.len) else if (envText("TF_DSV41_HANDOFF_UPTO")) |u| try std.fmt.parseInt(u32, u, 10) else @intCast(@max(1, (prompt.len - 1) / 128 * 128));
     if (prompt.len < upto + 1 or prompt.len + steps + 1 > m.caches[0].plan.capacity) return error.PromptTooShortOrLong;
     log.info("{d} prompt tokens, prefix {d}, {d} steps, {s}", .{ prompt.len, upto, steps, if (round) "Metal round trip" else spec });
 
