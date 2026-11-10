@@ -14,6 +14,16 @@ namespace rocm {
 
 constexpr int kStreamWaves = 4;
 
+// A block's most threads. gfx900: a several-row tile of at most 8 accumulators a lane (under 128 VGPRs, 2 waves a SIMD) runs 16 wave groups a block, so
+// the block's x stage is read by 4 times the columns; the launch (launches/affine.zig streamGroups) names the groups it wants, up to this.
+constexpr int stream_threads(int rows, int cb) {
+#if defined(__gfx900__)
+    if (rows > 1 && rows * cb <= 8) return 32 * 16;
+#endif
+    return 32 * kStreamWaves;
+}
+
+
 // Tile shapes that exist: CB columns a lane times R rows at most 16 accumulators.
 constexpr bool stream_shape(int rows, int cb) { return cb * rows <= 16; }
 constexpr int kStreamRows = 16;  // the most rows a launch takes
@@ -88,7 +98,7 @@ template <class Dec, class Act, class T, int R>
 __device__ inline void stream_stage(const typename Dec::Args& a, int row0, uint32_t* pairs, float* sums) {
     using pair = typename T::pair;
     const int nch = a.k >> 5;
-    for (int at = threadIdx.x; at < R * nch; at += 32 * kStreamWaves) {
+    for (int at = threadIdx.x; at < R * nch; at += blockDim.x) {
         const int r = at / nch;
         const int q = at - r * nch;
         const u32x4* src = reinterpret_cast<const u32x4*>(Act::row(a, row0 + r < a.m ? row0 + r : 0) + q * 32LL);
@@ -168,7 +178,11 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
     constexpr int CH = PAIR ? CB / 2 : CB;  // output columns a lane
     const int cols = PAIR ? pair_cols : a.n;
     const int per_wave = (32 >> lpc_log2) * CH;
+#if defined(__gfx900__)
+    const int col0 = (bx * (blockDim.x >> 5) + (threadIdx.x >> 5)) * per_wave + slot * CH;  // the block's wave groups: the launch's, 4 to 16
+#else
     const int col0 = (bx * kStreamWaves + (threadIdx.x >> 5)) * per_wave + slot * CH;
+#endif
     const int nch = a.k >> 5;
     const long long words_row = Dec::template row_words<long long>(a);
     const long long groups = a.k / a.group;

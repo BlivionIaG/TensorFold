@@ -79,7 +79,7 @@ struct StreamSides {
 
 // Item z of the plan (or the plain product, or a group's side) at CB columns a lane, R rows; PAIR fuses the activation.
 template <typename T, int BITS, int R, int CB, bool PAIR>
-__global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a, StreamSides sides, int lpc_log2,
+__global__ void __launch_bounds__(stream_threads(R, CB)) affine_dot2_stream(Affine a, StreamSides sides, int lpc_log2,
                                                                        int gshift) {
     using Epi = std::conditional_t<PAIR, StreamSwiglu<T>, StreamRound<T>>;
     stream_tile<MlxDecoder<BITS>, IdentityAct<T>, T, Epi, R, CB>(a, sides, lpc_log2, gshift);
@@ -87,14 +87,14 @@ __global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a
 
 // The plain product (or plan item) with Nemotron's relu^2 as the epilogue, into a.out16 in the activation type.
 template <typename T, int BITS, int R, int CB>
-__global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream_relu2(Affine a, StreamSides sides, int lpc_log2,
+__global__ void __launch_bounds__(stream_threads(R, CB)) affine_dot2_stream_relu2(Affine a, StreamSides sides, int lpc_log2,
                                                                              int gshift) {
     stream_tile<MlxDecoder<BITS>, IdentityAct<T>, T, StreamRelu2<T>, R, CB>(a, sides, lpc_log2, gshift);
 }
 
 // Relu^2 products of one x in one launch: plan a (items on z) on the first `split` blocks, plain b past them at z 0.
 template <typename T, int BITS, int R, int CB>
-__global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream_relu2_pair(Affine a, Affine b, int split,
+__global__ void __launch_bounds__(stream_threads(R, CB)) affine_dot2_stream_relu2_pair(Affine a, Affine b, int split,
                                                                                   int lpc_log2, int gshift) {
     StreamSides sides{};
     if (static_cast<int>(blockIdx.x) < split) {

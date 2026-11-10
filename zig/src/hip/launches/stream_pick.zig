@@ -40,7 +40,11 @@ pub fn lanesLog2(generation: Generation, k: c_int) u5 {
 
 /// The tile for `m` rows of `n` outputs over `items`; a `pair` lane's columns are the gate and up halves of outputs.
 pub fn pick(generation: Generation, m: c_int, lpc_log2: u5, bits: c_int, n: c_int, items: c_int, pair: bool) Tile {
-    const ri = rowTile(m);
+    return pickAt(generation, rowTile(m), m, lpc_log2, bits, n, items, pair);
+}
+
+/// `pick` on the row tile `ri` (an index into `stream_rows`) instead of `rowTile(m)`'s.
+pub fn pickAt(generation: Generation, ri: usize, m: c_int, lpc_log2: u5, bits: c_int, n: c_int, items: c_int, pair: bool) Tile {
     // RDNA3.5's one- and two-row launches keep more loads in flight with the extra waves of the narrowest
     const narrowest = generation == .rdna3_5 and ri < 2;
     const halves: c_int = if (pair) 2 else 1;
@@ -54,6 +58,8 @@ pub fn pick(generation: Generation, m: c_int, lpc_log2: u5, bits: c_int, n: c_in
         if (cb * affine.stream_rows[ri] > 16 or cb * bits > affine.stream_code_words) continue;
         // gfx900: 8 columns a lane take 215 VGPRs, one wave a SIMD; 4 or 2 keep two or four waves (measured: lm_head 2363 -> 1529 us)
         if (generation == .gcn5 and cb > 4) continue;
+        // and several rows keep their 8 accumulators: 4 rows of 4 columns took 195 VGPRs, one wave a SIMD (8 rows: 672 -> 485 us at 18432 x 2560)
+        if (generation == .gcn5 and affine.stream_rows[ri] > 1 and cb * affine.stream_rows[ri] > 8) continue;
         tile = .{ .at = c, .per_block = perBlock(c, lpc_log2, halves) };
         const waves = @as(u64, cdiv(n, tile.per_block)) * affine.stream_waves * @as(u64, @intCast(items)) * cdiv(m, affine.stream_rows[ri]);
         if (!narrowest and waves >= affine.streams_wanted) break;
@@ -64,8 +70,12 @@ pub fn pick(generation: Generation, m: c_int, lpc_log2: u5, bits: c_int, n: c_in
 /// `pick`, but at `want` columns a lane (a TF_STREAM_CB experiment; 0 keeps the pick) when that is one of `stream_cbs` and fits the
 /// lane's registers.
 pub fn pickWanted(want: c_int, generation: Generation, m: c_int, lpc_log2: u5, bits: c_int, n: c_int, items: c_int, pair: bool) Tile {
-    var tile = pick(generation, m, lpc_log2, bits, n, items, pair);
-    const ri = rowTile(m);
+    return pickWantedAt(want, generation, rowTile(m), m, lpc_log2, bits, n, items, pair);
+}
+
+/// `pickWanted` on the row tile `ri` (an index into `stream_rows`) instead of `rowTile(m)`'s.
+pub fn pickWantedAt(want: c_int, generation: Generation, ri: usize, m: c_int, lpc_log2: u5, bits: c_int, n: c_int, items: c_int, pair: bool) Tile {
+    var tile = pickAt(generation, ri, m, lpc_log2, bits, n, items, pair);
     for (affine.stream_cbs, 0..) |cb, c| {
         if (cb != want or cb * affine.stream_rows[ri] > 16 or cb * bits > affine.stream_code_words) continue;
         tile = .{ .at = c, .per_block = perBlock(c, lpc_log2, if (pair) 2 else 1) };
