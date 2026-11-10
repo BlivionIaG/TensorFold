@@ -3,7 +3,6 @@
 const std = @import("std");
 const hip_build = @import("hip.zig");
 
-
 /// `test-split` (part of `test`): protocol, planner, mock device, layer pipeline, Metal window and relay. `tf-offload` and
 /// `tf-offload-hip` are installable steps; the latter compiles on a macOS host against stub kernels and opens a card only
 /// when run with `--device hip`.
