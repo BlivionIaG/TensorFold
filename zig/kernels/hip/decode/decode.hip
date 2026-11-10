@@ -564,10 +564,57 @@ __device__ void
     }
 }
 
+#if defined(__gfx900__)
+// gfx900, rows of at most 128 values (a lane holds four): y, the weight and z for the row go out in one batch before the sum (the generic loop loads
+// the weight and z after the reduction), the kind is a template argument. Same arithmetic and sums as gnorm_out_body.
+template <int KIND>
+__device__ void gnorm_out_small(const float* y, const float* weight, const void* z, void* out, int rows, int width, float eps,
+                                int sigmoid_gate) {
+    const int lane = threadIdx.x & 31;
+    const int row = blockIdx.x * 8 + (threadIdx.x >> 5);
+    if (row >= rows) return;
+    const long long at = static_cast<long long>(row) * width;
+    float v[4], wv[4], zv[4];
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        const int i = lane + 32 * j;
+        const int c = i < width ? i : width - 1;
+        v[j] = y[at + c];
+        wv[j] = weight != nullptr ? weight[c] : 1.f;
+        zv[j] = load_kind(z, KIND, at + c);
+    }
+    float sum = 0.f;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        if (lane + 32 * j < width) sum += v[j] * v[j];
+    }
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+    const float inv = rsqrtf(__shfl(sum, 0, 32) / static_cast<float>(width) + eps);
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        const int i = lane + 32 * j;
+        if (i >= width) continue;
+        const float gate = sigmoid_gate ? 1.f / (1.f + expf(-zv[j])) : zv[j] / (1.f + expf(-zv[j]));
+        store_kind(out, KIND, at + i, v[j] * inv * wv[j] * round_kind(gate, KIND));
+    }
+}
+#endif
+
 // The gated norm out = rms(y) * weight * round(silu(z) or sigmoid(z)) in the kind, a wave a (row, head).
 __device__ void
     gnorm_out_body(const float* y, const float* weight, const void* z, void* out, int kind, int rows, int width,
                      float eps, int sigmoid_gate) {
+#if defined(__gfx900__)
+    if (width <= 128) {
+        if (kind == 1) {
+            gnorm_out_small<1>(y, weight, z, out, rows, width, eps, sigmoid_gate);
+        } else {
+            gnorm_out_small<2>(y, weight, z, out, rows, width, eps, sigmoid_gate);
+        }
+        return;
+    }
+#endif
     constexpr int kMost = 1024 / 32;
     const int lane = threadIdx.x & 31;
     const int row = blockIdx.x * 8 + (threadIdx.x >> 5);
