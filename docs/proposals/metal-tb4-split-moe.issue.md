@@ -46,8 +46,10 @@ refuses heterogeneous execution; nothing splits one model across two devices of 
 Honest limits. Measured on this M4 Pro, all-Metal decodes the 35B-A3B at 91.6 tok/s. On the Vega card the single-stream
 split is modelled at or below that (84 tok/s layer split, 52 expert split); the gain there is capacity and 2+ streams
 (131 tok/s modelled). The speed case needs a faster card. A Metal kernel cannot poll a flag written by another agent
-(measured), so every handoff costs a command-buffer wake of about 65 us; the layer split pays it once a token, the expert
-split forty times.
+(measured), so every handoff costs a command-buffer wake of about 65 us on an idle Mac and 149 us (p50) with the card in
+use; the layer split pays it once a token, the expert split forty times. First card run (Qwen3.5-4B, 32 layers): a split
+at any of five cuts, Metal first or card first, gives the unsplit run's tokens (40 of 40) and logits cosine 0.9996-0.99999;
+one stream takes 15-24 ms a position against 14 ms all-Metal and 19 ms all-card, as the one-stream model says.
 
 ## Checkpoint, revision and licence
 
@@ -129,8 +131,9 @@ Proposed here
 One MacBook Pro with M4 Pro (14 CPU, 20 GPU cores, 48 GiB, macOS 27.2) and one RX Vega 56 (8 GiB) on a Thunderbolt 4
 enclosure through TinyGPU's signed driver extension and the out-of-tree `hipmac` runtime. Needs other testers: other
 Apple chips and RAM classes (especially 24 GiB, where capacity matters), RDNA3/RDNA4 and NVIDIA cards through TinyGPU,
-Thunderbolt 5 hosts. Offline probes already ran without the card: Metal window wrap, command-buffer and event wake
+Thunderbolt 5 hosts. Offline probes ran without the card: Metal window wrap, command-buffer and event wake
 latency, memory-visibility rules, MLX expert throughput, all-Metal decode; see the probe directory next to the design.
+On the card: the startup probe and the 4B layer split (design, First card run).
 
 ## Related issues, pull requests and earlier attempts
 
