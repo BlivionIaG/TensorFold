@@ -10,6 +10,9 @@ const plan = @import("../forward/plan.zig");
 const round = @import("round.zig");
 const Engine = @import("engine.zig").Engine;
 
+/// Stand-in window addresses of a counting run: a stage's boundary rows are read and written there.
+const edge: fwd.Handoff = .{ .src = 1 << 41, .dst = 1 << 41 };
+
 /// A prompt pass of `rows` rows ending at the last of `capacity` positions, then the head over its last row.
 pub fn prompts(e: *Engine, rows: usize, capacity: usize) !usize {
     const m = e.model();
@@ -20,9 +23,11 @@ pub fn prompts(e: *Engine, rows: usize, capacity: usize) !usize {
     var arena = hip.Arena.counting();
     const o = counting(e, &arena);
     // every take grows with the rows and the keys walked, so the last chunk of a full window is the largest
-    const hidden = try fwd.span(o, m, &caches, 0, rows, capacity - rows, null);
-    const y = try o.project(fwd.at(hidden, (rows - 1) * m.spec.hidden), m.head, 1, false);
-    _ = try e.wholeRows(o, y, 1);
+    const hidden = try fwd.spanWith(o, m, &caches, 0, rows, capacity - rows, null, edge);
+    if (m.head) |head| {
+        const y = try o.project(fwd.at(hidden, (rows - 1) * m.spec.hidden), head, 1, false);
+        _ = try e.wholeRows(o, y, 1);
+    }
     return arena.peak;
 }
 
@@ -35,9 +40,9 @@ pub fn rounds(e: *Engine, rows: usize, capacity: usize) !usize {
     const o = counting(e, &arena);
     try win.kept(o, m, rows, table);
     const p: hip.plan_ops.Plan = .{ .args = std.mem.zeroes(@FieldType(hip.plan_ops.Plan, "args")), .rows = rows, .slots = rows + 1 };
-    const r: win.Round = .{ .plan = p, .tokens = 0, .span = std.mem.alignForward(usize, capacity, plan.min_span), .inputs = table };
+    const r: win.Round = .{ .plan = p, .tokens = 0, .span = std.mem.alignForward(usize, capacity, plan.min_span), .inputs = table, .hand = edge };
     const out = try round.forwardOn(o, m, r, null, 0);
-    _ = try e.wholeRows(o, out.y, rows);
+    if (out.y) |y| _ = try e.wholeRows(o, y, rows);
     return arena.peak;
 }
 

@@ -33,6 +33,7 @@ pub fn digest(a: Allocator, e: *Engine, lane: *const Lane) ![32]u8 {
     var hash = std.crypto.hash.sha2.Sha256.init(.{});
     hash.update(std.mem.asBytes(&lane.len));
     for (lane.caches.layers, 0..) |layer, index| switch (layer) {
+        .absent => unreachable, // a whole-model engine
         .linear => |x| for ([_]hip.DeviceBuffer{ x.conv, x.state }) |b| {
             const bytes = try a.alloc(u8, b.len);
             defer a.free(bytes);

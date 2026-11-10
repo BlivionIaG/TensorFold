@@ -103,7 +103,7 @@ pub fn main(init: std.process.Init) !u8 {
         if (begin < first + count) for (begin..first + count) |row| {
             e.prompts.release(mark);
             const last = family.forward.at(hidden, (row - first) * c.hidden);
-            const y = try o.project(last, e.model().head, 1, false);
+            const y = try o.project(last, e.model().head.?, 1, false);
             const got = try download(a, e, y.ptr, y.kind, c.vocab);
             @memcpy(logits[(row - first_logit) * c.vocab ..][0..c.vocab], got);
         };
@@ -143,7 +143,7 @@ fn captureEmbeds(a: Allocator, e: *Engine, first: usize, rows: usize, out: []f32
     const m = e.model();
     const o = e.ops(&e.prompts);
     const x = try family.forward.take(o, m.act, rows * m.spec.hidden);
-    try o.embedRows(m.embed, e.ids_dev.base(), rows, x);
+    try o.embedRows(m.embed.?, e.ids_dev.base(), rows, x);
     for (m.frame.?.runs) |run| if (run.clip(first, rows, m.spec.hidden)) |clip| {
         try o.copyCols(.{ .ptr = clip.features, .kind = .bf16 }, m.spec.hidden, 0, x.ptr + clip.first * m.spec.hidden * 2, clip.rows, m.spec.hidden);
     };

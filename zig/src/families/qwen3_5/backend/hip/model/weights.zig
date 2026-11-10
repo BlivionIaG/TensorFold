@@ -7,6 +7,7 @@ const table = @import("../../../weights/table.zig");
 const host = @import("../../../weights/host.zig");
 const checkpoint = @import("../../../weights/checkpoint.zig");
 const slicing = @import("../../../weights/slicing.zig");
+const view = @import("view.zig");
 
 const quant = hip.quant;
 const Tensor = table.Tensor;
@@ -175,10 +176,16 @@ pub const Model = struct {
     gpa: std.mem.Allocator,
     spec: config.Spec,
     buffers: std.ArrayList(hip.DeviceBuffer) = .empty,
-    embed: Projection = undefined,
+    /// The layers `layers` holds (`layers[0]` is layer `range.first`); whole unless a stage's range says less.
+    range: view.Range = .whole,
+    /// The checkpoint's projections are bf16 as stored (the embedding's format), whatever the range holds.
+    plain: bool = false,
+    /// Null when `range` does not start at layer 0.
+    embed: ?Projection = null,
     layers: []Layer = &.{},
-    final_norm: Buf = undefined,
-    /// `null` ties the output head with `embed`.
+    /// Null when `range` does not end at the last layer.
+    final_norm: ?Buf = null,
+    /// `null` ties the output head with `embed`; a stage that ends the model without starting it holds its own upload.
     head: ?Projection = null,
     mtp: ?MtpHead = null,
     /// A tensor-parallel rank's share: the output projections hold fp32 shares of a sum.
@@ -196,10 +203,15 @@ pub const Model = struct {
 
     /// `loadRank`, with a bf16 checkpoint's projections widened to fp32 dense when `widen` (a chat checkpoint).
     pub fn loadRankWith(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Runtime, dir: []const u8, rank: ?slicing.Rank, widen: bool) !Model {
+        return loadRankRange(gpa, io, d, dir, rank, widen, .whole);
+    }
+
+    /// `loadRankWith` for the layers of `range` only (see `fromCheckpointRange`).
+    pub fn loadRankRange(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Runtime, dir: []const u8, rank: ?slicing.Rank, widen: bool, range: view.Range) !Model {
         var ck = try checkpoint.Checkpoint.open(gpa, io, dir);
         defer ck.close();
         ck.main.widen = widen;
-        return fromCheckpointRank(gpa, d, &ck, std.math.maxInt(usize), rank);
+        return fromCheckpointRange(gpa, d, &ck, std.math.maxInt(usize), rank, range);
     }
 
     /// The first `limit` layers of `ck` (all when `limit` is large), with the MTP head only when every layer loads.
@@ -209,24 +221,39 @@ pub const Model = struct {
 
     /// `fromCheckpoint` for one tensor-parallel rank, `spec` being what that rank sees.
     pub fn fromCheckpointRank(gpa: std.mem.Allocator, d: *const hip.Runtime, ck: *const checkpoint.Checkpoint, limit: usize, rank: ?slicing.Rank) !Model {
+        return fromCheckpointRange(gpa, d, ck, limit, rank, .whole);
+    }
+
+    /// `fromCheckpointRank` for the layers of `range` only: no embedding past layer 0, no head short of the end.
+    pub fn fromCheckpointRange(gpa: std.mem.Allocator, d: *const hip.Runtime, ck: *const checkpoint.Checkpoint, limit: usize, rank: ?slicing.Rank, range: view.Range) !Model {
         const whole = ck.spec();
-        var m: Model = .{ .gpa = gpa, .spec = if (rank) |r| try slicing.localSpec(whole, r) else whole, .sliced = rank != null };
+        try range.admit(whole.n_layers, .{ .world = if (rank) |r| r.world else 1, .bf16 = ck.config.quant == .bf16 });
+        const stage = !range.isWhole(whole.n_layers);
+        var m: Model = .{ .gpa = gpa, .spec = if (rank) |r| try slicing.localSpec(whole, r) else whole, .sliced = rank != null, .range = range.within(whole.n_layers) };
         errdefer m.deinit();
         const u: Uploader = .{ .up = .{ .r = d, .buffers = &m.buffers, .gpa = gpa } };
         var scratch: std.heap.ArenaAllocator = .init(gpa);
         defer scratch.deinit();
         const embed = try ck.embed(scratch.allocator());
-        m.embed = try u.projection(embed);
-        m.final_norm = try u.tensor(try ck.finalNorm(scratch.allocator()));
+        m.plain = embed == .bf16;
+        const heads = m.range.heads(whole.n_layers);
+        if (m.range.embeds()) m.embed = try u.projection(embed);
+        if (heads) m.final_norm = try u.tensor(try ck.finalNorm(scratch.allocator()));
         const head = try ck.head(scratch.allocator());
         if (rank) |r| {
             m.head = try u.projection(try slicing.vocabRows(scratch.allocator(), head orelse embed, whole.vocab, r));
-        } else if (head) |h| m.head = try u.projection(h);
+        } else if (head) |h| {
+            if (heads) m.head = try u.projection(h);
+        } else if (heads and !m.range.embeds()) {
+            // tied: the last stage reads the embedding's table as its head, without holding the embedding
+            m.head = try u.projection(embed);
+        }
         // each part's mapped pages go once it is up: a rank holds one layer of the checkpoint at a time, not all of it
         ck.release(null);
         var list: std.ArrayList(Layer) = .empty;
         errdefer list.deinit(gpa);
-        for (0..@min(limit, m.spec.n_layers)) |i| {
+        const stop = @max(m.range.first, @min(limit, m.range.last, m.spec.n_layers));
+        for (m.range.first..stop) |i| {
             var host_layer = try ck.layer(i);
             defer host_layer.deinit();
             if (rank) |r| try slicing.layer(&host_layer, whole, r);
@@ -236,7 +263,7 @@ pub const Model = struct {
         m.layers = try list.toOwnedSlice(gpa);
         // under tp only rank 0 drafts: its head is whole, logits rows included (its own or the model's whole head)
         const drafts = if (rank) |r| r.rank == 0 else true;
-        if (drafts and m.layers.len == m.spec.n_layers) if (try ck.mtp()) |head_layer| {
+        if (drafts and !stage and m.layers.len == m.spec.n_layers) if (try ck.mtp()) |head_layer| {
             var h = head_layer;
             defer h.deinit();
             if (rank != null and h.head == null) h.head = head orelse embed;
@@ -248,7 +275,7 @@ pub const Model = struct {
 
     /// The output head: the embedding itself when the checkpoint ties them.
     pub fn outputHead(m: *const Model) Projection {
-        return m.head orelse m.embed;
+        return m.head orelse m.embed.?;
     }
 
     pub fn deinit(m: *Model) void {

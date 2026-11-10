@@ -37,24 +37,57 @@ pub const Trace = struct {
     layer: *const fn (ctx: *anyopaque, index: usize, x: Tensor, rows: usize) anyerror!void,
 };
 
+/// How a stage's boundary rows cross the host window, as device addresses.
+pub const Handoff = struct {
+    /// The previous stage's hidden rows as f32 (`stamp` set: in stamped 16-byte groups); read past layer 0.
+    src: u64 = 0,
+    stamp: ?Stamp = null,
+    /// Where a range that stops short of the last layer writes its residual rows as f32.
+    dst: u64 = 0,
+};
+
+/// The stamped hand-off: every group's stamp must be `seq` (re-read up to `retries` times); `status` 0 ok, 1 timed out.
+pub const Stamp = struct { seq: u32, status: u64, retries: u32 };
+
+/// `n` hidden values from the previous stage into `x` (the activation dtype).
+pub fn takeRows(o: Ops, hand: Handoff, x: Tensor, n: usize) Error!void {
+    const rows = hip.ops.split_rows;
+    if (hand.stamp) |st| return rows.consumeStamped(o, hand.src, st.seq, x, n, st.status, st.retries);
+    return rows.importRow(o, hand.src, x, n);
+}
+
+/// `n` residual values of `x` to the next stage, as f32.
+pub fn giveRows(o: Ops, hand: Handoff, x: Tensor, n: usize) Error!void {
+    return hip.ops.split_rows.exportRow(o, x, hand.dst, n);
+}
+
 /// The span's final-normed rows (len, hidden) in the activation dtype; `ids` are int32 token ids on the device.
 pub fn span(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len: usize, pos0: usize, trace: ?Trace) Error!Tensor {
+    return spanWith(ops, m, caches, ids, len, pos0, trace, .{});
+}
+
+/// `span` over `m.range`: rows come through `hand` past layer 0, and leave through it short of the head.
+pub fn spanWith(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len: usize, pos0: usize, trace: ?Trace, hand: Handoff) Error!Tensor {
     // prefill's kernels at any row count: a prompt's rows have the same bits fresh, resumed or in steps
     var o = ops;
     o.prefill = true;
     const s = m.spec;
     const x = try take(o, m.act, len * s.hidden);
     var start: usize = 0;
-    while (start < len) : (start += SPAN) {
-        const rows = @min(SPAN, len - start);
-        try o.embedRows(m.embed, ids + start * 4, rows, at(x, start * s.hidden));
+    if (m.range.embeds()) {
+        while (start < len) : (start += SPAN) {
+            const rows = @min(SPAN, len - start);
+            try o.embedRows(m.embed.?, ids + start * 4, rows, at(x, start * s.hidden));
+        }
+    } else {
+        try takeRows(o, hand, x, len * s.hidden);
     }
     if (m.frame) |frame| {
         for (frame.runs) |run| if (run.clip(pos0, len, s.hidden)) |clip| {
             try o.copyCols(.{ .ptr = clip.features, .kind = .bf16 }, s.hidden, 0, x.ptr + clip.first * s.hidden * 2, clip.rows, s.hidden);
         };
     }
-    for (m.layers, 0..) |layer, index| {
+    for (m.layers, m.range.first..) |layer, index| {
         start = 0;
         while (start < len) : (start += SPAN) {
             const rows = @min(SPAN, len - start);
@@ -77,6 +110,10 @@ pub fn span(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len
             if (m.taps.of(index)) |ti| if (caches.tap) |ring| try hip.plan_ops.tapRows(o, xs, ring.base(), rows, s.hidden, ti, m.taps.n, m.taps.rows, pos0 + start);
         }
         if (trace) |t| t.layer(t.ctx, index, x, len) catch |err| return if (err == error.Cancelled) error.Cancelled else error.HipFailed;
+    }
+    if (!m.headed()) {
+        try giveRows(o, hand, x, len * s.hidden);
+        return x;
     }
     const out = try take(o, m.act, len * s.hidden);
     try o.rms(x, m.final_norm, out, len, s.hidden, @floatCast(s.eps));
