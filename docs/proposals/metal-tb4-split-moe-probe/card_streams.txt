@@ -29,3 +29,19 @@ metal_first    a     streams 1 chunk 72: prefill 72 positions x 1 in 286.6 ms = 
 external_first a     streams 1 chunk 8: prefill 72 positions x 1 in 618.4 ms = 116.4 tok/s; 1/1 token-identical   [cut 16]
 external_first a     streams 1 chunk 72: prefill 72 positions x 1 in 478.8 ms = 150.4 tok/s; 1/1 token-identical   [cut 16]
 external_first a     streams 2 chunk 8: prefill 72 positions x 2 in 894.8 ms = 160.9 tok/s; 2/2 token-identical   [cut 16]
+# The Mac alone (no card), same prompt and tokens: tf-offload-metal parallel REF N [CHUNK [REPEAT]]; one engine, prefill in chunks, decode in shared rounds of one row a sequence
+metal alone: 1 sequences, chunk 24: prefill 9 positions x 1 in 88.0 ms = 102.3 tok/s; decode 40 tokens x 1 in 562.4 ms = 71.1 tok/s (71.1 a stream); 1/1 sequences token-identical
+metal alone: 2 sequences, chunk 24: prefill 9 positions x 2 in 114.4 ms = 157.4 tok/s; decode 40 tokens x 2 in 692.4 ms = 115.5 tok/s (57.8 a stream); 2/2 sequences token-identical
+metal alone: 3 sequences, chunk 24: prefill 9 positions x 3 in 146.9 ms = 183.8 tok/s; decode 40 tokens x 3 in 775.1 ms = 154.8 tok/s (51.6 a stream); 3/3 sequences token-identical
+metal alone: 4 sequences, chunk 24: prefill 9 positions x 4 in 171.3 ms = 210.2 tok/s; decode 40 tokens x 4 in 802.5 ms = 199.4 tok/s (49.8 a stream); 4/4 sequences token-identical
+metal alone: 2 sequences, chunk 24: prefill 9 positions x 2 in 115.0 ms = 156.6 tok/s; decode 40 tokens x 2 in 688.4 ms = 116.2 tok/s (58.1 a stream); 2/2 sequences token-identical   [second run]
+metal alone: 3 sequences, chunk 24: prefill 9 positions x 3 in 144.1 ms = 187.4 tok/s; decode 40 tokens x 3 in 775.6 ms = 154.7 tok/s (51.6 a stream); 3/3 sequences token-identical   [second run]
+metal alone: 4 sequences, chunk 24: prefill 9 positions x 4 in 176.1 ms = 204.5 tok/s; decode 40 tokens x 4 in 811.3 ms = 197.2 tok/s (49.3 a stream); 4/4 sequences token-identical   [second run]
+metal alone: 1 sequences, chunk 72: prefill 72 positions x 1 in 173.3 ms = 415.4 tok/s; decode 40 tokens x 1 in 579.0 ms = 69.1 tok/s (69.1 a stream); 1/1 sequences token-identical   [repeat 8]
+metal alone: 2 sequences, chunk 72: prefill 72 positions x 2 in 291.6 ms = 493.8 tok/s; decode 40 tokens x 2 in 701.8 ms = 114.0 tok/s (57.0 a stream); 2/2 sequences token-identical   [repeat 8]
+metal alone: 1 sequences, chunk 8: prefill 72 positions x 1 in 196.8 ms = 365.9 tok/s; decode 40 tokens x 1 in 580.5 ms = 68.9 tok/s (68.9 a stream); 1/1 sequences token-identical   [repeat 8]
+metal alone: 1 sequences, chunk 1: prefill 72 positions x 1 in 916.0 ms = 78.6 tok/s; decode 40 tokens x 1 in 579.8 ms = 69.0 tok/s (69.0 a stream); 1/1 sequences token-identical   [repeat 8]
+metal alone: 1 sequences, chunk 24: decode 40 tokens x 1 in 570.6 ms = 70.1 tok/s   [third run, no other builds running]
+metal alone: 2 sequences, chunk 24: decode 40 tokens x 2 in 686.8 ms = 116.5 tok/s (58.2 a stream); 2/2 token-identical   [third run, no other builds running]
+metal alone: 3 sequences, chunk 24: decode 40 tokens x 3 in 775.8 ms = 154.7 tok/s (51.6 a stream); 3/3 token-identical   [third run, no other builds running]
+metal alone: 4 sequences, chunk 24: decode 40 tokens x 4 in 803.9 ms = 199.0 tok/s (49.8 a stream); 4/4 token-identical   [third run, no other builds running]

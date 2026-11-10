@@ -32,7 +32,7 @@ What the measurements say, on this M4 Pro (48 GiB) and the Vega card:
 | Question | Answer |
 | --- | --- |
 | Does the offload beat plain Metal for one stream on the Vega card? | No. All-Metal decodes the 35B-A3B at 91.6 tok/s; the best single-stream split is a few percent below it (layer split, 84 tok/s modelled) or well below it (expert split, 52 tok/s modelled). Vega's whole-token decode bandwidth is below the M4 Pro's. |
-| What does the Vega card buy? | Capacity (a 24 GiB Mac holds 12 GiB instead of 19 GiB of weights) and aggregate throughput when two or more streams keep both devices busy: 131 tok/s modelled against 86 on one Metal queue [INFERENCE]. |
+| What does the Vega card buy? | Capacity (a 24 GiB Mac holds 12 GiB instead of 19 GiB of weights) and, on the 4B, no aggregate throughput: two pipelined streams decode 120-130 tok/s, the Mac alone batching two sequences in one round 116 (one engine, same prompts), and the Mac alone is ahead at three and four (155 and 198 against the split's 120). For the 35B-A3B, where a batched round reads more experts, the card's two-stream figure (131 modelled) against the Mac's batched figure is [INFERENCE] until measured. |
 | Where does the speed come from? | A faster external GPU. Modelled 7900 XTX-class: 158 tok/s resident; 5090-class: 299 tok/s resident, 3.5x all-Metal [INFERENCE]. |
 | Can Metal wait on a flag written by the external GPU (or the CPU)? | No. A running kernel never reliably sees a store from another agent; GPU stores are not visible mid command buffer either. Every handoff is a command-buffer boundary. Measured wake cost 65 us. |
 | Can Metal wrap the memory the external GPU DMAs into? | Yes. `newBufferWithBytesNoCopy` accepted 16 KiB to 1 GiB shm-backed mappings, including `MAP_FIXED` inside a `PROT_NONE` arena the way `hipmac` lays out its sysmem. |
@@ -533,7 +533,7 @@ Each milestone has a stop criterion; none needs more than one Mac and one card.
 | M0 (done offline) | the probes above | window wrap works, wake cost known: yes, 65 us idle (149 us with the card in use) |
 | M1 (receipt measured; relay round trips at 4 KiB / 64 KiB not separately) | on the card: flag round trip each way through the relay at 4 KiB and 64 KiB, `hipStreamWaitValue32`-class wait latency, GPU read of a 64 KiB host window; 4B dispatch counts with fused boundary kernels | eGPU to Metal to eGPU at 8 KiB p50 <= 250 us, p99 <= 500 us |
 | M2 | Level B stamped replies: stale-stamp rate and retry cost against the card's PCIe reads | zero accepted stale words in 10^6 replies, else stay at Level A |
-| M3 (done on the 4B: tokens identical, cosine >= 0.9996; 2 streams 120-130 tok/s = 1.6-1.8x one Mac stream, gate met; one stream 16-24 ms against 14 ms all-Metal, the 5% single-stream clause not met, as the model says) | Qwen3.5-4B layer split Metal + Vega, tokens against the unsplit runs (gate 4) and fidelity (gate 3); single stream and 2 streams | 2-stream throughput >= 1.5x one Metal queue (model 1.7x); single stream within 5% of all-Metal |
+| M3 (done on the 4B: tokens identical, cosine >= 0.9996; 2 streams 120-130 tok/s: 1.6-1.8x ONE Mac stream but only 1.03-1.13x the Mac alone batching two sequences (116), and below it at 3-4 sequences (155, 198): the gate as worded (against one Metal queue) is met, the honest comparison is not a win on this model; one stream 16-24 ms against 14 ms all-Metal, the 5% single-stream clause not met, as the model says) | Qwen3.5-4B layer split Metal + Vega, tokens against the unsplit runs (gate 4) and fidelity (gate 3); single stream and 2 streams | 2-stream throughput >= 1.5x one Metal queue (model 1.7x); single stream within 5% of all-Metal |
 | M4 | 35B-A3B layer split, KV hand-off after Metal prefill, 24 GiB-class memory cap emulated with a lower budget | fits the cap; 2-stream tok/s within 15% of the model |
 | M5 | expert split on the card with resident layers | 14 crossings fewer than all-split, tok/s within 15% of the model; if single-stream is below 50 tok/s it stays opt-in |
 | M6 | hot-expert cache: per-layer routing histograms on real prompts (code, prose), hit rate versus cache size | an all-hit layer rate that pays the cache's copy cost; otherwise drop PR 3 |
@@ -736,11 +736,25 @@ Decode, aggregate tokens per second over all sequences (a stream's share in brac
 Level B gives the same figures within 1 tok/s on `metal_first`. Against the planner (4B, receipt of the first run): 113.2 tok/s predicted
 for two streams, 62.8 for one; measured 119.9 at the planner's cut 16 and 129-130 at the best cuts (`metal_first` 20, `external_first` 16),
 so the model is within 6% at its own cut and slightly pessimistic at the best; one stream measures 44-53 (50.7 at cut 16 against the
-62.8 predicted, because the eager step costs more than the model's Vega figure, 19 ms a position all-card in the first run). Against one Mac
-stream at 14 ms a position (about 72 tok/s, same engine), two streams on the split are 1.6x at cut 16 and 1.8x at the best cuts; the
-gate asks 1.5x. A second stream on the Mac's own GPU alone (both sequences in one queue) is not measured here, so "one Metal queue"
-means one stream. Three and four streams do not add throughput at cut 16: the slower half is saturated at two. At 120 tok/s
+62.8 predicted, because the eager step costs more than the model's Vega figure, 19 ms a position all-card in the first run). Three and four streams do not add throughput at cut 16: the slower half is saturated at two. At 120 tok/s
 a position leaves the pipeline every 8.3 ms, so the slower side's work for one position is about 8 ms there.
+
+**The fair baseline: the Mac alone, same prompts, same tokens, batched.** `tf-offload-metal parallel REF N [CHUNK [REPEAT]]` runs
+N sequences of the reference's prompt on the Mac's GPU in one engine, prefill in chunks, then decode in shared rounds of one row a sequence
+(the engine's batched decode; best of two passes after a warm-up; three full runs agreed within 1%, the third with nothing else building; the first two overlapped a HIP kernel compile on another core). Every sequence token-identical to the reference.
+
+| Sequences | Mac alone, decode tok/s (a stream) | Split, best of the table above | Split at the planner's cut 16 |
+|---|---|---|---|
+| 1 | 70.1-71.1 (70-71) | 52.4 | 50.7 |
+| 2 | 115.5-116.5 (58) | 129-130 | 119.9 |
+| 3 | 154.7-154.8 (51.6) | | 120.3 |
+| 4 | 197.2-199.4 (49.3-49.8) | | 120.3 |
+
+So, for this checkpoint on this Mac, the split is not faster than the Mac alone: at two sequences it is level (1.03-1.13x at the best cuts,
+1.04x at the planner's), at three and four the Mac alone is ahead by 1.3x and 1.65x because a batched round reads the weights once for
+all rows and the 4B's rows are cheap, while the split's slower half is saturated at two. The earlier "1.6-1.8x" compared the split with one
+Mac stream; that is not the Mac's best use of its own GPU and is withdrawn as a speed claim. What the split buys on the 4B is only the
+memory it frees (the Mac holds 16 of 32 layers at cut 16).
 
 Chunked prefill (prompt 72 positions, `metal_first` unless stated; tok/s over the prefill only):
 
@@ -750,7 +764,8 @@ Chunked prefill (prompt 72 positions, `metal_first` unless stated; tok/s over th
 | 24 | | | | 251.2 |
 | external_first 16 | | 116.4 | | 150.4 |
 
-Two streams at chunk 8: 157.3 (`metal_first` 16) and 160.9 (`external_first` 16) tok/s aggregate. Chunked prefill is 3x the
+The Mac alone prefills the same 72 positions at 78.6 tok/s one position a step, 365.9 at chunk 8 and 415.4 at chunk 72 (two sequences, chunk 72:
+493.8 aggregate): 1.7-2.7x the split's 150-251 at the same chunk, because the card's half of the prefill is the slow part. Two streams at chunk 8: 157.3 (`metal_first` 16) and 160.9 (`external_first` 16) tok/s aggregate. Chunked prefill is 3x the
 token-by-token rate and saturates at about 156 tok/s for 16 layers on the card (the first run's whole-model figure on the card
 was about 200 tok/s, so 16 layers alone would be about 400 [INFERENCE]); the Mac's half, at the Metal stage's speed, bounds the
 rest. The decode rate after a chunked prefill is unchanged. The single-position fidelity check of the first run (cut 16, both
@@ -845,7 +860,7 @@ each pull request, resolve every `"conflicts"` entry, `atc land <issue> <session
 ## Open risks
 
 * **The card is slower than Metal for decode.** Single-stream gains need a faster external GPU; today the case is
-  capacity and 2+ streams, and the 2-stream gain is measured on the 4B (1.6-1.8x one Mac stream) and rests on the model [INFERENCE] for the 35B-A3B until M4.
+  capacity and 2+ streams, and on the 4B the 2-stream split is level with the Mac alone batching two sequences (120-130 against 116 tok/s) and slower at three and four; its value there is capacity, and whether a MoE's batched round on the Mac scales worse (more experts read) than the dense 4B's is the open question for M4 [INFERENCE].
 * **Wake cost of a Metal hop** is a property of this macOS and GPU (65 us on an idle Mac, 149 us p50 and 450 us p99
   with the card in use); it dominates the expert split (40 hops) and not the layer split (1). A change in a macOS release moves the answer; the probe receipt carries the OS build.
 * **Visibility of Metal output to PCIe readers** (flag before data). Measured toward the CPU only; Level A avoids it.
