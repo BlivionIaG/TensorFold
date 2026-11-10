@@ -332,8 +332,112 @@ struct ConvArgs {
     int layer;
 };
 
+#if defined(__gfx900__)
+// gfx900, a round's plan and a conv of 4 taps: conv_split_body's arithmetic with the loads reordered. The slot's count, first row and descriptor
+// address go out together; then the taps, the first row's sample and the norm weight (which do not wait for the state pointer) with the state pointer
+// load, then the history; the generic body loads each of them after the one before it, and the norm weight after the norm.
+template <int KIND>
+__device__ void conv_split_plan(const ConvArgs& c) {
+    __shared__ float sq[128];
+    __shared__ float inv_s;
+    constexpr int kept = 3;
+    const int conv_blocks = (c.channels + 127) / 128;
+    const int slot = blockIdx.y;
+    if (blockIdx.x >= conv_blocks) {
+        // the gates are one pass over every row of the round, from the first slot's blocks
+        if (slot != 0) return;
+        const int i = (blockIdx.x - conv_blocks) * 128 + threadIdx.x;
+        if (c.ga == nullptr || i >= c.gcount) return;
+        const int h = i % c.heads;
+        c.beta[i] = 1.f / (1.f + expf(-load_kind(c.gb, KIND, i)));
+        const float xg = load_kind(c.ga, KIND, i) + c.dt_bias[h];
+        const float soft = xg > 20.f ? xg : log1pf(expf(xg));
+        c.gate[i] = expf(-expf(c.a_log[h]) * soft);
+        return;
+    }
+    const int rows = c.plan.count[slot];
+    const long long row0 = c.plan.first[slot];
+    const unsigned long long desc_at = c.plan.desc[slot];
+    // the loads above stay above the return (the padding slot's descriptor is only an address: not read)
+    asm volatile("" ::: "memory");
+    if (rows == 0) return;
+    float* state = reinterpret_cast<float*>(reinterpret_cast<const unsigned long long*>(desc_at)[plan_first(c.layer)]);
+    const int channel = blockIdx.x * 128 + threadIdx.x;
+    const bool live = channel < c.channels;
+    const int cc = live ? channel : 0;
+    const bool head = c.norm == 128 && static_cast<int>(blockIdx.x) * 128 < 2 * c.kw;
+    const char* xin = static_cast<const char*>(c.x) + row0 * c.channels * 2;
+    const float* taps = c.weight + static_cast<long long>(cc) * c.kernel;
+    float tp[4];
+#pragma unroll
+    for (int t = 0; t < 4; ++t) tp[t] = taps[t];
+    float sample = load_kind(xin, KIND, cc);
+    // a head's norm weight (any valid address for a channel that has none)
+    const float nw = (head ? (channel < c.kw ? c.qw : c.kw_w) : c.weight)[threadIdx.x];
+    // a window of rows keeps its input rows and leaves the window as the round found it, for its keep
+    const bool replayed = rows > 1 && slot + 1 < static_cast<int>(gridDim.y);
+    float* samples = replayed ? reinterpret_cast<float*>(c.plan.snaps[2 * c.layer]) + row0 * c.channels : nullptr;
+    float history[kept];
+#pragma unroll
+    for (int t = 0; t < kept; ++t) history[t] = state[static_cast<long long>(t) * c.channels + cc];
+    float* qn = c.qn + row0 * c.kw;
+    float* kn = c.kn + row0 * c.kw;
+    float* vn = c.v + row0 * c.vw;
+    for (int r = 0; r < rows; ++r) {
+        if (r > 0) sample = load_kind(xin, KIND, static_cast<long long>(r) * c.channels + cc);
+        float acc = 0.f;
+#pragma unroll
+        for (int t = 0; t < kept; ++t) acc += history[t] * tp[t];
+        acc += sample * tp[kept];
+        float y = live ? acc * (1.f / (1.f + expf(-acc))) : 0.f;
+        if (head) {
+            // the norm of the head's 128 values, then the scale by its weight
+            __syncthreads();
+            sq[threadIdx.x] = y * y;
+            __syncthreads();
+            if (threadIdx.x < 32) {
+                float sum = 0.f;
+                for (int j = 0; j < 4; ++j) sum += sq[threadIdx.x + 32 * j];
+#pragma unroll
+                for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+                if (threadIdx.x == 0) inv_s = rsqrtf(sum / 128.f + c.eps);
+            }
+            __syncthreads();
+            y = y * inv_s * nw;
+        }
+        if (live) {
+            if (channel < c.kw) {
+                qn[static_cast<long long>(r) * c.kw + channel] = y;
+            } else if (channel < 2 * c.kw) {
+                kn[static_cast<long long>(r) * c.kw + channel - c.kw] = y;
+            } else {
+                vn[static_cast<long long>(r) * c.vw + channel - 2 * c.kw] = y;
+            }
+            history[0] = history[1];
+            history[1] = history[2];
+            history[2] = sample;
+            if (samples != nullptr) samples[static_cast<long long>(r) * c.channels + channel] = sample;
+        }
+    }
+    if (live && samples == nullptr) {
+#pragma unroll
+        for (int t = 0; t < kept; ++t) state[static_cast<long long>(t) * c.channels + channel] = history[t];
+    }
+}
+#endif
+
 // The conv for a window's rows split into q, k, v: taps in order, then silu; q, k heads rms-normed; gate and beta last.
 __device__ void conv_split_body(const ConvArgs& launch) {
+#if defined(__gfx900__)
+    if (launch.plan.count != nullptr && launch.kernel == 4) {
+        if (launch.kind == 1) {
+            conv_split_plan<1>(launch);
+        } else {
+            conv_split_plan<2>(launch);
+        }
+        return;
+    }
+#endif
     __shared__ float sq[128];
     __shared__ float inv_s;
     ConvArgs c = launch;
