@@ -60,9 +60,9 @@ tensorfold-native serve ~/models/Qwen3.5-4B-MLX-4bit --parallel 1 --context 8192
 `hip.Runtime.open()` loads `libamdhip64.dylib` on macOS and `libamdhip64.so` on Linux; `TENSORFOLD_HIP` names the file on any
 platform (an install outside the loader's search path, or the offline mock: `HIPMAC_BACKEND=mock`).
 
-The engine's HIP calls in a start and one request (the mock library behind a recording shim, 9,149 calls): `hipInit`,
+The engine's HIP calls in a start and one request (measured on the older base the branch had before it was rebased onto upstream main; the mock library behind a recording shim, 9,149 calls): `hipInit`,
 `hipDeviceGet`, `hipDevicePrimaryCtxRetain`, `hipCtxSetCurrent`, `hipDeviceGetAttribute`, `hipGetDevicePropertiesR0600`,
-`hipMemGetInfo`, `hipModuleLoadData` (10 code objects), `hipModuleGetFunction` (335 kernels), `hipModuleGetGlobal` (1),
+`hipMemGetInfo`, `hipModuleLoadData` (10 code objects there; upstream main has 16 groups), `hipModuleGetFunction` (335 kernels there; 559 now), `hipModuleGetGlobal` (1),
 `hipStreamCreateWithFlags`, `hipMalloc`, `hipMemcpyHtoD`, `hipMemset`, `hipHostMalloc`, `hipModuleLaunchKernel`,
 `hipStreamSynchronize`, `hipStreamBeginCapture`, `hipStreamEndCapture`, `hipGraphInstantiateWithFlags`, `hipGraphUpload`,
 `hipGraphLaunch`, `hipGraphDestroy`, `hipMemcpyHtoDAsync`, `hipMemcpyDtoHAsync`, `hipMemcpyDtoDAsync`, `hipFree`,
@@ -112,34 +112,29 @@ unchanged. What changed is what saw the whole wavefront or used an instruction g
 | `kGen` and `kWave` for gfx900; `static_assert` of the wave width against the gfx9 / RDNA arch | `common/arch.hpp` | unchanged |
 | a registry cost table for gfx900 (`src/hip/tuning/gfx900.zon`, generation `gcn5`); `chip()` names the generation `gcn5` for the gates | `src/hip/launches/affine.zig`, `mlx_entries.zig`, `native/hip.zig` | unchanged |
 
-The RDNA2 (gfx1030) code objects of all ten kernel groups, built by the same wrapper before and after the port, are byte for byte
-the same (`cmp`). The gfx11 objects cannot be built with Homebrew LLVM (above) and were not compared.
+The RDNA2 (gfx1030) code objects of the ten kernel groups of the older base, built by the same wrapper before and after the port, were byte
+for byte the same (`cmp`); the comparison on upstream main is in the offline verification below. The gfx11 objects cannot be built with
+Homebrew LLVM (above) and were not compared.
 
-All ten kernel groups (335 kernels) compile for gfx900 with no unported kernel left:
-
-| Group | Kernels | gfx900 |
-| --- | --- | --- |
-| `ops/ops.hip` (norms, rope, elementwise, argmax, top-k, MoE router, TP) | 30 | ported (draw.hpp) |
-| `ops/act.hip` | 17 | wave-32-group code, unchanged |
-| `attention/attention.hip` (decode attention, FA2 prefill) | 14 | `TF_FDOT2` |
-| `recurrence/gated_delta.hip` | 8 | unchanged |
-| `attention/prefill.hip` (64-row prefill attention) | 4 | `TF_FDOT2` |
-| `decode/decode.hip`, `decode/plan.hip` | 7 + 9 | unchanged |
-| `tiles/dot2_tiles.hip` (stream, row, lanes, GEMM, K-parallel tiles; 2-8 bits) | 234 | `DotF16`, epilogue, `group32` |
-| `tiles/dot2.hip` (reference, wide, tiled, split) | 7 | `TF_FDOT2` |
+All sixteen kernel groups of upstream main (559 kernels: 54, 20, 14, 9, 9, 9, 21, 335, 7, 19, 6, 12, 10, 16, 12 and 6 a group, counted
+from the code objects' amdhsa metadata) compile for gfx900 offline (`zig build hip-kernel-build -Dhip-arch=gfx900`, below). Upstream's
+RDNA-only lane instructions needed gfx900 forms: `row_xor` (DPP `row_xmask`) and `row_lane` (`v_permlane16`) in
+`attention/prefill.hpp`, `row_xor` and `wave_sum_dpp` (`v_permlanex16`) in `decode/plan.hip`. Each is a width-16 or width-32 `__shfl`
+with the same value, under `__gfx900__` only; the RDNA code keeps its instruction. The dot2 uses (`TF_FDOT2`) are in `common/dot2.hpp`,
+`tiles/gemm.hpp` and `attention/prefill.hpp`; `group32` is in `tiles/gemm.hpp`.
 
 Not on gfx900, by design: the matrix-core GEMM tile (`matrix_gemm.hpp`, WMMA, gfx11) and the BF16 dot2 tiles. They are compiled
 out by `TF_MATRIX=0` and `TF_DOT2_BF16=0`, and the registry never selects them for a `matrix = none`, `act = f16` GPU.
 gfx900 takes the RDNA2 fp16 family; that family is one the engine already serves on the Deck.
 
-Register pressure and scratch (from each kernel's amdhsa metadata; no timing yet): the decode stream tile, the row and lanes
-tiles and every non-GEMM kernel fit without spills.
-The prompt GEMM tiles spill: the 128-row tile (`affine_gemm_block`) 195 to 225 of 256 VGPRs (428 to 460 bytes of scratch), the 64-row
-tile 44 to 60, the K-parallel tiles 15 to 79; the 32-row tile spills nothing. `gfx900.zon` therefore never selects the 128-row
-tile: a prompt takes the K-parallel tiles to 24 rows, the 32-row tile to 32 and the 64-row tile past that; a decode call of 64
-rows or more takes the reference block tile. All of the tiles of a family give the same bits, so this changes speed only.
-The registry's tests assert it. Costs are the thresholds gfx1030's table carries, not measurements on a Vega; a measured table
-replaces them.
+Register pressure and scratch (from each kernel's amdhsa metadata of the offline gfx900 build; no timing): 56 kernels use scratch,
+55 of them affine tiles. The 128-row reference tile `affine_gemm_block` takes 428 to 464 bytes of scratch at 256 VGPRs, the K-parallel
+`affine_gemm_kp` tiles 64 to 324 bytes, and the stream tiles at 8 columns a lane 156 to 576 bytes; the stream tiles at 2 and 4
+columns a lane (the widths `stream_pick.zig` allows on gfx900) use none. Upstream main has no 32- or 64-row dot2 GEMM tiles (the
+older base had them, and they spilled little or nothing), so `gfx900.zon` takes the K-parallel tiles for small prompts and `block`
+for prompts past 32 rows and decode calls of 64 rows or more; both spill. [INFERENCE] Prompt prefill on a Vega is therefore slower
+than on the older base; it is unmeasured. All of the tiles of a family give the same bits, so this changes speed only. The registry's
+tests assert the table. Costs are the thresholds gfx1030's table carries, not measurements on a Vega; a measured table replaces them.
 
 Warp-synchronous code that was lock-step on 32 lanes is lock-step on 64, and `__syncwarp()` is a wavefront barrier, so the
 `gemm_kp` tile's LDS hand-offs between the two groups of a wavefront stay ordered. A block of 32 threads (`gated_delta`, the
@@ -152,19 +147,40 @@ engine's own bit rules: solo equals batched, resumed equals fresh).
 
 ## Offline verification (Mac, no card)
 
+Run on upstream main (the rebased branch), without the card:
+
 | Check | Result |
 | --- | --- |
-| `zig build native-hip tf-qwen35-test -Dhipcc=$ROCM/bin/hipcc` | builds; Mach-O arm64 executables |
-| `zig build hip-kernel-build hip-affine-build hip-gpu-build` | build (GPU tests compile, not run) |
-| `zig build test -Dhipcc=... -Dmetal-std=metal4.0` | 443 passed, 1 skipped, 0 failed (includes the caps, registry and tuning tests for gfx900) |
+| `HIPMAC_BACKEND=mock zig build hip-host-test -Dhip=true` | 78 passed (includes the caps, registry, tuning and stream-pick tests for gfx900) |
+| `zig build hip-kernel-build -Dhip=true -Dhipcc=<macOS wrapper> -Dhip-arch=gfx900` | all 16 groups compile (about 70 s; the GPU tests compile, not run) |
+| the same with `-Dhip-arch=gfx1030`, against a build of upstream main with the same wrapper | the `.text` and `.rodata` (machine code and kernel descriptors) of all 16 groups are byte for byte the same; the whole files differ in the `__hip_cuid_*` symbol, a hash of the source path (and the symbol order after it; looked at in group 3) |
+
+Run on the older base before the rebase, not repeated on upstream main:
+
+| Check | Result |
+| --- | --- |
+| `zig build test -Dhipcc=... -Dmetal-std=metal4.0` | 443 passed, 1 skipped, 0 failed |
 | `TF_QWEN_DIR=~/models/Qwen3.5-4B-MLX-4bit zig build test-qwen35` | the 4B checkpoint indexes (loader tests) |
-| ten code objects for gfx900, all 335 kernels | build; every kernel resolves through the mock runtime's `hipModuleGetFunction` |
 | `HIPMAC_BACKEND=mock TENSORFOLD_HIP=<hipmac>/build/libamdhip64.dylib tensorfold-native serve ~/models/Qwen3.5-4B-MLX-4bit` | starts, loads, captures 7 graphs, replays 153 of 160 rounds, answers a chat request (the mock does not run kernels, so the text is empty) |
+
+## Status
+
+The branch was rebased onto upstream main, whose stream tile, GEMM tile set and tail kernel differ from the older base the numbers
+below were measured on:
+
+- The older base staged x in LDS for the decode stream tile and had 32- and 64-row dot2 GEMM tiles. Upstream main has neither, so the
+  stream tile here loads x directly (widened to fp32 for `TF_G9_MIX=1`) and prompts past the K-parallel tiles run `block`, which spills
+  on gfx900 (see the scratch figures above). The x-staging commits of the older base are not part of this branch.
+- Upstream's tail kernel already loads several elements ahead on every architecture, so the gfx900-only batched loads are not needed.
+- The other tuning (v_mad_mix_f32 on fp32 x, `v_and_or_b32` code pairs, lanes a column that leave none idle, at most 4 columns a lane,
+  the `TF_G9_*` and `TF_STREAM_*` switches) is ported. It has been compiled for gfx900 offline; no kernel has run on the rebased branch.
 
 ## Decode on the card (Vega 56 through hipmac, TinyGPU)
 
 Measured with `tools/vega-macos/vega_gate.py` (starts `tensorfold-native serve` on `libamdhip64.dylib`, checks the greedy tokens against
-the mlx_lm references of `tools/vega-macos/mlx_ref.py`, then runs story decodes and reads `tensorfold.tokens_per_second`).
+the mlx_lm references of `tools/vega-macos/mlx_ref.py`, then runs story decodes and reads `tensorfold.tokens_per_second`). Every number
+in this section was measured on the older base the branch had before it was rebased onto upstream main; none was re-measured on the
+rebased branch, which differs in the ways listed under Status.
 
 | Step | decode tok/s | Tokens vs mlx_lm |
 | --- | --- | --- |
@@ -213,3 +229,6 @@ Profiling: `tools/vega-macos/hipprof.c` is a shim `libamdhip64` that forwards to
 
 - Logits cosine against mlx on the card (`vega_gate.py --logits` exists; the greedy tokens match for the checked prompts).
 - The default `--mtp-drafts 3` of a discrete GPU is irrelevant for this checkpoint (it has no MTP head).
+- Everything in the decode section on upstream main: tokens against mlx_lm, tok/s, the stream tile without staged x, prefill with
+  `block`, and the hardware tests (`hip-kernel-test`, `hip-affine-test`, `hip-gpu-test`).
+- The gfx900 pin of the stream tile: upstream's stream golden test covers BF16 only and has no recorded hash for gfx900.
