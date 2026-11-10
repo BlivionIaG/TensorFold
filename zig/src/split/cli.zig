@@ -185,9 +185,9 @@ fn planCmd(env: Env, args: []const []const u8) !u8 {
     const chosen = planner.choose(candidates, .{ .allow_unexecutable = has(args, "--allow-unexecutable") }) catch {
         const s = candidates.shortfall();
         try env.err.print("tf-offload: nothing fits: Mac needs {d:.1} of {d:.1} GiB, the device {d:.1} of {d:.1} GiB, both together {d:.1} of {d:.1} GiB\n", .{
-            gib(s.mac.needed),        gib(s.mac.available),
-            gib(s.vram.needed),       gib(s.vram.available),
-            gib(s.combined.needed),   gib(s.combined.available),
+            gib(s.mac.needed),      gib(s.mac.available),
+            gib(s.vram.needed),     gib(s.vram.available),
+            gib(s.combined.needed), gib(s.combined.available),
         });
         if (s.unexecutable_fits) try env.err.writeAll("tf-offload: a placement exists that this build cannot execute yet (--allow-unexecutable lists it)\n");
         return 1;
