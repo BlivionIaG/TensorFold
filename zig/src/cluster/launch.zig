@@ -84,6 +84,7 @@ pub const mac_probes = [_][]const u8{
 
 /// One node's inventory from its tools' output, over ssh (or locally when `local`).
 pub fn inventory(a: Allocator, r: Runner, c: config.Config, n: config.Node, local: bool) !node.Inventory {
+    if (!n.backend.launchable()) return error.UnlaunchableBackend;
     var texts: [mac_probes.len][]const u8 = undefined;
     for (mac_probes, &texts) |cmd, *t| {
         const argv: []const []const u8 = if (local) &.{ "/bin/sh", "-c", cmd } else try sshArgv(a, c, n, cmd);
@@ -134,6 +135,7 @@ pub fn launch(a: Allocator, r: Runner, c: config.Config, json: []const u8, model
     for (model.nodes) |name| {
         if (std.mem.eql(u8, name, leader)) continue;
         const n = c.nodes[c.find(name) orelse return error.UnknownNode];
+        if (!n.backend.launchable()) return error.UnlaunchableBackend;
         const argv = try sshArgv(a, c, n, try nodeCommand(a, json, name, leader, model.id));
         var ok = true;
         if (!dry) {

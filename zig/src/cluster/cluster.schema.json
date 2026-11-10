@@ -46,7 +46,7 @@
         "name": { "$ref": "#/$defs/name" },
         "address": { "type": "string", "minLength": 1, "description": "Host or IP for the launch step, never the data plane." },
         "via": { "$ref": "#/$defs/name", "description": "A node this one is reached through (its jump host); one hop only." },
-        "backend": { "enum": ["metal", "cuda"] },
+        "backend": { "enum": ["metal", "cuda", "hip"] },
         "chip": { "type": "string" },
         "gpu": { "type": "string" },
         "memory_gb": { "type": "number", "exclusiveMinimum": 0 },

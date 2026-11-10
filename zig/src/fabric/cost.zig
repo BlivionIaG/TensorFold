@@ -21,6 +21,12 @@ pub const cx5_mac_to_cuda: Link = .{ .kind = .cx5, .latency_ns = 7_625, .bandwid
 pub const cx5_cuda_to_mac: Link = .{ .kind = .cx5, .latency_ns = 3_680, .bandwidth = 51.0e9 / 8.0, .node_bandwidth = 51.2e9 / 8.0, .source = .documented };
 /// Thunderbolt 5 between two M3 Ultras: half the 8 B-4 KiB ping-pong round trip, and streaming SENDs of 16 KiB-4 MiB.
 pub const tb5: Link = .{ .kind = .tb5, .latency_ns = 3_500, .bandwidth = 9.38e9, .source = .measured };
+/// A host to its own external GPU through a PCIe tunnel over Thunderbolt: sustained 256 MiB staged copies measured on the card
+/// at 3.2e9 B/s host to device and 3.35e9 B/s device to host (`bandwidth` takes the lower). Latency is documented, not measured
+/// here: a posted write takes about 1 us, an MMIO read round trip about 12 us (the latency below is the posted write).
+pub const tb_gpu: Link = .{ .kind = .tb_gpu, .latency_ns = 1_000, .bandwidth = 3.2e9, .source = .documented };
+/// An MMIO read round trip over the PCIe tunnel (documented): what a doorbell-then-poll read from the host costs.
+pub const tb_gpu_read_round_trip_ns: f64 = 12_000;
 /// A same-node copy through unified memory.
 pub const local: Link = .{ .kind = .local, .latency_ns = 1_000, .bandwidth = 400e9, .source = .assumed };
 
@@ -33,7 +39,12 @@ pub const Handoff = struct {
 
 /// A command buffer signals a shared event the host waits on, and the host's signal wakes the next one (our M5 wake time).
 pub const event_handoff: Handoff = .{ .gpu_to_host_ns = 10_000, .host_to_gpu_ns = 100_000, .source = .probed };
-/// A resident kernel polls flag words the NIC writes into a shared buffer; unverified on Apple GPUs.
+/// Metal on an M4 Pro, macOS 27.2 (measured p50): a pre-committed command buffer waiting on a shared event the CPU sets starts in
+/// 65 us; a kernel's store is visible to a CPU poll about 25 us before the command buffer's completion callback.
+pub const metal_event_handoff: Handoff = .{ .gpu_to_host_ns = 25_000, .host_to_gpu_ns = 65_000, .source = .measured };
+/// A resident kernel polls flag words the NIC writes into a shared buffer. The assumption (2+3 us on Apple GPUs) is contradicted
+/// by measurements on an M4 Pro: a resident Metal kernel never reliably sees a CPU or DMA store, and flag stores from a Metal
+/// kernel can overtake the data they announce. See docs/proposals/metal-tb4-split-moe.md; use `metal_event_handoff` there.
 pub const polled_handoff: Handoff = .{ .gpu_to_host_ns = 2_000, .host_to_gpu_ns = 3_000, .source = .assumed };
 /// The network alone, for the floor.
 pub const no_handoff: Handoff = .{ .gpu_to_host_ns = 0, .host_to_gpu_ns = 0, .source = .assumed };
@@ -82,4 +93,13 @@ test "costs grow with bytes and handoff, and a shared bottleneck caps fan-out" {
     const lone = estimateNs(.broadcast, cx5_cuda_to_mac, no_handoff, .{ .ranks = 2, .bytes = 1 << 20 });
     try std.testing.expect(fan > lone);
     try std.testing.expectApproxEqRel(@as(f64, 186) * small, roundNs(.all_reduce, 186, 1, 14_336, tb5, no_handoff, 4), 1e-9);
+}
+
+test "a layer-split hop over the PCIe tunnel costs more than a tb5 hop and less than a millisecond" {
+    const bytes: u64 = 65_536;
+    const gpu = estimateNs(.send, tb_gpu, metal_event_handoff, .{ .ranks = 2, .bytes = bytes });
+    const mac = estimateNs(.send, tb5, metal_event_handoff, .{ .ranks = 2, .bytes = bytes });
+    try std.testing.expect(gpu > mac and gpu < 1e6);
+    try std.testing.expectApproxEqAbs(@as(f64, 90_000), metal_event_handoff.gpu_to_host_ns + metal_event_handoff.host_to_gpu_ns, 1);
+    try std.testing.expect(metal_event_handoff.source == .measured and tb_gpu_read_round_trip_ns > tb_gpu.latency_ns);
 }

@@ -19,7 +19,7 @@ const Sim = struct {
         for (cables) |c| s.net.cable(c[0], c[1], c[2], c[3]);
         for (&s.nodes, 0..) |*m, i| {
             const inv: node.Inventory = .{ .id = 100 + 10 * @as(u64, @intCast(i)), .name = .of("n"), .memory = 512 * node.gib };
-            m.* = Membership.init(gpa, .{}, inv, 1);
+            m.* = try Membership.init(gpa, .{}, inv, 1);
         }
         return s;
     }
@@ -98,7 +98,7 @@ test "a node that leaves is dropped at once, and a restart with a new incarnatio
     try s.run(400 * ms);
     try s.agree(&.{ 100, 110, 120 });
     s.nodes[3].deinit();
-    s.nodes[3] = Membership.init(gpa, .{}, .{ .id = 130, .name = .of("n") }, 2);
+    s.nodes[3] = try Membership.init(gpa, .{}, .{ .id = 130, .name = .of("n") }, 2);
     try s.run(600 * ms);
     try s.agree(&.{ 100, 110, 120, 130 });
 }
@@ -135,4 +135,9 @@ test "a node wrongly declared dead refutes it with a higher incarnation" {
     try s.run(1000 * ms);
     try std.testing.expect(s.nodes[2].me.incarnation > 1);
     try s.agree(&.{ 100, 110, 120, 130 });
+}
+
+test "a node on an external GPU cannot join a cluster" {
+    const inv: node.Inventory = .{ .id = 7, .name = .of("gpu0"), .backend = .hip, .unified = false, .gpu_limit = 24 * node.gib };
+    try std.testing.expectError(error.UnlaunchableBackend, Membership.init(std.testing.allocator, .{}, inv, 1));
 }
