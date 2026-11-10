@@ -108,6 +108,8 @@ pub const Hip = struct {
     pub const backend = Shared.backend;
 
     pub fn init(gpa: std.mem.Allocator, e: *Engine) !*Hip {
+        // the lanes draft, verify and keep rounds over the whole model: a stage's engine steps through `Engine.stage`
+        if (e.ranged()) return error.RangeWithDraft;
         const h = try gpa.create(Hip);
         errdefer gpa.destroy(h);
         const rows = e.o.batch_rows;

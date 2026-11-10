@@ -55,6 +55,8 @@ pub const Options = struct {
     graphs: bool = true,
     /// What the run may use, resolved once by whoever opens the engine.
     policy: hip.Policy = .{},
+    /// The layers this engine runs, a stage of a split model (the whole model by default): see `stage`, `spanStage`.
+    range: view.Range = .whole,
 };
 
 pub const Pick = lane_round.Pick;
@@ -101,6 +103,14 @@ fn linearPositions(gpa: std.mem.Allocator, d: *const hip.Runtime, capacity: usiz
     for (rows, 0..) |*r, p| r.* = @splat(@intCast(p));
     try b.upload(0, std.mem.sliceAsBytes(rows));
     return b;
+}
+
+/// A layer range is a stage of a split model: inside the checkpoint's layers, refused by name where it cannot run.
+fn refuseRange(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !void {
+    if (o.range.first == 0 and o.range.last == std.math.maxInt(usize)) return;
+    var c = try config.Config.read(gpa, io, dir);
+    defer c.deinit();
+    try o.range.admit(c.spec.n_layers, .{ .world = o.world, .vision = o.vision != null, .bf16 = c.quant == .bf16 });
 }
 
 /// What `load` found before reading the weights.
@@ -168,6 +178,7 @@ pub const Engine = struct {
         e.rope = null;
         e.linear = null;
         if (seen != null and o.world > 1) return error.VisionTensorParallelUnsupported;
+        try refuseRange(gpa, io, dir, o);
         e.sized = false;
         e.stopped = false;
         e.blas = null;
@@ -201,7 +212,7 @@ pub const Engine = struct {
             if (pf.weights > pf.pool.room(pf.held)) return error.WeightsDoNotFit;
         }
         _ = try steps.done(.{ 0, 0 }, .first);
-        e.weights = try weights.Model.loadRankWith(gpa, io, &e.driver, dir, group, chat);
+        e.weights = try weights.Model.loadRankRange(gpa, io, &e.driver, dir, group, chat, o.range);
         errdefer e.weights.deinit();
         if (e.plain() or chat) {
             // a bf16 checkpoint's products (rocBLAS, or widened for chat): one rank, not qualified under graphs
@@ -254,7 +265,9 @@ pub const Engine = struct {
         e.linear = if (e.bridge.model.torch_text) try linearPositions(e.gpa, &e.driver, capacity) else null;
         errdefer if (e.linear) |*b| b.free();
         e.bridge.model.positions = if (e.linear) |b| b.base() else 0;
-        e.drawer = try draw.Drawer.init(e.gpa, &e.driver, e.dtype, e.bridge.model.head.n * e.o.world, rows);
+        // a stage without the head still keeps a drawer (the argmax word and the row buffer), over the vocabulary
+        const vocab = if (e.bridge.model.head) |h| h.n * e.o.world else e.weights.spec.vocab;
+        e.drawer = try draw.Drawer.init(e.gpa, &e.driver, e.dtype, vocab, rows);
         errdefer e.drawer.deinit();
         e.pool = try pages.Pool.init(e.gpa, &e.driver, &e.bridge.model, count, e.o.rank == 0);
         errdefer e.pool.deinit();
@@ -294,7 +307,12 @@ pub const Engine = struct {
 
     /// The checkpoint's projections are BF16 as stored (an unquantized HF checkpoint): rocBLAS runs them.
     pub fn plain(e: *const Engine) bool {
-        return e.weights.embed == .bf16;
+        return e.weights.plain;
+    }
+
+    /// This engine runs a strict subset of the model's layers (a stage).
+    pub fn ranged(e: *const Engine) bool {
+        return !e.model().range.isWhole(e.model().spec.n_layers);
     }
 
     fn closeBlas(e: *Engine) void {
@@ -415,6 +433,7 @@ pub const Engine = struct {
     /// The layers a drafter taps (none: off), filling rings of caches made after; captured rounds are dropped.
     pub fn setTaps(e: *Engine, layers: []const u32) !void {
         const m = &e.bridge.model;
+        if (e.ranged() and layers.len > 0) return error.RangeWithDraft;
         if (layers.len > m.taps.layers.len) return error.TooManyTaps;
         for (layers) |l| if (l >= m.spec.n_layers) return error.BadTap;
         if (layers.len > 0 and m.act.size() != 2) return error.TapsNeed16Bit;
@@ -438,7 +457,7 @@ pub const Engine = struct {
 
     /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order.
     fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
-        const y = try o.project(hidden, e.model().head, rows, false);
+        const y = try o.project(hidden, e.model().head.?, rows, false);
         try e.drawRows(o, y, rows, reqs, out, false);
     }
 
@@ -454,7 +473,7 @@ pub const Engine = struct {
 
     /// vocab_gather: every rank's slice of `rows` logits rows, joined on the device into whole rows in rank order.
     fn joined(e: *Engine, o: hip.ops.Ops, c: hip.collective.Comm, slice: hip.ops.Tensor, rows: usize) !hip.ops.Tensor {
-        const width = e.model().head.n;
+        const width = e.model().head.?.n;
         const n = rows * width;
         const size_of = slice.kind.size();
         const parts = try o.arena.take(c.world * n * size_of);
@@ -498,6 +517,7 @@ pub const Engine = struct {
     /// `advance`, keeping the span's final-norm rows (end - pos0, hidden) in the prompts arena until its next reset.
     pub fn spanRows(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, end: usize, cancel: ?Cancel) !hip.ops.Tensor {
         if (e.stopped) return error.GroupStopped;
+        if (e.ranged()) return error.RangedEngine;
         if (end <= pos0 or end > caches.total or end - pos0 > e.o.prompt_rows) return error.PromptTooLong;
         e.prompts.reset();
         const ids = e.ids.slice(u32)[0 .. end - pos0];
@@ -513,6 +533,7 @@ pub const Engine = struct {
     /// Prefill `prompt[pos0..]` into `caches`; the last row's token, its final row copied to `last` (MTP's input).
     pub fn prefill(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, last: ?hip.DeviceBuffer, req: draw.Request, cancel: ?Cancel) !u32 {
         if (e.stopped) return error.GroupStopped;
+        if (e.ranged()) return error.RangedEngine;
         const m = e.model();
         const len = prompt.len - pos0;
         if (len == 0 or prompt.len > caches.total or len > e.o.prompt_rows) return error.PromptTooLong;
@@ -529,6 +550,19 @@ pub const Engine = struct {
         var token: [1]u32 = undefined;
         try e.project(o, row, 1, &.{req}, &token);
         return token[0];
+    }
+
+    /// A stage's prompt span of `len` rows from `pos0`, on the stream: token ids at `input`, or rows through `hand`.
+    pub fn spanStage(e: *Engine, caches: *state.Caches, input: u64, len: usize, pos0: usize, hand: fwd.Handoff) !hip.ops.Tensor {
+        if (e.stopped) return error.GroupStopped;
+        if (len == 0 or pos0 + len > caches.total or len > e.o.prompt_rows) return error.PromptTooLong;
+        e.prompts.reset();
+        return fwd.spanWith(e.ops(&e.prompts), e.model(), caches, input, len, pos0, null, hand);
+    }
+
+    /// A stage's decode step of one row at position `pos`, recorded on the stream, not waited for (see `round.stage`).
+    pub fn stage(e: *Engine, caches: *state.Caches, pos: usize, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !void {
+        return lane_round.stage(e, caches, pos, tokens, hand, argmax_at);
     }
 
     /// Every window in one forward: `out` the token of every row; the round's snapshots live until its keeps flush.

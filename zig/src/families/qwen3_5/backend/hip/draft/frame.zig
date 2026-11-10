@@ -107,7 +107,7 @@ pub fn forward(o: Ops, net: Net, l: Layout, dev: u64, streams: usize) !Out {
     const B = streams * c.block;
     const hd = c.hidden;
     const h = try fwd.take(o, net.act, B * hd);
-    try o.embedRows(net.m.embed, dev + l.ids, B, h);
+    try o.embedRows(net.m.embed.?, dev + l.ids, B, h);
     const x = try fwd.take(o, net.act, B * hd);
     const h2 = try fwd.take(o, net.act, B * hd);
     const at: dops.Attention = .{
@@ -165,10 +165,11 @@ pub fn forward(o: Ops, net: Net, l: Layout, dev: u64, streams: usize) !Out {
     const masked = try fwd.take(o, net.act, rows * hd);
     try dops.maskRows(o, h, masked, streams, hd, c.block);
     try o.rms(masked, net.w.final_norm, x, rows, hd, c.eps);
-    const logits = try o.project(x, net.m.head, rows, false);
+    const out_head = net.m.head.?;
+    const logits = try o.project(x, out_head, rows, false);
     const top_ids = try o.arena.of(i32, rows * c.topk);
     const top_vals = try o.arena.of(u16, rows * c.topk);
-    try o.topkRows(logits, rows, net.m.head.n, dev + l.ks, c.topk, top_ids, top_vals);
+    try o.topkRows(logits, rows, out_head.n, dev + l.ks, c.topk, top_ids, top_vals);
     const hp = try o.project(x, net.w.selector, rows, false);
     return .{ .top_ids = top_ids, .top_vals = top_vals, .hp = hp.ptr };
 }

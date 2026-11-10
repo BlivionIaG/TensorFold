@@ -60,7 +60,8 @@ pub const Draft = struct {
         if (m.tp != null or m.act.size() != 2) return error.UnsupportedTarget;
         const c = try config.Config.read(gpa, io, dir, config.Target.of(m.spec));
         if (!std.mem.eql(u32, c.tapLayers(), m.taps.layers[0..m.taps.n])) return error.TapsMismatch;
-        if (m.head.n != c.vocab or c.block - 1 > context.most_held) return error.UnsupportedDraftConfig;
+        const head = m.head orelse return error.UnsupportedTarget;
+        if (m.embed == null or head.n != c.vocab or c.block - 1 > context.most_held) return error.UnsupportedDraftConfig;
         const d = try gpa.create(Draft);
         errdefer gpa.destroy(d);
         d.* = .{
