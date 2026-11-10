@@ -12,6 +12,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Metal: `HostWindow` wraps page-aligned shared or pinned host memory as a zero-copy Metal buffer, and `Relay` hands work between the host and the GPU through command buffers parked on a shared event; `zig build test-metal-relay` tests both, `zig build test-split-metal` runs the split core's toy model with Metal as the host stage and requires the unsplit run's tokens, and on a Mac `zig build tf-offload` reports the Mac's GPU in its probe receipt and runs `demo` over Metal; no engine uses them yet.
 
+- Qwen3.8-27B engine on Metal: reads a tied embedding head (the head is the embedding table loaded a second time in the head's layout), so a tied checkpoint whose hidden size is not 2048, such as Qwen3.5-4B (2560 wide), opens this engine, and `Model.loadRange` loads one half-open layer range; whole-model loads are unchanged.
+
 - Tests: main's nightly is green again. The Flash Next learn, prompt and compare tools build again on Linux (#2585 had put one file in two modules), and the dense serving and serving-identity pins take the changes #2579, #2585, #2285, #2205 and #2789 made, each named beside its pin. Serving is unchanged (#3002).
 
 - Cortheon (`--cortheon`): DuckDuckGo results are kept, and its ads still skipped, when only the spelling differs (either quote style, a `class` attribute in any letter case, an unquoted `href`, spaces around its `=`, or a line break before it); a duplicate whose scheme or host differs only in letter case is dropped while paths and queries keep their case, and the PyPI, npm and crates.io allow-list takes the host in any case with the path exact (#2750). Thanks to @ppardus.
