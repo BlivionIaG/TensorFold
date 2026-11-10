@@ -22,10 +22,11 @@ pub const head_dispatches: f64 = 3;
 /// the 4B, 164 and 180 GB/s of weights and state against the 273 GB/s peak). Use it when only a peak bandwidth is known.
 pub const mac_efficiency: f64 = 0.62;
 /// Hop external device to Metal, in nanoseconds: flag visible to the host 5 us, event wake of a pre-committed command
-/// buffer 65 us (measured), flush 20 us (assumed). Replace with the probe receipt's number; this is only the default.
+/// buffer 65 us (an idle Mac), flush 20 us (assumed). The probe on an RX Vega 56 measured 159 us at p50 (flag 10 us, wake
+/// 149 us, p99 479 us) while the card was in use: replace it with the probe receipt's number; this is only the default.
 pub const assumed_hop_to_host_ns: f64 = 90_000;
-/// Hop Metal to external device in nanoseconds: host store and doorbell or poll on the device side (assumed, not yet
-/// measured on a card; milestone M1 replaces it).
+/// Hop Metal to external device in nanoseconds: host store and poll on the device side. The probe measured 10.5 us at p50
+/// (28.5 us at p99) on an RX Vega 56; this default is kept for a run with no receipt.
 pub const assumed_hop_to_device_ns: f64 = 15_000;
 /// A resident decode still returns a token id to the Mac and takes a sampling bookkeeping step (assumed).
 const resident_overhead_s: f64 = 30e-6;

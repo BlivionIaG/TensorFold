@@ -2,7 +2,7 @@
 
 Status: proposal. The offline part of the first pull request is implemented on this branch (see
 [Implementation status](#implementation-status-pull-request-1-offline)), including the engines' layer range; the
-card-gated parts and everything for MoE models are not. The measurements are real and reproducible
+MoE models are not, and the card ran once, for the Qwen3.5-4B layer split (see First card run). The measurements are real and reproducible
 (commands and raw output under [metal-tb4-split-moe-probe](metal-tb4-split-moe-probe/)); everything marked
 [INFERENCE] is a model or an assumption that a named milestone replaces with a measurement.
 The companion [issue draft](metal-tb4-split-moe.issue.md) follows `.github/ISSUE_TEMPLATE/proposal.yml`.
@@ -489,10 +489,10 @@ Each milestone has a stop criterion; none needs more than one Mac and one card.
 
 | | Measurement | Go if |
 | --- | --- | --- |
-| M0 (done offline) | the probes above | window wrap works, wake cost known: yes, 65 us |
-| M1 | on the card: flag round trip each way through the relay at 4 KiB and 64 KiB, `hipStreamWaitValue32`-class wait latency, GPU read of a 64 KiB host window; 4B dispatch counts with fused boundary kernels | eGPU to Metal to eGPU at 8 KiB p50 <= 250 us, p99 <= 500 us |
+| M0 (done offline) | the probes above | window wrap works, wake cost known: yes, 65 us idle (149 us with the card in use) |
+| M1 (receipt measured; relay round trips at 4 KiB / 64 KiB not separately) | on the card: flag round trip each way through the relay at 4 KiB and 64 KiB, `hipStreamWaitValue32`-class wait latency, GPU read of a 64 KiB host window; 4B dispatch counts with fused boundary kernels | eGPU to Metal to eGPU at 8 KiB p50 <= 250 us, p99 <= 500 us |
 | M2 | Level B stamped replies: stale-stamp rate and retry cost against the card's PCIe reads | zero accepted stale words in 10^6 replies, else stay at Level A |
-| M3 | Qwen3.5-4B layer split Metal + Vega, tokens against the unsplit runs (gate 4) and fidelity (gate 3); single stream and 2 streams | 2-stream throughput >= 1.5x one Metal queue (model 1.7x); single stream within 5% of all-Metal |
+| M3 (one stream done: tokens identical, cosine >= 0.9996, 16-24 ms against 14 ms all-Metal; 2 streams not run) | Qwen3.5-4B layer split Metal + Vega, tokens against the unsplit runs (gate 4) and fidelity (gate 3); single stream and 2 streams | 2-stream throughput >= 1.5x one Metal queue (model 1.7x); single stream within 5% of all-Metal |
 | M4 | 35B-A3B layer split, KV hand-off after Metal prefill, 24 GiB-class memory cap emulated with a lower budget | fits the cap; 2-stream tok/s within 15% of the model |
 | M5 | expert split on the card with resident layers | 14 crossings fewer than all-split, tok/s within 15% of the model; if single-stream is below 50 tok/s it stays opt-in |
 | M6 | hot-expert cache: per-layer routing histograms on real prompts (code, prose), hit rate versus cache size | an all-hit layer rate that pays the cache's copy cost; otherwise drop PR 3 |
@@ -503,8 +503,9 @@ Each milestone has a stop criterion; none needs more than one Mac and one card.
 Implemented on `feat/tb4-offload-pr1-up` (on upstream main) and tested without the card: the Mac's GPU is real, the
 external device is the CPU mock or hipmac's mock backend, which executes streams in order but does not compute. Run on
 macOS arm64 only (the `split` module has no platform imports, so [INFERENCE] it builds elsewhere; it was not built
-elsewhere). The card has not been used by this work. For a card run, `tb4-offload-card` is this branch merged with the
-gfx900 port `vega-macos-up` (below).
+elsewhere). The card ran this work once (2026-11-10, [First card run](#first-card-run-rx-vega-56-over-thunderbolt-4-2026-11-10)):
+the probe and the Qwen3.5-4B split. That run used `tb4-offload-card`, this branch merged with the gfx900 port
+`vega-macos-up` (below), with the two-process driver (`remote.zig`, `reference.zig`, `tf-offload-card`, `tf-offload-metal`).
 
 | Piece | Where | State |
 |---|---|---|
@@ -514,12 +515,12 @@ gfx900 port `vega-macos-up` (below).
 | Layer pipeline (`external_first`, `metal_first`, `external_only`; level A and level B) | `pipeline.zig` | tested on the toy model and on the real engine (Metal+Metal) |
 | Exact integer toy model, split at every layer, either order, both levels | `toy.zig`, `metal_toy.zig` | token-identical to the unsplit run, on the CPU peer and on a real Metal GPU peer |
 | Metal `HostWindow` (`newBufferWithBytesNoCopy`, 16 KiB alignment refused otherwise), `Relay` (event-gated handoff), wake probe | `zig/src/metal/window.zig`, `relay.zig`, `wake_probe.zig` | tested on an M4 Pro |
-| `tf-offload probe` (receipt `tensorfold-offload-probe/1`) | `probe.zig`, `metal_probe.zig`, `cli.zig` | runs against the mock; against hipmac's mock through the HIP adapter; card: not run |
+| `tf-offload probe` (receipt `tensorfold-offload-probe/1`) | `probe.zig`, `metal_probe.zig`, `cli.zig` | runs against the mock; against hipmac's mock through the HIP adapter; on the card: run once (First card run) |
 | `tf-offload plan` (placement `tensorfold-split/1`) | `geometry.zig`, `planner.zig`, `placement.zig`, `cli.zig` | reproduces `placement_results.txt` within 1%; dense configs executable, MoE only `all_metal` |
-| HIP adapter: `HipExternal` over `hipStreamWaitValue32`/`WriteValue32`, optional shared engine stream | `zig/src/hip/offload.zig` | passes on hipmac's mock backend (with the gfx900 caps row); card: not run |
+| HIP adapter: `HipExternal` over `hipStreamWaitValue32`/`WriteValue32`, optional shared engine stream | `zig/src/hip/offload.zig` | passes on hipmac's mock backend (with the gfx900 caps row); on the card it ran the probe and the split runs below |
 | Metal engine runs the tied-head Qwen3.5-4B and a layer range `[first,last)` (embed first, final norm/head/argmax last, KV and linear state only for owned layers); stamped-row pack kernels | `families/qwen27/` (`range.zig`, `stage_pass.zig`, `stage_rows.zig`, `split_peer.zig`) | real 4B on the M4 Pro: whole-model decode 74-75 tok/s; Metal+Metal split through the pipeline token-identical over 32 tokens at cuts 1, 8, 16, 31, both orders, both levels (16 runs); synthetic-weights version of the same test; 13.9 ms/position split against 13.4 unsplit (two engine instances in one process) |
-| HIP engine layer range (`Range`, ranged weights/caches, prompt span and decode step, `HipLayerStage` as `ExternalStage`) | `families/qwen3_5/backend/hip/` | plumbing tests only: ranged launch sequences equal the matching slice of the unsplit step, pool bytes of the halves sum to the whole, refusals (MTP, draft, tp, vision, bf16 checkpoints); no token computed |
-| Boundary kernels on HIP: `importRow`, `exportRow`, `consumeStamped` (level B: 16-byte stamped groups, bounded re-read, status word) | `zig/kernels/hip/split/rows.hip`, `zig/src/hip/ops/split_rows.zig` | host references; compiled to code objects for gfx900, gfx1030, gfx1100, gfx1151, gfx1201; contract records (gate 5) identical on four chips; gates 1-4 on a GPU not run |
+| HIP engine layer range (`Range`, ranged weights/caches, prompt span and decode step, `HipLayerStage` as `ExternalStage`) | `families/qwen3_5/backend/hip/` | plumbing tests offline; on the card the 4B decodes through it (whole range and every cut tried, both orders): 47/48 top-1 and logits cosine >= 0.9996 against the unsplit Metal run (First card run) |
+| Boundary kernels on HIP: `importRow`, `exportRow`, `consumeStamped` (level B: 16-byte stamped groups, bounded re-read, status word) | `zig/kernels/hip/split/rows.hip`, `zig/src/hip/ops/split_rows.zig` | host references; compiled to code objects for gfx900, gfx1030, gfx1100, gfx1151, gfx1201; contract records (gate 5) identical on four chips; run on gfx900 through the split (level A and B, status word 0); the standalone gates 1-4 on a GPU not run |
 | `Backend.hip`, `LinkKind.tb_gpu`, hop costs in `fabric/cost.zig` | `zig/src/cluster`, `zig/src/fabric` | tested; a hip node is planned but never launched |
 
 Commands (no card; the machine this was developed on has no working Metal compiler, so a local `xcrun` shim stood in for it when building; the shim is not part of the change):
@@ -538,7 +539,102 @@ zig build -Dhip=true tf-offload-hip   # same CLI with `--device hip`, which open
 
 On the M4 Pro, `plan` on the Qwen3.5-4B config with a mock receipt picks the pipelined layer split (115 tok/s
 predicted at two streams, 62 all-Metal) and on the 35B-A3B config picks all-Metal (87 tok/s predicted); the mock
-receipt's link numbers are the mock's, not a card's.
+receipt's link numbers are the mock's, not a card's (the card's receipt gives the table in First card run).
+
+### First card run (RX Vega 56 over Thunderbolt 4, 2026-11-10)
+
+The first end-to-end tokens through the pipeline with one half on the Mac's GPU and one on the card: Qwen3.5-4B MLX
+4-bit (32 layers), a 49-position sequence (the prompt and the unsplit Metal run's continuation, teacher forced), an M4
+Pro and one RX Vega 56 (gfx900, 8 GiB). Everything below was measured; the Mac was shared with other builds, which moves
+the Metal-side times by tens of percent from run to run.
+
+**Two processes, not one.** One program cannot link both engines: Zig allows a source file in one module of a program, and
+the Metal engine and the HIP engine both include the `core` files (`error: file exists in modules 'core' and 'core0'`).
+So the card's process (`tf-offload-card`: HIP engine, `HipExternal`, the pipeline) and the Mac's (`tf-offload-metal serve`:
+Metal engine, the host stage) are joined by `split/remote.zig`: a unix socket carries only `step`, `finish` and `reset`
+calls, and the window is the same memory in both. hipmac's `hipmacHostExport` hands out a duplicate of the pinned block's
+shared-memory descriptor (sent with `SCM_RIGHTS`); the Mac's process maps it and wraps the mapping for Metal
+(`newBufferWithBytesNoCopy`). Rows and tokens never cross the socket; a step pays the socket's round trips on top of the
+window's.
+
+**Probe receipt** (`tf-offload-hip probe --device hip`, 400 iterations): flag store to device wait release (hop to device)
+p50 10.5 us, p99 28.5 us; card flag to Metal command buffer completion (hop to host) p50 159 us, p99 479 us, of which
+Metal's wake p50 149 us, p99 450 us (65 us on an idle Mac in M0: the wake is slower while the card is in use); H2D 3.17 GB/s,
+D2H 3.34 GB/s. `fabric/cost.zig`'s `metal_event_handoff` now carries the measured 149 us end to end.
+
+**Planner with that receipt** (context 8192, `tf-offload plan`):
+
+| Model | Placement | Predicted tok/s |
+|---|---|---|
+| 4B | all Metal | 64.0 |
+| 4B | resident on the card | 50.5 |
+| 4B | layer split, one stream | 62.8 |
+| 4B | layer split, 2 streams, 16 layers on the card | 113.2 |
+| 35B-A3B | all Metal (chosen) | 89.1 |
+| 35B-A3B | layer split, 2 streams, 15 layers on the card (not executable in this change) | 130.5 |
+| 35B-A3B | expert split / reverse expert split | 47.4 / 87.3 |
+
+At one stream `auto` picks all-Metal for both models: a sequential split cannot beat the faster device. The gain is at two
+or more streams (and in capacity), as the model said before the card was used; the slower wake costs the expert split
+(40 hops) more than the layer split (one hop).
+
+**Fidelity** (top-1 and logits against the unsplit Metal run, teacher forced, 48 positions, vocabulary 248,320):
+
+| Run | Top-1 equal | Logits cosine min / mean | Free-running tokens (40) |
+|---|---|---|---|
+| unsplit on the card | 47 / 48 | 0.99968 / 0.99994 | identical to Metal |
+| Metal `[0,4)` + card `[4,32)`, level A and B | 47 / 48 | 0.99958 / 0.99995 | identical |
+| Metal `[0,8)` + card, A and B | 47 / 48 | 0.99974 / 0.99995 | identical |
+| Metal `[0,16)` + card, A and B | 47 / 48 | 0.99983 / 0.99997 | identical |
+| Metal `[0,24)` + card, A and B | 47 / 48 | 0.99988 / 0.99998 | identical |
+| Metal `[0,28)` + card, A and B | 47 / 48 | 0.99996 / 0.99999 | identical |
+| card `[0,k)` + Metal `[k,32)`, k = 4, 8, 16, 24, 28, level A | 47 / 48 | not read (the head is on the Mac) | identical |
+
+The single disagreement is the same position (2) in every run, and there the Metal logits themselves tie: the two
+leading bf16 logits are equal (13.125); Metal picks the lower index, the card's fp16 head the other. The drift grows with
+the card's share of the layers, as expected. Level B (stamped groups consumed on the card) gave the same logits as level
+A in every run and its status word read 0 after the last step; a stale stamp in an earlier step would have been
+overwritten, so [INFERENCE] the 10^6-reply accounting (M2) is still to do.
+
+**Time per position** (from the pipeline's phases, level A, Metal `[0,k)` first, 48 positions):
+
+| Cut k | Total p50 | Metal stage | Card wait |
+|---|---|---|---|
+| 4 | 20.2 ms | 4.4 ms | 16.8 ms |
+| 8 | 18.9 ms | 5.3 ms | 14.7 ms |
+| 16 | 18.8 ms | 9.8 ms | 10.5 ms |
+| 24 | 21.2 ms | 15.0 ms | 6.4 ms |
+| 28 | 21.2 ms | 16.8 ms | 4.3 ms |
+
+Card first, Metal `[k,32)` and the head second: 15.3, 15.8, 17.1, 20.6 and 23.6 ms at k = 4, 8, 16, 24 and 28. References
+on the same runs: unsplit Metal 13.7-14.0 ms per position (token by token through the same engine), unsplit card through
+the window pipeline 19.1-19.2 ms (eager step, no graph; 52 tok/s, the recipe's graph-replayed figure). From the phases
+the card costs about 0.52 ms a layer plus 2.1 ms for the head (4.3 ms for 4 layers, 6.4 for 8, 16.8 for 28), and Metal
+0.25 to 0.55 ms a layer in a burst plus a fixed 3-4 ms (embedding, command buffer, wake, socket). The halves never overlap
+in one stream, so a split is slower than the Mac alone by about the card's share of the work: the one-stream model. Recording
+the card's step takes 0.04-0.13 ms. The crossing itself (hop to device 10 us, hop to host 160 us) is under 2% of a
+position. The 2-stream pipeline that would overlap the halves is not in this change, so the 113 tok/s prediction is
+still [INFERENCE].
+
+**A first-launch hang the pipeline cannot see.** The first split run hung in the card's runtime: the first launch of a
+kernel that needs more scratch than the queue holds makes `hipModuleLaunchKernel` wait for the queue to drain
+(`scratch_grow` -> `wait_seq_locked`), and the queue was waiting on the window. `HipLayerStage.warm` records one plain and
+one stamped step on zero rows before the first wait. Any stream stage of another backend needs the same rule: no launch
+that can wait on the queue after the first window wait is queued.
+
+Reproduce (the card to oneself; `<lib>` is the hipmac runtime, out of tree):
+
+```sh
+zig build tf-offload-metal && zig build -Dhip=true tf-offload-card -Dhipcc=<gfx900 hipcc wrapper> -Doptimize=ReleaseFast
+M=<Qwen3.5-4B-MLX-4bit directory>
+TF_SPLIT_QWEN_DIR=$M zig-out/bin/tf-offload-metal ref ref.bin 40            # unsplit Metal: tokens, predictions, logits
+export HIPMAC_BACKEND=ut4g TENSORFOLD_HIP=<lib>
+zig-out/bin/tf-offload-card $M ref.bin unsplit                                 # the whole model on the card
+TF_SPLIT_QWEN_DIR=$M zig-out/bin/tf-offload-metal serve s.sock 0 16 &          # Metal [0,16)
+zig-out/bin/tf-offload-card $M ref.bin s.sock metal_first 16                   # card [16,32); levels A then B
+TF_SPLIT_QWEN_DIR=$M zig-out/bin/tf-offload-metal serve s.sock 16 32 &         # Metal [16,32)
+zig-out/bin/tf-offload-card $M ref.bin s.sock external_first 16                # card [0,16)
+```
 
 ### Rebase onto upstream main
 
@@ -567,17 +663,19 @@ Cluster tests (`zig test` on the cluster root with stand-in modules, because `te
 * **Batch prefill across the window.** The split prefills token by token through both sides (one row per step), which
   is exact but runs at decode speed; a prompt of N tokens costs N pipeline steps. Chunked prefill (rows > 1 per window
   slot) and Metal-prefill-then-state-handoff are the next change.
-* **Tokens on the card.** The HIP layer range is verified by launch accounting only; the numerics of a ranged HIP step
-  (the unfused residual add before the boundary against the fused tail, f16 against bf16 activations, the consume
-  kernel's memory reads of host-mapped memory) are [INFERENCE] until M1-M3 run on the card. Metal-to-HIP drift has no
-  measured bound yet; the fidelity gate for it is the first card measurement.
+* **Tokens on the card beyond one prompt.** One 49-position sequence on one 4B checkpoint (First card run) bounds the
+  Metal-to-HIP drift at logits cosine >= 0.9996 and one tie-break; more prompts, long contexts and the 35B-A3B are not
+  measured.
 * **Graph replay of the ranged HIP step**: the stage is eager (a graph would bake the sequence number and window
   addresses in); `seq` through a device-side word is the follow-up.
 * **Level B on the Metal side as consumer**: Metal reads stamped rows on the CPU (`wire.readStamped`), the GPU consume
   kernel exists only for HIP.
 * **One-process driver**: a command that loads both engines and a tokenizer and runs a prompt end to end
-  (`tensorfold serve --device-split`) is not in this change; the tests drive the pipeline directly.
-* Milestones M1 and M2 (see below) need the card; the receipt's `hop_*` fields are the first numbers they produce.
+  (`tensorfold serve --device-split`) is not in this change. The card run is two processes (First card run), because one
+  program cannot hold both engines until the `core` file sets of the two builds are disjoint; the tests drive the
+  pipeline directly.
+* Milestone M2 (stale stamps over 10^6 replies) and the 2-stream runs of M3 are not done; the receipt's `hop_*` fields are
+  the card's numbers from the first run.
 
 ## Pull requests
 
@@ -623,8 +721,8 @@ each pull request, resolve every `"conflicts"` entry, `atc land <issue> <session
 
 * **The card is slower than Metal for decode.** Single-stream gains need a faster external GPU; today the case is
   capacity and 2+ streams, and the 2-stream gain rests on a model [INFERENCE] until M3.
-* **Wake cost of 65 us a Metal hop** is a property of this macOS and GPU; it dominates the expert split (40 hops) and
-  not the layer split (1). A change in a macOS release moves the answer; the probe receipt carries the OS build.
+* **Wake cost of a Metal hop** is a property of this macOS and GPU (65 us on an idle Mac, 149 us p50 and 450 us p99
+  with the card in use); it dominates the expert split (40 hops) and not the layer split (1). A change in a macOS release moves the answer; the probe receipt carries the OS build.
 * **Visibility of Metal output to PCIe readers** (flag before data). Measured toward the CPU only; Level A avoids it.
 * **Mixed activation types** (fp16 stage, bf16 stage): fp16 overflow on large residual outliers; fidelity gate, not
   bit equality.
