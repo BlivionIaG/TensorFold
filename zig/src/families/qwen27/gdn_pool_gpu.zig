@@ -273,6 +273,7 @@ pub const Pool = struct {
 
     pub fn clearSlot(pool: *Pool, slot: u32, e: metal.ComputeEncoder) !void {
         if (slot >= pool.budget.slots) return error.BadGdnPoolIndex;
+        if (pool.budget.layers == 0) return; // a layer range of attention layers alone has no recurrent state
         const k = abi.WeightKinds{ .conv = .bf16, .a_log = .bf16, .dt = .bf16, .norm = .bf16 };
         const p = try pool.budget.shape.params(1, pool.budget.slots, k);
         e.setPipeline(pool.kernels.clear);

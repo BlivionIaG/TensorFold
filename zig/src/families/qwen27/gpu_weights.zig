@@ -10,6 +10,7 @@ const widths = @import("widths.zig");
 const Width = widths.Width;
 const Ref = projection.Ref;
 const Linear = projection.Linear;
+const Range = @import("range.zig").Range;
 pub const Tensor = cp.Tensor;
 
 pub const Gdn = struct { qkv: Linear, zba: Linear, out: Linear, conv: Tensor, a_log: Tensor, dt: Tensor, norm: Tensor };
@@ -363,6 +364,12 @@ fn decayLog(t: Tensor, shape: []const usize) !Tensor {
 
 /// Graph from `checkpoint`; each Linear is staged, repacked, dropped. `s` is the rank's share, `local` from `global`.
 pub fn load(allocator: std.mem.Allocator, device: mtl.Device, checkpoint: *const cp.Checkpoint, s: *const cfg.Shard, ws: *const widths.Widths) !Weights {
+    return loadRange(allocator, device, checkpoint, s, ws, Range.whole(s.local.layers));
+}
+
+/// `load` for one stage of a layer-split model: only the layers of `range` are staged and repacked, and the head only
+/// when the range ends the model. Records for layers outside the range are left undefined and must not be read.
+pub fn loadRange(allocator: std.mem.Allocator, device: mtl.Device, checkpoint: *const cp.Checkpoint, s: *const cfg.Shard, ws: *const widths.Widths, range: Range) !Weights {
     const c = s.local;
     const g = s.global;
     const prefix: []const u8 = if (checkpoint.has("language_model.model.embed_tokens.weight")) "language_model." else if (checkpoint.has("model.embed_tokens.weight")) "" else return error.MissingTextNamespace;
@@ -382,16 +389,19 @@ pub fn load(allocator: std.mem.Allocator, device: mtl.Device, checkpoint: *const
     var stage = cp.Stage{ .device = device };
     defer stage.deinit();
     const b = Builder{ .allocator = allocator, .device = device, .checkpoint = checkpoint, .prefix = prefix, .owned = &owned, .stage = &stage, .runs = &runs, .widths = ws };
-    for (layers, 0..) |*l, i| l.* = try b.layer(s, i);
+    try range.check(c.layers);
+    for (range.first..range.last) |i| layers[i] = try b.layer(s, i);
     const embed = try b.quant("model.embed_tokens", g.vocab, g.hidden, ws.embed);
     const norm = try b.tensor("model.norm.weight", .bf16, &.{c.hidden});
-    const head = try b.linear(&.{.{ .module = "lm_head", .n = g.vocab, .w = ws.head, .span = s.vocabRows() }}, g.hidden);
-    if (device.tensorUnits()) try laneOrder(allocator, device, layers, head);
+    // a tied head reads the embedding table a second time, into the head's projection layout
+    const has_head = range.head(c.layers);
+    const head = if (has_head) try b.linear(&.{.{ .module = if (c.tied) "model.embed_tokens" else "lm_head", .n = g.vocab, .w = ws.head, .span = s.vocabRows() }}, g.hidden) else undefined;
+    if (device.tensorUnits()) try laneOrder(allocator, device, layers[range.first..range.last], if (has_head) head else null);
     return .{ .allocator = allocator, .layers = layers, .embed = embed, .norm = norm, .head = head, .owned = owned, .runs = runs };
 }
 
 /// Tensor-unit projections leave load in lane_projection.reg_layout, the order quant_gpu's reg kernel reads.
-fn laneOrder(a: std.mem.Allocator, device: mtl.Device, layers: []const Layer, head: Linear) !void {
+fn laneOrder(a: std.mem.Allocator, device: mtl.Device, layers: []const Layer, head: ?Linear) !void {
     var jobs: std.ArrayList(lane.Order) = .empty;
     defer jobs.deinit(a);
     for (layers) |l| {
@@ -401,7 +411,7 @@ fn laneOrder(a: std.mem.Allocator, device: mtl.Device, layers: []const Layer, he
         };
         for (list) |p| try regJobs(a, &jobs, p);
     }
-    try regJobs(a, &jobs, head);
+    if (head) |h| try regJobs(a, &jobs, h);
     try lane.regOrder(device, jobs.items);
 }
 

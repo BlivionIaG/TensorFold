@@ -159,5 +159,6 @@ pub fn load(gpa: std.mem.Allocator, src: ck.Source, formats: *const Formats, c: 
     const layers = try gpa.alloc(Layer, c.layers);
     errdefer gpa.free(layers);
     for (layers, 0..) |*l, i| l.* = try b.layer(c, i);
-    return .{ .gpa = gpa, .prefix = b.prefix, .layers = layers, .embed = try b.linear("model.embed_tokens", c.vocab, c.hidden), .norm = try b.tensor("model.norm.weight", &.{c.hidden}), .head = try b.linear("lm_head", c.vocab, c.hidden) };
+    const embed = try b.linear("model.embed_tokens", c.vocab, c.hidden);
+    return .{ .gpa = gpa, .prefix = b.prefix, .layers = layers, .embed = embed, .norm = try b.tensor("model.norm.weight", &.{c.hidden}), .head = if (c.tied) embed else try b.linear("lm_head", c.vocab, c.hidden) };
 }
