@@ -161,10 +161,12 @@ pub const HipLayerStage = struct {
 
     /// Pays the first launches' costs before the pipeline queues its first wait on the window: a kernel that needs more
     /// scratch than the queue holds makes the runtime wait for the queue to drain, and a queue that is waiting on the
-    /// window never does. So every kernel and shape a step can take runs once here: the decode step, the decode
-    /// batches of 2 to `slots` rows and the prompt span at each row count of `ladder` up to `max_rows`, plain and stamped (not stamped for the first stage), at
-    /// the start of the caches and (plain) at their far end, with the head where the range has it; then the stage
-    /// starts over.
+    /// window never does. So every kernel and shape a step can take runs once here: the decode step, the decode batches
+    /// of 2 to `slots` rows and the prompt span at each row count of `ladder` up to `max_rows`, plain and stamped (not
+    /// stamped for the first stage), at the start of the caches and (plain) at their far end, with the head where the
+    /// range has it; then the stage starts over. The stream is waited for after every step: the decode steps share one
+    /// plan buffer here, and its pinned words must not be refilled before the stream's copy of the last step's ran (a
+    /// refilled buffer read through the earlier step's layout is a plan of garbage pointers).
     pub fn warm(s: *HipLayerStage) !void {
         var warm_rows: [pipeline.max_slots]stage_steps.Row = undefined;
         const e = s.e;
@@ -193,15 +195,28 @@ pub const HipLayerStage = struct {
             const argmax = if (heads) out_at else 0;
             const tokens = if (embeds) at else 0;
             _ = try e.stage(&s.plans[0], caches, 0, tokens, hand, argmax);
+            try e.stream.synchronize();
             // a decode batch of every row count from 2 to the slots (rows from distinct sequences at their own positions)
-            for (2..batches + 1) |n| _ = try e.stageRows(&s.plans[0], s.batchRows(n, 0, &warm_rows), tokens, hand, argmax);
-            for (counts) |n| _ = try e.spanStage(caches, tokens, n, 0, hand, argmax);
+            for (2..batches + 1) |n| {
+                _ = try e.stageRows(&s.plans[0], s.batchRows(n, 0, &warm_rows), tokens, hand, argmax);
+                try e.stream.synchronize();
+            }
+            for (counts) |n| {
+                _ = try e.spanStage(caches, tokens, n, 0, hand, argmax);
+                try e.stream.synchronize();
+            }
             if (stamped) continue;
             // and the far end of the caches: the longest attention walk, one row and the widest batch
             _ = try e.stage(&s.plans[0], caches, far - 1, tokens, hand, argmax);
-            if (batches > 1) _ = try e.stageRows(&s.plans[0], s.batchRows(batches, far - 1, &warm_rows), tokens, hand, argmax);
+            try e.stream.synchronize();
+            if (batches > 1) {
+                _ = try e.stageRows(&s.plans[0], s.batchRows(batches, far - 1, &warm_rows), tokens, hand, argmax);
+                try e.stream.synchronize();
+            }
             for (counts) |n| if (n == counts[0] or n == s.max_rows) {
-                if (far >= n) _ = try e.spanStage(caches, tokens, n, far - n, hand, argmax);
+                if (far < n) continue;
+                _ = try e.spanStage(caches, tokens, n, far - n, hand, argmax);
+                try e.stream.synchronize();
             };
         }
         try s.reset();

@@ -102,6 +102,41 @@ fn launch(f: abi.Function, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint
     return 0;
 }
 
+// Asynchronous host-to-device copies read their pinned source when the stream reaches them: the copies queued and not
+// yet known to have run, and how often a later copy was queued from memory an earlier pending one still reads.
+const Pending = struct { at: usize, len: usize };
+var pending: [256]Pending = undefined;
+var pending_count: usize = 0;
+var refills_seen: usize = 0;
+
+/// Queued copies from pinned memory that overlapped a copy still pending (`retire` not called between): the words were
+/// refilled before the stream could have read them. Counted since the process started; compare before and after.
+pub fn refills() usize {
+    return refills_seen;
+}
+
+/// Every queued item has run: a stream synchronize, or a release write after the work.
+pub fn retire() void {
+    pending_count = 0;
+}
+
+fn copyToDevice(_: abi.DevicePtr, src: [*]const u8, n: usize, _: abi.Stream) callconv(.c) abi.Result {
+    const at = @intFromPtr(src);
+    for (pending[0..pending_count]) |p| {
+        if (at < p.at + p.len and p.at < at + n) refills_seen += 1;
+    }
+    if (pending_count < pending.len) {
+        pending[pending_count] = .{ .at = at, .len = n };
+        pending_count += 1;
+    }
+    return 0;
+}
+
+fn streamSynchronize(_: abi.Stream) callconv(.c) abi.Result {
+    retire();
+    return 0;
+}
+
 fn malloc(out: *abi.DevicePtr, n: usize) callconv(.c) abi.Result {
     out.* = @ptrFromInt(next_device);
     next_device += std.mem.alignForward(u64, n, 1 << 16) + (1 << 16);
@@ -146,6 +181,8 @@ pub fn runtime() hip.Runtime {
     r.api.hipHostMalloc = hostMalloc;
     r.api.hipHostFree = hostFree;
     r.api.hipStreamCreateWithFlags = createStream;
+    r.api.hipMemcpyHtoDAsync = copyToDevice;
+    r.api.hipStreamSynchronize = streamSynchronize;
     r.api.hipMemGetInfo = memInfo;
     r.api.hipFuncGetAttribute = attribute;
     return r;
