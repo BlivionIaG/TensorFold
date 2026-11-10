@@ -54,28 +54,32 @@ pub fn main(init: std.process.Init) !void {
 
     const real = Real{ .io = io, .dir = dir };
     const src = h.Source{ .ctx = &real, .load = load, .layers = 32 };
-    // the gate's prompts: 12 or more tokens each, so that chunks of five make a full chunk and a short last one
-    const texts = [2][]const u8{ "The three primary colors are red, yellow and blue, and the three secondary colors are", "Water boils at one hundred degrees Celsius at sea level, and the capital of France is" };
-    const ids0 = try tok.encode(a, texts[0]);
+    // the gate's prompt: 12 or more tokens, so that chunks of five make a full chunk and a short last one; and the text
+    // eight prompts of 5 to 20 tokens are cut from
+    const text0 = "The three primary colors are red, yellow and blue, and the three secondary colors are";
+    const long_text = "Water boils at one hundred degrees Celsius at sea level, the capital of France is Paris, and the tallest mountain on Earth is Mount Everest";
+    const ids0 = try tok.encode(a, text0);
     defer a.free(ids0);
-    const ids1 = try tok.encode(a, texts[1]);
-    defer a.free(ids1);
-    std.debug.print("qwen27 split gate prompts: {d} and {d} tokens, chunks of {d}\n", .{ ids0.len, ids1.len, h.chunk_size });
+    const source = try tok.encode(a, long_text);
+    defer a.free(source);
+    std.debug.print("qwen27 split gate prompt: {d} tokens, chunks of {d}; eight sequences cut from {d} tokens\n", .{ ids0.len, h.chunk_size, source.len });
     var report = h.Report{};
     const m = try load(&real, a, .{ .first = 0, .last = src.layers });
     const c0 = try h.reference(a, m, ids0, 32, &report);
     defer h.freeCase(a, c0);
-    const c1 = try h.reference(a, m, ids1, 32, null);
-    defer h.freeCase(a, c1);
+    const seqs = try h.mixed(a, m, source);
+    defer h.freeSeqs(a, seqs);
+    const bits = try h.batchBits(a, m, seqs, 12);
+    std.debug.print("qwen27 decode batch rows against the same row alone: {d} of {d} logits rows differ in any bit\n", .{ bits.differing, bits.rows });
     m.deinit();
-    for ([2]h.Case{ c0, c1 }, texts) |c, label| {
-        const out = try tok.decode(a, c.single, true);
+    {
+        const out = try tok.decode(a, c0.single, true);
         defer a.free(out);
-        std.debug.print("qwen27 unsplit reference \"{s}\" -> \"{s}\" ({d:.2} ms/position token by token)\n", .{ label, out, @as(f64, @floatFromInt(report.unsplit_ns)) / 1e6 });
+        std.debug.print("qwen27 unsplit reference \"{s}\" -> \"{s}\" ({d:.2} ms/position token by token)\n", .{ text0, out, @as(f64, @floatFromInt(report.unsplit_ns)) / 1e6 });
     }
-    try h.cuts(a, src, &.{ 1, 8, 16, 31 }, .{ c0, c1 }, &report);
+    try h.cuts(a, src, &.{ 1, 16, 31 }, 16, c0, seqs, &report);
     const split_ns = report.split_ns / report.split_steps;
-    std.debug.print("qwen27 split: {d} decode, {d} chunked and {d} two-sequence runs identical; {d:.2} ms/position split against {d:.2} unsplit\n", .{ report.runs, report.chunked_runs, report.stream_runs, @as(f64, @floatFromInt(split_ns)) / 1e6, @as(f64, @floatFromInt(report.unsplit_ns)) / 1e6 });
+    std.debug.print("qwen27 split: {d} decode and {d} chunked runs, {d} runs of up to eight sequences in one to four lanes, all identical; {d:.2} ms/position split against {d:.2} unsplit\n", .{ report.runs, report.chunked_runs, report.matrix_runs, @as(f64, @floatFromInt(split_ns)) / 1e6, @as(f64, @floatFromInt(report.unsplit_ns)) / 1e6 });
 }
 
 fn nsNow() u64 {
