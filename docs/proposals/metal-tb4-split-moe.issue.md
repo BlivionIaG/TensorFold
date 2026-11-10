@@ -54,8 +54,10 @@ one stream takes 15-24 ms a position against 14 ms all-Metal and 19 ms all-card,
 sequence token-identical; the fair baseline, the Mac alone batching two sequences in one engine, decodes 116 tok/s (155 at three, 198 at four, where the
 split stays at 120), so on the 4B the split is level at two sequences and behind beyond, and its value is capacity. Chunked prefill through the split is 3x the
 one-position-a-step rate (156-251 tok/s) but the Mac alone prefills at 415-494. The 35B-A3B on the Mac alone (mlx_lm; the native Metal engine does not admit its shape) decodes 88.8 / 135.8 / 176.4 / 206.9 tok/s at
-1 / 2 / 4 / 8 sequences; the written split (one row a step) cannot beat that beyond two sequences, and the model says a split whose stages batch
-rows of several sequences would be 1.1-1.2x ahead on the Vega and that a card holding the model should run it resident (needs a whole-model one-row decode above 89 tok/s).
+1 / 2 / 4 / 8 sequences; the written split (one row a step) cannot beat that beyond two sequences, and the stages now batch
+rows of several sequences (every sequence token-identical to its own unsplit run, 1 to 8 sequences), and on the 4B the split then reaches parity with the Mac alone at four sequences
+(196 against 199) and falls behind at eight (295 against 331): the Vega's marginal row costs 7.5 ms against the Mac's 1.3 (a round of N rows is a + b N; the Vega resident gives 64.8 / 76.2 / 104.9 / 115.4 tok/s at 1 / 2 / 4 / 8).
+A card that holds the model should run it resident, which needs a whole-model one-row decode above 89 tok/s and multi-row kernels whose b is near the Mac's.
 The 4B's Mac baseline is also higher with mlx_lm (154.6 at two sequences against the split's 120-130).
 
 ## Checkpoint, revision and licence
