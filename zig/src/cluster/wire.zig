@@ -203,3 +203,18 @@ test "an inventory round-trips through its encoding" {
     var t: Out = .{ .buf = &tiny };
     try std.testing.expectError(error.NoRoom, putInventory(&t, &inv));
 }
+
+test "a hip inventory with a PCIe-tunnel port round-trips, and an unknown link kind is corrupt" {
+    var inv: node.Inventory = .{ .id = 5, .name = .of("gpu0"), .backend = .hip, .unified = false, .gpu_limit = 24 * node.gib };
+    inv.addPort(.{ .device = .of("tb_gpu0"), .kind = .tb_gpu, .up = true, .gbps = 26 });
+    var buf: [1024]u8 = undefined;
+    var o: Out = .{ .buf = &buf };
+    try putInventory(&o, &inv);
+    const msg = o.finish(.{ .kind = .inventory, .from = 5 });
+    const body = (try open(msg)).body;
+    var i: In = .{ .buf = body };
+    try std.testing.expectEqual(inv, try getInventory(&i));
+    try std.testing.expectEqual(@as(u8, 3), @backingInt(node.Backend.hip));
+    try std.testing.expectEqual(@as(u8, 4), @backingInt(node.LinkKind.tb_gpu));
+    try std.testing.expect(std.enums.fromInt(node.LinkKind, 5) == null);
+}
