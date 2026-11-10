@@ -366,6 +366,24 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
             for (int d = lpc >> 1; d > 0; d >>= 1) v[c] += __shfl_xor(v[c], d, 32);
         }
         if (j != 0 || row0 + r >= a.m) continue;
+#if defined(__gfx900__) && TF_G9_REPAIR == 0
+        // measurement only (no repair of a non-finite sum): what the repair's fp64 code costs the loop
+#elif defined(__gfx900__) && TF_G9_REPAIR == 2
+        // one cold site for every column (the unrolled form below copies the fp64 replay CB times into the kernel)
+        bool bad = false;
+#pragma unroll
+        for (int c = 0; c < CB; ++c) bad |= col0 + c % CH < cols && !__builtin_isfinite(v[c]);
+        if (__builtin_expect(bad, 0)) {
+#pragma nounroll
+            for (int c = 0; c < CB; ++c) {
+                const int col = col0 + c % CH;
+                if (col < cols && !__builtin_isfinite(v[c])) {
+                    const int wc = col + (PAIR && c >= CH ? pair_cols : 0);
+                    v[c] = Dec::template repair_stream<T>(a, xr[r], wc, v[c]);
+                }
+            }
+        }
+#else
 #pragma unroll
         for (int c = 0; c < CB; ++c) {
             const int col = col0 + c % CH;
@@ -374,6 +392,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                 v[c] = Dec::template repair_stream<T>(a, xr[r], wc, v[c]);
             }
         }
+#endif
 #pragma unroll
         for (int c = 0; c < CH; ++c) {
             const int col = col0 + c;
