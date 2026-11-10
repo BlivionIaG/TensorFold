@@ -177,6 +177,7 @@ pub const LaneHost = struct {
         .imprint = rows_host.ask,
         .drain = rows_host.drain,
         .load = load.attach,
+        .handoff = handoffFn,
     };
 
     const scored_vtable: Engine.VTable = blk: {
@@ -190,6 +191,12 @@ pub const LaneHost = struct {
         v.decide = scoring.decide;
         break :blk v;
     };
+
+    /// The exporter's held exports, when it serves them over HTTP.
+    fn handoffFn(ctx: *anyopaque) ?@import("lane_export.zig").Serve {
+        const x = self(ctx).exporter orelse return null;
+        return x.serve;
+    }
 
     /// The family's queue as a keepalive target, when it set one.
     fn keepaliveFn(ctx: *anyopaque) ?api.keepalive.Target {

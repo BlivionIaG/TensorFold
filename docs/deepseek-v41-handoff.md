@@ -73,6 +73,8 @@ reply is one token, and the state at the cut goes to the producer (`cuda_export_
 
 * `--mcdma-produce LINK` attaches to mcdma-rpcd's listen daemon and holds each export until the decoder closes it
   (`TF_PRODUCE_HELD_GIB`, as for Qwen).
+* `--mcdma-produce http` holds them the same way and serves them on the server's own port, for a Mac with no link
+  ([Over plain HTTP](#over-plain-http)).
 * `TF_DSV41_HANDOFF_DUMP=DIR` also (or instead, with no link) writes each export as `DIR/<id>.mkvh2`, with
   `<id>.tokens.json` (the prompt ids it covers) beside it, or `<id>.error` with the reason. `<id>.mkvh2` is what the
   producer's replies are, concatenated: the protocol-2 MANIFEST, then every DATA frame (a 128-byte header and the
@@ -121,14 +123,67 @@ in delivery order; a synthetic one from `synth.zig`, or a producer's parts dumpe
 lands the hand-off in a blank Snapshot, then compares the next N logit rows (the reference's tokens fed to both): top-1
 agreement and NRMS, and the free-running token streams. Agreement is reported, not required.
 
-`TF_DSV41_HANDOFF_DUMP=<path>` keeps the round trip's file; `TF_DSV41_HANDOFF_FILE=<path>` serves such a file as the lane
+`TF_DSV41_HANDOFF_DUMP=<path>` keeps the round trip's file (a path ending in `.mkvh2` keeps it as a producer's stream instead,
+the body `GET /v1/handoff/<id>` serves, for the checkpoint's own name: a fake producer can serve it to the HTTP decoder); `TF_DSV41_HANDOFF_FILE=<path>` serves such a file as the lane
 host's remote source (instead of `--prefill-from`): a request whose prompt extends the file's tokens gets that prefix landed
 from it, through the lane's own `wants` / `fill` / restore / `drop` path and keep rule, and any other prompt is prefilled here.
 
+## Over plain HTTP
+
+With no ConnectX link between the pair and the Mac, the hand-off travels over the LAN on the ports the servers already
+have. It is the same stream a link carries, so nothing in the library changes: the manifest, the part checks and the landing
+are the ones `TF_DSV41_HANDOFF_FILE` uses.
+
+**Producer** (the GB10 pair's rank 0, an export profile as above): `dsv41-serve ... --mcdma-produce http`. `http` is a reserved
+link name: no mcdma-rpcd, no listen daemon. Each export is held as for a link (`TF_PRODUCE_HELD_GIB`, 120 s) and the server
+answers, on its own port and behind its own API keys (`--api-key`, `--api-key-file`):
+
+* `GET /v1/handoff/<id>`: HTTP 200, `application/octet-stream`, `Content-Length`, and the producer's replies to a decoder's
+  OPEN and every PULL as one body: the protocol-2 MANIFEST, then each DATA frame (128-byte header, payload, CRC-32). The
+  frames are cut from the held bf16 parts a message at a time through one 4 MiB buffer: no second copy of an export exists.
+  It may be fetched again until it is deleted or expires (a retry is a new GET; there are no ranges).
+* `DELETE /v1/handoff/<id>`: the decoder is done; the export is released at once (HTTP 200, or 404 when none is held).
+* 400 when the id is not exactly 32 hex digits; 404 for an id never exported, deleted, or expired (and from a server that was not
+  started with `--mcdma-produce http`); 409 with the reason when the export failed (the trigger's reply was still one token).
+  A key without the `inference` scope gets 403, no key 401. Only a held export is reachable: the route reads no file and
+  takes no path.
+
+The body is not encrypted: it is a state derived from the prompt. Keep the pair's port on a trusted LAN, and use a key.
+
+**Decoder** (the Mac): `serve ... --prefill-from http://PRODUCER:PORT --mcdma-link http`. A request whose prompt is long enough
+(`TF_PREFILL_MIN`, `TF_PREFILL_CHUNK`) triggers the export with the same `POST /v1/completions` + `kv_transfer_params`, then
+`GET /v1/handoff/<id>` is read frame by frame straight into the landing (`handoff_file.pullFrom`: the manifest must be for this
+checkpoint, prompt and shard, every frame arrives in order and checksummed, nothing may follow the last; the export is never held
+whole here), the copy on the producer is deleted, and the Mac prefills the tail and decodes. `TF_PREFILL_API_KEY_FILE`'s key is
+sent on all three requests. `TF_PREFILL_TIMEOUT_S` (default 60 s plus 1 s per 400 tokens) bounds the trigger and, separately,
+the transfer. Any failure (the producer down, a 401, a 404, a cut stream, a wrong checkpoint or prompt, a bad checksum, a
+timeout) is logged and that prompt is prefilled on the Mac; a checkpoint, prompt or protocol mismatch also turns remote prefill
+off for the rest of the run, as over a link. The result is labelled remote as ever and is outside the exactness contract.
+
+The pair, then the Mac (names and paths are placeholders):
+
+```
+# each Spark: the export profile (replicated KV, whole-prompt prefill, paged pool), rank 1 as ever `tf-dsv41 follow`
+export TF_EXPERIMENTAL=deepseek TF_DSV41_POOL_TOKENS=65536   # plus the pair's usual TF_TP_* and TF_DSV41_* settings
+unset TF_DSV41_PREFILL TF_DSV41_PREFILL_PIECES TF_DSV41_KV_SPLIT
+# rank 0 only: the serve line gains one flag (and a key)
+tensorfold-dsv41 serve $MODEL --host 0.0.0.0 --port 8000 --name DeepSeek-V4.1-Flash-TF --no-thinking \
+    --mcdma-produce http --api-key-file $KEYFILE
+# the Mac
+TF_PREFILL_API_KEY_FILE=$KEYFILE tensorfold-native serve $PACK --engram-stream-dir $ENGRAM --chat-template $PACK/chat_template.jinja \
+    --prefill-from http://PRODUCER:8000 --mcdma-link http --prompt-cache-gib 4
+```
+
+Both ends must load the same checkpoint files: the manifest's model name is the hash of `config.json` and
+`model.safetensors.index.json`. The producer logs `dsv41 handoff export: http` and `handoff <id>: N tokens ... MiB of bf16 rows`
+per export; the Mac logs `remote prefill over HTTP: N prefixes pulled, X MiB and Y ms each` at shutdown.
+
 ## Tests
 
-`zig build test-dsv41-handoff` (host only; includes the export glue over a synthetic engine snapshot, the file round trip and
-the producer's held-export bookkeeping): codec exhaustively against independent tables, packers against independent
+`zig build test-dsv41-handoff` (host only; includes the export glue over a synthetic engine snapshot, the file round trip, the
+producer's held-export bookkeeping with its readers, and the HTTP decoder against a loopback fake producer: a whole fetch
+landed in a Snapshot's buffers, 401, 404, 409, a cut stream, a wrong checkpoint or prompt, a producer that never answers): codec exhaustively against independent tables, packers against independent
 f64 references, plan partitions, export-to-import round trips for both Metal layouts (replicated, split 2 and 3 shards,
 short, odd and even `upto`), protocol 2 end to end over the fake link, and layout guards that fail when an engine's
-constants change. `compile-dsv41-handoff-aarch64-linux` / `-macos` compile the tests for the targets.
+constants change. `zig build test-handoff-routes-host` runs `GET`/`DELETE /v1/handoff/<id>` over real sockets (the whole stream under
+its `Content-Length`, the key gate and scopes, bad ids, 404 and 409). `compile-dsv41-handoff-aarch64-linux` / `-macos` compile the tests for the targets.

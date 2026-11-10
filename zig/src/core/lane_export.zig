@@ -19,6 +19,31 @@ pub const Exporter = struct {
     exported: *const fn (ptr: *anyopaque, h: Handoff, tokens: []const u32, saved: pc.Saved) void,
     /// No state will come for `h`: the decoder is told why.
     failed: *const fn (ptr: *anyopaque, h: Handoff, why: []const u8) void,
+    /// The held exports as `GET /v1/handoff/<id>` on the server's own port, for a decoder with no fabric link (null: not served).
+    serve: ?Serve = null,
+};
+
+/// An export's bytes read over HTTP: the producer's replies to a decoder's OPEN and every PULL, back to back.
+pub const Stream = struct {
+    ptr: *anyopaque,
+    /// the whole body, known before the first byte (the response's Content-Length)
+    size: u64,
+    /// The next message (valid until the next call), or null after the last.
+    next: *const fn (ptr: *anyopaque) anyerror!?[]const u8,
+    /// The export may be released again.
+    close: *const fn (ptr: *anyopaque) void,
+};
+
+/// What the server reads of an exporter that serves its exports over HTTP (server/handoff_routes.zig).
+pub const Serve = struct {
+    ptr: *anyopaque,
+    /// A held export's stream, which holds it until closed. `NotHeld`: never held, released or expired. `Refused`: the export
+    /// failed, and `why` says why.
+    open: *const fn (ptr: *anyopaque, id: [16]u8, why: *[]const u8) OpenError!Stream,
+    /// The export released now (a decoder is done with it); false when none was held.
+    release: *const fn (ptr: *anyopaque, id: [16]u8) bool,
+
+    pub const OpenError = error{ NotHeld, Refused, OutOfMemory, Unreadable };
 };
 
 /// A handoff request needs an exporter, and a prompt with a token past its mark.

@@ -49,7 +49,7 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
 | `TF_PREFILL_AHEAD` | With `--prefill-from`: whole count from 1 of queued requests with a fill under way or landed; default 4 |
 | `TF_PREFILL_API_KEY_FILE` | With `--prefill-from`: the path of a file only its owner can read, holding the GB10 server's API key, which the trigger sends as a Bearer token; unset sends none, and a GB10 started with `--api-key` then answers 401 |
 | `TF_PRODUCE_HELD_GIB` | With `--mcdma-produce`: whole GiB 1 through 1024 of hand-off exports a GB10 holds at once; an export past it is refused by name and the Mac prefills that prompt itself; default 32 |
-| `TF_PREFILL_TIMEOUT_S` | With `--prefill-from`: whole seconds 1 through 86400 for the trigger; default 60 plus 1 per 400 tokens sent |
+| `TF_PREFILL_TIMEOUT_S` | With `--prefill-from`: whole seconds 1 through 86400 for the trigger and, with `--mcdma-link http`, separately for the transfer of the export; default 60 plus 1 per 400 tokens sent |
 | `XPU_A8_BITS` | Exactly `4` or `8`, for the XPU quantization study; unset keeps the study's existing setting |
 | `LFM3_FUSE` | Whole u32 fusion mask; default 7 |
 | `TF_SLIDE_POCKET_KEY` | Exactly `auto`, `reply`, `subject` or `both`; default `auto` |

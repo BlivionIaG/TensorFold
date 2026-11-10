@@ -9,3 +9,6 @@ pub const import_metal = @import("import.zig");
 pub const export_metal = @import("export_metal.zig");
 pub const blob = @import("blob.zig");
 pub const landing = @import("landing.zig");
+/// The hand-off as a byte stream (a file, or an HTTP body) and the decoder's fetch over HTTP: one reader checks both.
+pub const file = @import("../handoff_file.zig");
+pub const http = @import("../handoff_http.zig");

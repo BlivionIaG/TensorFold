@@ -186,3 +186,76 @@ test "a link's table holds the export until the decoder closes it, refuses a rep
     _ = std.fmt.bufPrint(&hex, "{x}", .{&id}) catch unreachable;
     try std.testing.expectEqualStrings(&hex, done.items[0]);
 }
+
+fn readAll(r: *serve.Produce.Reading, into: *std.ArrayList(u8)) !void {
+    while (try r.next()) |message| try into.appendSlice(gpa, message);
+}
+
+test "an HTTP producer streams a held export to any reader; a release or an expiry frees it at the last reader's close" {
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const fake = try Fake.init(250);
+    defer fake.deinit();
+    var problem: []const u8 = "";
+    const p = try serve.Produce.open(gpa, io, fake.source(), .{ .http = true, .model = model, .ttl_ns = std.time.ns_per_hour }, &problem);
+    const tokens = try tokensOf(a, 250);
+    const id: [16]u8 = @splat(0x21);
+    p.exported(id, tokens, try p.save(250));
+    try std.testing.expectEqual(@as(usize, 1), p.held.count());
+    try std.testing.expectEqual(@as(u32, 1), fake.released);
+
+    // what a reader gets is what the file holds, and the stream says its length first
+    var want: std.Io.Writer.Allocating = .init(gpa);
+    defer want.deinit();
+    try file.write(gpa, &want.writer, p.table.get(id).?.ready, model, 0, 1);
+    var why: []const u8 = "";
+    const first = try p.read(id, &why);
+    const second = try p.read(id, &why); // another reader at once, on the same export
+    try std.testing.expectEqual(@as(u64, want.written().len), first.size());
+    var got: std.ArrayList(u8) = .empty;
+    defer got.deinit(gpa);
+    try readAll(first, &got);
+    try std.testing.expectEqualSlices(u8, want.written(), got.items);
+    first.close();
+
+    // the decoder deletes it while the second reader is mid-stream: new readers find nothing, the second one finishes whole
+    const manifest_len = (try second.next()).?.len; // the manifest
+    try std.testing.expect(p.discard(id));
+    try std.testing.expectEqual(@as(usize, 0), p.held.count());
+    try std.testing.expectError(error.NotHeld, p.read(id, &why));
+    try std.testing.expect(!p.discard(id));
+    var rest: usize = 0;
+    while (try second.next()) |message| rest += message.len;
+    try std.testing.expectEqual(want.written().len, manifest_len + rest);
+    second.close(); // the last close frees the export: the leak check proves it
+
+    // a failed export is refused with its reason
+    p.failed(@splat(0x22), "DeviceLost");
+    try std.testing.expectError(error.Refused, p.read(@splat(0x22), &why));
+    try std.testing.expectEqualStrings("DeviceLost", why);
+    try std.testing.expectError(error.NotHeld, p.read(@splat(0x23), &why));
+    p.stop();
+}
+
+test "an HTTP producer's export expires, and one being read outlives its expiry" {
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const fake = try Fake.init(130);
+    defer fake.deinit();
+    var problem: []const u8 = "";
+    const p = try serve.Produce.open(gpa, io, fake.source(), .{ .http = true, .model = model, .ttl_ns = 20 * std.time.ns_per_ms }, &problem);
+    const id: [16]u8 = @splat(0x31);
+    p.exported(id, try tokensOf(a, 130), try p.save(130));
+    var why: []const u8 = "";
+    const reading = try p.read(id, &why);
+    _ = try reading.next();
+    try std.Io.sleep(io, .fromMilliseconds(60), .awake);
+    try std.testing.expectError(error.NotHeld, p.read(id, &why)); // the sweep took it
+    var rest: usize = 0;
+    while (try reading.next()) |message| rest += message.len;
+    try std.testing.expect(rest > 0); // the reader that held it still gets every frame
+    reading.close();
+    p.stop();
+}

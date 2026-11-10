@@ -99,7 +99,7 @@ fn streamAgree(want: []const u32, got: []const u32) usize {
 }
 
 /// Runs the check named by `spec` against slot 0 of `m`; every failure is logged and returned.
-pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8) !void {
+pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8, checkpoint: []const u8) !void {
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -146,10 +146,13 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8) !
     // the hand-off: a file (or the round trip's own export) landed in a blank Snapshot as a pull lands it
     const snap = try m.snapshotBlank();
     defer m.snapshotDrop(snap);
-    const bytes = if (file != null) null else try exportNative(a, m, native, prompt[0..upto]);
-    if (bytes) |b| if (envText("TF_DSV41_HANDOFF_DUMP")) |path| {
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = b });
-        log.info("wrote the round trip's hand-off file ({d} bytes, {d} tokens) to {s}", .{ b.len, upto, path });
+    const parts = if (file != null) null else try exportNative(a, m, native, prompt[0..upto]);
+    const bytes = if (parts) |p| try ho.blob.write(a, checkpoint, prompt[0..upto], p) else null;
+    if (parts) |p| if (envText("TF_DSV41_HANDOFF_DUMP")) |path| {
+        const as_stream = std.mem.endsWith(u8, path, ho.file.extension);
+        const data = if (as_stream) try stream(a, checkpoint, prompt[0..upto], p) else bytes.?;
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = data });
+        log.info("wrote the round trip's hand-off {s} ({d} bytes, {d} tokens) to {s}", .{ if (as_stream) "stream, as a producer serves it," else "file", data.len, upto, path });
     };
     const landed = if (file) |f| f else try ho.blob.Blob.parse(a, bytes.?);
     var landing: ho.landing.Landing = undefined;
@@ -180,9 +183,18 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8) !
     try m.reset();
 }
 
-/// The native slot as a hand-off file: the Metal lane's own state through the library's Metal-to-neutral export.
-fn exportNative(a: std.mem.Allocator, m: *ds.Model, native: *const ds.Model.Snapshot, tokens: []const u32) ![]u8 {
+/// The native slot's state through the library's Metal-to-neutral export: the parts a producer would send.
+fn exportNative(a: std.mem.Allocator, m: *ds.Model, native: *const ds.Model.Snapshot, tokens: []const u32) ![]const ho.export_cuda.Part {
     const view = remote.packedOf(m, @constCast(native));
-    const parts = try ho.export_metal.build(a, .{ .upto = tokens.len }, view);
-    return ho.blob.write(a, "dsv41-roundtrip", tokens, parts);
+    return ho.export_metal.build(a, .{ .upto = tokens.len }, view);
+}
+
+/// `parts` as a producer's replies to a decoder (`GET /v1/handoff/<id>`'s body; `TF_DSV41_HANDOFF_DUMP=<path>.mkvh2`): the
+/// MANIFEST for `checkpoint` and `tokens`, then every part as a checksummed DATA frame.
+fn stream(a: std.mem.Allocator, checkpoint: []const u8, tokens: []const u32, parts: []const ho.export_cuda.Part) ![]const u8 {
+    const built = try tf.deepseek_v41_handoff_p2.layers(a, parts);
+    const exp: tf.fabric.producer.Export = .{ .handoff = @splat(0x5a), .tokens = tokens, .first_token = 0, .tokens_per_row = 1, .layers = built.layers, .sources = built.sources };
+    var out: std.Io.Writer.Allocating = .init(a);
+    try ho.file.write(a, &out.writer, &exp, checkpoint, 0, 1);
+    return out.written();
 }

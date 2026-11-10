@@ -14,6 +14,7 @@ const ps = fabric.prefill_source;
 const q27 = @import("qwen27_remote.zig");
 const trigger = @import("remote_trigger.zig");
 const Filled = api.LaneHost.Remote.Filled;
+const http = @import("deepseek_v41_http.zig");
 const Flags = api.LaneHost.Remote.Flags;
 
 pub const policy = q27.policy;
@@ -205,14 +206,39 @@ pub const Link = struct {
     }
 };
 
+/// The link a served host holds: an MCDMA one (`--mcdma-link NAME`) or the HTTP transport (`--mcdma-link http`).
+pub const Attached = union(enum) {
+    mcdma: *Link,
+    http: *http.Link,
+
+    fn start(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, f: Flags, id: []const u8) !Attached {
+        if (f.overHttp()) return .{ .http = try http.Link.start(gpa, io, m, f, id) };
+        return .{ .mcdma = try Link.start(gpa, io, m, f, id) };
+    }
+
+    fn source(a: Attached) api.LaneHost.Remote.Source {
+        return switch (a) {
+            .mcdma => |l| l.pull.source(),
+            .http => |l| l.pull.source(),
+        };
+    }
+
+    pub fn stop(a: Attached, gpa: std.mem.Allocator) void {
+        switch (a) {
+            .mcdma => |l| l.stop(gpa),
+            .http => |l| l.stop(gpa),
+        }
+    }
+};
+
 /// --prefill-from on a served host `h`: starts its link and gives the lane host the pull and the keep rule.
 pub fn attach(h: anytype, io: std.Io, a: std.mem.Allocator, f: Flags, id: []const u8, why: *[]const u8) !void {
     if (!f.on()) return;
-    h.link = Link.start(h.gpa, io, h.model, f, id) catch |err| {
-        why.* = if (err == error.InvalidEnvironment) "a TF_PREFILL_* setting is malformed: the line above names it, its value and its accepted forms" else try std.fmt.allocPrint(a, "--mcdma-link {s}: the link could not open ({s}); is mcdma-rpcd's connect daemon serving it?", .{ f.link.?, @errorName(err) });
+    h.link = Attached.start(h.gpa, io, h.model, f, id) catch |err| {
+        why.* = if (err == error.InvalidEnvironment) "a TF_PREFILL_* setting is malformed: the line above names it, its value and its accepted forms" else if (f.overHttp()) try std.fmt.allocPrint(a, "--prefill-from {s} with --mcdma-link http: the HTTP link could not start ({s})", .{ f.url.?, @errorName(err) }) else try std.fmt.allocPrint(a, "--mcdma-link {s}: the link could not open ({s}); is mcdma-rpcd's connect daemon serving it?", .{ f.link.?, @errorName(err) });
         return err;
     };
-    h.host.remote = h.link.?.pull.source();
+    h.host.remote = h.link.?.source();
     h.host.keep_remote = keeps() catch |err| {
         why.* = "TF_PREFILL_KEEP takes 1 (keep states built on a pulled prefix, marked remote) or 0";
         h.link.?.stop(h.gpa);

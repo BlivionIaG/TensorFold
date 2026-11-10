@@ -20,8 +20,9 @@ pub const Export = struct {
     source: gpu.Source,
     produce: *serve.Produce,
 
-    /// The exporter for `m`, or null with `problem` set (what to change). `link`: `--mcdma-produce`'s name; the dump
-    /// directory comes from TF_DSV41_HANDOFF_DUMP. With neither, no exporter (null, no problem).
+    /// The exporter for `m`, or null with `problem` set (what to change). `link`: `--mcdma-produce`'s name, or `http` to serve
+    /// the exports on the server's own port; the dump directory comes from TF_DSV41_HANDOFF_DUMP. With neither, no exporter
+    /// (null, no problem).
     pub fn open(gpa: std.mem.Allocator, io: std.Io, m: *model.Model, pieces: bool, link: ?[]const u8, checkpoint: []const u8, problem: *[]const u8) !?*Export {
         const dump: []const u8 = if (std.c.getenv(dump_env)) |v| std.mem.span(v) else "";
         if (link == null and dump.len == 0) return null;
@@ -33,10 +34,11 @@ pub const Export = struct {
             problem.* = "--mcdma-produce: TF_PRODUCE_HELD_GIB is malformed; the line above names its forms";
             return error.InvalidEnvironment;
         };
+        const http = if (link) |l| std.mem.eql(u8, l, api.LaneHost.Remote.http_link) else false;
         const x = try gpa.create(Export);
         errdefer gpa.destroy(x);
         x.* = .{ .gpa = gpa, .source = .{ .ss = m.sessions.? }, .produce = undefined };
-        x.produce = try serve.Produce.open(gpa, io, x.source.source(), .{ .link = link, .dump = if (dump.len > 0) dump else null, .model = checkpoint, .held_bytes = cap << 30 }, problem);
+        x.produce = try serve.Produce.open(gpa, io, x.source.source(), .{ .link = if (http) null else link, .http = http, .dump = if (dump.len > 0) dump else null, .model = checkpoint, .held_bytes = cap << 30 }, problem);
         log.info("dsv41 handoff export: {s}{s}{s}", .{ if (link) |l| l else "no link", if (dump.len > 0) ", files under " else "", dump });
         return x;
     }
@@ -48,7 +50,29 @@ pub const Export = struct {
     }
 
     pub fn exporter(x: *Export) api.LaneHost.Export.Exporter {
-        return .{ .ptr = x, .snapshots = .{ .ptr = x, .vtable = &snapshots }, .exported = exported, .failed = failed };
+        const over_http = x.produce.opts.http;
+        return .{ .ptr = x, .snapshots = .{ .ptr = x, .vtable = &snapshots }, .exported = exported, .failed = failed, .serve = if (over_http) .{ .ptr = x, .open = readOpen, .release = readRelease } else null };
+    }
+
+    /// `GET /v1/handoff/<id>`: the held export's replies, a message at a time.
+    fn readOpen(ptr: *anyopaque, id: [16]u8, why: *[]const u8) api.LaneHost.Export.Serve.OpenError!api.LaneHost.Export.Stream {
+        const r = try self(ptr).produce.read(id, why);
+        return .{ .ptr = r, .size = r.size(), .next = readNext, .close = readClose };
+    }
+
+    fn readNext(ptr: *anyopaque) anyerror!?[]const u8 {
+        const r: *serve.Produce.Reading = @ptrCast(@alignCast(ptr));
+        return r.next();
+    }
+
+    fn readClose(ptr: *anyopaque) void {
+        const r: *serve.Produce.Reading = @ptrCast(@alignCast(ptr));
+        r.close();
+    }
+
+    /// `DELETE /v1/handoff/<id>`.
+    fn readRelease(ptr: *anyopaque, id: [16]u8) bool {
+        return self(ptr).produce.discard(id);
     }
 
     const snapshots: pc.Snapshots.VTable = .{ .bytes = bytes, .save = save, .restore = restore, .drop = drop };

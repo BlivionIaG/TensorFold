@@ -450,6 +450,8 @@ pub const Engine = struct {
         load: ?*const fn (ctx: *anyopaque, producer: ?load_ledger.Producer) void = null,
         /// Asked once per whole request: the returned message is the refusal, up to `refusal_bytes`; null: accepted.
         refusal: ?*const fn (ctx: *anyopaque, request: *const Request, out: []u8) ?[]const u8 = null,
+        /// The hand-off exports this engine holds, served over HTTP (`GET /v1/handoff/<id>`); null: it serves none.
+        handoff: ?*const fn (ctx: *anyopaque) ?@import("lane_export.zig").Serve = null,
     };
 
     pub fn info(e: Engine) Info {
@@ -527,6 +529,12 @@ pub const Engine = struct {
     pub fn learn(e: Engine, request: *const LearnRequest, sink: LearnSink) LearnError!void {
         const f = e.vtable.learn orelse return error.Unsupported;
         return f(e.ctx, request, sink);
+    }
+
+    /// The engine's held hand-off exports, when it serves them over HTTP.
+    pub fn handoffServe(e: Engine) ?@import("lane_export.zig").Serve {
+        const f = e.vtable.handoff orelse return null;
+        return f(e.ctx);
     }
 
     /// The engine's refusal of a whole `request`: the returned message, up to `refusal_bytes`; null: accepted.

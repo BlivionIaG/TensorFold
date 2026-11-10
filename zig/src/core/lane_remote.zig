@@ -26,6 +26,10 @@ pub const ResumePeek = struct { ctx: *anyopaque, at: *const fn (ctx: *anyopaque,
 /// The family's state after `at` prompt tokens, computed by another machine: never kept, never the engine's own.
 pub const Filled = struct { saved: pc.Saved, at: u32 };
 
+/// The link name that stands for the server's own HTTP port: `--mcdma-produce http` serves hand-off exports on it, and
+/// `--prefill-from URL --mcdma-link http` fetches them from `URL` (no ConnectX link; DeepSeek V4.1 only).
+pub const http_link = "http";
+
 /// serve --prefill-from URL (the GB10 server) and --mcdma-link NAME (mcdma-rpcd's connect link): both, or neither.
 pub const Flags = struct {
     url: ?[]const u8 = null,
@@ -34,6 +38,12 @@ pub const Flags = struct {
 
     pub fn on(f: Flags) bool {
         return f.url != null or f.link != null;
+    }
+
+    /// `--mcdma-link http`: the hand-off comes over HTTP from `--prefill-from`'s server, not over a fabric link.
+    pub fn overHttp(f: Flags) bool {
+        const l = f.link orelse return false;
+        return std.mem.eql(u8, l, http_link);
     }
 };
 

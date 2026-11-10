@@ -22,13 +22,17 @@ pub const Options = struct {
     /// the most export bytes a link holds at once (TF_PRODUCE_HELD_GIB)
     held_bytes: u64 = 32 << 30,
     ttl_ns: u64 = 120 * std.time.ns_per_s,
+    /// serve the held exports over the server's own HTTP port (`--mcdma-produce http`): no link, no daemon, the exports are held
+    /// as for a link (same cap and expiry) until the decoder deletes them
+    http: bool = false,
 };
 
 /// What `save` hands `exported`: the engine's state, read back.
 pub const Saved = struct { cap: cx.Captured };
 
-/// One export a link holds: its converted parts, and the table's name for it.
-const Held = struct { built: *cx.Built, name: [32]u8 };
+/// One export the producer holds: its converted parts, and the table's name for it. A stream reading it pins it: an expiry or
+/// a release meanwhile only marks it `gone`, and the last stream to close frees it.
+pub const Held = struct { built: *cx.Built, name: [32]u8, pins: u32 = 0, gone: bool = false };
 
 pub const Produce = struct {
     gpa: std.mem.Allocator,
@@ -42,6 +46,7 @@ pub const Produce = struct {
     thread: ?std.Thread = null,
     held: std.AutoHashMapUnmanaged([16]u8, *Held) = .empty,
     lock: std.atomic.Mutex = .unlocked, // `held`: the engine thread adds, the serving thread releases
+    streams: std.atomic.Value(u32) = .init(0), // reads under way (HTTP): the producer stops after them
 
     /// A producer over `source`: the link attached when `opts.link` is set, the dump directory made when `opts.dump` is.
     /// On failure `problem` says what to fix.
@@ -54,6 +59,7 @@ pub const Produce = struct {
             problem.* = "TF_DSV41_HANDOFF_DUMP: the directory cannot be made";
             return err;
         };
+        if (opts.http) log.info("handoff: exports are served over HTTP, GET /v1/handoff/<id> on this server's port", .{});
         const link = opts.link orelse return p;
         if (builtin.os.tag != .linux) {
             problem.* = "--mcdma-produce runs on Linux, beside mcdma-rpcd's listen daemon";
@@ -77,14 +83,18 @@ pub const Produce = struct {
         return p;
     }
 
-    /// Stops serving and frees every export still held (after the lane host stopped: no export comes in).
+    /// Stops serving and frees every export still held (after the lane host stopped: no export comes in). A read under way ends
+    /// first: the server's socket timeouts bound it.
     pub fn stop(p: *Produce) void {
         if (p.thread) |t| {
             p.serving.stop.store(true, .release);
             t.join();
-            var it = p.held.valueIterator();
-            while (it.next()) |h| release(p, h.*);
-            p.held.deinit(p.gpa);
+        }
+        while (p.streams.load(.acquire) > 0) std.Io.sleep(p.io, .fromMilliseconds(1), .awake) catch {};
+        var it = p.held.valueIterator();
+        while (it.next()) |h| release(p, h.*);
+        p.held.deinit(p.gpa);
+        if (p.thread != null) {
             if (p.reg) |*r| r.close();
             p.serving.deinit();
             p.box.close();
@@ -134,14 +144,88 @@ pub const Produce = struct {
         _ = std.fmt.hexToBytes(&id, name) catch return; // a failed handoff's entry holds no export
         while (!p.lock.tryLock()) std.atomic.spinLoopHint();
         const got = p.held.fetchRemove(id);
+        const reading = if (got) |kv| kv.value.pins > 0 else false;
+        if (reading) got.?.value.gone = true; // the last read to close frees it
         p.lock.unlock();
-        _ = p.serving.responder.checksums.remove(id); // CLOSE removes it; an expired export's would stay
-        if (got) |kv| release(p, kv.value);
+        if (p.thread != null) _ = p.serving.responder.checksums.remove(id); // CLOSE removes it; an expired export's would stay
+        if (got) |kv| if (!reading) release(p, kv.value);
     }
 
     fn release(p: *Produce, h: *Held) void {
         h.built.deinit(p.gpa); // the frames the responder planned at OPEN go with it
         p.gpa.destroy(h);
+    }
+
+    /// Exports past their time and those the decoder released are freed (on a link the serving thread does this every millisecond).
+    fn sweep(p: *Produce) void {
+        var done: std.ArrayList([]const u8) = .empty;
+        defer done.deinit(p.gpa);
+        p.table.expire() catch {};
+        p.table.takeFinished(&done) catch {};
+        for (done.items) |name| reap(p, name);
+    }
+
+    /// One decoder's read of a held export (`GET /v1/handoff/<id>`): its replies to OPEN and every PULL, a message at a time,
+    /// with the export pinned until `close`.
+    pub const Reading = struct {
+        p: *Produce,
+        held: *Held,
+        replies: *file.Replies,
+
+        /// the stream's length in bytes, known before the first
+        pub fn size(r: *const Reading) u64 {
+            return r.replies.size;
+        }
+
+        pub fn next(r: *Reading) !?[]const u8 {
+            return r.replies.next();
+        }
+
+        pub fn close(r: *Reading) void {
+            const p = r.p;
+            const held = r.held;
+            r.replies.deinit();
+            p.gpa.destroy(r);
+            p.unlease(held);
+        }
+    };
+
+    /// The held export under `id` for reading. `NotHeld`: never held, released or expired. `Refused`: it failed (`why` says why).
+    pub fn read(p: *Produce, id: [16]u8, why: *[]const u8) error{ NotHeld, Refused, OutOfMemory, Unreadable }!*Reading {
+        p.sweep();
+        const failed_why: ?[]const u8 = if (p.table.get(id)) |e| (if (e == .failed) e.failed else null) else null;
+        while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+        const held = p.held.get(id) orelse {
+            p.lock.unlock();
+            why.* = failed_why orelse return error.NotHeld;
+            return error.Refused;
+        };
+        held.pins += 1;
+        p.lock.unlock();
+        _ = p.streams.fetchAdd(1, .acq_rel);
+        errdefer p.unlease(held);
+        const r = try p.gpa.create(Reading);
+        errdefer p.gpa.destroy(r);
+        const replies = file.Replies.open(p.gpa, &held.built.exp, p.opts.model, 0, 1) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.Unreadable;
+        r.* = .{ .p = p, .held = held, .replies = replies };
+        return r;
+    }
+
+    fn unlease(p: *Produce, h: *Held) void {
+        while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+        h.pins -= 1;
+        const last = h.pins == 0 and h.gone;
+        p.lock.unlock();
+        if (last) release(p, h);
+        _ = p.streams.fetchSub(1, .acq_rel);
+    }
+
+    /// The decoder is done with `id` (`DELETE /v1/handoff/<id>`): its export is released now. False when none was held.
+    pub fn discard(p: *Produce, id: [16]u8) bool {
+        if (p.table.get(id) == null) return false;
+        p.table.finish(id) catch return false;
+        p.sweep();
+        return true;
     }
 
     /// The engine's state at `at` tokens, read back (the lane host's `snapshots.save` at the cut).
@@ -167,6 +251,7 @@ pub const Produce = struct {
     }
 
     fn record(p: *Produce, id: [16]u8, tokens: []const u32, st: cx.State) !void {
+        if (p.opts.http) p.sweep(); // what expired or was released makes room under the cap
         const built = try cx.build(p.gpa, id, tokens, st);
         var kept = false;
         defer if (!kept) built.deinit(p.gpa);
@@ -174,7 +259,7 @@ pub const Produce = struct {
         for (built.exp.layers) |l| frames += l.parts.len;
         log.info("handoff {x}: {d} tokens, {d} parts, {d} MiB of bf16 rows", .{ &id, tokens.len, frames, built.bytes >> 20 });
         if (p.opts.dump != null) try p.dump(built, tokens);
-        if (p.opts.link == null) return;
+        if (p.opts.link == null and !p.opts.http) return;
         const held = try p.gpa.create(Held);
         errdefer p.gpa.destroy(held);
         held.* = .{ .built = built, .name = undefined };
@@ -235,6 +320,6 @@ pub const Produce = struct {
                 std.Io.Dir.cwd().writeFile(p.io, .{ .sub_path = path, .data = why }) catch {};
             } else |_| {}
         }
-        if (p.opts.link != null) p.table.add(id, "failed", .{ .failed = why }) catch {};
+        if (p.opts.link != null or p.opts.http) p.table.add(id, "failed", .{ .failed = why }) catch {};
     }
 };

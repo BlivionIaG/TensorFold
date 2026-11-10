@@ -9,5 +9,6 @@ test {
     _ = @import("handoff/tests.zig");
     _ = @import("cuda_export_test.zig");
     _ = @import("handoff_file_test.zig");
+    _ = @import("handoff_http_test.zig");
     _ = @import("cuda_export_serve_test.zig");
 }

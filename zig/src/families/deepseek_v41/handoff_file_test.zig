@@ -14,14 +14,14 @@ const file = @import("handoff_file.zig");
 const gpa = std.testing.allocator;
 const model = "dsv41-test";
 
-const Fixture = struct {
+pub const Fixture = struct {
     arena_state: std.heap.ArenaAllocator,
     tokens: []u32,
     built: *cx.Built,
     bytes: []u8,
     shape: plan.Shape,
 
-    fn make(upto: u64, ds_rows: u32) !Fixture {
+    pub fn make(upto: u64, ds_rows: u32) !Fixture {
         var f: Fixture = undefined;
         f.arena_state = .init(gpa);
         errdefer f.arena_state.deinit();
@@ -40,14 +40,14 @@ const Fixture = struct {
         return f;
     }
 
-    fn deinit(f: *Fixture) void {
+    pub fn deinit(f: *Fixture) void {
         gpa.free(f.bytes);
         f.built.deinit(gpa);
         f.arena_state.deinit();
     }
 };
 
-fn target(arena: std.mem.Allocator) !metal.Packed {
+pub fn target(arena: std.mem.Allocator) !metal.Packed {
     const probe: metal.Packed = .{ .live = &.{}, .storage = &.{}, .layers = 43, .capacity = 1024 };
     return .{ .live = try arena.alloc(u8, probe.liveBytes()), .storage = try arena.alloc(u8, metal.Packed.storageBytes(1024)), .layers = 43, .capacity = 1024 };
 }

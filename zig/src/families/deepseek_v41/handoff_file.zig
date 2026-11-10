@@ -1,9 +1,11 @@
-//! A hand-off as a file, for moving one between machines with no MCDMA link (opt-in: TF_DSV41_HANDOFF_DUMP on the producer).
+//! A hand-off as a byte stream: a file (opt-in TF_DSV41_HANDOFF_DUMP on the producer) or an HTTP body (`GET /v1/handoff/<id>`),
+//! for moving one between machines with no MCDMA link.
 //!
-//! The file is the producer's replies, byte for byte, to a decoder's OPEN and then each PULL: one MKVH protocol 2 MANIFEST
+//! The stream is the producer's replies, byte for byte, to a decoder's OPEN and then each PULL: one MKVH protocol 2 MANIFEST
 //! message, then every DATA frame in order, each message a 128-byte header followed by `nbytes` of payload (so the stream
-//! delimits itself). `write` runs the real `producer.Responder` over the export; `pull` is `fabric.decoder.pull` reading the
-//! same messages from memory: the same checks in the same order, the rows landed in the same `Sink`.
+//! delimits itself). `Replies` runs the real `producer.Responder` over an export one message at a time; `pullFrom` is
+//! `fabric.decoder.pull` reading the same messages from any reader: the same checks in the same order, the rows landed in
+//! the same `Sink`, whether they come from memory, a file or a socket.
 const std = @import("std");
 const fabric = @import("fabric");
 const wire = fabric.wire;
@@ -12,7 +14,7 @@ const producer = fabric.producer;
 const decoder = fabric.decoder;
 
 pub const extension = ".mkvh2";
-/// The reply area a link of 4 MiB segments gives the responder: frames are planned and cut for it.
+/// The reply area a link of 4 MiB segments gives the responder: frames are planned and cut for it, so no message is longer.
 pub const reply_area = 4 << 20;
 
 /// `<id as 32 hex digits>.mkvh2`.
@@ -28,57 +30,110 @@ const Capture = struct {
     }
 };
 
+/// One export's stream, a message at a time through one reply area: the export itself is only read (its frames are planned on a
+/// copy of its header), so any number of streams may read one export at once.
+pub const Replies = struct {
+    gpa: std.mem.Allocator,
+    exp: producer.Export,
+    table: producer.Table,
+    area: []u8,
+    cap: Capture = .{},
+    responder: producer.Responder,
+    /// messages given so far (the MANIFEST is the first, waiting in `area` from `open`)
+    at: u64 = 0,
+    /// the stream's whole length in bytes
+    size: u64 = 0,
+
+    pub fn open(gpa: std.mem.Allocator, exp: *const producer.Export, model: []const u8, tp_rank: u64, tp_size: u64) !*Replies {
+        const r = try gpa.create(Replies);
+        errdefer gpa.destroy(r);
+        r.* = .{ .gpa = gpa, .exp = exp.*, .table = .{ .gpa = gpa, .ttl_ns = std.math.maxInt(u64), .clock = fabric.words.nowNs }, .area = try gpa.alloc(u8, reply_area), .responder = undefined };
+        errdefer gpa.free(r.area);
+        r.exp.frames = &.{};
+        errdefer r.table.deinit();
+        try r.table.add(exp.handoff, "replies", .{ .ready = &r.exp });
+        r.responder = .{ .gpa = gpa, .table = &r.table, .out = .{ .area = r.area, .ptr = &r.cap, .publish_fn = Capture.publish }, .model = model, .tp_rank = tp_rank, .tp_size = tp_size };
+        errdefer r.responder.deinit();
+        errdefer if (r.exp.frames.len > 0) gpa.free(r.exp.frames);
+
+        const options = "{\"checksum\": true}";
+        var request: [wire.header_bytes + options.len]u8 = undefined;
+        request[0..wire.header_bytes].* = wire.pack(.{ .kind = .open, .handoff = exp.handoff, .nbytes = options.len });
+        @memcpy(request[wire.header_bytes..], options);
+        try r.responder.handle(1, &request);
+        const head = switch (wire.unpackUpTo(r.area[0..r.cap.len], wire.recurrent_version)) {
+            .ok => |h| h,
+            .bad => return error.Protocol,
+        };
+        if (head.kind != .manifest) return error.Protocol;
+        r.size = r.cap.len;
+        for (r.exp.frames) |f| r.size += wire.header_bytes + (r.exp.layers[f.position].frameBytes(f.row_start, f.rows) orelse return error.Protocol);
+        return r;
+    }
+
+    pub fn deinit(r: *Replies) void {
+        const gpa = r.gpa;
+        if (r.exp.frames.len > 0) gpa.free(r.exp.frames);
+        r.responder.deinit();
+        r.table.deinit();
+        gpa.free(r.area);
+        gpa.destroy(r);
+    }
+
+    /// The next message, valid until the next call; null after the last.
+    pub fn next(r: *Replies) !?[]const u8 {
+        const i = r.at;
+        if (i == 0) {
+            r.at = 1;
+            return r.area[0..r.cap.len];
+        }
+        if (i - 1 >= r.exp.frames.len) return null;
+        const request = wire.pack(.{ .kind = .pull, .handoff = r.exp.handoff, .frame = @intCast(i - 1) });
+        try r.responder.handle(@intCast(1 + i), &request);
+        r.at = i + 1;
+        return r.area[0..r.cap.len];
+    }
+};
+
 /// `exp` as the replies a responder gives its decoder; `exp` itself is left as it was (its frames are planned on a copy).
 pub fn write(gpa: std.mem.Allocator, w: *std.Io.Writer, exp: *const producer.Export, model: []const u8, tp_rank: u64, tp_size: u64) !void {
-    var copy = exp.*;
-    copy.frames = &.{};
-    defer if (copy.frames.len > 0) gpa.free(copy.frames);
-    var table: producer.Table = .{ .gpa = gpa, .ttl_ns = std.math.maxInt(u64), .clock = fabric.words.nowNs };
-    defer table.deinit();
-    try table.add(exp.handoff, "dump", .{ .ready = &copy });
-    const area = try gpa.alloc(u8, reply_area);
-    defer gpa.free(area);
-    var cap: Capture = .{};
-    var responder: producer.Responder = .{ .gpa = gpa, .table = &table, .out = .{ .area = area, .ptr = &cap, .publish_fn = Capture.publish }, .model = model, .tp_rank = tp_rank, .tp_size = tp_size };
-    defer responder.deinit();
-
-    const options = "{\"checksum\": true}";
-    var open: [wire.header_bytes + options.len]u8 = undefined;
-    open[0..wire.header_bytes].* = wire.pack(.{ .kind = .open, .handoff = exp.handoff, .nbytes = options.len });
-    @memcpy(open[wire.header_bytes..], options);
-    try responder.handle(1, &open);
-    const head = switch (wire.unpackUpTo(area[0..cap.len], wire.recurrent_version)) {
-        .ok => |h| h,
-        .bad => return error.Protocol,
-    };
-    if (head.kind != .manifest) return error.Protocol;
-    try w.writeAll(area[0..cap.len]);
-    for (0..head.frames) |i| {
-        const request = wire.pack(.{ .kind = .pull, .handoff = exp.handoff, .frame = @intCast(i) });
-        try responder.handle(@intCast(2 + i), &request);
-        try w.writeAll(area[0..cap.len]);
-    }
+    const replies = try Replies.open(gpa, exp, model, tp_rank, tp_size);
+    defer replies.deinit();
+    while (try replies.next()) |message| try w.writeAll(message);
 }
+
+/// What a decoder can meet beyond the link decoder's own refusals: a stream that ends early, or a read that fails.
+pub const Error = decoder.Error || error{ Truncated, TransportFailed };
 
 const Message = struct { h: wire.Header, payload: []const u8 };
 
-fn next(bytes: []const u8, at: *usize, most: u16) decoder.Error!Message {
-    const msg = bytes[at.*..];
+fn readFailure(err: std.Io.Reader.Error) Error {
+    return switch (err) {
+        error.EndOfStream => error.Truncated,
+        error.ReadFailed => error.TransportFailed,
+    };
+}
+
+/// The next message: its header, then exactly its payload, in the reader's buffer (valid until the next call).
+fn next(r: *std.Io.Reader, most: u16) Error!Message {
+    const head = r.peek(wire.header_bytes) catch |err| return readFailure(err);
+    const nbytes = std.mem.readInt(u64, head[56..64], .little);
+    if (nbytes > reply_area - wire.header_bytes) return error.Protocol;
+    const msg = r.take(wire.header_bytes + @as(usize, @intCast(nbytes))) catch |err| return readFailure(err);
     const h = switch (wire.unpackUpTo(msg, most)) {
         .ok => |h| h,
         .bad => return error.Protocol,
     };
-    // every message of a file carries a payload: manifest, data or error
+    // every message of a stream carries a payload: manifest, data or error
     if (h.kind != .manifest and h.kind != .data and h.kind != .@"error") return error.Protocol;
-    at.* += wire.header_bytes + @as(usize, @intCast(h.nbytes));
     return .{ .h = h, .payload = wire.body(msg, h) };
 }
 
-/// The file's hand-off pulled into `sink` as `fabric.decoder.pull` would from a producer: the manifest must be for this
-/// checkpoint, prompt and shard; every frame arrives in order, whole, checksummed; nothing may follow the last.
-pub fn pull(arena: std.mem.Allocator, bytes: []const u8, expect: decoder.Expect, sink: decoder.Sink, reason: *decoder.Reason) decoder.Error!decoder.Pulled {
-    var at: usize = 0;
-    const first = try next(bytes, &at, expect.protocol);
+/// The hand-off `r` carries pulled into `sink` as `fabric.decoder.pull` would from a producer: the manifest must be for this
+/// checkpoint, prompt and shard; every frame arrives in order, whole, checksummed; nothing may follow the last. `r` needs a
+/// buffer of `reply_area` bytes (or to hold the whole stream), and its end is the stream's end.
+pub fn pullFrom(arena: std.mem.Allocator, r: *std.Io.Reader, expect: decoder.Expect, sink: decoder.Sink, reason: *decoder.Reason) Error!decoder.Pulled {
+    const first = try next(r, expect.protocol);
     switch (first.h.kind) {
         .@"error" => {
             reason.len = @min(first.payload.len, reason.buf.len);
@@ -102,7 +157,7 @@ pub fn pull(arena: std.mem.Allocator, bytes: []const u8, expect: decoder.Expect,
     var total: u64 = 0;
     for (0..m.frames) |i| {
         const frame: u32 = @intCast(i);
-        const msg = try next(bytes, &at, m.protocol);
+        const msg = try next(r, m.protocol);
         const h = msg.h;
         if (h.kind == .@"error") {
             reason.len = @min(msg.payload.len, reason.buf.len);
@@ -121,9 +176,21 @@ pub fn pull(arena: std.mem.Allocator, bytes: []const u8, expect: decoder.Expect,
         rows_next[idx] += h.rows;
         total += h.nbytes;
     }
-    if (at != bytes.len) return error.Protocol;
+    if (r.peekByte()) |_| return error.Protocol else |err| switch (err) { // nothing may follow the last frame
+        error.EndOfStream => {},
+        error.ReadFailed => return error.TransportFailed,
+    }
     for (m.layers, 0..) |l, j| if (rows_next[j] != l.rows()) return error.Protocol;
     return .{ .manifest = m, .frames = m.frames, .bytes = total };
+}
+
+/// `pullFrom` over a hand-off held in memory (a file read whole); a short file is a protocol error, as it always was.
+pub fn pull(arena: std.mem.Allocator, bytes: []const u8, expect: decoder.Expect, sink: decoder.Sink, reason: *decoder.Reason) decoder.Error!decoder.Pulled {
+    var r = std.Io.Reader.fixed(bytes);
+    return pullFrom(arena, &r, expect, sink, reason) catch |err| switch (err) {
+        error.Truncated, error.TransportFailed => error.Protocol,
+        else => |e| e,
+    };
 }
 
 fn rowsFit(start: u64, count: u64, total: u64) bool {
