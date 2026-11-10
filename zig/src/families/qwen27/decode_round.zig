@@ -34,6 +34,8 @@ pub const Runner = struct {
     allocator: std.mem.Allocator,
     residency: ?mtl.ResidencySet.Follow = null,
     model: *Model,
+    /// The layers whose state this runner holds: the model's range, else all. A partial range runs in stage_pass.zig.
+    range: forward.Range,
     geometry: attn.planning.Geometry = .{},
     gdn: GdnPool,
     attention: attn.Attention,
@@ -95,9 +97,11 @@ pub const Runner = struct {
         errdefer a.free(attention_index);
         var ng: u32 = 0;
         var na: u32 = 0;
+        const range = m.range orelse forward.Range.whole(m.config.layers);
         for (linear_index, attention_index, 0..) |*g, *v, block| {
             g.* = std.math.maxInt(u32);
             v.* = std.math.maxInt(u32);
+            if (!range.owns(block)) continue;
             if (m.config.kind(block) == .linear) {
                 g.* = ng;
                 ng += 1;
@@ -158,7 +162,7 @@ pub const Runner = struct {
         errdefer a.free(offsets);
         @memset(offsets, 0);
         const taps = try Taps.init(m.device, m.frame.capacity, @intCast(m.config.hidden));
-        return .{ .allocator = a, .model = m, .geometry = geometry, .gdn = pool, .attention = attention, .scratch = scratch, .bindings = bindings, .caches = caches, .linear_index = linear_index, .attention_index = attention_index, .offsets = offsets, .owned = owned, .taps = taps, .slots = slots, .ready = ready, .capacity = capacity, .kv = kv };
+        return .{ .allocator = a, .model = m, .range = range, .geometry = geometry, .gdn = pool, .attention = attention, .scratch = scratch, .bindings = bindings, .caches = caches, .linear_index = linear_index, .attention_index = attention_index, .offsets = offsets, .owned = owned, .taps = taps, .slots = slots, .ready = ready, .capacity = capacity, .kv = kv };
     }
 
     /// Slot `slot` holds the pages of its first `rows` rows before a pass or a copy writes them (paged runners).
@@ -261,6 +265,7 @@ pub const Runner = struct {
         if (r.tail != null and (accepted or head != .all)) return error.BadVerifyTail;
         // A rank's head writes only this rank's vocabulary columns; the tail's matcher reads the whole vocabulary.
         if (r.tail != null and r.reduce != null) return error.TailOnRank;
+        if (r.range.len() != r.model.config.layers) return error.RoundNotReady; // a partial range runs in stage_pass.zig
         for (round.slots, round.windows) |slot, window| if (slot >= r.ready or r.offsets[slot] != window.start) return error.CachePositionDiffers;
         for (round.slots, round.windows) |slot, window| try r.cover(slot, window.start + @as(u32, @intCast(window.parents.len)));
         const paths = try r.allocator.alloc([]const u32, round.windows.len);
@@ -342,7 +347,7 @@ pub const Runner = struct {
         errdefer if (!ended) e.end(); // an encoder the pool releases unended aborts the process, and the error is lost
         var gi: usize = 0;
         var ai: usize = 0;
-        for (r.model.weights.layers) |layer| switch (layer.mixer) {
+        for (r.model.weights.layers[r.range.first..r.range.last]) |layer| switch (layer.mixer) {
             .linear => {
                 try r.gdn.commit(gi, .{ .host = recurrent, .metadata = r.metadata() }, e);
                 gi += 1;
@@ -409,7 +414,7 @@ pub const Runner = struct {
         for (0..r.gdn.budget.layers) |gi| try r.gdn.commitPublish(gi, plan, e);
         e.barrier();
         var ai: usize = 0;
-        for (r.model.weights.layers) |layer| switch (layer.mixer) {
+        for (r.model.weights.layers[r.range.first..r.range.last]) |layer| switch (layer.mixer) {
             .linear => {},
             .attention => {
                 var views: [attn.planning.max_streams]attn.Cache = undefined;
@@ -474,7 +479,7 @@ pub const Runner = struct {
         r.offsets[slot] = 0;
     }
 
-    fn params(r: *Runner, rows: usize) !abi.Params {
+    pub fn params(r: *Runner, rows: usize) !abi.Params {
         return r.gdn.budget.shape.params(rows, r.slots, .{ .conv = .bf16, .a_log = .bf16, .dt = .bf16, .norm = .bf16 });
     }
 
@@ -487,7 +492,7 @@ pub const Runner = struct {
         return r.geometry.promptRows(@min(requested, r.model.frame.capacity));
     }
 
-    fn attentionPlan(r: *Runner, round: *const Round) !attn.Plan {
+    pub fn attentionPlan(r: *Runner, round: *const Round) !attn.Plan {
         var windows: [attn.planning.max_streams]attn.planning.Window = undefined;
         if (round.windows.len > windows.len) return error.AttentionStreams;
         for (round.windows, 0..) |window, i| windows[i] = .{ .parents = window.parents, .start = window.start, .capacity = r.capacity };
@@ -499,13 +504,13 @@ pub const Runner = struct {
         return views[0..round.slots.len];
     }
 
-    fn gdnForward(ptr: *anyopaque, e: mtl.ComputeEncoder, block: usize, weights: wts.Gdn, frame: *Frame, rows: u32) !void {
+    pub fn gdnForward(ptr: *anyopaque, e: mtl.ComputeEncoder, block: usize, weights: wts.Gdn, frame: *Frame, rows: u32) !void {
         const r: *Runner = @ptrCast(@alignCast(ptr));
         var hook = GdnHook{ .pool = &r.gdn, .quant = &r.model.kernels, .glue = r.model.glue, .plan = r.current_gdn orelse return error.RoundNotReady, .linear_index = r.linear_index, .accepted_chain = r.accepted_chain };
         try GdnHook.forward(&hook, e, block, weights, frame, rows);
     }
 
-    fn attentionForward(ptr: *anyopaque, e: mtl.ComputeEncoder, block: usize, weights: wts.Attention, f: *Frame, rows: u32) !void {
+    pub fn attentionForward(ptr: *anyopaque, e: mtl.ComputeEncoder, block: usize, weights: wts.Attention, f: *Frame, rows: u32) !void {
         const r: *Runner = @ptrCast(@alignCast(ptr));
         const plan = (r.current_attention orelse return error.RoundNotReady).*;
         const layer = r.attention_index[block];

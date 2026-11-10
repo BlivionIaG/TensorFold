@@ -12,6 +12,11 @@ pub const attention_plan = @import("attention_plan.zig");
 pub const simd_attention = @import("simd_attention.zig");
 pub const decode_round = @import("decode_round.zig");
 pub const forward = @import("forward.zig");
+/// A layer range's stage of the split pipeline (decode only; see split_peer.zig).
+pub const range = @import("range.zig");
+pub const stage_rows = @import("stage_rows.zig");
+pub const stage_pass = @import("stage_pass.zig");
+pub const split_peer = @import("split_peer.zig");
 pub const gdn = @import("gdn.zig");
 pub const gdn_contract = @import("gdn_contract.zig");
 pub const gdn_hook = @import("gdn_hook.zig");
@@ -60,6 +65,7 @@ test {
     _ = @import("attention_pick_test.zig");
     _ = state;
     _ = @import("range.zig");
+    _ = @import("stage_rows.zig");
     _ = projection;
     _ = model;
     _ = quant_gpu;

@@ -68,8 +68,9 @@ pub const Budget = struct {
     conv_tails: usize,
     scratch: usize,
 
+    /// `layers` is how many linear layers the pool holds state for: none for a layer range of attention layers alone.
     pub fn init(shape: abi.Shape, layers: usize, slots: usize, rows: usize) !Budget {
-        if (layers == 0 or layers > shape.c.layers or slots == 0 or slots > 128 or rows == 0 or rows > @import("gpu_frame.zig").max_rows) return error.BadGdnPool;
+        if (layers > shape.c.layers or slots == 0 or slots > 128 or rows == 0 or rows > @import("gpu_frame.zig").max_rows) return error.BadGdnPool;
         const layer_slots = try std.math.mul(usize, layers, slots);
         const layer_rows = try std.math.mul(usize, layers, rows);
         const query = try abi.countBytes(u16, shape.c.k_heads * shape.c.dk, layer_rows);
