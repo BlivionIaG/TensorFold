@@ -34,6 +34,8 @@ pub const HipLayerStage = struct {
     pos: usize = 0,
     /// The u32 the stamped consume kernel stores in (0: every group arrived, 1: a stamp stayed stale).
     status: hip.DeviceBuffer,
+    /// The head's logits row of the last recorded step (a range with the head), valid until the next step is recorded.
+    logits: ?hip.ops.Tensor = null,
 
     /// A stage over the sized engine `e` for sequences of up to `positions` positions (at most the engine's capacity).
     /// The engine should be opened with `batch_rows = 1`: a stage's step is one row.
@@ -66,6 +68,47 @@ pub const HipLayerStage = struct {
 
     pub fn external(s: *HipLayerStage) pipeline.ExternalStage {
         return .{ .ptr = s, .run = run };
+    }
+
+    /// Pays the first launches' costs before the pipeline queues its first wait on the window: a kernel that needs more
+    /// scratch than the queue holds makes the runtime wait for the queue to drain, and a queue that is waiting on the
+    /// window never does. One step runs on zero rows, plain and then stamped, and the stage starts over.
+    pub fn warm(s: *HipLayerStage) !void {
+        const e = s.e;
+        const m = e.model();
+        const embeds = m.range.embeds();
+        const heads = m.headed();
+        const hidden_bytes = 4 * m.spec.hidden;
+        var rows = try hip.DeviceBuffer.alloc(&e.driver, split.wire.stampedLen(hidden_bytes) + hidden_bytes + 64);
+        defer rows.free();
+        try rows.fill8(0);
+        const at = rows.base();
+        const out_at = at + split.wire.stampedLen(hidden_bytes);
+        for ([2]bool{ false, true }) |stamped| {
+            if (embeds and stamped) continue;
+            const hand: fwd.Handoff = .{
+                .src = if (embeds) 0 else at,
+                .stamp = if (stamped) .{ .seq = 0, .status = s.status.base(), .retries = 1 } else null,
+                .dst = if (heads) 0 else out_at,
+            };
+            _ = try e.stage(&s.caches, 0, if (embeds) at else 0, hand, if (heads) out_at else 0);
+        }
+        try s.reset();
+    }
+
+    /// The last step's logits as f32, whatever kind the head produced: for fidelity checks, with the stream idle (after
+    /// the pipeline's step returned). `out.len` is the vocabulary.
+    pub fn readLogits(s: *const HipLayerStage, out: []f32) !void {
+        const y = s.logits orelse return error.BadStep;
+        const width: usize = if (y.kind == .f32) 4 else 2;
+        const raw = try s.e.gpa.alloc(u8, out.len * width);
+        defer s.e.gpa.free(raw);
+        try hip.runtime.check(s.e.driver.api.hipMemcpyDtoH(raw.ptr, @ptrFromInt(y.ptr), raw.len));
+        for (out, 0..) |*o, i| o.* = switch (y.kind) {
+            .f32 => @bitCast(std.mem.readInt(u32, raw[4 * i ..][0..4], .little)),
+            .f16 => @floatCast(@as(f16, @bitCast(std.mem.readInt(u16, raw[2 * i ..][0..2], .little)))),
+            .bf16 => @bitCast(@as(u32, std.mem.readInt(u16, raw[2 * i ..][0..2], .little)) << 16),
+        };
     }
 
     /// The consume kernel's verdict on the last stamped input: 0 when every group's stamp was current. Reads device
@@ -103,7 +146,7 @@ pub const HipLayerStage = struct {
             .stamp = if (io.stamped) .{ .seq = io.seq, .status = s.status.base(), .retries = io.retries } else null,
             .dst = if (heads) 0 else out_at,
         };
-        try e.stage(&s.caches, s.pos, if (embeds) in_at else 0, hand, if (heads) out_at else 0);
+        s.logits = try e.stage(&s.caches, s.pos, if (embeds) in_at else 0, hand, if (heads) out_at else 0);
         s.pos += 1;
     }
 };

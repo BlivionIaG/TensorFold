@@ -17,10 +17,15 @@ const device = split.device;
 /// hipStreamWaitValue32's compare for equality (hipStreamWaitValueEq).
 const wait_eq: c_uint = 1;
 
-pub const Error = runtime.Error || error{ NoValueOps, UnsupportedGpu, OutOfMemory };
+pub const Error = runtime.Error || error{ NoValueOps, UnsupportedGpu, OutOfMemory, NoExport };
 
 const WaitValue32 = *const fn (abi.Stream, ?*anyopaque, u32, c_uint, u32) callconv(.c) abi.Result;
 const WriteValue32 = *const fn (abi.Stream, ?*anyopaque, u32, c_uint) callconv(.c) abi.Result;
+const HostExport = *const fn (?*anyopaque, *c_int, *u64, *u64) callconv(.c) abi.Result;
+
+/// Another process's way to the same pinned memory: a shared-memory file descriptor (the receiver closes it), where the
+/// window starts in that object and the object's size.
+pub const Export = struct { fd: c_int, offset: u64, size: u64 };
 
 pub const Options = struct {
     /// Datasheet memory bandwidth in bytes a second; the planner scales it by a measured efficiency.
@@ -45,6 +50,7 @@ pub const HipExternal = struct {
     owns_stream: bool = true,
     wait32: WaitValue32,
     write32: WriteValue32,
+    host_export: ?HostExport,
     caps: device.Caps,
     name: [128]u8 = @splat(0),
     arch: [64]u8 = @splat(0),
@@ -61,7 +67,7 @@ pub const HipExternal = struct {
         const write32 = rt.lib.lookup(WriteValue32, "hipStreamWriteValue32") orelse return error.NoValueOps;
         const self = try gpa.create(HipExternal);
         errdefer gpa.destroy(self);
-        self.* = .{ .gpa = gpa, .rt = rt, .ctx = undefined, .stream = undefined, .wait32 = wait32, .write32 = write32, .caps = undefined, .fence_window = undefined };
+        self.* = .{ .gpa = gpa, .rt = rt, .ctx = undefined, .stream = undefined, .wait32 = wait32, .write32 = write32, .host_export = rt.lib.lookup(HostExport, "hipmacHostExport"), .caps = undefined, .fence_window = undefined };
         self.ctx = try Context.init(rt, index);
         errdefer self.ctx.deinit();
         var arch_buf: [64]u8 = undefined;
@@ -90,6 +96,15 @@ pub const HipExternal = struct {
         };
         if (options.pump_mock) self.pump = std.Thread.spawn(.{}, pumpMain, .{self}) catch return error.OutOfMemory;
         return self;
+    }
+
+    /// A descriptor another process can map the window's pinned memory through (hipmac's `hipmacHostExport`; the lookup
+    /// is its own, like the value calls: a runtime without it answers error.NoExport).
+    pub fn exportWindow(self: *HipExternal, w: device.Window) Error!Export {
+        const export_fn = self.host_export orelse return error.NoExport;
+        var out: Export = .{ .fd = -1, .offset = 0, .size = 0 };
+        try runtime.check(export_fn(w.ptr, &out.fd, &out.offset, &out.size));
+        return out;
     }
 
     pub fn external(self: *HipExternal) device.ExternalDevice {

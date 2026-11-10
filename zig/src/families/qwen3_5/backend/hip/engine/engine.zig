@@ -566,7 +566,7 @@ pub const Engine = struct {
     }
 
     /// A stage's decode step of one row at position `pos`, recorded on the stream and not waited for (see `round.stage`).
-    pub fn stage(e: *Engine, caches: *state.Caches, pos: usize, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !void {
+    pub fn stage(e: *Engine, caches: *state.Caches, pos: usize, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !?hip.ops.Tensor {
         return lane_round.stage(e, caches, pos, tokens, hand, argmax_at);
     }
 
