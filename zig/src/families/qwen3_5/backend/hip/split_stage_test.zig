@@ -24,10 +24,10 @@ const pipeline = split.pipeline;
 const wire = split.wire;
 
 /// An engine over the 4B's shape and a layer range, sized on the stand-in runtime; the weights are fake addresses.
-const Eng = struct {
+pub const Eng = struct {
     e: *Engine,
 
-    fn open(range: view.Range, capacity: usize, rows: usize) !Eng {
+    pub fn open(range: view.Range, capacity: usize, rows: usize) !Eng {
         if (!fake.available()) return error.SkipZigTest;
         const e = try gpa.create(Engine);
         errdefer gpa.destroy(e);
@@ -69,7 +69,7 @@ const Eng = struct {
     }
 
     /// `Engine.deinit` without the runtime and context the stand-in does not own.
-    fn close(t: Eng) void {
+    pub fn close(t: Eng) void {
         const e = t.e;
         if (e.sized) {
             e.round.deinit(e);
@@ -160,12 +160,12 @@ test "split stage: a range is refused where it cannot run" {
 
 /// A stream device's window protocol with the stream collapsed to the call order: `enqueue` runs the work now, as a HIP
 /// stream records launches, and the stream's write lands at once, so a step's operations are in the log in stream order.
-const Recorder = struct {
+pub const Recorder = struct {
     const Op = union(enum) { wait: struct { offset: usize, value: u32 }, work, write: struct { offset: usize, value: u32 } };
     ops: std.ArrayList(Op) = .empty,
     mem: ?[]align(16 * 1024) u8 = null,
 
-    fn deinit(r: *Recorder) void {
+    pub fn deinit(r: *Recorder) void {
         r.ops.deinit(gpa);
         if (r.mem) |m| gpa.free(m);
     }
@@ -244,28 +244,29 @@ const Recorder = struct {
         .deinit = deinitFn,
     };
 
-    fn device(r: *Recorder) split.device.ExternalDevice {
+    pub fn device(r: *Recorder) split.device.ExternalDevice {
         return .{ .ptr = r, .vtable = &vtable };
     }
 };
 
 /// The host stage: a hidden row from a token (stamped, level A or B), or a token from a hidden row; no arithmetic.
-const Host = struct {
+pub const Host = struct {
     steps: usize = 0,
 
-    fn step(ptr: *anyopaque, seq: u32, _: []const u8, rows: u32, _: []const u8, out: []u8, _: pipeline.Level) anyerror!usize {
+    pub fn step(ptr: *anyopaque, seq: u32, _: []const u8, rows: u32, _: []const u8, out: []u8, _: pipeline.Level) anyerror!usize {
         const h: *Host = @ptrCast(@alignCast(ptr));
         h.steps += 1;
         if (out.len >= wire.stampedLen(4 * 2560)) {
-            const zero: [4 * 4 * 2560]u8 = @splat(0);
+            const zero: [8 * 4 * 2560]u8 = @splat(0);
             wire.packStampedRows(out, &zero, rows, 4 * 2560, seq);
             return rows * 4 * 2560;
         }
-        std.mem.writeInt(u32, out[0..4], 9, .little);
-        return 4;
+        // a token reply: one for a single slot, one a row for a decode batch
+        for (0..out.len / 4) |i| std.mem.writeInt(u32, out[4 * i ..][0..4], 9, .little);
+        return out.len;
     }
 
-    fn finish(_: *anyopaque, _: u32) anyerror!void {}
+    pub fn finish(_: *anyopaque, _: u32) anyerror!void {}
 };
 
 fn pipelineSteps(order: pipeline.Order, level: pipeline.Level, range: view.Range, steps: usize) !void {
@@ -304,7 +305,7 @@ fn pipelineSteps(order: pipeline.Order, level: pipeline.Level, range: view.Range
         try T.expectEqual(slot, ops[2].write.offset);
         try T.expectEqual(@as(u32, @intCast(i + 1)), ops[2].write.value);
         try base.expectSeq(want, fake.launches());
-        try T.expectEqual(i + 1, st.pos);
+        try T.expectEqual(i + 1, st.position(0));
     }
     try T.expectEqual(steps, rec.ops.items.len / 3);
 }
@@ -338,23 +339,23 @@ test "split stage: a stage refuses a step that does not fit its range" {
     // the caches hold 4 positions: the fifth step is refused by name, and nothing advanced
     for (0..3) |_| try st.record(io);
     try T.expectError(error.ContextFull, st.record(io));
-    try T.expectEqual(@as(usize, 4), st.pos);
+    try T.expectEqual(@as(usize, 4), st.position(0));
     // a new sequence starts over
     try st.reset();
-    try T.expectEqual(@as(usize, 0), st.pos);
+    try T.expectEqual(@as(usize, 0), st.position(0));
     try st.record(io);
 }
 
-/// A pipeline of `max_rows` 4 over `rec`'s window at `offset`, its stage and its host.
-const Lane = struct {
+/// A pipeline over `dev`'s window at `offset`, its stage (`opts`) and its host.
+pub const Lane = struct {
     st: stage.HipLayerStage,
     host: Host = .{},
-    scratch: [4 * 4 * 2560]u8 = undefined,
+    scratch: [8 * 4 * 2560]u8 = undefined,
     p: pipeline.Pipeline = undefined,
 
-    fn start(l: *Lane, e: *Engine, dev: split.device.ExternalDevice, window: split.device.Window, order: pipeline.Order, level: pipeline.Level, offset: usize) !void {
-        l.st = try stage.HipLayerStage.init(e, 16, .{ .max_rows = 4 });
-        const cfg: pipeline.Config = .{ .order = order, .level = level, .hidden_bytes = 4 * 2560, .max_rows = 4, .window_offset = offset };
+    pub fn start(l: *Lane, e: *Engine, dev: split.device.ExternalDevice, window: split.device.Window, order: pipeline.Order, level: pipeline.Level, offset: usize, opts: stage.Options) !void {
+        l.st = try stage.HipLayerStage.init(e, 16, opts);
+        const cfg: pipeline.Config = .{ .order = order, .level = level, .hidden_bytes = 4 * 2560, .max_rows = @intCast(opts.max_rows), .window_offset = offset };
         const peer: ?pipeline.Peer = if (order == .external_only) null else .{ .ptr = &l.host, .step = Host.step, .finish = Host.finish };
         l.p = pipeline.Pipeline.init(dev, window, cfg, l.st.external(), peer, &l.scratch);
     }
@@ -372,7 +373,7 @@ fn pipelineRows(order: pipeline.Order, level: pipeline.Level, range: view.Range,
     const cfg: pipeline.Config = .{ .order = order, .level = level, .hidden_bytes = 4 * 2560, .max_rows = 4 };
     const window = try dev.allocWindow(pipeline.Pipeline.windowBytes(cfg, 1));
     var lane: Lane = undefined;
-    try lane.start(t.e, dev, window, order, level, 0);
+    try lane.start(t.e, dev, window, order, level, 0, .{ .max_rows = 4 });
     defer lane.st.deinit();
     const m = t.e.model();
     const stamped = order == .metal_first;
@@ -384,7 +385,7 @@ fn pipelineRows(order: pipeline.Order, level: pipeline.Level, range: view.Range,
     fake.clear();
     _ = try lane.p.stepRows((&[4]u32{ 5, 6, 7, 8 })[0..rows]);
     try base.expectSeq(want, fake.launches());
-    try T.expectEqual(rows, lane.st.pos);
+    try T.expectEqual(rows, lane.st.position(0));
 
     const hidden: u32 = 2560;
     const got = fake.boundaries();
@@ -446,7 +447,7 @@ test "split stage: sequences on one engine take their own plan buffers, in turn,
     const slot = pipeline.Pipeline.slotBytes(cfg);
     const window = try dev.allocWindow(pipeline.Pipeline.windowBytes(cfg, 2));
     var lanes: [2]Lane = undefined;
-    for (&lanes, 0..) |*l, i| try l.start(t.e, dev, window, .metal_first, .a, 2 * slot * i);
+    for (&lanes, 0..) |*l, i| try l.start(t.e, dev, window, .metal_first, .a, 2 * slot * i, .{ .max_rows = 4 });
     defer for (&lanes) |*l| l.st.deinit();
 
     // no two of the stages' pinned or device plan words overlap
@@ -467,8 +468,8 @@ test "split stage: sequences on one engine take their own plan buffers, in turn,
     const works = [2]split.streams.Work{ .{ .prompt = prompts[0], .out = &out[0] }, .{ .prompt = prompts[1], .out = &out[1] } };
     fake.clear();
     try split.streams.generate(&.{ &lanes[0].p, &lanes[1].p }, &works, 2);
-    try T.expectEqual(@as(usize, 7), lanes[0].st.pos);
-    try T.expectEqual(@as(usize, 5), lanes[1].st.pos);
+    try T.expectEqual(@as(usize, 7), lanes[0].st.position(0));
+    try T.expectEqual(@as(usize, 5), lanes[1].st.position(0));
     // a one-row step takes the decode round's plan, whether it is a decode step or a prompt's last chunk (the 5-token
     // prompt ends on one row at position 4, the 3-token on one at 2): the stage's three one-row steps fill buffers 0, 1, 0
     // of their own stage, and the word after the token's is the position
@@ -503,8 +504,8 @@ test "split stage: warm-up runs every row count's span and the decode step, plai
     // stamped: the decode step's row and the spans of 2, 3 and 4 rows; plain: those four, then the spans of the smallest
     // and the largest count at the far end of the caches
     try T.expectEqual(@as(usize, 1 + 2 + 3 + 4), consumes);
-    try T.expectEqual(@as(usize, 4 + 2), imports);
-    try T.expectEqual(@as(usize, 0), st.pos);
+    try T.expectEqual(@as(usize, 4 + 2 + 1), imports);
+    try T.expectEqual(@as(usize, 0), st.position(0));
     try T.expectEqual(@as(usize, 0), st.stamped_rows);
     // the stage serves a sequence from its first position again
     var rec: Recorder = .{};
@@ -515,5 +516,5 @@ test "split stage: warm-up runs every row count's span and the decode step, plai
     var scratch: [4 * 4 * 2560]u8 = undefined;
     const io: pipeline.StepIo = .{ .in = .init(window.ptr, n), .out = .init(window.ptr + n, n), .seq = 1, .rows = 4, .stamped = true, .retries = 10, .scratch = &scratch, .hidden_bytes = 4 * 2560 };
     try st.record(io);
-    try T.expectEqual(@as(usize, 4), st.pos);
+    try T.expectEqual(@as(usize, 4), st.position(0));
 }

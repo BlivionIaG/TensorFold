@@ -559,6 +559,7 @@ pub const Engine = struct {
     /// (engine/stage.zig): recorded on the stream, not waited for.
     pub const spanStage = stage_steps.span;
     pub const stage = stage_steps.decode;
+    pub const stageRows = stage_steps.decodeRows;
     pub const newPlan = stage_steps.newPlan;
 
     /// Every window in one forward: `out` the token of every row; the round's snapshots live until its keeps flush.

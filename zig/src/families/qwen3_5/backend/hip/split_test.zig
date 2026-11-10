@@ -88,13 +88,18 @@ pub const Marks = struct {
 
 /// One decode round (one row, two slots) of `m` over its range, logged; the caller frees the sequence.
 pub fn decode(rig: *Rig, m: *const view.Model, hand: fwd.Handoff, marks: *Marks) !Seq {
+    return decodeRows(rig, m, hand, 1, marks);
+}
+
+/// One decode round of `n` rows, a window each (`n` + 1 slots), logged: a decode batch.
+pub fn decodeRows(rig: *Rig, m: *const view.Model, hand: fwd.Handoff, n: usize, marks: *Marks) !Seq {
     fake.clear();
     marks.n = 0;
     const o = rig.ops();
     var table: [32][2]u64 = undefined;
-    try win.kept(o, m, 1, &table);
+    try win.kept(o, m, n, &table);
     const args: hip.plan_ops.Args = .{ .pos = plan_at, .slot = plan_at + 64, .first = plan_at + 128, .count = plan_at + 192, .desc = plan_at + 256, .snaps = plan_at + 512, .pages = @intCast(state.tableWord(32)), .pool = 4 };
-    const r: win.Round = .{ .plan = .{ .args = args, .rows = 1, .slots = 2 }, .tokens = tokens_at, .span = 128, .inputs = &table, .positions3 = plan_at + 1024, .rotary = plan_at + 1088, .hand = hand };
+    const r: win.Round = .{ .plan = .{ .args = args, .rows = @intCast(n), .slots = @intCast(n + 1) }, .tokens = tokens_at, .span = 128, .inputs = &table, .positions3 = plan_at + 1024, .rotary = plan_at + 1088, .hand = hand };
     _ = try round.forwardOn(o, m, r, marks.trace(), argmax_at);
     return gpa.dupe([*:0]const u8, fake.launches());
 }

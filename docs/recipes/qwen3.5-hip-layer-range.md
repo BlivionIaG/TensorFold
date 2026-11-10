@@ -11,7 +11,7 @@ offline only. Nothing below has run on a card, and no token has been compared be
 | Weights uploaded for the range only (embedding when `first == 0`; final norm and head when it ends the model, the tied head an upload of its own) | `model/weights.zig` (`fromCheckpointRange`), `model/bridge.zig` |
 | KV pages and linear state for owned layers only (`LayerCache.absent` elsewhere) | `forward/pages.zig`, `forward/state.zig` |
 | Prompt span over the range (`rows` positions) | `forward/forward.zig` (`spanWith`, `Handoff`), `engine/stage.zig` (`span`), `Engine.spanStage` |
-| Decode step over the range (one row), the plan buffers a stage owns | `forward/window.zig` (`forward`), `engine/stage.zig` (`decode`, `newPlan`), `Engine.stage` |
+| Decode round over the range (one row, or one row of each of several sequences), the plan buffers a stage owns | `forward/window.zig` (`forward`), `engine/stage.zig` (`decode`, `decodeRows`, `newPlan`), `Engine.stage`, `Engine.stageRows` |
 | The external stage for `split.pipeline` | `split_stage.zig` (`HipLayerStage`) |
 | Boundary kernels (import, stamped consume, export) | `zig/src/hip/ops/split_rows.zig` |
 
@@ -37,14 +37,24 @@ warms every kernel and shape it can take (`warm`: the decode step and the span a
 because a kernel that needs more scratch makes the runtime wait for the stream to drain, which a stream waiting on the
 window never does. Steps are recorded eagerly, not replayed from a graph: a graph would bake in the stamp's sequence
 number and the window addresses. The stage's launches and the pipeline's waits and writes must be on one stream: open
-the adapter (`hip.offload.Options.stream`) on the engine's stream, and open the engine with `batch_rows = 1` and
-`prompt_rows >= max_rows`.
+the adapter (`hip.offload.Options.stream`) on the engine's stream, and open the engine with `batch_rows >= slots` (below)
+and `prompt_rows >= max_rows`.
 
-Several sequences share one engine and one stream through one `HipLayerStage` each (own caches, status words and plan
-buffers; the pool must hold the caches of all of them). A decode step's plan words go up from pinned host words by an
-asynchronous copy that runs when the stream reaches it, so each stage has `Options.plans` (default 2) buffers it takes in
-turn, and relies on one invariant: at most `plans - 1` earlier steps of a sequence are recorded and not collected when
-it records another. The pipeline collects a step's token before it queues the sequence's next step, so one buffer would
+A stage serves `Options.slots` sequences (a pipeline lane's, at most 8 and at most `batch_rows`), each with its own caches
+and position. A step names its slots: one slot, and its rows are consecutive positions of that sequence; `rows` slots,
+and it is a decode batch, row i the next position of sequence `slots[i]` at its own position. A batch is one decode round
+over `rows` windows of different caches (the engine's lane-round machinery: one plan, one forward), so the weights are
+read once for all of them; each row's stamped input is its own consume launch and the head writes a token a row. Only the
+named slots advance, by one, and a sequence that skips a step keeps its position. The round runs exactly `rows` rows, not
+padded to the lane rounds' buckets: a stage's rows come from the window, and padding rows would read what lies behind
+them. [INFERENCE] the plan kernels take any row count and every row is bitwise serial, as the lane rounds' padding
+relies on; only a run on a device can show it. `warm` runs the batches of every size from 2 to `slots`.
+
+Several lanes share one engine and one stream through one `HipLayerStage` each (own caches, status words and plan
+buffers; the pool must hold the caches of every slot of every stage). A decode step's plan words go up from pinned host
+words by an asynchronous copy that runs when the stream reaches it, so each stage has `Options.plans` (default 2) buffers
+it takes in turn, and relies on one invariant: at most `plans - 1` earlier steps of a lane are recorded and not collected
+when it records another. The pipeline collects a step's tokens before it queues the lane's next step, so one buffer would
 do and two are slack. The arenas and the shared round's host rows are used while recording or ordered by the stream.
 
 Tests, no device: `zig build -Dhip=true test-qwen35-split-host` runs a recording stand-in for the HIP runtime on a
@@ -52,5 +62,6 @@ launcher that names gfx1030, over the 4B's shape with fake weights. It compares 
 unsplit step's slice (the embedding only first, the head only last, import only non-first, export only non-last), the
 same for a prompt span (plain and stamped), the allocations of a ranged engine against its own plan, the stage's recorded
 operations between the pipeline's wait and write in every order, the boundary launches of a multi-row step (consume
-count, row offsets, status words), two stages' disjoint plan buffers over one engine and the warm-up's coverage. They
-compute nothing: they check plumbing, not tokens.
+count, row offsets, status words), decode batches of 1, 2, 3 and 8 slots in every order and level (one round, a consume a
+row, only the named slots advance, a skipped slot keeps its position), two lanes' disjoint plan buffers over one engine
+and the warm-up's coverage. They compute nothing: they check plumbing, not tokens.
