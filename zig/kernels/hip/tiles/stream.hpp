@@ -291,28 +291,34 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         for (int r = 0; r < R; ++r) {
             if (row0 + r >= a.m) break;
             xval_t<T> xp[16];
-            uint32_t xn[16];
-            const u32x4* src = reinterpret_cast<const u32x4*>(xr[r] + static_cast<long long>(q) * 32);
-#pragma unroll
-            for (int v = 0; v < 4; ++v) {
-                const u32x4 t = src[v];
-                xn[4 * v] = t.x;
-                xn[4 * v + 1] = t.y;
-                xn[4 * v + 2] = t.z;
-                xn[4 * v + 3] = t.w;
-            }
             float sx = 0.f;
+            if constexpr (SHARED) {
 #pragma unroll
-            for (int i = 0; i < 16; ++i) {
-                sx = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(pair, xn[i])), __builtin_bit_cast(pair, kOne), sx);
-            }
-            if constexpr (kWideX<T>) {
-                pair xq[16];
-                stream_x_pairs<Dec, T>(xn, xq, std::make_integer_sequence<int, 16>{});
-#pragma unroll
-                for (int i = 0; i < 16; ++i) xp[i] = stream_xval<T>(xq[i]);
+                for (int i = 0; i < 16; ++i) xp[i] = stream_xval<T>(__builtin_bit_cast(pair, xs[((r * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)]));
+                sx = sums[r * nch + q];
             } else {
-                stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
+                uint32_t xn[16];
+                const u32x4* src = reinterpret_cast<const u32x4*>(xr[r] + static_cast<long long>(q) * 32);
+#pragma unroll
+                for (int v = 0; v < 4; ++v) {
+                    const u32x4 t = src[v];
+                    xn[4 * v] = t.x;
+                    xn[4 * v + 1] = t.y;
+                    xn[4 * v + 2] = t.z;
+                    xn[4 * v + 3] = t.w;
+                }
+#pragma unroll
+                for (int i = 0; i < 16; ++i) {
+                    sx = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(pair, xn[i])), __builtin_bit_cast(pair, kOne), sx);
+                }
+                if constexpr (kWideX<T>) {
+                    pair xq[16];
+                    stream_x_pairs<Dec, T>(xn, xq, std::make_integer_sequence<int, 16>{});
+#pragma unroll
+                    for (int i = 0; i < 16; ++i) xp[i] = stream_xval<T>(xq[i]);
+                } else {
+                    stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
+                }
             }
 #pragma unroll
             for (int c = 0; c < CB; ++c) {
@@ -350,7 +356,10 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
             work(at(r + 1), wb, sbb, bbb);
         }
     } else {
-        // several rows: the dots cover the loads' latency, and registers go to the rows' x
+        // several rows: the dots cover the loads' latency, and registers go to the rows' x. gfx900: the rows' x staged in LDS first
+#if defined(__gfx900__)
+        if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
+#endif
         for (int r = 0; r < rounds; ++r) {
             fetch(at(r), wa, sa, ba);
             work(at(r), wa, sa, ba);
@@ -430,7 +439,7 @@ __device__ inline void stream_tile(typename Dec::Args& a, const Sides& sides, in
     }
     if (!Dec::take_item(a, blockIdx.z) || by * R >= a.m) return;
 #if defined(__gfx900__)
-    if constexpr (R == 1) {
+    if constexpr (R <= 4) {
         if (shared) {
             if constexpr (Dec::kWideBytes != 4) {
                 if (Dec::wide_aligned(a)) return stream_body<Dec, Act, T, Epi, R, CB, true, true>(a, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);

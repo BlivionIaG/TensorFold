@@ -339,3 +339,17 @@ here do not need Xcode, only the command line tools' SDK and Zig's C compiler:
     export TF_CC="zig cc"                      # tools/vega-macos/vega_gate.py builds the hipprof shim with it (default clang)
 
 `zig build test` (the Metal tests) and `make -C hipmac` (clang) do not work without it.
+
+## Several rows a round (N streams), gfx900
+
+A round of N rows costs a + b N on the Vega (measured with `--parallel N` and N concurrent requests, /tmp-free script in the log of this
+commit's message): N = 1, 2, 4, 8 take 15.7, 27.9, 43.3, 80.1 ms a round, b about 9 ms a row (Mac Metal: 1.3). The 2 to 16 row products all
+run the stream tile (`gfx900.zon`: `stream`, rows <= 16; row tiles of 1, 2 and 4 rows a block); at four rows its launches take 2.1 to 3.5 times
+the one-row time (gate/up 130 -> 384 us, down 93 -> 198, qkv 99 -> 249, lm_head 1217 -> 4260), about 6.6 ms of the b, far from the weight read
+(26.5 MB of gate/up at 384 us is 69 GB/s), so the weights are read once per row block and the tile is bound by something else. The 2- and 4-row
+kernels use 119 and 107 VGPRs (1 and 2 waves a SIMD).
+- Kept: the one-row x stage also serves the two-row tile (`stageBytes(rows = 2)`, up to 22 KB): N = 2 goes 27.9 -> 23.6 ms a round.
+- Measured and not kept: staging the four-row tile (N = 4 43.3 -> 48.3; `TF_STREAM_STAGE=1` forces it), the one-row tile's two-deep weight prefetch at
+  every row count (N = 2, 4, 8: 23.9, 43.8, 81.8: no change, so the weight latency is not what the rows wait for), `TF_STREAM_CB=1|4`, `TF_STREAM_LPC=8`.
+- Open: what bounds the 4-row tile (per-wave VALU of the x preparation and the code pairs against LDS and L1 traffic needs counters or a
+  kernel with one of them removed); b <= 2 ms is not reached.
