@@ -179,16 +179,49 @@ The branch is on upstream main. What the older base (`vega-macos`) had and what 
 - The fused gate/up + silu_mul launch (below), the kernel tests of the commit before it, and the small-kernel tuning below (`tf_gdn_plan_128`,
   `tf_tail`, `tf_conv_split`, `tf_gnorm_out`, `tf_argmax`, the descriptor chain of `tf_plan_apply_f16`; upstream's tail, gnorm and plan_apply
   already had some of the batching, the gfx900 paths are in front of them).
-- Offline here: all 16 gfx900 groups compile (`hip-kernel-build -Dhip-arch=gfx900`), `hip-host-test` passes (mock), and the gfx1030 `.text` of all
-  16 groups is byte for byte upstream main's. Not run: any kernel on the card, `hip-kernel-test`, `hip-affine-test`, the sha gate, tok/s,
-  prefill tok/s on this branch.
+- Offline: all 16 gfx900 groups compile (`hip-kernel-build -Dhip-arch=gfx900`), `hip-host-test` passes (mock), and the gfx1030 `.text` of all
+  16 groups is byte for byte upstream main's. On the card: see "On the rebased branch" under "Decode on the card".
 
 ## Decode on the card (Vega 56 through hipmac, TinyGPU)
 
 Measured with `tools/vega-macos/vega_gate.py` (starts `tensorfold-native serve` on `libamdhip64.dylib`, checks the greedy tokens against
 the mlx_lm references of `tools/vega-macos/mlx_ref.py`, then runs story decodes and reads `tensorfold.tokens_per_second`). Every number
-in this section was measured on the older base the branch had before it was rebased onto upstream main; none was re-measured on the
-rebased branch, which differs in the ways listed under Status.
+in this section was measured on the older base the branch had before it was rebased onto upstream main (`vega-macos`), except the table
+"On the rebased branch" below, which was measured on `vega-macos-up`.
+
+### On the rebased branch (`vega-macos-up`, Vega 56, hipmac master 8b38ae3)
+
+Startup: the load-time cost rig times forwards on KV pages nothing wrote, and hipmac's `hipMalloc` does not zero (HIP does not promise it).
+NaN keys sent every stream launch down the fp64 replay and the load never ended; the rig now zeroes the pool first (`hip_costs.zig`).
+
+| Check | Result |
+| --- | --- |
+| sha gate, nothink / think96 | `eb415dcbaf6e` / `bf86edaf9c17`, identical to mlx_lm, in every variant below |
+| decode, `vega-macos` (older base) in the same session | 64.5 tok/s |
+| decode, `TF_G9_REPAIR=1` (upstream's inline replay) | 62.8 tok/s |
+| decode, `TF_G9_REPAIR=2` (one cold site, the default) | 63.8 tok/s (63.76 on the final default) |
+| decode, `TF_G9_REPAIR=0` (no replay, measurement only, never shipped) | 64.0 tok/s |
+| decode, `TF_STREAM_STAGE=0` / `=1` (before REPAIR=2) | 60.3 / 61.7 tok/s (default 63.0) |
+| `hip-affine-test` (the `hip-affine-build` test binary) | 30/30 |
+| `hip-kernel-test` | 156 passed, 13 skipped, 2 failed of 171 |
+
+The two failures are `nemotron/epilogue.zig` (the relu^2 layer and the fc1 + shared up pair at one row, hidden 2688). They fail the same way
+on the rebase base `4ed9a3e15` (MIX=1, no stage), with `TF_STREAM_STAGE=0` and with `TF_G9_MIX=1`: not from this branch's ports, cause not
+diagnosed. `TF_G9_REPAIR` changes no launch's time in the per-kernel profile (down 76.3 us, out_proj 38.3 us in all three) but the decode
+round in a graph; the 64 VGPRs of the stream kernel (59 on `vega-macos`) give the same 4 waves a SIMD. What is left of the gap to `vega-macos`
+(0.8 tok/s) is the narrow-n stream launches: down (k = 9216) 76 us against about 70.
+
+Prefill (server `prefill_seconds` of a chat prompt, one token out; tok/s):
+
+| Prompt tokens | 50 | 100 | 225 | 526 | 1026 |
+| --- | --- | --- | --- | --- | --- |
+| `vega-macos-up` | 75 | 76 | 120 | 193 | 190 |
+| `vega-macos` | 72 | 76 | 119 | 192 | 189 |
+| `vega-macos-up`, `TF_POLICY=gemm=reference` (the block tile) | 54 | 54 | 106 | 168 | 182 |
+
+The 64- and 32-row GEMM tiles are worth 15% at 526 tokens and 40% at 100 over the block tile, and match the older base.
+
+### The older base (`vega-macos`, before the rebase)
 
 | Step | decode tok/s | Tokens vs mlx_lm |
 | --- | --- | --- |
@@ -235,11 +268,10 @@ Profiling: `tools/vega-macos/hipprof.c` is a shim `libamdhip64` that forwards to
 
 ## Not yet verified
 
-- Logits cosine against mlx on the card (`vega_gate.py --logits` exists; the greedy tokens match for the checked prompts).
+- Logits cosine against mlx on the card (`vega_gate.py --logits` exists; the greedy tokens match for the checked prompts). `zig build
+  tf-qwen35-test` does not compile on upstream main (`zig/tests/qwen35/main.zig:170`), so `--logits` cannot run on this branch.
 - The default `--mtp-drafts 3` of a discrete GPU is irrelevant for this checkpoint (it has no MTP head).
-- Everything above on the card with this branch: tokens against mlx_lm (the sha gate), decode tok/s (the older base's 64.8), prefill tok/s
-  (the older base's ~200), the hardware tests (`hip-kernel-test`, `hip-affine-test`, `hip-gpu-test`), and the recorded hash pins of the stream
-  test (`pinned_f16_gfx900_flush` was recorded on the older base's tile).
+- `hip-gpu-test`, and the stream test's other recorded pins on a second card.
 
 ## Dense MLP gate/up + silu_mul in one launch (gfx900)
 
