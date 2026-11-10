@@ -10,6 +10,8 @@ pub const Dtype = enum(u8) { f16, bf16 };
 pub const Error = error{ Unsupported, OutOfMemory, Timeout, DeviceLost, BadWindow, Failed };
 
 pub const Caps = struct {
+    /// The runtime behind the device: "hip", "cuda", "mock".
+    backend: []const u8,
     name: []const u8,
     arch: []const u8,
     /// Memory the device keeps for tensors, after what the runtime reserves.

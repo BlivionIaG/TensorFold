@@ -135,6 +135,7 @@ pub const Mock = struct {
     fn capsFn(ptr: *anyopaque) device.Caps {
         const m = self(ptr);
         return .{
+            .backend = "mock",
             .name = m.options.name,
             .arch = "mock",
             .vram_bytes = m.options.vram_bytes,
