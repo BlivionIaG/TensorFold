@@ -101,9 +101,64 @@ __device__ __forceinline__ void store_kind(void* p, int kind, long long i, float
 constexpr int kTailThreads = 512;
 constexpr int kTailWidth = 8192;
 
+#if defined(__gfx900__)
+// gfx900, no slots, a row of at most 8 * kTailThreads values: x, y and the norm weight of the row in registers, all loads in one batch and ahead of
+// the sum (the generic path loads the weight after the reduction: one more round trip to memory), the row never goes through LDS, and the kind is a
+// template argument (no branch between loads). The arithmetic and the order of the sums are the generic path's.
+template <int KIND>
+__device__ void tail_dense(void* x, const void* y, const float* weight, void* normed, int width, float eps) {
+    constexpr int kU = 8;
+    __shared__ float part[kTailThreads / 32];
+    const long long at = static_cast<long long>(blockIdx.x) * width;
+    float xv[kU], tv[kU], wv[kU];
+#pragma unroll
+    for (int u = 0; u < kU; ++u) {
+        const int i = threadIdx.x + u * kTailThreads;
+        const int c = i < width ? i : width - 1;
+        xv[u] = load_kind(x, KIND, at + c);
+        tv[u] = load_kind(y, KIND, at + c);
+        wv[u] = weight != nullptr ? weight[c] : 1.f;
+    }
+    float sum = 0.f;
+#pragma unroll
+    for (int u = 0; u < kU; ++u) {
+        const int i = threadIdx.x + u * kTailThreads;
+        const float v = round_kind(xv[u] + tv[u], KIND);
+        xv[u] = v;
+        if (i < width) {
+            store_kind(x, KIND, at + i, v);
+            sum += v * v;
+        }
+    }
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+    if ((threadIdx.x & 31) == 0) part[threadIdx.x >> 5] = sum;
+    __syncthreads();
+    float total = 0.f;
+#pragma unroll
+    for (int w = 0; w < kTailThreads / 32; ++w) total += part[w];
+    const float inv = rsqrtf(total / static_cast<float>(width) + eps);
+#pragma unroll
+    for (int u = 0; u < kU; ++u) {
+        const int i = threadIdx.x + u * kTailThreads;
+        if (i < width) store_kind(normed, KIND, at + i, xv[u] * inv * wv[u]);
+    }
+}
+#endif
+
 // One row a block, one launch: x = round(x + t), t = y or the slot-ordered weighted sum; normed = rms(x) * weight.
 __device__ void tail_body(void* x, const void* y, const float* wts, const float* weight, void* normed, int kind,
                           int slots, int width, float eps) {
+#if defined(__gfx900__)
+    if (slots == 0 && width <= 8 * kTailThreads) {
+        if (kind == 1) {
+            tail_dense<1>(x, y, weight, normed, width, eps);
+        } else {
+            tail_dense<2>(x, y, weight, normed, width, eps);
+        }
+        return;
+    }
+#endif
     __shared__ float row_v[kTailWidth];
     __shared__ float part[kTailThreads / 32];
     const int row = blockIdx.x;
