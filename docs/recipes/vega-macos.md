@@ -243,6 +243,47 @@ one rounding (also passes the sha gate; an option, not the default).
 | fused, silu_mul rounding (default) | 57.90 | 363 | 111.8 us |
 | fused, fp32 epilogue (`TF_GU_F32=1`) | 57.67 | 363 | 111.8 us |
 
+## Small-kernel tuning of the decode (gfx900)
+
+The gate/up fusion's kernel test is `the stacked gate and up with silu_mul's rounding as the epilogue write the bytes of the two products and
+silu_mul` (`zig/src/hip/kernel_tests/decode.zig`; byte for byte against the group kernel and `tf_silu_mul`; `hip-kernel-test` is 64 tests).
+Every change below is `#if defined(__gfx900__)` and keeps the arithmetic and its order (the same bits); the gfx1030 code objects' `.text` is
+identical to the commit before (only the symbol table's order moves).
+
+Why the small kernels were slow: a wave's loads were issued one dependent step after the other (a descriptor, then a pointer, then the data), with
+a `waitcnt` in between, and a 32-thread block used a quarter of a CU's wave slots. The changes issue every independent load first.
+
+| Kernel | Before (us a launch) | After | Change |
+| --- | --- | --- | --- |
+| `tf_gdn_plan_128` | 43.9 | 25.5 | LDS staging steps 16 -> 4 (3 blocks a CU -> all 512 resident), window loaded ahead of the state, no `threadIdx` bound branches |
+| `tf_tail` | 15.6 | 11.1 | `tail_dense`: x, y, weight in one batch, the row in registers |
+| `tf_conv_split` | 16.2 | 11.6 | `conv_split_plan`: plan, taps, sample, norm weight in one batch |
+| `tf_gnorm_out` | 16.8 | 9.8 | `gnorm_out_small` (width <= 128): y, weight, z in one batch |
+| `tf_argmax` | 202 | 140-156 | 16-byte loads, four in flight (the order of a thread's values does not change the result: `better` is a total order) |
+| `tf_plan_apply_f16` | 51 | 46 | descriptor chain before the exponentials, eight values loaded together |
+
+Decode tok/s (median of 3, sha gate passing at each step): 57.7 (`f8904b4af`) -> 58.29 (plan steps only) -> 59.46 (gdn scan) -> 61.5 (tail) -> 62.35 (conv) ->
+63.23 (gnorm) -> 64.8 (argmax and plan_apply).
+
+Tried and not kept (all pass the sha gate; tok/s or kernel time not better):
+
+| Experiment | Result |
+| --- | --- |
+| 3-deep weight prefetch (`stream.hpp`, R == 1) | 58.57 tok/s; gate/up unchanged (113 us), lm_head 1605 us |
+| `__launch_bounds__(128, 4)` on the stream tile (<= 64 VGPR) | 53.66 tok/s; gate/up 141 us, down 102 us (spills) |
+| `TF_STREAM_STAGE=0`, `TF_STREAM_LPC=8`, `TF_STREAM_CB=4` | gate/up 125 / 132 / 112 us (default 112), down 152 for LPC=8 |
+| 8 waves a block (256 threads) | gate/up 111.5, down 66.6, lm_head 1180: no change |
+| non-temporal weight loads (`slc`) | the profile shows -4 % on gate/up and qkv, the graph decodes 63.3 tok/s (63.23 before): not kept |
+| tail folded into the next GEMV | not built: the residual is updated in place while other blocks read it, and every block would redo the row norm |
+
+Where the stream tile's time goes (ablations of the stream kernel, a profile of the decode with the tile changed; not kept in the tree): with the
+dot arithmetic removed gate/up takes 95.6 us (112), down 59, qkv 72.5, lm_head 1035 (1170); with the scale/bias loads removed 91.9 / 66.3 / 64.7 / 906;
+with both removed (the weights' loads only) 78.0 / 53.0 / 57.6 / 902 us (302 / 223 / 274 / 352 GB/s of weight bytes). The tile's floor is then 78 us for
+gate/up, and the dot arithmetic and the table loads cost 34 us of it: this is what a faster GEMV has to win back, mostly the table loads (an
+interleaved scale-and-bias table, one 32-bit load a group, is the idea not tried). Down (k = 9216, 320 blocks) is at 223 GB/s with the loads alone, and
+halving its blocks does not move it, so its limit is the access pattern, not the number of waves. Note that `--prof` replays one kernel back to
+back (the same weights twice in the L2's reach), so a profile's gain from a load change can be absent in the decode: the tok/s decides.
+
 ## Building on a Mac whose Xcode license is not accepted
 
 `clang`, `xcrun` and `make` stop with "You have not agreed to the Xcode license agreements" until the license is accepted (needs sudo). The builds
