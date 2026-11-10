@@ -161,7 +161,7 @@ const Stopper = struct {
         const n = s.node;
         const o = try mcdma_link.Open.init(gpa, n.spec);
         defer o.deinit();
-        var live = bringup.Live.init(gpa, n.inv, o.link.transport(), n.spec.names, n.plan, quick);
+        var live = try bringup.Live.init(gpa, n.inv, o.link.transport(), n.spec.names, n.plan, quick);
         defer live.deinit();
         _ = try live.up();
         while (!s.done.load(.acquire)) words.pause(ms);
