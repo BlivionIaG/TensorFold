@@ -297,7 +297,7 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     });
 }
 
-/// `tf-offload-hip`: tf-offload with a HIP card as an external device, over hipmac's runtime (TF_HIP_LIB or the search path).
+/// `tf-offload-hip`: tf-offload with a HIP card as an external device, over hipmac's runtime (TENSORFOLD_HIP or the search path).
 /// Compiles on any macOS host against stub kernels; running it against a card is a step of its own.
 pub fn offloadExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, metal: *std.Build.Module) void {
     const stub_kernels = b.createModule(.{ .root_source_file = b.addWriteFiles().add("kernels.zig", stub) });
