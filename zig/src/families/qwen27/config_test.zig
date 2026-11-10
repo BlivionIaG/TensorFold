@@ -132,14 +132,25 @@ test "a routed config refuses a rank split" {
     try std.testing.expectError(error.BadShard, split(&c, 1, 2, .mlp));
 }
 
-test "dense config refuses MoE and tied embedding heads" {
+test "dense config refuses MoE and reads a tied embedding head as a flag" {
     const a = std.testing.allocator;
     const moe = try edit(a, "num_experts", .{ .integer = 8 });
     defer a.free(moe);
     try std.testing.expectError(error.NotQwenDense, parse(a, moe, null));
     const tied = try edit(a, "tie_word_embeddings", .{ .bool = true });
     defer a.free(tied);
-    try std.testing.expectError(error.TiedEmbeddingHead, parse(a, tied, null));
+    try std.testing.expect((try parse(a, tied, null)).tied);
+    const untied = try edit(a, "tie_word_embeddings", .{ .bool = false });
+    defer a.free(untied);
+    try std.testing.expect(!(try parse(a, untied, null)).tied);
+    try std.testing.expect(!(try parse(a, fixture, null)).tied);
+    // the flag sits at the root or in text_config, and only a boolean is a value
+    const nested = try std.fmt.allocPrint(a, "{{\"model_type\":\"qwen3_5\",\"tie_word_embeddings\":true,\"text_config\":{s}}}", .{fixture});
+    defer a.free(nested);
+    try std.testing.expect((try parse(a, nested, null)).tied);
+    const bad = try edit(a, "tie_word_embeddings", .{ .integer = 1 });
+    defer a.free(bad);
+    try std.testing.expectError(error.BadTiedHead, parse(a, bad, null));
 }
 
 test "invalid scalar shapes and types fail without a cast trap" {
