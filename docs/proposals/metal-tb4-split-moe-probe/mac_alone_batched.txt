@@ -1,0 +1,16 @@
+# The Mac alone serving N sequences (M4 Pro, 48 GiB, macOS 27.2, mlx 0.32.4, mlx_lm 0.32.2), 2026-11-10. No card.
+# $ /tmp/mlxenv/bin/python mlx_batched_decode.py MODEL_DIR 1,2,4,8 1 40      (different prompts of 9 tokens, 40 greedy tokens each; best of two passes after a warm-up)
+# Models: mlx-community/Qwen3.6-35B-A3B-4bit @38740b847e4cb78f352aba30aa41c76e08e6eb46 (20.40 GB on disk, 19.0 GiB), mlx-community/Qwen3.5-4B-MLX-4bit @32f3e8ecf65426fc3306969496342d504bfa13f3
+# TensorFold's native Metal engine refuses the 35B-A3B: `tf-offload-metal ref` -> error.UnqualifiedQwenShape (families/qwen27/model.zig `supported` admits the dense 27B/9B/4B sizes and the 3,072-wide 48-layer 122B MoE only).
+Qwen3.6-35B-A3B-4bit: prompts of 9 tokens (different), 40 generated, mlx 0.32.4
+mlx_lm 1 sequences: decode 40 tokens = 88.8 tok/s (88.8 a stream); wall 485 ms; peak 19.6 GB
+mlx_lm 2 sequences: prefill 21 tokens at 92.4 tok/s (first-shape compile); decode 80 tokens = 135.3 tok/s (67.6 a stream); wall 822 ms; 2 distinct continuations; peak 19.8 GB
+mlx_lm 3 sequences: decode 120 tokens = 162.4 tok/s (54.1 a stream); wall 843 ms; 3 distinct continuations; peak 19.9 GB
+mlx_lm 4 sequences: decode 160 tokens = 177.4 tok/s (44.3 a stream); wall 1027 ms; 4 distinct continuations; peak 20.0 GB
+mlx_lm 8 sequences: decode 320 tokens = 206.9 tok/s (25.9 a stream); wall 1777 ms; 8 distinct continuations; peak 20.3 GB
+# second run (decode only): 1: 89.7; 2: 137.1; 4: 173.9 tok/s.  third run (72-token prompts): 1: 88.4, 2: 135.7, 4: 178.0; 216-token prompts: 1: 88.6, 2: 134.9 tok/s
+# the same 9-token prompt N times (identical routing, experts shared by all rows; flatters batching): 1: 88.2, 2: 139.7, 3: 172.9, 4: 189.7, 8: 237.4 tok/s
+# prefill (prompt tokens per second over the whole batch, the library's figure): 9 tokens 1 seq 248-251; 72 tokens: 1 seq 452, 2 seq 484, 4 seq 731; 216 tokens: 1 seq 820, 2 seq 799
+Qwen3.5-4B-MLX-4bit, different prompts of 9 tokens, 40 generated (mlx_lm):
+mlx_lm 1 sequences: decode 84.6 tok/s; 2: 154.6 (77.3 a stream); 3: 205.7 (68.6); 4: 220.9 (55.2)     (mlx_lm generate, 40 tokens: 88.6 tok/s)
+# TensorFold's native Metal engine on the 4B for comparison (tf-offload-metal parallel, same prompts): 70.1, 116.5, 154.7, 199.0 tok/s for 1..4 sequences
