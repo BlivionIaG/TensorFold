@@ -68,7 +68,7 @@ pub const Head = struct {
         const qa = try bridge.projection(w.q);
         const ka = try bridge.projection(w.k);
         const kv_heads = ka.n / s.head_dim;
-        const full = if (w.head) |hp| try bridge.projection(hp) else model.head;
+        const full = if (w.head) |hp| try bridge.projection(hp) else model.head.?;
         var narrow = full;
         narrow.n = @min(full.n, draft_vocab);
         const none: hip.DeviceBuffer = .{ .r = d, .ptr = null, .len = 0 };
@@ -268,7 +268,7 @@ pub const Head = struct {
         const eps: f32 = @floatCast(s.eps);
         const hd = s.head_dim;
         const emb = try fwd.take(o, m.act, rows * s.hidden);
-        try o.embedRows(m.embed, ids, rows, emb);
+        try o.embedRows(m.embed.?, ids, rows, emb);
         const emb_e = try fwd.take(o, m.act, rows * s.hidden);
         try o.rms(emb, w.fc_e_norm.ptr, emb_e, rows, s.hidden, eps);
         const emb_h = try fwd.take(o, m.act, rows * s.hidden);
