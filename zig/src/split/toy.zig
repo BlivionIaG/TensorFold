@@ -193,6 +193,11 @@ const mock = @import("mock.zig");
 
 /// The toy model split at layer `k` between a mock device and the CPU in `order`; `out` gets the generated tokens.
 pub fn runSplit(gpa: std.mem.Allocator, order: pipeline.Order, level: pipeline.Level, late: bool, k: usize, prompt: []const u32, out: []u32) !void {
+    _ = try runPhases(gpa, order, level, late, k, prompt, out);
+}
+
+/// `runSplit`, returning where the pipeline's steps spent their time.
+pub fn runPhases(gpa: std.mem.Allocator, order: pipeline.Order, level: pipeline.Level, late: bool, k: usize, prompt: []const u32, out: []u32) !pipeline.Phases {
     const params = try gpa.create(Params);
     defer gpa.destroy(params);
     params.* = .init(42);
@@ -216,6 +221,7 @@ pub fn runSplit(gpa: std.mem.Allocator, order: pipeline.Order, level: pipeline.L
     var p: pipeline.Pipeline = .init(dev, window, cfg, ext.external(), if (order == .external_only) null else cpu.peer(), &scratch);
     try generate(&p, prompt, out);
     try dev.sync(1_000_000_000);
+    return p.phases;
 }
 
 test "every split of the toy model generates the unsplit reference's tokens" {
@@ -253,6 +259,15 @@ test "level B accepts a hidden row whose flag outran its data" {
     var got: [12]u32 = undefined;
     try runSplit(std.testing.allocator, .metal_first, .b, true, 4, &prompt, &got);
     try std.testing.expectEqualSlices(u32, &want, &got);
+}
+
+test "a pipeline's phases count the device's wait, and the finish only where the host stage runs first" {
+    const prompt = [_]u32{ 8, 8, 61 };
+    var got: [6]u32 = undefined;
+    const first = try runPhases(std.testing.allocator, .external_first, .a, false, 5, &prompt, &got);
+    try std.testing.expect(first.wait_ns > 0 and first.finish_ns == 0);
+    const host_first = try runPhases(std.testing.allocator, .metal_first, .b, false, 5, &prompt, &got);
+    try std.testing.expect(host_first.wait_ns > 0);
 }
 
 test "a cut link or a stuck device is a named error inside the timeout and the next run is valid" {
