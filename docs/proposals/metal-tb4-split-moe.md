@@ -412,6 +412,47 @@ through `platform/environment.zig` rules as the pull-request skill requires.
 | `zig/src/cluster/` | `Backend.hip`, link kind, role classification for Qwen names |
 | docs | recipe page for the split on Mac, README table row after the receipts exist |
 
+### One process or two
+
+**Decision: two processes over a unix socket (`split/remote.zig`) are the design, not a stopgap.** The pipeline runs in the
+process that owns the card; the host stage is served by the process that owns the Mac's GPU; both map the window
+(the card's pinned memory, passed as a shared-memory descriptor); only the calls that start a step and wait for it cross
+the socket, and rows, tokens and stamps never do.
+
+Why not one binary that links both engines. Zig compiles a source file into one module of a program, so the Metal engine
+(root `tensorfold.zig`, 674 files reachable by `@import`) and the HIP engine (root `core/root.zig` as module `core`, 360
+files) cannot both be linked while they share files: the build refuses with `file exists in modules 'core' and 'core0'`.
+Counted over `@import("*.zig")` reachability from `zig/` on `21ea8dee4`:
+
+| Pair of roots | Files in both |
+| --- | --- |
+| `core/root.zig` and `tensorfold.zig` | 124 |
+| `core/root.zig` and `qwen27_core.zig` (the Metal lane core) | 78 (checkpoint reading, GGUF, safetensors, NPY, quantization, segments, KV pool, direct I/O) |
+| `core/root.zig` and the `families/qwen27` tree | 0 |
+
+Making the sets disjoint means a shared `checkpoint_io`-style module that both builds import and rewriting every
+relative importer of those files: a build-graph refactor across upstream code, reviewed on its own merits and for
+reasons that have nothing to do with this feature. The socket keeps the change inside `split/` and the two engines'
+range hooks.
+
+What the socket costs and buys.
+
+* Cost: a unix socket request and reply between two threads (40 B out, 8 B back; `cc -O2`, M4 Pro, 20,000 round trips)
+  is 7.0 us at the median and 13-14 us at the 99th percentile; a step makes two calls (`step`, `finish`), so about
+  14 us of the 15-24 ms a position takes on the card (measured positions: First card run). Between two processes
+  rather than threads it is [INFERENCE] the same order.
+* Buys: an eGPU unplug or a wedged card takes down the card process, not the address space that holds the Mac's model
+  and KV; the Mac side sees a closed socket and returns from `serve` (today the tool then exits; keeping the model
+  loaded for a new client is [INFERENCE] a small change, not made); one client per card is a property
+  of the dext, and the card process is the one that owns it; hipmac stays out of tree and out of the Mac engine's
+  link line; each side builds with only its own backend.
+* Launch: a convenience driver (`tensorfold serve --device-split PATH`) spawns the card process as a child, hands it
+  the socket path, and waits for `serving`; the user sees one command. It is not in pull request 1.
+
+In-process linking stays possible later and is conditional on disjoint file sets for the two roots. If a future
+refactor gets there, `Peer` already is the seam: `LayerPeer` is called directly instead of through `Client`, nothing
+else in `pipeline.zig` changes.
+
 ### Exactness, in the repository's terms
 
 Two engines with different activation types meet at a boundary: Metal runs bf16, the gfx900 path runs fp16 (it has no
