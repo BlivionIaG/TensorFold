@@ -54,9 +54,17 @@ pub const Stage = struct {
         return .{ .ptr = self, .run = runFn };
     }
 
-    fn runFn(ptr: *anyopaque, input: []const u8, out: []u8) anyerror!usize {
+    /// The device side on the CPU: refuse an aborted step, validate a stamped row, run, leave the result in the out slot.
+    fn runFn(ptr: *anyopaque, io: pipeline.StepIo) anyerror!void {
         const self: *Stage = @ptrCast(@alignCast(ptr));
-        return self.run(input, out);
+        const h = io.in.header().*;
+        if (h.status != 0 or h.kind == @backingInt(wire.Kind.abort)) return error.PeerLost;
+        const input = if (io.stamped) blk: {
+            const row = io.scratch[0..io.hidden_bytes];
+            _ = try wire.readStamped(row, io.in.data(), io.seq, io.retries);
+            break :blk row;
+        } else io.in.data()[0..h.bytes];
+        _ = try self.run(input, io.out.data());
     }
 
     /// `input` is a token (4 bytes) when the stage embeds, else a hidden row of i32; the output is a token when it has the head.

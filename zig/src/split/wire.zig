@@ -72,11 +72,11 @@ pub const Slot = struct {
     /// Publish a payload that is already in place (a device wrote it): header fields, then the sequence word.
     pub fn publishHeader(s: Slot, seq: u32, kind: Kind, layer: u16, rows: u32, bytes: u32, status: Status) void {
         const h = s.header();
-        h.kind = @intFromEnum(kind);
+        h.kind = @backingInt(kind);
         h.layer = layer;
         h.rows = rows;
         h.bytes = bytes;
-        h.status = @intFromEnum(status);
+        h.status = @backingInt(status);
         @atomicStore(u32, &h.seq, seq, .release);
     }
 

@@ -46,8 +46,10 @@ pub const Window = struct {
     }
 };
 
-/// A recorded launch plan: `run` is called in stream order (a HIP graph launch, a captured indirect buffer, or, on a
-/// mock, plain Zig code on the device's thread).
+/// A recorded launch plan. A stream device (HIP, CUDA) calls `run` when the work is enqueued and `run` issues launches
+/// (a graph launch, a captured indirect buffer) on the device's stream, so they execute in stream order; a mock calls
+/// it later, in stream order, on its own thread and computes on the CPU. `run` must not read data that an earlier stream
+/// operation (a wait) is still to make available.
 pub const Work = struct {
     ctx: *anyopaque,
     run: *const fn (ctx: *anyopaque) anyerror!void,
