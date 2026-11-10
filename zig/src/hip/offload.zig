@@ -28,6 +28,9 @@ pub const Options = struct {
     /// Bytes the runtime keeps for itself out of the card's total (hipmac reserves a low page range and a top block).
     reserved_bytes: u64 = 128 << 20,
     max_windows: u32 = 128,
+    /// Keep synchronizing the stream from a thread, for hipmac's mock backend, which executes a stream only while it is
+    /// synchronized. A card runs its queue on its own and needs no pump.
+    pump_mock: bool = false,
 };
 
 pub const HipExternal = struct {
@@ -45,6 +48,8 @@ pub const HipExternal = struct {
     windows: std.AutoHashMapUnmanaged(usize, memory.HostBuffer) = .empty,
     allocs: std.AutoHashMapUnmanaged(u64, memory.DeviceBuffer) = .empty,
     lost: bool = false,
+    pump: ?std.Thread = null,
+    pump_stop: std.atomic.Value(bool) = .init(false),
 
     pub fn create(gpa: std.mem.Allocator, rt: *runtime.Runtime, index: c_int, options: Options) Error!*HipExternal {
         const wait32 = rt.lib.lookup(WaitValue32, "hipStreamWaitValue32") orelse return error.NoValueOps;
@@ -65,6 +70,7 @@ pub const HipExternal = struct {
         self.fence_window = try memory.HostBuffer.allocMapped(rt, window_align);
         @memset(self.fence_window.bytes, 0);
         self.caps = .{
+            .backend = "hip",
             .name = self.name[0..name.len],
             .arch = self.arch[0..arch.len],
             .vram_bytes = mem.total -| options.reserved_bytes,
@@ -76,6 +82,7 @@ pub const HipExternal = struct {
             .launch_ns = 4_400,
             .max_windows = options.max_windows,
         };
+        if (options.pump_mock) self.pump = std.Thread.spawn(.{}, pumpMain, .{self}) catch return error.OutOfMemory;
         return self;
     }
 
@@ -187,8 +194,19 @@ pub const HipExternal = struct {
         return device.nowNs();
     }
 
+    fn pumpMain(self: *HipExternal) void {
+        while (!self.pump_stop.load(.acquire)) {
+            self.stream.synchronize() catch {};
+            device.pause(20_000);
+        }
+    }
+
     fn deinitFn(ptr: *anyopaque) void {
         const self = me(ptr);
+        if (self.pump) |t| {
+            self.pump_stop.store(true, .release);
+            t.join();
+        }
         self.stream.synchronize() catch {};
         var wit = self.windows.valueIterator();
         while (wit.next()) |b| {
@@ -235,7 +253,7 @@ fn mockRuntime() ?runtime.Runtime {
 test "on the mock backend the window protocol runs through stream wait and write" {
     var rt = mockRuntime() orelse return error.SkipZigTest;
     defer rt.close();
-    const hip_dev = HipExternal.create(std.testing.allocator, &rt, 0, .{ .peak_bandwidth = 410_000_000_000 }) catch |err| switch (err) {
+    const hip_dev = HipExternal.create(std.testing.allocator, &rt, 0, .{ .peak_bandwidth = 410_000_000_000, .pump_mock = true }) catch |err| switch (err) {
         // a mock without the value calls: the refusal is the behaviour under test
         error.NoValueOps => return,
         else => return err,
@@ -247,6 +265,7 @@ test "on the mock backend the window protocol runs through stream wait and write
     try std.testing.expect(@intFromPtr(w.ptr) % HipExternal.window_align == 0);
     try dev.enqueueWait(w, 0, 7, 0);
     try dev.enqueueWrite(w, 64, 9);
+    // the mock only runs a stream while someone synchronizes it: the pump does, as the hardware's command processor would
     try std.testing.expectError(error.Timeout, dev.sync(5_000_000));
     @atomicStore(u32, w.word(0), 7, .release);
     try dev.sync(2_000_000_000);
