@@ -14,16 +14,15 @@ const magic: u32 = 0x5350_4c54;
 
 const Op = enum(u8) { hello, step, finish, reset, bye };
 
-/// One request: `a`..`c` carry the operation's words (hello: window offset in the object, window length, object size;
-/// step: input offset and length, output offset; the output length and sequence ride in `len` and `seq`).
+/// One request: `a`..`d` carry the operation's words (hello: window offset in the object, window length, object size;
+/// step: input offset and length, output offset; the output length, the rows and the sequence ride in `len`, `rows` and
+/// `seq`). A step's input and output are in the window: the pipeline stages the tokens it hands the stage there.
 const Request = extern struct {
     magic: u32 = magic,
     op: u8,
     level: u8 = 0,
-    /// A step's input outside the window (the token a range that embeds takes) travels in `a`, its output outside the
-    /// window (the token a range that ends the model gives) in the reply: at most 8 bytes each.
-    inline_input: u8 = 0,
-    inline_output: u8 = 0,
+    pad: u16 = 0,
+    rows: u32 = 1,
     seq: u32 = 0,
     len: u32 = 0,
     a: u64 = 0,
@@ -31,7 +30,7 @@ const Request = extern struct {
     d: u64 = 0,
 };
 
-const Reply = extern struct { status: i32, n: u32, data: u64 = 0 };
+const Reply = extern struct { status: i32, n: u32 };
 
 fn readAll(fd: c_int, buf: []u8) Error!void {
     var at: usize = 0;
@@ -140,21 +139,10 @@ pub const Client = struct {
         return .{ .ptr = cl, .step = stepFn, .finish = finishFn };
     }
 
-    fn stepFn(ptr: *anyopaque, seq: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+    fn stepFn(ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const cl: *Client = @ptrCast(@alignCast(ptr));
-        var req: Request = .{ .op = @backingInt(Op.step), .level = @backingInt(level), .seq = seq, .len = @intCast(out.len), .b = input.len };
-        if (cl.offsetOf(input)) |at| req.a = at else |_| {
-            if (input.len > 8) return error.BadMessage;
-            req.inline_input = 1;
-            @memcpy(std.mem.asBytes(&req.a)[0..input.len], input);
-        }
-        if (cl.offsetOf(out)) |at| req.d = at else |_| {
-            if (out.len > 8) return error.BadMessage;
-            req.inline_output = 1;
-        }
-        const r = try cl.call(req);
-        if (req.inline_output != 0) @memcpy(out, std.mem.asBytes(&r.data)[0..out.len]);
-        return r.n;
+        const req: Request = .{ .op = @backingInt(Op.step), .level = @backingInt(level), .rows = rows, .seq = seq, .len = @intCast(out.len), .a = try cl.offsetOf(input), .b = input.len, .d = try cl.offsetOf(out) };
+        return (try cl.call(req)).n;
     }
 
     fn finishFn(ptr: *anyopaque, seq: u32) anyerror!void {
@@ -233,12 +221,9 @@ pub fn serveOver(fd: c_int, host: Host) Error!void {
             },
             .step => {
                 const w = window orelse return error.BadMessage;
-                if ((req.inline_output == 0 and req.d + req.len > w.len) or (req.inline_output != 0 and req.len > 8)) return error.BadMessage;
-                if ((req.inline_input == 0 and req.a + req.b > w.len) or (req.inline_input != 0 and req.b > 8)) return error.BadMessage;
+                if (req.d + req.len > w.len or req.a + req.b > w.len) return error.BadMessage;
                 const level: pipeline.Level = if (req.level == 0) .a else .b;
-                const input = if (req.inline_input != 0) std.mem.asBytes(&req.a)[0..req.b] else w[req.a..][0..req.b];
-                const out = if (req.inline_output != 0) std.mem.asBytes(&reply.data)[0..req.len] else w[req.d..][0..req.len];
-                if (host.peer.step(host.peer.ptr, req.seq, input, out, level)) |n| reply.n = @intCast(n) else |err| {
+                if (host.peer.step(host.peer.ptr, req.seq, req.rows, w[req.a..][0..req.b], w[req.d..][0..req.len], level)) |n| reply.n = @intCast(n) else |err| {
                     std.debug.print("split remote: step {d}: {s}\n", .{ req.seq, @errorName(err) });
                     reply.status = 1;
                 }
@@ -284,6 +269,7 @@ const Adder = struct {
     window: ?[]u8 = null,
     resets: u32 = 0,
     last_level: pipeline.Level = .a,
+    last_rows: u32 = 0,
     finished: u32 = 0,
 
     fn host(a: *Adder) Host {
@@ -298,8 +284,9 @@ const Adder = struct {
     fn reset(ptr: *anyopaque) anyerror!void {
         @as(*Adder, @ptrCast(@alignCast(ptr))).resets += 1;
     }
-    fn step(ptr: *anyopaque, seq: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+    fn step(ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const a: *Adder = @ptrCast(@alignCast(ptr));
+        a.last_rows = rows;
         if (seq == 99) return error.Boom;
         a.last_level = level;
         for (input, 0..) |b, i| out[i] = b +% 1;
@@ -343,20 +330,18 @@ test "a step, a finish and a reset cross a socket pair; the window is the same m
 
     const p = cl.peer();
     @memcpy(cl.window[0..4], &[4]u8{ 1, 2, 3, 4 });
-    const n = try p.step(p.ptr, 7, cl.window[0..4], cl.window[64..68], .b);
+    const n = try p.step(p.ptr, 7, 1, cl.window[0..4], cl.window[64..68], .b);
     try std.testing.expectEqual(@as(usize, 4), n);
     try std.testing.expectEqualSlices(u8, &.{ 2, 3, 4, 5 }, cl.window[64..68]);
     try p.finish(p.ptr, 7);
     try cl.reset();
-    try std.testing.expectError(error.PeerFailed, p.step(p.ptr, 99, cl.window[0..4], cl.window[64..68], .a));
-    // an input outside the window (a token) travels in the request
-    var token = [4]u8{ 9, 8, 7, 6 };
-    try std.testing.expectEqual(@as(usize, 4), try p.step(p.ptr, 8, &token, cl.window[64..68], .a));
-    try std.testing.expectEqualSlices(u8, &.{ 10, 9, 8, 7 }, cl.window[64..68]);
-    // so does an output outside it, in the reply
-    var back: [4]u8 = undefined;
-    try std.testing.expectEqual(@as(usize, 4), try p.step(p.ptr, 9, cl.window[0..4], &back, .a));
-    try std.testing.expectEqualSlices(u8, &.{ 2, 3, 4, 5 }, &back);
+    try std.testing.expectError(error.PeerFailed, p.step(p.ptr, 99, 1, cl.window[0..4], cl.window[64..68], .a));
+    // the rows of a chunk travel as a count
+    try std.testing.expectEqual(@as(usize, 4), try p.step(p.ptr, 8, 3, cl.window[0..4], cl.window[64..68], .a));
+    try std.testing.expectEqual(@as(u32, 3), adder.last_rows);
+    // bytes outside the window are refused before they are sent
+    var stray: [4]u8 = undefined;
+    try std.testing.expectError(error.BadMessage, p.step(p.ptr, 9, 1, &stray, cl.window[64..68], .a));
     _ = c.shutdown(pair[0], c.SHUT.WR);
     thread.join();
     try std.testing.expectEqual(@as(u32, 1), adder.resets);

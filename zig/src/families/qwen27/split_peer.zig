@@ -185,8 +185,9 @@ pub const LayerPeer = struct {
         return at - base;
     }
 
-    fn stepFn(ptr: *anyopaque, seq: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+    fn stepFn(ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const st = @as(*LayerPeer, @ptrCast(@alignCast(ptr))).stage;
+        if (rows != 1) return error.BadStep;
         const head = st.range.head(st.model.config.layers);
         const in: Input = if (st.range.embed()) .{ .token = std.mem.readInt(u32, input[0..4], .little) } else .{ .row = input };
         try st.launch(in, if (head) .own else .{ .window = .{ .offset = try offsetOf(st, out), .stamp = seq } });
@@ -215,6 +216,7 @@ pub const External = struct {
         const st = @as(*External, @ptrCast(@alignCast(ptr))).stage;
         const h = io.in.header().*;
         if (h.status != 0 or h.kind == @backingInt(wire.Kind.abort)) return error.PeerLost;
+        if (io.rows != 1) return error.BadStep;
         const head = st.range.head(st.model.config.layers);
         var in: Input = undefined;
         if (st.range.embed()) {

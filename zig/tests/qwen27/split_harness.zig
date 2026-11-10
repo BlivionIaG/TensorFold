@@ -86,7 +86,7 @@ const Rig = struct {
         r.mock = try split.mock.Mock.create(a, mock);
         r.dev = r.mock.external();
         errdefer r.dev.deinit();
-        r.window = try r.dev.allocWindow(pl.Pipeline.slotBytes(cfg) * 2);
+        r.window = try r.dev.allocWindow(pl.Pipeline.windowBytes(cfg, 1));
         errdefer r.dev.freeWindow(r.window);
         // metal_first: the host runs the layers that come first. external_first: the device does.
         const host_low = cfg.order == .metal_first;

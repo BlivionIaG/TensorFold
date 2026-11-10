@@ -114,7 +114,9 @@ test "a reference survives a file" {
     var prompt = [_]u32{ 1, 2, 3 };
     var want = [_]u32{ 4, 5 };
     var preds = [_]u32{ 9, 8, 7, 4 };
-    const path = "/tmp/tf-split-reference-test.bin";
+    // a file a process: several test runs may share the directory
+    var name: [64]u8 = undefined;
+    const path = try std.fmt.bufPrintSentinel(&name, "/tmp/tf-split-reference-test-{d}.bin", .{c.getpid()}, 0);
     try save(a, path, .{ .layers = 32, .hidden = 2560, .prompt = &prompt, .want = &want, .preds = &preds });
     defer _ = c.unlink(path);
     const r = try load(a, path);
