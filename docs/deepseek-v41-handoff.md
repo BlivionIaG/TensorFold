@@ -175,8 +175,10 @@ TF_PREFILL_API_KEY_FILE=$KEYFILE tensorfold-native serve $PACK --engram-stream-d
 ```
 
 Both ends must load the same checkpoint files: the manifest's model name is the hash of `config.json` and
-`model.safetensors.index.json`. The producer logs `dsv41 handoff export: http` and `handoff <id>: N tokens ... MiB of bf16 rows`
-per export; the Mac logs `remote prefill over HTTP: N prefixes pulled, X MiB and Y ms each` at shutdown.
+`model.safetensors.index.json`. The producer logs `handoff: exports are served over HTTP, GET /v1/handoff/<id> on this server's port` at start
+and `handoff <id>: N tokens, P parts, M MiB of bf16 rows` per export; the Mac's reply says what happened in its `tensorfold` block:
+`"exact_mode": "remote_prefix"`, `remote_prefix` and `pulled_prefix` in tokens, as over a link. A failed pull logs
+`remote prefill failed (REASON); the prompt is prefilled here` once per request and the reply has none of those fields.
 
 ## Tests
 
