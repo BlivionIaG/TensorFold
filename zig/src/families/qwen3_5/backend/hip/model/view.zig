@@ -41,7 +41,7 @@ pub const Routed = struct {
 };
 
 pub const Mlp = union(enum) {
-    dense: struct { gate: Projection, up: Projection, down: Projection },
+    dense: struct { gate: Projection, up: Projection, down: Projection, gate_up: ?Projection = null },
     moe: Routed,
 };
 

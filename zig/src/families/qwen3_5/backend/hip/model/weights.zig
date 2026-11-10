@@ -31,7 +31,15 @@ pub const Experts = struct {
 /// Router rows [E + 1, D], the shared gate row last: bf16 as the Python holds them and `rows32` widened.
 pub const Routed = struct { router: Buf, rows32: Buf, experts: Experts, top_k: usize, remap: ?Buf = null };
 
-pub const DenseMlp = struct { gate: Projection, up: Projection, down: Projection };
+/// `gate` and `up` are the halves of `gate_up` when the loader stacked them (gfx900: one launch writes silu(gate) * up), else uploaded alone.
+pub const DenseMlp = struct { gate: Projection, up: Projection, down: Projection, gate_up: ?Projection = null };
+
+/// Whether gate and up are uploaded as one stacked matrix: the gfx900 kernels read the pair in one launch (TF_FUSE_GU=0 keeps them apart).
+fn fusesGateUp() bool {
+    if (!std.mem.eql(u8, hip.kernels.arch, "gfx900")) return false;
+    const v = std.c.getenv("TF_FUSE_GU") orelse return true;
+    return !std.mem.eql(u8, std.mem.span(v), "0");
+}
 
 pub const Mlp = union(enum) { dense: DenseMlp, routed: Routed };
 
@@ -98,7 +106,18 @@ const Uploader = struct {
 
     fn mlp(u: Uploader, m: host.Mlp) !Mlp {
         switch (m) {
-            .dense => |d| return .{ .dense = .{ .gate = try u.projection(d.gate), .up = try u.projection(d.up), .down = try u.projection(d.down) } },
+            .dense => |d| {
+                if (fusesGateUp()) {
+                    var stack: std.heap.ArenaAllocator = .init(u.up.gpa);
+                    defer stack.deinit();
+                    if (try quant.fuseRows(stack.allocator(), d.gate, d.up)) |h| {
+                        const gate_up = try u.projection(h);
+                        const halves = quant.splitRows(gate_up);
+                        return .{ .dense = .{ .gate = halves[0], .up = halves[1], .down = try u.projection(d.down), .gate_up = gate_up } };
+                    }
+                }
+                return .{ .dense = .{ .gate = try u.projection(d.gate), .up = try u.projection(d.up), .down = try u.projection(d.down) } };
+            },
             .routed => |r| {
                 const e = r.experts;
                 return .{ .routed = .{

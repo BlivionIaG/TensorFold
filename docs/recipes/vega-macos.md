@@ -227,3 +227,29 @@ Profiling: `tools/vega-macos/hipprof.c` is a shim `libamdhip64` that forwards to
 
 - Logits cosine against mlx on the card (`vega_gate.py --logits` exists; the greedy tokens match for the checked prompts).
 - The default `--mtp-drafts 3` of a discrete GPU is irrelevant for this checkpoint (it has no MTP head).
+
+## Dense MLP gate/up + silu_mul in one launch (gfx900)
+
+The loader stacks a dense layer's gate and up rows into one MLX matrix (`quant.fuseRows`, host copy of 12 MB a layer through the scratch arena;
+`gate` and `up` of the view are the two halves of the same device bytes, `quant.splitRows`, so prefill and the unfused path read them as before)
+and the decode path (`Ops.projectGateUp`) runs the stream tile's pair mode (`Epi::kPair`, the routed experts' one) over it with `limit = -1`: the
+epilogue (`swiglu` in `tiles/epilogue.hpp`, gfx900 only) rounds gate and up to fp16, then silu(gate) to fp16, then the product: the bytes of the two
+products and `tf_silu_mul`, so the tokens do not change. `TF_FUSE_GU=0` (at load) keeps the separate matrices; `TF_GU_F32=1` runs the fp32 sums into
+one rounding (also passes the sha gate; an option, not the default).
+
+| | decode tok/s (median of 3) | launches a token | gate/up kernel |
+| --- | --- | --- | --- |
+| `TF_FUSE_GU=0` | 57.45 | 393 | 114.5 us + `tf_silu_mul` |
+| fused, silu_mul rounding (default) | 57.90 | 363 | 111.8 us |
+| fused, fp32 epilogue (`TF_GU_F32=1`) | 57.67 | 363 | 111.8 us |
+
+## Building on a Mac whose Xcode license is not accepted
+
+`clang`, `xcrun` and `make` stop with "You have not agreed to the Xcode license agreements" until the license is accepted (needs sudo). The builds
+here do not need Xcode, only the command line tools' SDK and Zig's C compiler:
+
+    export PATH=$HOME/.local/zig-0.17.0:$PATH
+    export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk TF_SDKROOT=$SDKROOT
+    export TF_CC="zig cc"                      # tools/vega-macos/vega_gate.py builds the hipprof shim with it (default clang)
+
+`zig build test` (the Metal tests) and `make -C hipmac` (clang) do not work without it.

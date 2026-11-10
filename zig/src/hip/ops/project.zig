@@ -1,5 +1,6 @@
 //! The products on a projection of any format, dispatched on its tag; `affine*` are the MLX affine path behind them.
 
+const std = @import("std");
 const t = @import("types.zig");
 const quant = @import("core").quant;
 const launches = @import("../launches.zig");
@@ -54,6 +55,14 @@ pub fn projectGroup(o: Ops, x: Tensor, ps: []const Projection, m: usize, outs: [
 pub fn projectRoutedAct(o: Ops, x: Tensor, proj: Projection, items: u64, count: usize, members: u64, pairs: usize, x_div: usize, rows: usize, limit: f32) Error!?Tensor {
     switch (proj.handle) {
         .mlx => |h| return affineRoutedAct(o, x, affineOf(proj, h), items, count, members, pairs, x_div, rows, limit),
+        .dense => return null,
+    }
+}
+
+/// A stacked (gate | up) projection as silu(gate) * up in x's kind, one launch, rounded as `silu_mul` rounds its inputs; null when the tile does not take it.
+pub fn projectGateUp(o: Ops, x: Tensor, proj: Projection, m: usize) Error!?Tensor {
+    switch (proj.handle) {
+        .mlx => |h| return affineGateUp(o, x, affineOf(proj, h), m),
         .dense => return null,
     }
 }
@@ -194,6 +203,36 @@ pub fn affineRoutedAct(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, m
         .out16 = out,
     };
     if (!try z.affine.pairRun(z.r, arg, limit, int(count), o.stream)) return null;
+    return .{ .ptr = out, .kind = x.kind };
+}
+
+/// The plain (m, N) product of stacked gate | up rows with the pair epilogue: the limit's sign picks `silu_mul`'s rounding (fp16 inputs).
+pub fn affineGateUp(o: Ops, x: Tensor, w: Affine, m: usize) Error!?Tensor {
+    const z = o.l;
+    if (o.prefill or !o.fused() or x.kind != .f16 or w.n % 2 != 0 or w.partial or m == 0) return null;
+    try w.check();
+    const kind = w.tables.table();
+    var shape = shapeOf(o, x, w, m);
+    shape.pairs = true;
+    if (z.affine.choose(.routed_act, .decode, shape) == null) return null;
+    const out = try o.arena.take(m * (w.n / 2) * 2);
+    const arg: affine_launch.Arg = .{
+        .x = x.ptr,
+        .words = w.words,
+        .scale = .{ .p = w.scale, .kind = kind },
+        .bias = .{ .p = w.bias, .kind = kind },
+        .out = 0,
+        .m = int(m),
+        .n = int(w.n),
+        .k = int(w.k),
+        .bits = int(w.bits),
+        .group = int(w.group),
+        .fp16 = 1,
+        .out16 = out,
+    };
+    // TF_GU_F32=1: the fp32 sums into silu * up with one rounding (an option measured against the token gate, not the default)
+    const single = if (std.c.getenv("TF_GU_F32")) |v| v[0] == '1' else false;
+    if (!try z.affine.pairRun(z.r, arg, if (single) -2.0 else -1.0, 1, o.stream)) return null;
     return .{ .ptr = out, .kind = x.kind };
 }
 
