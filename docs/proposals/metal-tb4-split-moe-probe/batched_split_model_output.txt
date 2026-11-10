@@ -1,0 +1,35 @@
+validation on the 4B: Mac alone a = 12.73 ms, b = 1.99 ms; r = 0.74
+  N=1: Mac alone 70 | single-row split model 67 tok/s | measured on the card: 53 (best cut, 4B)
+  N=2: Mac alone 116 | single-row split model 117 tok/s | measured on the card: 130 (best cut, 4B)
+  N=3: Mac alone 155 | single-row split model 117 tok/s | measured on the card: 120 (best cut, 4B)
+  N=4: Mac alone 199 | single-row split model 117 tok/s | measured on the card: 120 (best cut, 4B)
+
+Mac alone fit: a = 7.06 ms a round, b = 3.94 ms a row (routed experts: 8 x 40 x 1.6875 MiB = 540 MiB -> 144 GB/s)
+  N=1: measured 88.8 tok/s, fit 90.9
+  N=2: measured 135.8 tok/s, fit 133.9
+  N=4: measured 176.4 tok/s, fit 175.3
+  N=8: measured 206.9 tok/s, fit 207.4
+
+break-even speed of the card (r = card's whole-model one-row decode speed over the Mac's, 88.8 tok/s):
+  resident (the card holds the model): r > 1
+  split, batched stages, N=2: r > 0.50 (needs the card to hold the fraction it is given; implemented single-row split: never beats 91+ tok/s)
+  split, batched stages, N=4: r > 0.32 (needs the card to hold the fraction it is given; implemented single-row split: never beats 91+ tok/s)
+  split, batched stages, N=8: r > 0.19 (needs the card to hold the fraction it is given; implemented single-row split: never beats 91+ tok/s)
+
+RX Vega 56 8 GiB (today): r = 0.68 (63 tok/s one row, model)
+  N=1: Mac alone    91 | resident does not fit (the card holds 16 of 40 layers)
+  N=2: Mac alone   134 | resident does not fit (the card holds 15 of 40 layers) | split batched   148 (1.11x, card 15 layers) | split single-row (implemented)   148 (1.11x)
+  N=4: Mac alone   175 | resident does not fit (the card holds 14 of 40 layers) | split batched   210 (1.20x, card 14 layers) | split single-row (implemented)   142 (0.81x)
+  N=8: Mac alone   207 | resident does not fit (the card holds 13 of 40 layers) | split batched   255 (1.23x, card 13 layers) | split single-row (implemented)   132 (0.64x)
+
+RX 7900 XTX 24 GiB: r = 1.79 (167 tok/s one row, model)
+  N=1: Mac alone    91 | resident   160 (1.76x)
+  N=2: Mac alone   134 | resident   237 (1.77x) | split batched   246 (1.84x, card 25 layers) | split single-row (implemented)   246 (1.84x)
+  N=4: Mac alone   175 | resident   311 (1.77x) | split batched   362 (2.07x, card 26 layers) | split single-row (implemented)   246 (1.40x)
+  N=8: Mac alone   207 | resident   369 (1.78x) | split batched   480 (2.31x, card 26 layers) | split single-row (implemented)   246 (1.18x)
+
+RTX 5090 32 GiB: r = 3.38 (317 tok/s one row, model)
+  N=1: Mac alone    91 | resident   298 (3.28x)
+  N=2: Mac alone   134 | resident   443 (3.31x) | split batched   378 (2.82x, card 30 layers) | split single-row (implemented)   378 (2.82x)
+  N=4: Mac alone   175 | resident   584 (3.33x) | split batched   559 (3.19x, card 31 layers) | split single-row (implemented)   378 (2.16x)
+  N=8: Mac alone   207 | resident   695 (3.35x) | split batched   745 (3.59x, card 31 layers) | split single-row (implemented)   378 (1.82x)

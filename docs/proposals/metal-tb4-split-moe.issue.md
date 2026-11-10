@@ -53,8 +53,10 @@ at any of five cuts, Metal first or card first, gives the unsplit run's tokens (
 one stream takes 15-24 ms a position against 14 ms all-Metal and 19 ms all-card, as the one-stream model says. Two sequences pipelined over the split decode 120 tok/s at the planner's cut (113 predicted) and 129-130 at the best cuts, every
 sequence token-identical; the fair baseline, the Mac alone batching two sequences in one engine, decodes 116 tok/s (155 at three, 198 at four, where the
 split stays at 120), so on the 4B the split is level at two sequences and behind beyond, and its value is capacity. Chunked prefill through the split is 3x the
-one-position-a-step rate (156-251 tok/s) but the Mac alone prefills at 415-494. Whether the split pays on the 35B-A3B (where a batched
-round reads more experts) is not measured.
+one-position-a-step rate (156-251 tok/s) but the Mac alone prefills at 415-494. The 35B-A3B on the Mac alone (mlx_lm; the native Metal engine does not admit its shape) decodes 88.8 / 135.8 / 176.4 / 206.9 tok/s at
+1 / 2 / 4 / 8 sequences; the written split (one row a step) cannot beat that beyond two sequences, and the model says a split whose stages batch
+rows of several sequences would be 1.1-1.2x ahead on the Vega and that a card holding the model should run it resident (needs a whole-model one-row decode above 89 tok/s).
+The 4B's Mac baseline is also higher with mlx_lm (154.6 at two sequences against the split's 120-130).
 
 ## Checkpoint, revision and licence
 
