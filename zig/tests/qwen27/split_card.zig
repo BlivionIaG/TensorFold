@@ -314,7 +314,7 @@ pub fn main(init: std.process.Init) !void {
         for (0..repeat) |r| @memcpy(prompt[r * ref.prompt.len ..][0..ref.prompt.len], ref.prompt);
         if (prompt.len + ref.want.len > capacity) return error.PromptTooLong;
         // what the tokens must be: the reference's, or (a longer prompt) a run with one position a step
-        var want = try a.dupe(u32, ref.want);
+        const want = try a.dupe(u32, ref.want);
         defer a.free(want);
         for (levels) |level| {
             const cfg: pl.Config = .{ .order = order, .level = level, .hidden_bytes = hidden_bytes, .max_rows = @intCast(chunk), .timeout_ns = 60_000_000_000 };
