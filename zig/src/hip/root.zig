@@ -90,5 +90,6 @@ test {
     _ = @import("comm/loopback.zig");
     _ = @import("tuning/search.zig");
     _ = @import("kernel_tests/affine/cells.zig");
+    _ = @import("ops/split_rows_wire_test.zig");
     _ = offload;
 }
