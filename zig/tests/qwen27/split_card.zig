@@ -4,7 +4,11 @@
 //! forced on the tokens in the reference file (`tf-offload-metal ref`) and compared position by position, then free
 //! running. Opens the card: run it only with the card to yourself.
 //!   tf-offload-card MODEL_DIR REF_FILE unsplit
-//!   tf-offload-card MODEL_DIR REF_FILE SOCKET metal_first|external_first CUT [levels a,b]
+//!   tf-offload-card MODEL_DIR REF_FILE SOCKET metal_first|external_first CUT [streams=N] [chunk=C] [repeat=R]
+//! With `streams`, `chunk` or `repeat` (any of them, `streams=1` too) the run is the pipelined one instead: N sequences share the card and the Mac's GPU
+//! (`tf-offload-metal serve SOCKET FIRST LAST N`), each prompt (the reference's, repeated R times) goes through in steps of
+//! C positions, then the reference's tokens are generated; the prefill and the decode rates are printed, and every sequence's
+//! tokens are checked (R = 1: against the reference file; else against the same run with one position a step).
 const std = @import("std");
 const split = @import("split");
 const hip = @import("hip");
@@ -21,29 +25,37 @@ fn nowNs() u64 {
     return split.device.nowNs();
 }
 
-/// One layer range on the card: its engine (opened for single-row steps), the stage over it, and the adapter that queues
-/// the window's waits and writes on the engine's own stream.
+/// One layer range on the card: its engine (opened for single-row decode steps and prompt chunks of up to `max_rows`),
+/// one stage a sequence over it, and the adapter that queues the window's waits and writes on the engine's own stream.
 const Half = struct {
     a: std.mem.Allocator,
     e: *Engine,
-    stage: *Stage,
+    stages: []Stage,
     dev: *hip.offload.HipExternal,
 
-    fn init(a: std.mem.Allocator, io: std.Io, dir: []const u8, range: qwen35.view.Range) !Half {
-        const e = try Engine.open(a, io, dir, .{ .capacity = capacity, .streams = 1, .batch_rows = 1, .prompt_rows = 1, .range = range });
+    fn init(a: std.mem.Allocator, io: std.Io, dir: []const u8, range: qwen35.view.Range, sequences: usize, max_rows: usize) !Half {
+        const e = try Engine.open(a, io, dir, .{ .capacity = capacity, .streams = 1, .batch_rows = 1, .prompt_rows = max_rows, .range = range });
         errdefer e.deinit();
-        const stage = try a.create(Stage);
-        errdefer a.destroy(stage);
-        stage.* = try Stage.init(e, capacity);
-        errdefer stage.deinit();
-        try stage.warm();
+        const stages = try a.alloc(Stage, sequences);
+        errdefer a.free(stages);
+        var made: usize = 0;
+        errdefer for (stages[0..made]) |*st| st.deinit();
+        while (made < sequences) : (made += 1) {
+            stages[made] = try Stage.init(e, capacity, .{ .max_rows = max_rows });
+            try stages[made].warm();
+        }
         const dev = try hip.offload.HipExternal.create(a, &e.driver, 0, .{ .peak_bandwidth = 410_000_000_000, .stream = e.stream });
-        return .{ .a = a, .e = e, .stage = stage, .dev = dev };
+        return .{ .a = a, .e = e, .stages = stages, .dev = dev };
+    }
+
+    /// The first sequence's stage, the one the single-sequence runs use.
+    fn stage(s: Half) *Stage {
+        return &s.stages[0];
     }
 
     fn deinit(s: Half) void {
-        s.stage.deinit();
-        s.a.destroy(s.stage);
+        for (s.stages) |*st| st.deinit();
+        s.a.free(s.stages);
         s.e.drain();
         s.dev.external().deinit();
         s.e.deinit();
@@ -73,11 +85,11 @@ const Pass = struct {
     fn begin(a: std.mem.Allocator, half: Half, window: split.device.Window, cfg: pl.Config, client: ?*split.remote.Client) !*Pass {
         const s = try a.create(Pass);
         errdefer a.destroy(s);
-        try half.stage.reset();
+        try half.stage().reset();
         if (client) |cl| try cl.reset();
         @memset(window.bytes(), 0);
         s.* = .{ .a = a, .half = half, .window = window, .cfg = cfg, .client = client, .scratch = try a.alloc(u8, cfg.hidden_bytes), .p = undefined };
-        s.p = .init(half.dev.external(), window, cfg, half.stage.external(), if (client) |cl| cl.peer() else null, s.scratch);
+        s.p = .init(half.dev.external(), window, cfg, half.stage().external(), if (client) |cl| cl.peer() else null, s.scratch);
         return s;
     }
 
@@ -137,7 +149,7 @@ fn fidelity(a: std.mem.Allocator, half: Half, window: split.device.Window, cfg: 
     std.debug.print("  logits against the Metal run, {d} positions of {d}:", .{ seq.len, vocab });
     for (seq, 0..) |t, i| {
         const pred = try s.p.step(t);
-        try half.stage.readLogits(row);
+        try half.stage().readLogits(row);
         const want = ref_logits[i * vocab ..][0..vocab];
         var dot: f64 = 0;
         var na: f64 = 0;
@@ -164,6 +176,86 @@ fn fidelity(a: std.mem.Allocator, half: Half, window: split.device.Window, cfg: 
         }
     }
     std.debug.print("  cosine min {d:.6} (position {d}), mean {d:.6}; top-1 differs at {d}\n", .{ min_cos, worst, sum_cos / @as(f64, @floatFromInt(seq.len)), differ });
+}
+
+/// `outs.len` sequences of the same prompt through one pipeline each over the shared window, the prompt in steps of up to
+/// `chunk` positions, then `outs[i].len` greedy tokens; returns the wall time. Both sides start every sequence at position 0.
+fn pipelined(a: std.mem.Allocator, half: Half, window: split.device.Window, base: pl.Config, client: *split.remote.Client, chunk: usize, prompt: []const u32, outs: []const []u32) !u64 {
+    const n = outs.len;
+    for (half.stages[0..n]) |*st| try st.reset();
+    try client.reset();
+    @memset(window.bytes(), 0);
+    const slot = pl.Pipeline.slotBytes(base);
+    const scratch = try a.alloc(u8, n * base.max_rows * base.hidden_bytes);
+    defer a.free(scratch);
+    var pipes: [split.streams.max_streams]pl.Pipeline = undefined;
+    var ptrs: [split.streams.max_streams]*pl.Pipeline = undefined;
+    var works: [split.streams.max_streams]split.streams.Work = undefined;
+    for (0..n) |i| {
+        var cfg = base;
+        cfg.window_offset = i * 2 * slot;
+        const mine = scratch[i * base.max_rows * base.hidden_bytes ..][0 .. base.max_rows * base.hidden_bytes];
+        pipes[i] = .init(half.dev.external(), window, cfg, half.stages[i].external(), client.peerOf(@intCast(i)), mine);
+        ptrs[i] = &pipes[i];
+        works[i] = .{ .prompt = prompt, .out = outs[i] };
+    }
+    const t0 = nowNs();
+    try split.streams.generate(ptrs[0..n], works[0..n], chunk);
+    return nowNs() - t0;
+}
+
+/// The pipelined run (see the header): one untimed pass, then the prompt alone and the prompt with the tokens, so the
+/// decode time is the difference; every sequence's tokens against `want`.
+fn pipelinedReport(a: std.mem.Allocator, half: Half, window: split.device.Window, cfg: pl.Config, client: *split.remote.Client, chunk: usize, prompt: []const u32, want: []const u32) !void {
+    const n = half.stages.len;
+    const full = try a.alloc(u32, n * want.len);
+    defer a.free(full);
+    const outs = try a.alloc([]u32, n);
+    defer a.free(outs);
+    const none = try a.alloc([]u32, n);
+    defer a.free(none);
+    for (outs, none, 0..) |*o, *z, i| {
+        o.* = full[i * want.len ..][0..want.len];
+        z.* = full[0..0];
+    }
+    _ = try pipelined(a, half, window, cfg, client, chunk, prompt, outs);
+    const pre = try pipelined(a, half, window, cfg, client, chunk, prompt, none);
+    @memset(full, std.math.maxInt(u32));
+    const all = try pipelined(a, half, window, cfg, client, chunk, prompt, outs);
+    var same: usize = 0;
+    for (outs) |o| same += @intFromBool(std.mem.eql(u32, o, want));
+    const sec = struct {
+        fn of(ns: u64) f64 {
+            return @as(f64, @floatFromInt(ns)) / 1e9;
+        }
+    }.of;
+    const nf: f64 = @floatFromInt(n);
+    const dec = all -| pre;
+    std.debug.print("{s:<14} {s:<5} streams {d} chunk {d}: prefill {d} positions x {d} in {d:.1} ms = {d:.1} tok/s; decode {d} tokens x {d} in {d:.1} ms = {d:.1} tok/s ({d:.1} a stream); {d}/{d} sequences token-identical\n", .{
+        @tagName(cfg.order),
+        @tagName(cfg.level),
+        n,
+        chunk,
+        prompt.len,
+        n,
+        sec(pre) * 1e3,
+        nf * @as(f64, @floatFromInt(prompt.len)) / sec(pre),
+        want.len,
+        n,
+        sec(dec) * 1e3,
+        nf * @as(f64, @floatFromInt(want.len)) / sec(dec),
+        @as(f64, @floatFromInt(want.len)) / sec(dec),
+        same,
+        n,
+    });
+}
+
+/// `key=value` options after the cut, as numbers; a missing one is `default`.
+fn option(args: []const []const u8, key: []const u8, default: usize) !usize {
+    for (args) |arg| {
+        if (arg.len > key.len and arg[key.len] == '=' and std.mem.eql(u8, arg[0..key.len], key)) return std.fmt.parseInt(usize, arg[key.len + 1 ..], 10);
+    }
+    return default;
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -195,11 +287,18 @@ pub fn main(init: std.process.Init) !void {
         .metal_first => .{ .first = cut, .last = layers },
         .external_first => .{ .first = 0, .last = cut },
     };
-    const half = try Half.init(a, io, dir, range);
+    const extra: []const []const u8 = if (args.len > 6) args[6..] else &.{};
+    const n_streams = try option(extra, "streams", 1);
+    const chunk = try option(extra, "chunk", 1);
+    const repeat = try option(extra, "repeat", 1);
+    const piped = n_streams > 1 or chunk > 1 or repeat > 1 or try option(extra, "streams", 0) > 0;
+    if (piped and unsplit) return error.PipelinedNeedsASplit;
+    if (n_streams == 0 or n_streams > split.streams.max_streams or chunk == 0 or repeat == 0) return error.BadOption;
+    const half = try Half.init(a, io, dir, range, n_streams, chunk);
     defer half.deinit();
     const dev = half.dev.external();
     const hidden_bytes: usize = @as(usize, ref.hidden) * 4;
-    const window = try dev.allocWindow(pl.Pipeline.windowBytes(.{ .order = order, .hidden_bytes = hidden_bytes }, 1));
+    const window = try dev.allocWindow(pl.Pipeline.windowBytes(.{ .order = order, .hidden_bytes = hidden_bytes, .max_rows = @intCast(chunk) }, n_streams));
     defer dev.freeWindow(window);
     var client: split.remote.Client = undefined;
     if (!unsplit) {
@@ -209,6 +308,26 @@ pub fn main(init: std.process.Init) !void {
     }
     defer if (!unsplit) client.close();
     const cl: ?*split.remote.Client = if (unsplit) null else &client;
+    if (piped) {
+        const prompt = try a.alloc(u32, ref.prompt.len * repeat);
+        defer a.free(prompt);
+        for (0..repeat) |r| @memcpy(prompt[r * ref.prompt.len ..][0..ref.prompt.len], ref.prompt);
+        if (prompt.len + ref.want.len > capacity) return error.PromptTooLong;
+        // what the tokens must be: the reference's, or (a longer prompt) a run with one position a step
+        const want = try a.dupe(u32, ref.want);
+        defer a.free(want);
+        for (levels) |level| {
+            const cfg: pl.Config = .{ .order = order, .level = level, .hidden_bytes = hidden_bytes, .max_rows = @intCast(chunk), .timeout_ns = 60_000_000_000 };
+            if (repeat > 1 and level == levels[0]) {
+                var one = cfg;
+                one.max_rows = 1;
+                const outs = [1][]u32{want};
+                _ = try pipelined(a, half, window, one, cl.?, 1, prompt, &outs);
+            }
+            try pipelinedReport(a, half, window, cfg, cl.?, chunk, prompt, want);
+        }
+        return;
+    }
     std.debug.print("{s:<14} {s:<5} {s:>4} {s:>11} {s:>10} {s:>10} {s:>16} {s:>10}\n", .{ "order", "level", "cut", "mean us/pos", "p50 us", "p99 us", "top-1 vs metal", "free==ref" });
     const logits_path = try std.fmt.allocPrintSentinel(a, "{s}.logits", .{args[2]}, 0);
     defer a.free(logits_path);
@@ -236,7 +355,7 @@ pub fn main(init: std.process.Init) !void {
             agree(t.preds[gen_from..], ref.preds[gen_from..]),
             seq.len - gen_from,
         });
-        if (level == .b and order == .metal_first) std.debug.print("  stamped hand-off: status word after the last step {d} (0: every group's stamp was current)\n", .{try half.stage.stampStatus()});
+        if (level == .b and order == .metal_first) std.debug.print("  stamped hand-off: status word after the last step {d} (0: every group's stamp was current)\n", .{try half.stage().stampStatus()});
         const n: f64 = @floatFromInt(seq.len);
         const ph = t.phases;
         std.debug.print("  us/position: record {d:.0}, host stage {d:.0}, finish {d:.0}, wait for the card {d:.0}\n", .{ @as(f64, @floatFromInt(ph.queue_ns)) / 1e3 / n, @as(f64, @floatFromInt(ph.peer_ns)) / 1e3 / n, @as(f64, @floatFromInt(ph.finish_ns)) / 1e3 / n, @as(f64, @floatFromInt(ph.wait_ns)) / 1e3 / n });
