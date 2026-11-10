@@ -28,8 +28,29 @@ pub fn launches() []const [*:0]const u8 {
     return names[0..logged];
 }
 
+/// One boundary-row launch (split/rows.hip), as its arguments name it: `window` the address in the host window and
+/// `device` the activation row's, `n` values, and for a stamped consume the sequence stamp and the status word.
+pub const Boundary = struct {
+    kind: enum { import, export_, consume },
+    window: u64,
+    device: u64,
+    n: u32,
+    seq: u32 = 0,
+    status: u64 = 0,
+};
+
+const max_boundaries = 1 << 12;
+var boundary_log: [max_boundaries]Boundary = undefined;
+var boundary_count: usize = 0;
+
+/// The boundary-row launches since `clear`, in order.
+pub fn boundaries() []const Boundary {
+    return boundary_log[0..boundary_count];
+}
+
 pub fn clear() void {
     logged = 0;
+    boundary_count = 0;
 }
 
 pub fn nameAt(i: usize) []const u8 {
@@ -56,10 +77,28 @@ fn getGlobal(ptr: *abi.DevicePtr, len: *usize, _: abi.Module, _: [*:0]const u8) 
     return 0;
 }
 
-fn launch(f: abi.Function, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: abi.Stream, _: ?[*]?*anyopaque, _: ?[*]?*anyopaque) callconv(.c) abi.Result {
+fn word(comptime T: type, params: [*]?*anyopaque, at: usize) T {
+    const p: *const T = @ptrCast(@alignCast(params[at].?));
+    return p.*;
+}
+
+fn launch(f: abi.Function, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: abi.Stream, params: ?[*]?*anyopaque, _: ?[*]?*anyopaque) callconv(.c) abi.Result {
     if (logged == max_log) return 1;
-    names[logged] = @ptrCast(f.?);
+    const name: [*:0]const u8 = @ptrCast(f.?);
+    names[logged] = name;
     logged += 1;
+    const a = params orelse return 0;
+    const at = boundary_count;
+    if (at == max_boundaries) return 1;
+    // argument orders of the three launches in hip/launches/split_rows.zig
+    if (std.mem.eql(u8, std.mem.span(name), "tf_split_import_row")) {
+        boundary_log[at] = .{ .kind = .import, .window = word(u64, a, 0), .device = word(u64, a, 1), .n = @intCast(word(c_int, a, 2)) };
+    } else if (std.mem.eql(u8, std.mem.span(name), "tf_split_export_row")) {
+        boundary_log[at] = .{ .kind = .export_, .window = word(u64, a, 1), .device = word(u64, a, 0), .n = @intCast(word(c_int, a, 2)) };
+    } else if (std.mem.eql(u8, std.mem.span(name), "tf_split_consume_stamped")) {
+        boundary_log[at] = .{ .kind = .consume, .window = word(u64, a, 0), .seq = word(u32, a, 1), .device = word(u64, a, 2), .n = @intCast(word(c_int, a, 3)), .status = word(u64, a, 5) };
+    } else return 0;
+    boundary_count += 1;
     return 0;
 }
 

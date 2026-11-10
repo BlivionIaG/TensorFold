@@ -180,8 +180,9 @@ test "split stage: a ranged decode step is the unsplit step's slice plus its han
     }
 }
 
-/// A prompt span of `len` rows from position `pos0` over `m`'s range, logged.
-fn span(rig: *Rig, m: *const view.Model, hand: fwd.Handoff, len: usize, marks: *Marks) !Seq {
+/// A prompt span of `len` rows from position `pos0` over `m`'s range, logged; `head`: the last stage's projection of
+/// the last row and its argmax follow (`Engine.spanStage`).
+pub fn span(rig: *Rig, m: *const view.Model, hand: fwd.Handoff, len: usize, pos0: usize, head: bool, marks: *Marks) !Seq {
     var pool = try pages.Pool.init(gpa, rig.rt, m, 4, false);
     defer pool.deinit();
     var caches = try state.Caches.init(gpa, &pool, m, 256);
@@ -189,7 +190,12 @@ fn span(rig: *Rig, m: *const view.Model, hand: fwd.Handoff, len: usize, marks: *
     _ = try caches.grow(gpa, 256);
     fake.clear();
     marks.n = 0;
-    _ = try fwd.spanWith(rig.ops(), m, &caches, tokens_at, len, 64, marks.trace(), hand);
+    const o = rig.ops();
+    const hidden = try fwd.spanWith(o, m, &caches, tokens_at, len, pos0, marks.trace(), hand);
+    if (head and m.headed()) {
+        const y = try o.project(fwd.at(hidden, (len - 1) * m.spec.hidden), m.head.?, 1, false);
+        try o.argmaxRows(y, 1, m.head.?.n, argmax_at);
+    }
     return gpa.dupe([*:0]const u8, fake.launches());
 }
 
@@ -200,23 +206,29 @@ test "split stage: a ranged prompt span is the unsplit span's slice plus its han
     defer whole.deinit();
     var um: Marks = .{};
     const len = 3;
-    const u = try span(&rig, &whole.model, .{}, len, &um);
+    const u = try span(&rig, &whole.model, .{}, len, 64, false, &um);
     defer gpa.free(u);
     try T.expect(std.mem.indexOf(u8, std.mem.span(u[0]), "embed") != null);
     try T.expect(std.mem.indexOf(u8, std.mem.span(u[u.len - 1]), "rms") != null);
     for ([_]view.Range{ .{ .first = 0, .last = 16 }, .{ .first = 8, .last = 24 }, .{ .first = 16 }, .{ .first = 3, .last = 4 } }) |range| {
-        var f = try fake.Fixture.init(gpa, range, .f16);
-        defer f.deinit();
-        var rm: Marks = .{};
-        const r = try span(&rig, &f.model, handoff(&f.model, false), len, &rm);
-        defer gpa.free(r);
-        const a = range.first;
-        const b = range.within(32).last;
-        var want: std.ArrayList([*:0]const u8) = .empty;
-        defer want.deinit(gpa);
-        try want.append(gpa, if (a == 0) u[0] else "tf_split_import_row");
-        try want.appendSlice(gpa, u[if (a == 0) 1 else um.ends[a - 1]..um.ends[b - 1]]);
-        if (b == 32) try want.append(gpa, u[u.len - 1]) else try want.append(gpa, "tf_split_export_row");
-        try expectSeq(want.items, r);
+        // the rows come in plain (one import for all) or stamped (one consume launch a row)
+        for ([2]bool{ false, true }) |stamped| {
+            if (stamped and range.first == 0) continue;
+            var f = try fake.Fixture.init(gpa, range, .f16);
+            defer f.deinit();
+            var rm: Marks = .{};
+            const r = try span(&rig, &f.model, handoff(&f.model, stamped), len, 64, false, &rm);
+            defer gpa.free(r);
+            const a = range.first;
+            const b = range.within(32).last;
+            var want: std.ArrayList([*:0]const u8) = .empty;
+            defer want.deinit(gpa);
+            if (a == 0) try want.append(gpa, u[0]) else if (stamped) {
+                for (0..len) |_| try want.append(gpa, "tf_split_consume_stamped");
+            } else try want.append(gpa, "tf_split_import_row");
+            try want.appendSlice(gpa, u[if (a == 0) 1 else um.ends[a - 1]..um.ends[b - 1]]);
+            if (b == 32) try want.append(gpa, u[u.len - 1]) else try want.append(gpa, "tf_split_export_row");
+            try expectSeq(want.items, r);
+        }
     }
 }

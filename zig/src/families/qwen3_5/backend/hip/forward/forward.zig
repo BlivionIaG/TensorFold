@@ -47,15 +47,17 @@ pub const Handoff = struct {
     dst: u64 = 0,
 };
 
-/// The stamped hand-off of `metal_first` level B: every group's stamp must equal `seq` (re-read at most `retries`
-/// times each); the consume kernel stores 0 (ok) or 1 (timed out) in the u32 at `status`.
+/// The stamped hand-off of `metal_first`: every group's stamp must equal `seq` (re-read at most `retries` times each);
+/// each row's consume kernel stores 0 (ok) or 1 (timed out) in its own u32, row `r`'s at `status + 4 * r`.
 pub const Stamp = struct { seq: u32, status: u64, retries: u32 };
 
-/// `n` hidden values from the previous stage into `x` (the activation dtype).
-pub fn takeRows(o: Ops, hand: Handoff, x: Tensor, n: usize) Error!void {
-    const rows = hip.ops.split_rows;
-    if (hand.stamp) |st| return rows.consumeStamped(o, hand.src, st.seq, x, n, st.status, st.retries);
-    return rows.importRow(o, hand.src, x, n);
+/// `rows` hidden rows of `width` values from the previous stage into `x` (the activation dtype). Plain rows are
+/// contiguous f32; stamped rows each start on a group boundary (`split_rows.stampedBytes(width)` apart), one consume
+/// launch each, the only per-row work of a hand-off.
+pub fn takeRows(o: Ops, hand: Handoff, x: Tensor, rows: usize, width: usize) Error!void {
+    const split_rows = hip.ops.split_rows;
+    const st = hand.stamp orelse return split_rows.importRow(o, hand.src, x, rows * width);
+    for (0..rows) |r| try split_rows.consumeStamped(o, hand.src + r * split_rows.stampedBytes(width), st.seq, at(x, r * width), width, st.status + 4 * r, st.retries);
 }
 
 /// `n` residual values of `x` to the next stage, as f32.
@@ -84,7 +86,7 @@ pub fn spanWith(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64,
             try o.embedRows(m.embed.?, ids + start * 4, rows, at(x, start * s.hidden));
         }
     } else {
-        try takeRows(o, hand, x, len * s.hidden);
+        try takeRows(o, hand, x, len, s.hidden);
     }
     if (m.frame) |frame| {
         for (frame.runs) |run| if (run.clip(pos0, len, s.hidden)) |clip| {

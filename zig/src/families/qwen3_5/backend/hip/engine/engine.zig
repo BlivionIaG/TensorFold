@@ -15,6 +15,7 @@ const slicing = @import("../../../weights/slicing.zig");
 const reduce = hip.reduce;
 const round_graphs = @import("round_graphs.zig");
 const lane_round = @import("round.zig");
+const stage_steps = @import("stage.zig");
 const scratch = @import("scratch.zig");
 const mtp = @import("mtp.zig");
 const admission = hip.admission;
@@ -554,21 +555,11 @@ pub const Engine = struct {
         return token[0];
     }
 
-    /// A stage's prompt span of `len` rows from position `pos0` over its layers, recorded on the stream and not waited
-    /// for. The first stage reads `len` int32 token ids at the device address `input`; the others read their rows
-    /// through `hand` (`input` is not read). Returns the final-normed rows, or, short of the last layer, the residual
-    /// rows after the range's last layer, which `hand.dst` also receives as f32.
-    pub fn spanStage(e: *Engine, caches: *state.Caches, input: u64, len: usize, pos0: usize, hand: fwd.Handoff) !hip.ops.Tensor {
-        if (e.stopped) return error.GroupStopped;
-        if (len == 0 or pos0 + len > caches.total or len > e.o.prompt_rows) return error.PromptTooLong;
-        e.prompts.reset();
-        return fwd.spanWith(e.ops(&e.prompts), e.model(), caches, input, len, pos0, null, hand);
-    }
-
-    /// A stage's decode step of one row at position `pos`, recorded on the stream and not waited for (see `round.stage`).
-    pub fn stage(e: *Engine, caches: *state.Caches, pos: usize, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !?hip.ops.Tensor {
-        return lane_round.stage(e, caches, pos, tokens, hand, argmax_at);
-    }
+    /// A stage's prompt span of several rows, a decode step of one, and the plan buffers a stage records its steps with
+    /// (engine/stage.zig): recorded on the stream, not waited for.
+    pub const spanStage = stage_steps.span;
+    pub const stage = stage_steps.decode;
+    pub const newPlan = stage_steps.newPlan;
 
     /// Every window in one forward: `out` the token of every row; the round's snapshots live until its keeps flush.
     pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: []u32) !lane_round.Verified {

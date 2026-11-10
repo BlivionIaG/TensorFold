@@ -183,33 +183,6 @@ pub fn forwardOn(ops: hip.ops.Ops, m: *const view.Model, r: win.Round, trace: ?f
     return .{ .hidden = hidden, .y = y, .used = o.arena.used };
 }
 
-/// One decode step (one row, one slot) of the layers of `e`'s range over `caches` at slot `pos`, recorded on the
-/// engine's stream and not waited for: the plan words go up in the stream, then the forward. `tokens` is the device
-/// address of the u32 token id (layer 0's stage); `hand` the boundary rows of the stages that have one; `argmax_at` the
-/// device address of the i32 the head's greedy pick lands in (the last stage). Launches are eager: a graph would bake
-/// in `hand`'s sequence stamp and addresses, which change from step to step [INFERENCE: not measured].
-pub fn stage(e: *Engine, caches: *state.Caches, pos: usize, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !?hip.ops.Tensor {
-    const st = &e.round;
-    const m = e.model();
-    if (e.stopped) return error.GroupStopped;
-    if (pos >= caches.covered()) return error.ContextFull;
-    const none = [1]u32{0};
-    const rows = [1]Rows{.{ .caches = caches, .pos = pos, .tokens = &none }};
-    const shape = try shapeOf(e, &rows);
-    st.wins[0] = .{ .desc = caches.desc.base(), .pos = pos, .tokens = &none };
-    e.rounds.reset();
-    const o = e.ops(&e.rounds);
-    try win.kept(o, m, shape.rows, st.snaps);
-    const l = plan.Layout.of(shape.rows, shape.slots, m.spec.n_layers);
-    st.buffer.fill(l, shape, st.wins[0..1], st.scratch.desc.base(), st.snaps);
-    st.layout = l;
-    const words = st.buffer.dev.base();
-    const p: hip.plan_ops.Plan = .{ .args = st.buffer.args(l), .rows = shape.rows, .slots = shape.slots };
-    const r: win.Round = .{ .plan = p, .tokens = tokens, .span = shape.span, .inputs = st.snaps, .positions3 = words + 4 * l.rope, .rotary = words + 4 * l.rotary, .hand = hand };
-    try st.buffer.send(e.stream.handle, l);
-    return (try forwardOn(o, m, r, null, argmax_at)).y;
-}
-
 /// One round's forward as `choose` picked: replayed from the shape's graph, captured, or eager.
 fn run(e: *Engine, c: Chosen, r: win.Round) !round_graphs.Out {
     const entry = c.entry orelse return body(e, r);
