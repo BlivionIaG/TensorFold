@@ -199,7 +199,7 @@ pub fn main(init: std.process.Init) !void {
     defer half.deinit();
     const dev = half.dev.external();
     const hidden_bytes: usize = @as(usize, ref.hidden) * 4;
-    const window = try dev.allocWindow(pl.Pipeline.slotBytes(.{ .order = order, .hidden_bytes = hidden_bytes }) * 2);
+    const window = try dev.allocWindow(pl.Pipeline.windowBytes(.{ .order = order, .hidden_bytes = hidden_bytes }, 1));
     defer dev.freeWindow(window);
     var client: split.remote.Client = undefined;
     if (!unsplit) {

@@ -252,7 +252,7 @@ const Recorder = struct {
 const Host = struct {
     steps: usize = 0,
 
-    fn step(ptr: *anyopaque, seq: u32, _: []const u8, out: []u8, _: pipeline.Level) anyerror!usize {
+    fn step(ptr: *anyopaque, seq: u32, _: u32, _: []const u8, out: []u8, _: pipeline.Level) anyerror!usize {
         const h: *Host = @ptrCast(@alignCast(ptr));
         h.steps += 1;
         if (out.len >= wire.stampedLen(4 * 2560)) {
@@ -277,7 +277,7 @@ fn pipelineSteps(order: pipeline.Order, level: pipeline.Level, range: view.Range
     defer rec.deinit();
     const dev = rec.device();
     const cfg: pipeline.Config = .{ .order = order, .level = level, .hidden_bytes = 4 * 2560 };
-    const window = try dev.allocWindow(2 * pipeline.Pipeline.slotBytes(cfg));
+    const window = try dev.allocWindow(pipeline.Pipeline.windowBytes(cfg, 1));
     var scratch: [4 * 2560]u8 = undefined;
     var host: Host = .{};
     const peer: ?pipeline.Peer = if (order == .external_only) null else .{ .ptr = &host, .step = Host.step, .finish = Host.finish };
@@ -325,7 +325,7 @@ test "split stage: a stage refuses a step that does not fit its range" {
     defer rec.deinit();
     const dev = rec.device();
     const cfg: pipeline.Config = .{ .order = .metal_first, .hidden_bytes = 4 * 2560 };
-    const window = try dev.allocWindow(2 * pipeline.Pipeline.slotBytes(cfg));
+    const window = try dev.allocWindow(pipeline.Pipeline.windowBytes(cfg, 1));
     const n = pipeline.Pipeline.slotBytes(cfg);
     var scratch: [4 * 2560]u8 = undefined;
     const io: pipeline.StepIo = .{ .in = .init(window.ptr, n), .out = .init(window.ptr + n, n), .seq = 1, .stamped = true, .retries = 10, .scratch = &scratch, .hidden_bytes = 4 * 2560 };
