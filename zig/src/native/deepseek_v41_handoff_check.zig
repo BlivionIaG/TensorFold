@@ -229,6 +229,7 @@ fn graft(m: *ds.Model, native: *const ds.Model.Snapshot, landed: *ds.Model.Snaps
 /// TF_DSV41_HANDOFF_BISECT: the native state with one part kind (window rings, carries, pool rows, index keys) taken from the
 /// hand-off and the rest the local prefill's own, each compared with the local run: which part moves the logits.
 fn bisect(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, prompt: []const u32, upto: u32, ref_picks: []const u32, ref: []const f32, steps: usize) !void {
+    try compareRows(m, a, native, landed, upto);
     inline for (comptime std.meta.tags(Part)) |part| {
         const hybrid = try graft(m, native, landed, part, upto);
         defer m.snapshotDrop(hybrid);
@@ -237,5 +238,49 @@ fn bisect(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snapshot, 
         const first = (try feed(m, a, prompt[upto..], true)).?;
         const rows = try decode(m, a, first, ref_picks, steps, try a.alloc(u32, steps));
         compare("only " ++ @tagName(part) ++ " from the hand-off", ref, rows, steps);
+    }
+}
+
+fn bf(h: u16) f64 {
+    return @floatCast(@as(f32, @bitCast(@as(u32, h) << 16)));
+}
+
+/// The landed state's rows against the native ones, both read back as the hand-off's bf16 parts: per part kind, the relative
+/// RMS error of each part (`|landed - native|` over `|native|`), its mean and its worst, with the layer that has it. Rows that
+/// are one ring slot or one position out of place would show here as errors of order 1.
+fn compareRows(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, upto: u32) !void {
+    const want = try ho.export_metal.build(a, .{ .upto = upto }, remote.packedOf(m, @constCast(native)));
+    const got = try ho.export_metal.build(a, .{ .upto = upto }, remote.packedOf(m, landed));
+    inline for (comptime std.meta.tags(Part)) |kind| {
+        var sum: f64 = 0;
+        var worst: f64 = 0;
+        var worst_layer: u32 = 0;
+        var n: usize = 0;
+        for (want, got) |w, g| {
+            if (!std.mem.eql(u8, @tagName(w.spec.kind), @tagName(kind))) continue;
+            var err: f64 = 0;
+            var ref_sq: f64 = 0;
+            if (w.spec.dtype == .f32) {
+                for (0..w.bytes.len / 4) |i| {
+                    const x: f64 = @as(f32, @bitCast(std.mem.readInt(u32, w.bytes[i * 4 ..][0..4], .little)));
+                    const y: f64 = @as(f32, @bitCast(std.mem.readInt(u32, g.bytes[i * 4 ..][0..4], .little)));
+                    err += (x - y) * (x - y);
+                    ref_sq += x * x;
+                }
+            } else for (0..w.bytes.len / 2) |i| {
+                const x = bf(std.mem.readInt(u16, w.bytes[i * 2 ..][0..2], .little));
+                const y = bf(std.mem.readInt(u16, g.bytes[i * 2 ..][0..2], .little));
+                err += (x - y) * (x - y);
+                ref_sq += x * x;
+            }
+            const r = if (ref_sq > 0) @sqrt(err / ref_sq) else 0;
+            sum += r;
+            n += 1;
+            if (r > worst) {
+                worst = r;
+                worst_layer = w.spec.layer;
+            }
+        }
+        if (n > 0) log.info("rows {s}: {d} parts, relative RMS vs the local prefill's: mean {d:.4}, worst {d:.4} (layer {d})", .{ @tagName(kind), n, sum / @as(f64, @floatFromInt(n)), worst, worst_layer });
     }
 }
