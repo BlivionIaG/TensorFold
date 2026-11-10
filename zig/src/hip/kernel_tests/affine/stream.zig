@@ -18,7 +18,7 @@ const pinned_f16_gfx900: u64 = 0x19fdf3b06c3a5b4f;
 const pinned_f16_gfx900_flush: u64 = 0xbfd29f54a3b90d6a;
 const pinned_bf16: u64 = 0x6b703ab847138aad;
 
-/// Row counts: one row a block (the staged tile of gfx900), two, a partial block of four, a partial block of four, and the y blocks above.
+/// Row counts: one row a block (the staged tile of gfx900), two, a partial block of four, and the y blocks above.
 const row_counts = [_]usize{ 1, 2, 3, 5, 16 };
 
 /// How a launch writes: fp32, the activation type, silu(gate) * up of a stacked pair, or fp32 of a two-expert plan.
