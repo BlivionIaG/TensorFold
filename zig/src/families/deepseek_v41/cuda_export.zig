@@ -30,6 +30,16 @@ pub const State = struct {
     pages: []const Pages,
 };
 
+/// A state read back from the engine, held until `Source.release`.
+pub const Captured = struct { ctx: *anyopaque, state: State };
+
+/// Where a state comes from: the engine's active slot at `at` tokens (a device read), or a test's synthetic one.
+pub const Source = struct {
+    ptr: *anyopaque,
+    take: *const fn (ptr: *anyopaque, gpa: std.mem.Allocator, at: u64) anyerror!Captured,
+    release: *const fn (ctx: *anyopaque) void,
+};
+
 /// An export and everything it reads: the converted parts live in `arena` until `deinit`.
 pub const Built = struct {
     arena: std.heap.ArenaAllocator,

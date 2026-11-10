@@ -166,6 +166,19 @@ pub const Lanes = struct {
         try x.pass.ingest(st.slot, start + span.skip, taps, mapped[0..span.count]);
     }
 
+    /// A hand-off's export point (core/lane_export.zig): the stream's mark hook, called where the target stands after the
+    /// prompt's tokens but the last (this backend cuts no chunks: the target calls it at its own cut).
+    const Cut = struct {
+        s: *Stream,
+        at: u32,
+
+        fn run(ptr: *anyopaque) void {
+            const c: *Cut = @ptrCast(@alignCast(ptr));
+            const k = c.s.reuse.hook orelse return;
+            k.at(k.ptr, c.s, c.at);
+        }
+    };
+
     fn prefill(ptr: *anyopaque, s: *Stream) anyerror!void {
         const x = self(ptr);
         if (x.streams.get(s) != null) return error.StreamLive;
@@ -187,6 +200,10 @@ pub const Lanes = struct {
         x.policy.depth.reset(slot);
         const ids = s.prompt();
         x.target.admit(slot, s.max_new);
+        var cut: Cut = .{ .s = s, .at = @intCast(ids.len -| 1) };
+        const exporting = ids.len >= 2 and s.reuse.hook != null and std.mem.indexOfScalar(u32, s.reuse.marks, cut.at) != null;
+        if (exporting) x.target.arm(slot, .{ .ptr = &cut, .run = Cut.run });
+        defer if (exporting) x.target.arm(slot, null);
         st.first = try x.target.prefill(slot, ids, s.sampling, ids.len);
         st.len = ids.len;
         _ = x.scratch.reset(.retain_capacity);
