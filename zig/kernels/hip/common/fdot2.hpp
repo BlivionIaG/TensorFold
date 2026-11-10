@@ -11,10 +11,10 @@
 //              on fp16 x (a denormal x flushed, ~10% faster decode)   0: converts and fuses
 //   TF_G9_FOLD  1: the stream tile leaves the 1024 of its code pairs to the group's bias (not the same bits)    0: subtracts it per pair
 //   TF_G9_ANDOR 1: the stream tile's code pairs by v_and_or_b32 (quant/mlx_decoder.hpp)     0: the compiler's and + or
-//   TF_G9_REPAIR 1: the stream tile replays a non-finite sum in fp64, inline for each column (upstream's form)   2: one cold site for all the columns
-//                0: no replay (measurement only: a NaN or inf sum is then returned as it is)
+//   TF_G9_REPAIR 2: the stream tile replays a non-finite sum in fp64 at one cold site for all its columns (+1 tok/s: the unrolled form copies the
+//                replay CB times into the kernel)   1: inline for each column (upstream's form)   0: no replay (measurement only: a NaN or inf sum is then returned as it is)
 #ifndef TF_G9_REPAIR
-#define TF_G9_REPAIR 1
+#define TF_G9_REPAIR 2
 #endif
 #ifndef TF_G9_MIX
 #define TF_G9_MIX 2
