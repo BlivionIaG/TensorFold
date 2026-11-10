@@ -199,7 +199,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
             problem.* = "TF_DSV41_HANDOFF_FILE and --prefill-from both name a remote source: use one";
             return error.InvalidEnvironment;
         }
-        h.file = try remote.FileSource.open(gpa, io, model_ptr, std.mem.span(path));
+        h.file = try remote.FileSource.open(gpa, io, model_ptr, std.mem.span(path), try remote.checkpointId(a, io, o.dir));
         h.host.remote = h.file.?.source();
         h.host.keep_remote = try remote.keeps();
     }

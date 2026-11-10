@@ -104,6 +104,29 @@ pub const Pull = struct {
     }
 };
 
+/// Decimal token ids, white space or commas (a JSON array reads too).
+pub fn parseIds(a: std.mem.Allocator, text: []const u8) ![]u32 {
+    var out: std.ArrayList(u32) = .empty;
+    errdefer out.deinit(a);
+    var it = std.mem.tokenizeAny(u8, text, " \t\r\n,[]");
+    while (it.next()) |w| try out.append(a, try std.fmt.parseInt(u32, w, 10));
+    return out.toOwnedSlice(a);
+}
+
+/// A hand-off file: the library's blob, or a producer's stream (`<id>.mkvh2`, with the exported prefix's ids in `<id>.tokens.json`
+/// beside it) replayed through the decoder's checks for `checkpoint`.
+pub fn loadFile(a: std.mem.Allocator, io: std.Io, path: []const u8, checkpoint: []const u8) !ho.blob.Blob {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(8 << 30));
+    if (!std.mem.endsWith(u8, path, ho.file.extension)) return ho.blob.Blob.parse(a, bytes);
+    const ids = try std.fmt.allocPrint(a, "{s}.tokens.json", .{path[0 .. path.len - ho.file.extension.len]});
+    const tokens = try parseIds(a, try std.Io.Dir.cwd().readFileAlloc(io, ids, a, .limited(64 << 20)));
+    var reason: fabric.decoder.Reason = .{};
+    return ho.blob.fromStream(a, bytes, .{ .model = checkpoint, .tokens = tokens, .protocol = fabric.wire.recurrent_version }, &reason) catch |err| {
+        if (reason.len > 0) std.log.err("hand-off stream {s}: the producer said: {s}", .{ path, reason.text() });
+        return err;
+    };
+}
+
 /// TF_DSV41_HANDOFF_FILE: a hand-off file (families/deepseek_v41/handoff/blob.zig) as the remote source, with no network:
 /// a prompt that extends the file's tokens gets that prefix landed from it; any other prompt is prefilled here. It runs the
 /// lane host's own remote path (`wants`, `fill`, the restore in `Backend.prefill`, `drop`, the keep rule) against a file.
@@ -114,13 +137,13 @@ pub const FileSource = struct {
     blob: ho.blob.Blob,
     running: std.atomic.Value(u32) = .init(0),
 
-    pub fn open(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, path: []const u8) !*FileSource {
+    pub fn open(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, path: []const u8, checkpoint: []const u8) !*FileSource {
         const f = try gpa.create(FileSource);
         errdefer gpa.destroy(f);
         f.* = .{ .gpa = gpa, .model = m, .arena = .init(gpa), .blob = undefined };
         errdefer f.arena.deinit();
         const a = f.arena.allocator();
-        f.blob = try ho.blob.Blob.parse(a, try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(8 << 30)));
+        f.blob = try loadFile(a, io, path, checkpoint);
         return f;
     }
 

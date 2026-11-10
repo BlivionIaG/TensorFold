@@ -42,13 +42,7 @@ fn nrms(a: []const f32, b: []const f32) f64 {
 }
 
 fn readTokens(a: std.mem.Allocator, io: std.Io, path: []const u8) ![]u32 {
-    const text = try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(64 << 20));
-    defer a.free(text);
-    var out: std.ArrayList(u32) = .empty;
-    errdefer out.deinit(a);
-    var it = std.mem.tokenizeAny(u8, text, " \t\r\n,[]");
-    while (it.next()) |w| try out.append(a, try std.fmt.parseInt(u32, w, 10));
-    return out.toOwnedSlice(a);
+    return remote.parseIds(a, try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(64 << 20)));
 }
 
 /// `ids` through slot 0 in workspace-sized chunks; the last chunk's final row (copied) when `last`.
@@ -105,7 +99,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8, c
     const a = arena_state.allocator();
     const steps: usize = if (envText("TF_DSV41_HANDOFF_STEPS")) |s| try std.fmt.parseInt(usize, s, 10) else 16;
     const round = std.mem.eql(u8, spec, "roundtrip");
-    const file: ?ho.blob.Blob = if (round) null else try ho.blob.Blob.parse(a, try std.Io.Dir.cwd().readFileAlloc(io, spec, a, .limited(8 << 30)));
+    const file: ?ho.blob.Blob = if (round) null else try remote.loadFile(a, io, spec, checkpoint);
     var prompt: []u32 = if (envText("TF_DSV41_HANDOFF_TOKENS")) |p| try readTokens(a, io, p) else blk: {
         const n: usize = if (file) |f| f.tokens.len + 64 else 1500;
         const t = try a.alloc(u32, n);
