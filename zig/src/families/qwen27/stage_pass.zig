@@ -33,19 +33,26 @@ fn run(s: *forward.Stages, lane: *core.segments.Lane) anyerror!void {
     try s.finish(lane);
 }
 
-/// Encode the next position of `slot` for `r`'s range into `relay`'s parked command buffer; the caller opens the
-/// ticket once the input row is in place. `id` is the token a range that embeds reads (any id for one that does not).
-/// An encoding error ends the runner and the relay's pass; a GPU failure shows at the ticket.
-pub fn launch(r: *Runner, relay: *mtl.Relay, slot: u32, id: u32, io: forward.Io) !mtl.Ticket {
+/// The most positions one launch carries (the pipeline's `max_rows_limit`).
+const max_chain = 256;
+
+/// Encode the next `ids.len` consecutive positions of `slot` for `r`'s range into `relay`'s parked command buffer; the
+/// caller opens the ticket once the input rows are in place. `ids` are the tokens a range that embeds reads (any ids for
+/// one that does not). One position is a decode step; more are a prompt chunk, run with the prompt kernels as
+/// `Session.promptChunk` runs it. An encoding error ends the runner and the relay's pass; a GPU failure shows at the ticket.
+pub fn launch(r: *Runner, relay: *mtl.Relay, slot: u32, ids: []const u32, io: forward.Io) !mtl.Ticket {
     const m = r.model;
     if (r.failed or r.active != null or slot >= r.ready) return error.RoundNotReady;
-    const ids = [1]u32{id};
-    var round = try Round.init(r.allocator, &.{.{ .slot = slot, .start = r.offsets[slot], .capacity = r.capacity, .ids = &ids }}, @intCast(m.config.conv_kernel), r.slots, @intCast(m.shard.global.vocab));
+    if (ids.len == 0 or ids.len > m.frame.capacity or ids.len > max_chain) return error.BadFrameRows;
+    m.kernels.prompt = ids.len > 1;
+    defer m.kernels.prompt = false;
+    var round = try Round.init(r.allocator, &.{.{ .slot = slot, .start = r.offsets[slot], .capacity = r.capacity, .ids = ids }}, @intCast(m.config.conv_kernel), r.slots, @intCast(m.shard.global.vocab));
     defer round.deinit();
-    try r.cover(slot, round.windows[0].start + 1);
-    const row = [1]u32{0};
-    const paths = [1][]const u32{&row};
-    var recurrent = try round.recurrent(try r.params(1), &paths);
+    try r.cover(slot, round.windows[0].start + @as(u32, @intCast(ids.len)));
+    var chain: [max_chain]u32 = undefined;
+    for (chain[0..ids.len], 0..) |*c, i| c.* = @intCast(i);
+    const paths = [1][]const u32{chain[0..ids.len]};
+    var recurrent = try round.recurrent(try r.params(ids.len), &paths);
     defer recurrent.deinit();
     var attention_plan = try r.attentionPlan(&round);
     defer attention_plan.deinit();
@@ -64,7 +71,7 @@ pub fn launch(r: *Runner, relay: *mtl.Relay, slot: u32, id: u32, io: forward.Io)
     }
     var stages = forward.Stages{
         .model = m,
-        .rows = 1,
+        .rows = @intCast(ids.len),
         .hooks = .{ .ptr = r, .gdn = Runner.gdnForward, .attention = Runner.attentionForward },
         .head = if (r.range.head(m.config.layers)) .last else .none,
         .range = r.range,
@@ -80,6 +87,6 @@ pub fn launch(r: *Runner, relay: *mtl.Relay, slot: u32, id: u32, io: forward.Io)
         relay.abort();
         return err;
     }
-    r.offsets[slot] += 1;
+    r.offsets[slot] += @intCast(ids.len);
     return ticket;
 }

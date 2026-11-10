@@ -54,21 +54,28 @@ pub fn main(init: std.process.Init) !void {
 
     const real = Real{ .io = io, .dir = dir };
     const src = h.Source{ .ctx = &real, .load = load, .layers = 32 };
-    const want = try a.alloc(u32, 32);
-    defer a.free(want);
+    // the gate's prompts: 12 or more tokens each, so that chunks of five make a full chunk and a short last one
+    const texts = [2][]const u8{ "The three primary colors are red, yellow and blue, and the three secondary colors are", "Water boils at one hundred degrees Celsius at sea level, and the capital of France is" };
+    const ids0 = try tok.encode(a, texts[0]);
+    defer a.free(ids0);
+    const ids1 = try tok.encode(a, texts[1]);
+    defer a.free(ids1);
+    std.debug.print("qwen27 split gate prompts: {d} and {d} tokens, chunks of {d}\n", .{ ids0.len, ids1.len, h.chunk_size });
     var report = h.Report{};
-    {
-        const m = try load(&real, a, .{ .first = 0, .last = src.layers });
-        defer m.deinit();
-        const t = try h.unsplit(a, m, prompt, want);
-        report.unsplit_ns = t.ns / t.steps;
-        const out = try tok.decode(a, want, true);
+    const m = try load(&real, a, .{ .first = 0, .last = src.layers });
+    const c0 = try h.reference(a, m, ids0, 32, &report);
+    defer h.freeCase(a, c0);
+    const c1 = try h.reference(a, m, ids1, 32, null);
+    defer h.freeCase(a, c1);
+    m.deinit();
+    for ([2]h.Case{ c0, c1 }, texts) |c, label| {
+        const out = try tok.decode(a, c.single, true);
         defer a.free(out);
-        std.debug.print("qwen27 unsplit reference (token-by-token prompt): {d:.2} ms/position, \"{s}\"\n", .{ @as(f64, @floatFromInt(report.unsplit_ns)) / 1e6, out });
+        std.debug.print("qwen27 unsplit reference \"{s}\" -> \"{s}\" ({d:.2} ms/position token by token)\n", .{ label, out, @as(f64, @floatFromInt(report.unsplit_ns)) / 1e6 });
     }
-    try h.cuts(a, src, &.{ 1, 8, 16, 31 }, prompt, want, &report);
+    try h.cuts(a, src, &.{ 1, 8, 16, 31 }, .{ c0, c1 }, &report);
     const split_ns = report.split_ns / report.split_steps;
-    std.debug.print("qwen27 split: {d} runs token-identical; {d:.2} ms/position split against {d:.2} unsplit\n", .{ report.runs, @as(f64, @floatFromInt(split_ns)) / 1e6, @as(f64, @floatFromInt(report.unsplit_ns)) / 1e6 });
+    std.debug.print("qwen27 split: {d} decode, {d} chunked and {d} two-sequence runs identical; {d:.2} ms/position split against {d:.2} unsplit\n", .{ report.runs, report.chunked_runs, report.stream_runs, @as(f64, @floatFromInt(split_ns)) / 1e6, @as(f64, @floatFromInt(report.unsplit_ns)) / 1e6 });
 }
 
 fn nsNow() u64 {
