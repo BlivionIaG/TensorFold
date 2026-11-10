@@ -516,7 +516,11 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
         .link_libc = true,
         .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "split", .module = split } },
     });
+    const offload_options = b.addOptions();
+    offload_options.addOption(bool, "with_hip", false);
+    split_metal.addOptions("offload_options", offload_options);
     const offload_exe = b.addExecutable(.{ .name = "tf-offload", .root_module = split_metal });
+    hip_build.offloadExe(b, target, optimize, metal);
     b.step("tf-offload", "tf-offload probe | plan | demo: TB4 external-GPU offload (mock device on this build)").dependOn(&b.addInstallArtifact(offload_exe, .{}).step);
     const split_tests = b.step("test-split", "TB4 offload: protocol, planner, mock device, layer pipeline, Metal window and relay");
     for ([_]*std.Build.Module{ split, split_metal }) |m| {

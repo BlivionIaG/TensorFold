@@ -1,8 +1,10 @@
-//! tf-offload: `probe`, `plan` and `demo` on a Metal host. The only external device this build opens is the CPU mock;
-//! the HIP build (`tf-offload-hip`) adds a card. `demo` runs the toy layer pipeline between the mock device and Metal.
+//! tf-offload: `probe`, `plan` and `demo` on a Metal host. `tf-offload` opens only the CPU mock device; `tf-offload-hip`
+//! (same file, `with_hip`) adds a HIP card through hipmac. `demo` runs the toy layer pipeline between the mock device
+//! and Metal.
 const std = @import("std");
 const metal = @import("metal");
 const split = @import("split");
+const options = @import("offload_options");
 const metal_probe = @import("metal_probe.zig");
 const metal_toy = @import("metal_toy.zig");
 
@@ -14,7 +16,37 @@ fn openMock(gpa: std.mem.Allocator, _: c_int) anyerror!split.device.ExternalDevi
     return m.external();
 }
 
-pub const backends = [_]split.cli.Backend{.{ .name = "mock", .open = openMock }};
+/// The HIP card at `index`: the runtime stays open for the life of the process (the device borrows it).
+fn openHip(gpa: std.mem.Allocator, index: c_int) anyerror!split.device.ExternalDevice {
+    const hip = @import("hip");
+    const rt = try gpa.create(hip.Runtime);
+    rt.* = try hip.Runtime.open();
+    var arch_buf: [64]u8 = undefined;
+    const arch = try hip.Device.archName(rt, index, &arch_buf);
+    const peak = peakBandwidth(arch) orelse return error.UnknownPeakBandwidth;
+    const d = try hip.offload.HipExternal.create(gpa, rt, index, .{ .peak_bandwidth = peak, .pump_mock = hipmacMock() });
+    return d.external();
+}
+
+/// hipmac's mock backend (no card) runs a stream only while it is synchronized, so the adapter pumps it.
+fn hipmacMock() bool {
+    const v = std.c.getenv("HIPMAC_BACKEND") orelse return false;
+    return std.mem.eql(u8, std.mem.span(v), "mock");
+}
+
+/// Datasheet memory bandwidth by architecture, bytes a second; the planner scales it by a measured efficiency. gfx900 is
+/// the Vega 56's 410 GB/s (the Vega 64 has 484). Cards not listed need a row here, with its datasheet number.
+fn peakBandwidth(arch: []const u8) ?u64 {
+    if (std.mem.startsWith(u8, arch, "gfx900")) return 410_000_000_000;
+    if (std.mem.startsWith(u8, arch, "gfx1100")) return 960_000_000_000;
+    if (std.mem.startsWith(u8, arch, "gfx1151")) return 256_000_000_000;
+    return null;
+}
+
+pub const backends = if (options.with_hip)
+    [_]split.cli.Backend{ .{ .name = "mock", .open = openMock }, .{ .name = "hip", .open = openHip } }
+else
+    [_]split.cli.Backend{.{ .name = "mock", .open = openMock }};
 
 const demo_usage = "usage: tf-offload demo [--order external_first|metal_first] [--level a|b] [--split K] [--tokens N]\n";
 
