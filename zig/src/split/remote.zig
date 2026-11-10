@@ -27,6 +27,9 @@ const Request = extern struct {
     level: u8 = 0,
     stream: u16 = 0,
     rows: u32 = 1,
+    /// The sequences of a step (`StepIo.slots`): `nslots` of them in `slots`.
+    nslots: u8 = 1,
+    slots: [pipeline.max_slots]u8 = @splat(0),
     seq: u32 = 0,
     len: u32 = 0,
     a: u64 = 0,
@@ -154,11 +157,17 @@ pub const Client = struct {
         return .{ .ptr = &cl.lanes[stream], .step = stepFn, .finish = finishFn };
     }
 
-    fn stepFn(ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+    fn stepFn(ptr: *anyopaque, seq: u32, slots: []const u8, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const lane: *Lane = @ptrCast(@alignCast(ptr));
         const cl = lane.client;
-        const req: Request = .{ .op = @backingInt(Op.step), .level = @backingInt(level), .stream = lane.stream, .rows = rows, .seq = seq, .len = @intCast(out.len), .a = try cl.offsetOf(input), .b = input.len, .d = try cl.offsetOf(out) };
+        const req: Request = .{ .op = @backingInt(Op.step), .level = @backingInt(level), .stream = lane.stream, .rows = rows, .nslots = @intCast(slots.len), .slots = slotWords(slots), .seq = seq, .len = @intCast(out.len), .a = try cl.offsetOf(input), .b = input.len, .d = try cl.offsetOf(out) };
         return (try cl.call(req)).n;
+    }
+
+    fn slotWords(slots: []const u8) [pipeline.max_slots]u8 {
+        var w: [pipeline.max_slots]u8 = @splat(0);
+        @memcpy(w[0..slots.len], slots);
+        return w;
     }
 
     fn finishFn(ptr: *anyopaque, seq: u32) anyerror!void {
@@ -239,9 +248,9 @@ pub fn serveOver(fd: c_int, host: Host) Error!void {
                 const w = window orelse return error.BadMessage;
                 if (req.d + req.len > w.len or req.a + req.b > w.len) return error.BadMessage;
                 const level: pipeline.Level = if (req.level == 0) .a else .b;
-                if (req.stream >= host.peers.len) return error.BadMessage;
+                if (req.stream >= host.peers.len or req.nslots == 0 or req.nslots > pipeline.max_slots) return error.BadMessage;
                 const pe = host.peers[req.stream];
-                if (pe.step(pe.ptr, req.seq, req.rows, w[req.a..][0..req.b], w[req.d..][0..req.len], level)) |n| reply.n = @intCast(n) else |err| {
+                if (pe.step(pe.ptr, req.seq, req.slots[0..req.nslots], req.rows, w[req.a..][0..req.b], w[req.d..][0..req.len], level)) |n| reply.n = @intCast(n) else |err| {
                     std.debug.print("split remote: step {d}: {s}\n", .{ req.seq, @errorName(err) });
                     reply.status = 1;
                 }
@@ -288,6 +297,7 @@ const Adder = struct {
     resets: u32 = 0,
     last_level: pipeline.Level = .a,
     last_rows: u32 = 0,
+    last_slots: usize = 0,
     finished: u32 = 0,
 
     peers: [2]pipeline.Peer = undefined,
@@ -305,9 +315,10 @@ const Adder = struct {
     fn reset(ptr: *anyopaque) anyerror!void {
         @as(*Adder, @ptrCast(@alignCast(ptr))).resets += 1;
     }
-    fn step(ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+    fn step(ptr: *anyopaque, seq: u32, slots: []const u8, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const a: *Adder = @ptrCast(@alignCast(ptr));
         a.last_rows = rows;
+        a.last_slots = slots.len;
         if (seq == 99) return error.Boom;
         a.last_level = level;
         for (input, 0..) |b, i| out[i] = b +% 1;
@@ -351,23 +362,26 @@ test "a step, a finish and a reset cross a socket pair; the window is the same m
 
     const p = cl.peer();
     @memcpy(cl.window[0..4], &[4]u8{ 1, 2, 3, 4 });
-    const n = try p.step(p.ptr, 7, 1, cl.window[0..4], cl.window[64..68], .b);
+    const n = try p.step(p.ptr, 7, &.{0}, 1, cl.window[0..4], cl.window[64..68], .b);
     try std.testing.expectEqual(@as(usize, 4), n);
     try std.testing.expectEqualSlices(u8, &.{ 2, 3, 4, 5 }, cl.window[64..68]);
     try p.finish(p.ptr, 7);
     try cl.reset();
-    try std.testing.expectError(error.PeerFailed, p.step(p.ptr, 99, 1, cl.window[0..4], cl.window[64..68], .a));
+    try std.testing.expectError(error.PeerFailed, p.step(p.ptr, 99, &.{0}, 1, cl.window[0..4], cl.window[64..68], .a));
     // the rows of a chunk travel as a count
-    try std.testing.expectEqual(@as(usize, 4), try p.step(p.ptr, 8, 3, cl.window[0..4], cl.window[64..68], .a));
+    try std.testing.expectEqual(@as(usize, 4), try p.step(p.ptr, 8, &.{0}, 3, cl.window[0..4], cl.window[64..68], .a));
     try std.testing.expectEqual(@as(u32, 3), adder.last_rows);
+    // a decode batch names its sequences
+    try std.testing.expectEqual(@as(usize, 4), try p.step(p.ptr, 8, &.{ 2, 0, 5 }, 3, cl.window[0..4], cl.window[64..68], .a));
+    try std.testing.expectEqual(@as(usize, 3), adder.last_slots);
     // a second stage answers to its own number
     const p1 = cl.peerOf(1);
-    try std.testing.expectEqual(@as(usize, 4), try p1.step(p1.ptr, 1, 1, cl.window[0..4], cl.window[64..68], .a));
+    try std.testing.expectEqual(@as(usize, 4), try p1.step(p1.ptr, 1, &.{0}, 1, cl.window[0..4], cl.window[64..68], .a));
     try p1.finish(p1.ptr, 1);
     try std.testing.expectEqual(@as(u32, 2), adder.finished);
     // bytes outside the window are refused before they are sent
     var stray: [4]u8 = undefined;
-    try std.testing.expectError(error.BadMessage, p.step(p.ptr, 9, 1, &stray, cl.window[64..68], .a));
+    try std.testing.expectError(error.BadMessage, p.step(p.ptr, 9, &.{0}, 1, &stray, cl.window[64..68], .a));
     _ = c.shutdown(pair[0], c.SHUT.WR);
     thread.join();
     try std.testing.expectEqual(@as(u32, 1), adder.resets);
