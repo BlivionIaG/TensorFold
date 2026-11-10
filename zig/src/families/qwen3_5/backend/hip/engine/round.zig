@@ -188,7 +188,7 @@ pub fn forwardOn(ops: hip.ops.Ops, m: *const view.Model, r: win.Round, trace: ?f
 /// address of the u32 token id (layer 0's stage); `hand` the boundary rows of the stages that have one; `argmax_at` the
 /// device address of the i32 the head's greedy pick lands in (the last stage). Launches are eager: a graph would bake
 /// in `hand`'s sequence stamp and addresses, which change from step to step [INFERENCE: not measured].
-pub fn stage(e: *Engine, caches: *state.Caches, pos: usize, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !void {
+pub fn stage(e: *Engine, caches: *state.Caches, pos: usize, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !?hip.ops.Tensor {
     const st = &e.round;
     const m = e.model();
     if (e.stopped) return error.GroupStopped;
@@ -207,7 +207,7 @@ pub fn stage(e: *Engine, caches: *state.Caches, pos: usize, tokens: u64, hand: f
     const p: hip.plan_ops.Plan = .{ .args = st.buffer.args(l), .rows = shape.rows, .slots = shape.slots };
     const r: win.Round = .{ .plan = p, .tokens = tokens, .span = shape.span, .inputs = st.snaps, .positions3 = words + 4 * l.rope, .rotary = words + 4 * l.rotary, .hand = hand };
     try st.buffer.send(e.stream.handle, l);
-    _ = try forwardOn(o, m, r, null, argmax_at);
+    return (try forwardOn(o, m, r, null, argmax_at)).y;
 }
 
 /// One round's forward as `choose` picked: replayed from the shape's graph, captured, or eager.
