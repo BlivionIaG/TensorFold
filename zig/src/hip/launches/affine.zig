@@ -83,6 +83,7 @@ pub const stream_waves = 4; // kStreamWaves
 pub const streams_wanted = 3000; // kStreamWavesWanted
 pub const stream_code_words = 32; // kStreamCodeWords
 const gcn5_stage_bytes = 12 << 10; // the most a gfx900 block stages at one row
+const gcn5_stage_rows_bytes = 22 << 10; // and at two or four rows
 const stage_bytes_max = 32 << 10; // the most LDS a block stages x in
 const stage_flag: c_int = 0x100; // the bit of the launch's lpc_log2 that tells the gfx900 stream tile to stage x
 
@@ -266,12 +267,15 @@ pub const Kernels = struct {
         try hl.launch(f, .{ .grid = grid, .block = block, .shared = shared }, .{ .r = r, .handle = s }, args);
     }
 
-    /// LDS bytes a gfx900 block stages its row of x in, 0 for none (tiles/stream.hpp stream_stage): a one-row launch while the stage is small
-    /// (5.8 KB at k = 2560, 9.2 KB at 4096; not at k = 9216, 19.5 KB: 3 blocks a CU, 92 us staged, 66 unstaged). Other GPUs' tiles do not stage.
+    /// LDS bytes a gfx900 block stages its `rows` rows of x in, 0 for none (tiles/stream.hpp stream_stage): while the stage is small. One row:
+    /// 5.8 KB at k = 2560, 9.2 KB at 4096; not at k = 9216, 19.5 KB: 3 blocks a CU, 92 us staged, 66 unstaged. Several rows (`rows` the row
+    /// tile's, 2 or 4): up to 22 KB, two blocks a CU. Other GPUs' tiles do not stage.
     pub fn stageBytes(k: *const Kernels, rows: c_int, depth: c_int) u32 {
-        if (k.caps.generation != .gcn5 or !k.stage_on or rows != 1) return 0;
+        // four rows measured slower staged (N = 4 streams 43 -> 48 ms a round): their 107 VGPRs and the stage's barrier outweigh the x loads saved
+        if (k.caps.generation != .gcn5 or !k.stage_on or (rows > 2 and k.tune.stage < 0)) return 0;
         const bytes = @as(i64, rows) * (2 * @as(i64, depth) + @divTrunc(depth, 32) * 4);
-        const repays = if (k.tune.stage >= 0) k.tune.stage == 1 else bytes <= gcn5_stage_bytes;
+        const limit: i64 = if (rows == 1) gcn5_stage_bytes else gcn5_stage_rows_bytes;
+        const repays = if (k.tune.stage >= 0) k.tune.stage == 1 else bytes <= limit;
         return if (repays and bytes <= stage_bytes_max) @intCast(bytes) else 0;
     }
 
@@ -392,7 +396,7 @@ pub const Kernels = struct {
         if (k.tune.lpc >= 4 and k.tune.lpc < 32 and std.math.isPowerOfTwo(@as(u32, @intCast(k.tune.lpc)))) lpc_log2 = @min(lpc_log2, std.math.log2_int(u32, @intCast(k.tune.lpc)));
         const ri = stream_pick.rowTile(a.m);
         const tile = stream_pick.pickWanted(k.tune.cb, k.caps.generation, a.m, lpc_log2, a.bits, total_n, items, sides.pair_cols > 0);
-        const stage = k.stageBytes(a.m, a.k);
+        const stage = k.stageBytes(stream_rows[ri], a.k);
         const per_block = tile.per_block;
         var blocks: c_uint = cdiv(total_n, per_block);
         if (sides.count > 0) {
