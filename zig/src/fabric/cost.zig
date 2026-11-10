@@ -39,9 +39,11 @@ pub const Handoff = struct {
 
 /// A command buffer signals a shared event the host waits on; the host's signal wakes the next one (our M5 wake time).
 pub const event_handoff: Handoff = .{ .gpu_to_host_ns = 10_000, .host_to_gpu_ns = 100_000, .source = .probed };
-/// Metal on an M4 Pro, macOS 27.2 (measured p50): a pre-committed command buffer waiting on a shared event the CPU sets starts in
-/// 65 us; a kernel's store is visible to a CPU poll about 25 us before the command buffer's completion callback.
-pub const metal_event_handoff: Handoff = .{ .gpu_to_host_ns = 25_000, .host_to_gpu_ns = 65_000, .source = .measured };
+/// Metal on an M4 Pro, macOS 27.2: a kernel's store is visible to a CPU poll about 25 us before the command buffer's completion
+/// callback (measured), and the wake of a command buffer, end to end, takes 149 us at p50 and 450 us at p99 while a Thunderbolt
+/// card is attached and in use (measured by `tf-offload-hip probe` on an RX Vega 56; 65 us on an idle Mac). The two directions
+/// sum to the measured p50; how the sum splits between them is [INFERENCE].
+pub const metal_event_handoff: Handoff = .{ .gpu_to_host_ns = 25_000, .host_to_gpu_ns = 124_000, .source = .measured };
 /// A resident kernel polls flag words the NIC writes into a shared buffer. The assumption (2+3 us on Apple GPUs) is contradicted
 /// by measurements on an M4 Pro: a resident Metal kernel never reliably sees a CPU or DMA store, and flag stores from a Metal
 /// kernel can overtake the data they announce. See docs/proposals/metal-tb4-split-moe.md; use `metal_event_handoff` there.
@@ -100,6 +102,6 @@ test "a layer-split hop over the PCIe tunnel costs more than a tb5 hop and less 
     const gpu = estimateNs(.send, tb_gpu, metal_event_handoff, .{ .ranks = 2, .bytes = bytes });
     const mac = estimateNs(.send, tb5, metal_event_handoff, .{ .ranks = 2, .bytes = bytes });
     try std.testing.expect(gpu > mac and gpu < 1e6);
-    try std.testing.expectApproxEqAbs(@as(f64, 90_000), metal_event_handoff.gpu_to_host_ns + metal_event_handoff.host_to_gpu_ns, 1);
+    try std.testing.expectApproxEqAbs(@as(f64, 149_000), metal_event_handoff.gpu_to_host_ns + metal_event_handoff.host_to_gpu_ns, 1);
     try std.testing.expect(metal_event_handoff.source == .measured and tb_gpu_read_round_trip_ns > tb_gpu.latency_ns);
 }
