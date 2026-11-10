@@ -3,7 +3,6 @@
 //! Mac's GPU and is reached over a socket, the window being shared memory both map. Every configuration is run teacher
 //! forced on the tokens in the reference file (`tf-offload-metal ref`) and compared position by position, then free
 //! running. Opens the card: run it only with the card to yourself.
-//!   tf-offload-card MODEL_DIR REF_FILE unsplit
 //!   tf-offload-card MODEL_DIR REF_FILE SOCKET metal_first|external_first CUT [streams=N] [lanes=L] [chunk=C] [repeat=R]
 //!   tf-offload-card MODEL_DIR REF_FILE unsplit [streams=N] [lanes=L] [chunk=C] [repeat=R]
 //! With `streams`, `lanes`, `chunk` or `repeat` (any of them, `streams=1` too) the run is the pipelined one instead: N sequences share the card and the Mac's GPU
@@ -294,7 +293,8 @@ pub fn main(init: std.process.Init) !void {
         .metal_first => .{ .first = cut, .last = layers },
         .external_first => .{ .first = 0, .last = cut },
     };
-    const extra: []const []const u8 = if (args.len > 6) args[6..] else &.{};
+    const first_option: usize = if (unsplit) 4 else 6;
+    const extra: []const []const u8 = if (args.len > first_option) args[first_option..] else &.{};
     const n_streams = try option(extra, "streams", 1);
     const chunk = try option(extra, "chunk", 1);
     const repeat = try option(extra, "repeat", 1);
