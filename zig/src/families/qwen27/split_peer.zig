@@ -1,8 +1,10 @@
 //! One layer range of a dense Qwen model as a stage of the split pipeline, on this Mac's GPU: `LayerPeer` is the host
 //! stage (`split.pipeline.Peer`, driven through `metal.Relay`), `External` the same range run synchronously from the
-//! mock device's thread. A step carries one position (a decode step) or up to `max_rows` consecutive positions of one
-//! sequence (a prompt chunk, run with the prompt kernels as `Session.promptChunk` runs it). The state of a layer lives
-//! with the stage that owns it, one stage a sequence; stages of one model share its frame, see `Serial`.
+//! mock device's thread. A stage serves up to `max_slots` sequences, a slot each (their caches and positions). A step
+//! carries one position of one slot (a decode step), up to `max_rows` consecutive positions of one slot (a prompt chunk,
+//! run with the prompt kernels as `Session.promptChunk` runs it), or one position of each of several slots (a decode
+//! batch, one shared round). The state of a layer lives with the stage that owns it; stages of one model (one a lane)
+//! share its frame, see `Serial`.
 const std = @import("std");
 const mtl = @import("metal");
 const split = @import("split");
@@ -21,6 +23,7 @@ const wire = split.wire;
 const gpu_wait_ms = 10_000;
 /// The most positions a step carries (the pipeline's `max_rows_limit`).
 pub const max_rows = pipeline.max_rows_limit;
+pub const max_slots = stage_pass.max_slots;
 
 /// What a step reads: the tokens a range that embeds takes, or the f32 rows (little-endian words, `rows * hidden * 4`
 /// bytes) of one that does not.
@@ -48,10 +51,11 @@ pub const Stage = struct {
     range: range_mod.Range,
     pending: ?mtl.Ticket = null,
 
-    /// `model` was loaded for a range (`Model.loadRange`); the stage is one sequence's state of it. `warm` keeps the
-    /// first steps' shader compiles out of a pipeline deadline.
-    pub fn init(a: std.mem.Allocator, model: *Model, capacity: u32, serial: *Serial) !*Stage {
+    /// `model` was loaded for a range (`Model.loadRange`); the stage holds the state of `slots` sequences of it. `warm`
+    /// keeps the first steps' shader compiles out of a pipeline deadline.
+    pub fn init(a: std.mem.Allocator, model: *Model, capacity: u32, slots: u32, serial: *Serial) !*Stage {
         const range = model.range orelse return error.BadLayerRange;
+        if (slots == 0 or slots > max_slots) return error.BadSlots;
         const s = try a.create(Stage);
         errdefer a.destroy(s);
         const bytes = model.config.hidden * 4 * @min(model.frame.capacity, max_rows);
@@ -60,7 +64,7 @@ pub const Stage = struct {
             .allocator = a,
             .model = model,
             .serial = serial,
-            .runner = try Runner.init(a, model, 1, capacity),
+            .runner = try Runner.init(a, model, slots, capacity),
             .rows = undefined,
             .relay = undefined,
             .window = null,
@@ -108,8 +112,9 @@ pub const Stage = struct {
         return s.model.config.hidden * 4;
     }
 
-    /// Encode this stage's pass over `input` for the next positions and open it; `finish` waits for it.
-    pub fn launch(s: *Stage, input: Input, out: Output) !void {
+    /// Encode this stage's pass over `input` for the next positions of the sequences `slots` name (one slot: its
+    /// consecutive positions; as many slots as rows: a decode batch) and open it; `finish` waits for it.
+    pub fn launch(s: *Stage, input: Input, out: Output, slots: []const u8) !void {
         const pool = mtl.objc.Pool.push();
         defer pool.pop();
         var zeros: [max_rows]u32 = @splat(0);
@@ -139,7 +144,7 @@ pub const Stage = struct {
             },
         };
         if (s.serial.last) |other| if (other != s) try other.finish();
-        const ticket = try stage_pass.launch(&s.runner, &s.relay, 0, ids, io);
+        const ticket = try stage_pass.launch(&s.runner, &s.relay, slots, ids, io);
         s.relay.open(ticket);
         s.pending = ticket;
         s.serial.last = s;
@@ -156,12 +161,13 @@ pub const Stage = struct {
         }
     }
 
-    /// The token a range that ends the model drew after the last row of its step, once `finish` returned: greedy over
-    /// the logits, as `Session.greedy`.
-    pub fn draw(s: *Stage) !u32 {
-        if (!s.range.head(s.model.config.layers)) return error.BadStageInput;
-        const logits = s.model.frame.get(.logits).buffer.slice(u16, s.model.config.vocab);
-        return session.argmax(logits);
+    /// The tokens a range that ends the model drew, once `finish` returned: greedy over the logits rows, as
+    /// `Session.greedy`. One for a single slot's step (after its last row), else one a row.
+    pub fn draw(s: *Stage, out: []u32) !void {
+        if (!s.range.head(s.model.config.layers) or out.len == 0) return error.BadStageInput;
+        const vocab = s.model.config.vocab;
+        const logits = s.model.frame.get(.logits).buffer.slice(u16, out.len * vocab);
+        for (out, 0..) |*o, i| o.* = try session.argmax(logits[i * vocab ..][0..vocab]);
     }
 
     /// The `rows` f32 rows `Output.own` left, after `finish`.
@@ -177,18 +183,22 @@ pub const Stage = struct {
         s.relay.deinit();
         s.relay = try mtl.Relay.init(s.model.device, s.model.queue);
         s.runner.recover();
-        try s.runner.reset(0);
+        for (0..s.runner.ready) |slot| try s.runner.reset(@intCast(slot));
     }
 
-    /// One decode step and one two-row chunk, then `reset`: pipelines compile and weights page in outside a deadline.
+    /// A decode step, a two-row chunk and (with two slots) a two-row batch, then `reset`: pipelines compile and weights
+    /// page in outside a deadline.
     pub fn warm(s: *Stage) !void {
         const row = try s.allocator.alloc(u8, 2 * s.rowBytes());
         defer s.allocator.free(row);
         @memset(row, 0);
         const tokens = [2]u32{ 0, 0 };
-        for ([2]usize{ 1, 2 }) |n| {
-            if (n > s.model.frame.capacity) break;
-            try s.launch(if (s.range.embed()) .{ .tokens = tokens[0..n] } else .{ .rows = row[0 .. n * s.rowBytes()] }, .own);
+        const slots = [2]u8{ 0, 1 };
+        for ([3]usize{ 1, 2, 3 }) |kind| {
+            if (kind > 1 and s.model.frame.capacity < 2) break;
+            if (kind == 3 and s.runner.ready < 2) break;
+            const n: usize = if (kind == 1) 1 else 2;
+            try s.launch(if (s.range.embed()) .{ .tokens = tokens[0..n] } else .{ .rows = row[0 .. n * s.rowBytes()] }, .own, if (kind == 3) slots[0..2] else slots[0..1]);
             try s.finish();
             try s.reset();
         }
@@ -213,7 +223,7 @@ pub const LayerPeer = struct {
 
     fn stepFn(ptr: *anyopaque, seq: u32, slots: []const u8, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const st = @as(*LayerPeer, @ptrCast(@alignCast(ptr))).stage;
-        if (rows == 0 or rows > max_rows or slots.len != 1 or slots[0] != 0) return error.BadStep;
+        if (rows == 0 or rows > max_rows or slots.len == 0 or (slots.len > 1 and slots.len != rows)) return error.BadStep;
         const head = st.range.head(st.model.config.layers);
         var tokens: [max_rows]u32 = undefined;
         var in: Input = .{ .rows = input[0 .. rows * st.rowBytes()] };
@@ -221,12 +231,9 @@ pub const LayerPeer = struct {
             for (tokens[0..rows], 0..) |*t, i| t.* = std.mem.readInt(u32, input[4 * i ..][0..4], .little);
             in = .{ .tokens = tokens[0..rows] };
         }
-        try st.launch(in, if (head) .own else .{ .window = .{ .offset = try offsetOf(st, out), .stamp = seq } });
+        try st.launch(in, if (head) .own else .{ .window = .{ .offset = try offsetOf(st, out), .stamp = seq } }, slots);
         if (head or level == .a) try st.finish();
-        if (head) {
-            std.mem.writeInt(u32, out[0..4], try st.draw(), .little);
-            return 4;
-        }
+        if (head) return try writeTokens(st, slots, out);
         return rows * st.rowBytes();
     }
 
@@ -234,6 +241,15 @@ pub const LayerPeer = struct {
         return @as(*LayerPeer, @ptrCast(@alignCast(ptr))).stage.finish();
     }
 };
+
+/// The head's tokens into `out` as u32 words: one for a single slot, else one a row. Returns the bytes written.
+fn writeTokens(st: *Stage, slots: []const u8, out: []u8) !usize {
+    var tokens: [max_slots]u32 = undefined;
+    const n = slots.len;
+    try st.draw(tokens[0..n]);
+    for (tokens[0..n], 0..) |t, i| std.mem.writeInt(u32, out[4 * i ..][0..4], t, .little);
+    return 4 * n;
+}
 
 /// The device stage of the pipeline: the same range run on this GPU from the mock device's thread, a step at a time.
 pub const External = struct {
@@ -247,9 +263,8 @@ pub const External = struct {
         const st = @as(*External, @ptrCast(@alignCast(ptr))).stage;
         const h = io.in.header().*;
         if (h.status != 0 or h.kind == @backingInt(wire.Kind.abort)) return error.PeerLost;
-        if (io.slots.len != 1 or io.slots[0] != 0) return error.BadStep;
         const rows: usize = io.rows;
-        if (rows == 0 or rows > max_rows or io.hidden_bytes != st.rowBytes()) return error.BadStep;
+        if (rows == 0 or rows > max_rows or io.hidden_bytes != st.rowBytes() or io.slots.len == 0 or (io.slots.len > 1 and io.slots.len != rows)) return error.BadStep;
         const head = st.range.head(st.model.config.layers);
         var tokens: [max_rows]u32 = undefined;
         var in: Input = undefined;
@@ -261,10 +276,10 @@ pub const External = struct {
             _ = try wire.readStampedRows(plain, io.in.data(), rows, io.hidden_bytes, io.seq, io.retries);
             in = .{ .rows = plain };
         } else in = .{ .rows = io.in.data()[0 .. rows * io.hidden_bytes] };
-        try st.launch(in, .own);
+        try st.launch(in, .own, io.slots);
         try st.finish();
         if (head) {
-            std.mem.writeInt(u32, io.out.data()[0..4], try st.draw(), .little);
+            _ = try writeTokens(st, io.slots, io.out.data());
         } else @memcpy(io.out.data()[0 .. rows * io.hidden_bytes], st.ownRows(rows));
     }
 };
