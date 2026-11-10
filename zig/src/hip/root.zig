@@ -36,6 +36,8 @@ pub const registry = @import("core").registry;
 pub const collective = @import("collective.zig");
 /// Joins this rank's tensor-parallel group: RCCL's (comm/), behind collective.zig.
 pub const joinGroup = @import("comm/group.zig").join;
+/// A card as the offload layer's external device (windows, stream wait/write value, bounded sync).
+pub const offload = @import("offload.zig");
 
 test {
     _ = policy;
@@ -45,4 +47,5 @@ test {
     _ = @import("comm/rccl.zig");
     _ = @import("comm/link.zig");
     _ = @import("comm/group.zig");
+    _ = offload;
 }
