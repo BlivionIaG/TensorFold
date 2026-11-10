@@ -88,7 +88,17 @@ test "the neutral format's constants: any change to them is a new format" {
 test "PR 2373's metal_kv_state.zig, when this branch carries it" {
     if (comptime !options.exl3_kv) return error.SkipZigTest;
     const src = @embedFile("../metal_kv_state.zig");
-    try has(src, "528");
-    try has(src, "288");
-    try has(src, "68");
+    try has(src, "pub const main_stride = 288;");
+    try has(src, "pub const index_stride = 68;");
+    try has(src, "pub const ring_stride = 528;");
+    try has(src, "pub const window = 128;");
+    try has(src, "pub const owners = [_]u32{ 2, 8, 14, 20 };");
+    try has(src, "pub const ratios = [_]u32{ 2, 2, 2, 1 };");
+    try has(src, "pub const capture_rows: u32 = 8;");
+    try has(src, "pub const capture_width: u32 = 512;");
+    // the carry: 7 ratio-sum slots of (values, gates) f32 rows of 512
+    try has(src, "return 7 * 2 * 512 * 4;");
+    try has(src, "partial_off += 2 * r * 512 * 4;");
+    try std.testing.expectEqual(@as(usize, metal.Packed.partial_bytes), 7 * 2 * 512 * 4);
+    try std.testing.expectEqual(@as(usize, metal.Packed.capture_bytes), 8 * 2 * 512 * 4);
 }
