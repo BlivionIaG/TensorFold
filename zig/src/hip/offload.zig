@@ -256,6 +256,8 @@ test "on the mock backend the window protocol runs through stream wait and write
     const hip_dev = HipExternal.create(std.testing.allocator, &rt, 0, .{ .peak_bandwidth = 410_000_000_000, .pump_mock = true }) catch |err| switch (err) {
         // a mock without the value calls: the refusal is the behaviour under test
         error.NoValueOps => return,
+        // hipmac's mock reports gfx900, which the caps table gets from the Vega port; without it the card is refused by design
+        error.UnsupportedGpu => return error.SkipZigTest,
         else => return err,
     };
     const dev = hip_dev.external();
