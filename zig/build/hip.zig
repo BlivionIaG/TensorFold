@@ -334,6 +334,7 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
     const core = coreModule(b, target);
     const hip = b.createModule(.{ .root_source_file = b.path("zig/src/hip/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
     hip.addImport("core", core);
+    hip.addImport("split", b.createModule(.{ .root_source_file = b.path("zig/src/split/split.zig"), .target = target, .optimize = optimize, .link_libc = true }));
     hip.addImport("hip_kernels", kernels);
     hip.addImport("cuda_memory", b.createModule(.{ .root_source_file = b.path("zig/src/native/cuda_memory.zig"), .target = target, .optimize = optimize }));
     if (hip_include) |dir| {

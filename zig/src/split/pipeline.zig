@@ -25,12 +25,26 @@ pub const Level = enum {
 
 pub const Error = device.Error || wire.Error || error{ PeerLost, BadStep };
 
-/// The stage the device runs in its stream: `input` is a token (4 bytes) when the stage embeds, else a hidden row;
-/// the result goes to `out`, a slot in the window, and its length is returned (a hidden row, or a token when the stage
-/// owns the head). A device stage's kernels read and write window memory directly; a mock does it on the CPU.
+/// What a device stage is given for one step: its input and output slots in the window (kernels read and write them
+/// by their GPU addresses, which are the host's pointers), and how the input is protected. The output slot's kind and
+/// byte count are fixed by the pipeline before the first step; the stage's work fills the payload.
+pub const StepIo = struct {
+    in: wire.Slot,
+    out: wire.Slot,
+    seq: u32,
+    /// The input row is 16-byte stamped groups (`metal_first`): the stage must see every group's stamp equal `seq`.
+    stamped: bool,
+    retries: u32,
+    /// Host memory a CPU stage may stage a stamped row in, `hidden_bytes` long.
+    scratch: []u8,
+    hidden_bytes: usize,
+};
+
+/// The stage the device runs in its stream. A stream device records launches that read `io.in` and write `io.out` when
+/// `run` is called at enqueue time; a mock device calls it later, in stream order, on its own thread and computes on the CPU.
 pub const ExternalStage = struct {
     ptr: *anyopaque,
-    run: *const fn (ptr: *anyopaque, input: []const u8, out: []u8) anyerror!usize,
+    run: *const fn (ptr: *anyopaque, io: StepIo) anyerror!void,
 };
 
 /// The stage the host runs on its own GPU. `step` returns when the stage's result is complete in `out` (level A) or has
@@ -77,9 +91,17 @@ pub const Pipeline = struct {
         std.debug.assert(window.len >= 2 * n and scratch.len >= cfg.hidden_bytes);
         std.debug.assert(cfg.order == .external_only or peer != null);
         var p: Pipeline = .{ .dev = dev, .window = window, .cfg = cfg, .external = external, .peer = peer, .scratch = scratch, .down = .init(window.ptr, n), .up = .init(window.ptr + n, n) };
+        p.prepare();
+        return p;
+    }
+
+    /// Empty slots; the up slot's payload kind and size are fixed by the order.
+    fn prepare(p: *Pipeline) void {
         p.down.clear();
         p.up.clear();
-        return p;
+        const hidden = p.cfg.order == .external_first;
+        p.up.header().kind = @backingInt(if (hidden) wire.Kind.hidden else wire.Kind.token);
+        p.up.header().bytes = @intCast(if (hidden) p.cfg.hidden_bytes else 4);
     }
 
     /// One token step; returns the token the last layer's head chose. The step's sequence number is the pipeline's count.
@@ -148,13 +170,12 @@ pub const Pipeline = struct {
     /// After a failed step: drain the device stream (its error is the failure already reported) and start over.
     pub fn reset(p: *Pipeline) void {
         p.dev.sync(p.cfg.timeout_ns) catch {};
-        p.down.clear();
-        p.up.clear();
+        p.prepare();
         p.seq = 0;
     }
 };
 
-/// The device-side step, run in stream order after the wait on the down slot's word.
+/// The device-side step: the stage's work between the wait on the down slot's word and the write of the up slot's.
 const Step = struct {
     p: *Pipeline,
     seq: u32,
@@ -162,21 +183,14 @@ const Step = struct {
     fn run(ctx: *anyopaque) anyerror!void {
         const s: *Step = @ptrCast(@alignCast(ctx));
         const p = s.p;
-        const h = p.down.header().*;
-        if (h.status != 0 or h.kind == @intFromEnum(wire.Kind.abort)) return error.PeerLost;
-        const input = switch (p.cfg.order) {
-            .metal_first => blk: {
-                const row = p.scratch[0..p.cfg.hidden_bytes];
-                _ = try wire.readStamped(row, p.down.data(), s.seq, p.cfg.stamp_retries);
-                break :blk row;
-            },
-            else => p.down.data()[0..h.bytes],
-        };
-        // the stage writes its result where the host reads it: a device stage's kernels would write the window itself
-        const n = try p.external.run(p.external.ptr, input, p.up.data());
-        const kind: wire.Kind = if (p.cfg.order == .external_first) .hidden else .token;
-        p.up.header().kind = @intFromEnum(kind);
-        p.up.header().bytes = @intCast(n);
-        p.up.header().status = 0;
+        try p.external.run(p.external.ptr, .{
+            .in = p.down,
+            .out = p.up,
+            .seq = s.seq,
+            .stamped = p.cfg.order == .metal_first,
+            .retries = p.cfg.stamp_retries,
+            .scratch = p.scratch,
+            .hidden_bytes = p.cfg.hidden_bytes,
+        });
     }
 };
