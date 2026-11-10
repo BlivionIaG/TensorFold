@@ -65,6 +65,31 @@ exactly what the Metal engine itself applies to a bf16 row: the fp4 pool (served
 * The decoder builds the shape itself: `upto` from the prompt it pulls, `shards` from its link set, the drafter rows
   `min(upto, 128)` or 0. `p2.check` compares a manifest with that plan exactly.
 
+## Producing on the GB10
+
+`dsv41-serve` exports a prompt's hand-off when a request names one: `kv_transfer_params.mcdma_handoff` with a 32-hex `id`
+and `export_from` 0 on `/v1/chat/completions` or `/v1/completions`. The prompt prefills to its last-but-one token, the
+reply is one token, and the state at the cut goes to the producer (`cuda_export_serve.zig`).
+
+* `--mcdma-produce LINK` attaches to mcdma-rpcd's listen daemon and holds each export until the decoder closes it
+  (`TF_PRODUCE_HELD_GIB`, as for Qwen).
+* `TF_DSV41_HANDOFF_DUMP=DIR` also (or instead, with no link) writes each export as `DIR/<id>.mkvh2`, with
+  `<id>.tokens.json` (the prompt ids it covers) beside it, or `<id>.error` with the reason. `<id>.mkvh2` is what the
+  producer's replies are, concatenated: the protocol-2 MANIFEST, then every DATA frame (a 128-byte header and the
+  payload). `handoff_file.pull` replays it through the decoder's checks into any sink, the importer's `p2.ShardSink`
+  included, so a hand-off moves between machines without the link. A file is written whole and renamed, so one that
+  is there is complete.
+* The export reads rank 0's active slot: its snapshot (`Sessions.snapshot`) and its pool pages, through the same
+  `PageStore` the NVMe park uses. A replicated pool holds the same pages and rings on every rank, so no other rank takes
+  part. The snapshot's raw bytes are converted at once to the library's bf16 parts and freed.
+* The model name is `LaneHost.Remote.checkpointId` of the checkpoint folder (config and weight index hashed): the
+  decoder must serve identical files, or give the manifest's name.
+
+The engine refuses, at start-up and by name, a configuration it cannot export: no session store (`TF_DSV41_POOL_TOKENS`),
+`TF_DSV41_PREFILL=replay` (replay snapshots lack the decoder layers' rings), `TF_DSV41_PREFILL_PIECES=1` (a prompt in pieces
+never stands at the cut), `TF_DSV41_KV_SPLIT=1` (half the pages are on the other rank), a non-default prompt shape, and fp4
+comp rows. The production profile on the pair uses replay, pieces and a split pool, so an export pair runs another profile.
+
 ## Assumptions that the library cannot prove
 
 * The Metal engines compute the same normed, roped, compressed row as CUDA for the same tokens, to bf16 noise. The
@@ -75,7 +100,8 @@ exactly what the Metal engine itself applies to a bf16 row: the fp4 pool (served
 
 ## Tests
 
-`zig build test-dsv41-handoff` (host only): codec exhaustively against independent tables, packers against independent
+`zig build test-dsv41-handoff` (host only; includes the export glue over a synthetic engine snapshot, the file round trip and
+the producer's held-export bookkeeping): codec exhaustively against independent tables, packers against independent
 f64 references, plan partitions, export-to-import round trips for both Metal layouts (replicated, split 2 and 3 shards,
 short, odd and even `upto`), protocol 2 end to end over the fake link, and layout guards that fail when an engine's
 constants change. `compile-dsv41-handoff-aarch64-linux` / `-macos` compile the tests for the targets.

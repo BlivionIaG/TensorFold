@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- DeepSeek-V4.1 on CUDA: `dsv41-serve` takes `--mcdma-produce LINK` and exports a hand-off request's prompt state (the slot's snapshot and pool pages at the prompt's last-but-one token) as MKVH protocol-2 bf16 parts for the Metal decoder; `TF_DSV41_HANDOFF_DUMP=DIR` writes each export as a `.mkvh2` file (no link needed) that `handoff_file.pull` replays into the importer. It refuses replay prefill, prefill pieces, a split KV pool and no session store by name; a replicated, full-prefill profile is exported. Host-tested against the library's own importer; not yet run on a GB10 pair.
+
 - Evidence index: reads saved native capabilities, including unknown and XPU chip labels; advertised facts stay unqualified, and invalid supplied input stops with a bounded error (#2708).
 
 - `--instruct-sampling card` (or `field=value` pairs) serves the model card's instruct sampling to chat requests with thinking off that leave those fields unset; request fields, then the serve flags, then the pairs decide, and the server's own requests never take it (#2626). Thanks to @BobClawblaw.
