@@ -43,6 +43,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Tests: the sessions-writes mixed load holds its pool to one slot's capacity, so it exercises spills to the tier (#2731). Thanks to @garvrao80.
 
+- EXL3's host expert planner counts routed picks once, preserving cache placement and frequency ordering without allocating a second copy of the picks.
+
 - Flash Next EXL3 with offloaded experts and an MTP head uses completed-round token rates to choose plain or drafted rounds, with bounded probes; other formats retain their existing draft policy (#1446).
 
 - Flash Next EXL3 selects host planning, eager device planning or CUDA graph replay with `TF_FLASHNEXT_EXL3_GRAPH=0`, `eager` or `1`. Engine teardown clears its capture-failure history without retiring another engine's graphs or retries. Its graph qualification runner propagates prefill configuration refusals (#1445).
