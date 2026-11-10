@@ -188,6 +188,12 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const family_host = b.addRunArtifact(b.addTest(.{ .root_module = host.family }));
     test_step.dependOn(&family_host.step);
     b.step("test-qwen35-hip-host", "Qwen HIP family CPU tests with inert kernels").dependOn(&family_host.step);
+    // the layer-range and split-stage plumbing runs a recording stand-in for the HIP runtime on kernels that name gfx1030
+    const split_kernels = b.createModule(.{ .root_source_file = b.addWriteFiles().add("kernels.zig", split_stub) });
+    const split_host = engineModules(b, b.graph.host, .Debug, split_kernels, null);
+    const family_split = b.addRunArtifact(b.addTest(.{ .root_module = split_host.family, .filters = &.{"split stage:"} }));
+    test_step.dependOn(&family_split.step);
+    b.step("test-qwen35-split-host", "Qwen HIP layer ranges and the split stage: dry-run launches and plumbing, no device").dependOn(&family_split.step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.flashnext })).step);
     b.step("test-flashnext-proposal-hip-host", "Original Flash Next HIP IDs and head-row spans without device runtime").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.flashnext, .filters = &.{"Flash Next proposal:"} })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.nemotron })).step);
@@ -390,6 +396,8 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
     });
     const qwen_vision = @import("lighton_hip.zig").vision(b, target, optimize, hip, core, lanes, serve);
     family.addImport("qwen_hip_vision", qwen_vision);
+    // the very split instance hip uses: the external stage implements its types
+    family.addImport("split", hip.import_table.get("split").?);
     const lighton = @import("lighton_hip.zig").module(b, target, optimize, hip, core, lanes, api, serve);
     const flashnext = b.createModule(.{
         .root_source_file = b.path("zig/src/families/flashnext/hip.zig"),
@@ -549,6 +557,8 @@ const headers = [_][]const u8{
 };
 /// The flags of the kernels' first build: no contraction, wave32 on RDNA, C++20.
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-mno-wavefrontsize64", "-ffp-contract=off" };
+/// `stub` naming gfx1030 (RDNA2: the caps table row with fp16 activations, as the gfx900 target has) with a code object that is eight bytes (a stand-in runtime loads anything): the launcher loads.
+const split_stub = std.fmt.comptimePrint("pub const arch = \"gfx1030\";\nconst blob align(8) = [8]u8{{ 0, 1, 2, 3, 4, 5, 6, 7 }};\npub const images: [{d}][]align(8) const u8 = @splat(&blob);\n", .{groups.len});
 const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, relax_branches: bool, arch: []const u8) *std.Build.Module {

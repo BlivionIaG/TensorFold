@@ -31,6 +31,10 @@ pub const Options = struct {
     /// Keep synchronizing the stream from a thread, for hipmac's mock backend, which executes a stream only while it is
     /// synchronized. A card runs its queue on its own and needs no pump.
     pump_mock: bool = false,
+    /// Queue the window waits and writes on this stream (the engine's) instead of one of the adapter's own: a layer
+    /// stage records its launches on the engine's stream, and only a wait and a write on that same stream order them.
+    /// The caller keeps it alive past the adapter and destroys it.
+    stream: ?Stream = null,
 };
 
 pub const HipExternal = struct {
@@ -38,6 +42,7 @@ pub const HipExternal = struct {
     rt: *const runtime.Runtime,
     ctx: Context,
     stream: Stream,
+    owns_stream: bool = true,
     wait32: WaitValue32,
     write32: WriteValue32,
     caps: device.Caps,
@@ -65,8 +70,9 @@ pub const HipExternal = struct {
         @memcpy(self.arch[0..arch.len], arch);
         const name = try self.ctx.name(&self.name);
         const mem = try self.ctx.memInfo();
-        self.stream = try Stream.init(rt);
-        errdefer self.stream.deinit();
+        self.owns_stream = options.stream == null;
+        self.stream = options.stream orelse try Stream.init(rt);
+        errdefer if (self.owns_stream) self.stream.deinit();
         self.fence_window = try memory.HostBuffer.allocMapped(rt, window_align);
         @memset(self.fence_window.bytes, 0);
         self.caps = .{
@@ -221,7 +227,7 @@ pub const HipExternal = struct {
         }
         self.allocs.deinit(self.gpa);
         self.fence_window.free();
-        self.stream.deinit();
+        if (self.owns_stream) self.stream.deinit();
         self.ctx.deinit();
         self.gpa.destroy(self);
     }
@@ -272,4 +278,29 @@ test "on the mock backend the window protocol runs through stream wait and write
     @atomicStore(u32, w.word(0), 7, .release);
     try dev.sync(2_000_000_000);
     try std.testing.expectEqual(@as(u32, 9), @atomicLoad(u32, w.word(64), .acquire));
+}
+
+test "on the mock backend the adapter queues on the stream it is given and leaves it to the caller" {
+    var rt = mockRuntime() orelse return error.SkipZigTest;
+    defer rt.close();
+    var shared = try Stream.init(&rt);
+    defer shared.deinit();
+    const hip_dev = HipExternal.create(std.testing.allocator, &rt, 0, .{ .peak_bandwidth = 410_000_000_000, .pump_mock = true, .stream = shared }) catch |err| switch (err) {
+        error.NoValueOps => return,
+        // the caps table of this tree has no row for the mock's architecture: nothing to run
+        error.UnsupportedGpu => return error.SkipZigTest,
+        else => return err,
+    };
+    try std.testing.expectEqual(shared.handle, hip_dev.stream.handle);
+    const dev = hip_dev.external();
+    const w = try dev.allocWindow(4096);
+    try dev.enqueueWait(w, 0, 3, 0);
+    try dev.enqueueWrite(w, 64, 5);
+    @atomicStore(u32, w.word(0), 3, .release);
+    try dev.sync(2_000_000_000);
+    try std.testing.expectEqual(@as(u32, 5), @atomicLoad(u32, w.word(64), .acquire));
+    dev.freeWindow(w);
+    dev.deinit();
+    // the stream outlives the adapter
+    try shared.synchronize();
 }
