@@ -253,7 +253,7 @@ const Recorder = struct {
 const Host = struct {
     steps: usize = 0,
 
-    fn step(ptr: *anyopaque, seq: u32, rows: u32, _: []const u8, out: []u8, _: pipeline.Level) anyerror!usize {
+    fn step(ptr: *anyopaque, seq: u32, _: []const u8, rows: u32, _: []const u8, out: []u8, _: pipeline.Level) anyerror!usize {
         const h: *Host = @ptrCast(@alignCast(ptr));
         h.steps += 1;
         if (out.len >= wire.stampedLen(4 * 2560)) {

@@ -32,14 +32,18 @@ pub const Error = device.Error || wire.Error || error{ PeerLost, BadStep };
 /// by their GPU addresses, which are the host's pointers), and how the input is protected. The output slot's kind and
 /// byte count are fixed by the pipeline before the step; the stage's work fills the payload.
 ///
-/// `rows` positions travel in one step. A stage that embeds reads `rows` u32 tokens at the input payload; any other
-/// reads `rows` hidden rows of `hidden_bytes` f32 words, plain, or each row on its own stamped groups when `stamped`.
-/// A stage that ends the model writes one u32 (the greedy token after the last row); any other writes `rows` plain rows.
+/// `rows` rows travel in one step, of the sequences `slots` names (the stage's state for each: caches, positions). With one
+/// slot the rows are consecutive positions of that sequence (a prompt chunk, or a decode position); with `rows` slots each
+/// row is the next position of its own sequence (a decode batch, no slot twice). A stage that embeds reads `rows` u32 tokens
+/// at the input payload; any other reads `rows` hidden rows of `hidden_bytes` f32 words, plain, or each row on its own
+/// stamped groups when `stamped`. A stage that ends the model writes u32 tokens: one, the greedy pick after the last row,
+/// for a single slot, else one a row; any other writes `rows` plain rows.
 pub const StepIo = struct {
     in: wire.Slot,
     out: wire.Slot,
     seq: u32,
     rows: u32 = 1,
+    slots: []const u8 = &.{0},
     /// The input rows are 16-byte stamped groups (`metal_first`): the stage must see every group's stamp equal `seq`.
     stamped: bool,
     retries: u32,
@@ -57,11 +61,11 @@ pub const ExternalStage = struct {
 
 /// The stage the host runs on its own GPU, for one sequence. `step` takes `rows` positions (`input` is `rows` u32 tokens
 /// or `rows` plain f32 rows), returns when the stage's result is complete in `out` (level A) or has been launched and will
-/// land there (level B, hidden rows only), and returns the bytes of plain result (`rows` rows, or 4 for a token);
+/// land there (level B, hidden rows only), and returns the bytes of plain result (`rows` rows, or 4 a token); `slots` as in `StepIo`;
 /// `finish` waits for a launched step to complete. A hidden result goes to `out` as `rows` stamped rows.
 pub const Peer = struct {
     ptr: *anyopaque,
-    step: *const fn (ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: Level) anyerror!usize,
+    step: *const fn (ptr: *anyopaque, seq: u32, slots: []const u8, rows: u32, input: []const u8, out: []u8, level: Level) anyerror!usize,
     finish: *const fn (ptr: *anyopaque, seq: u32) anyerror!void,
 };
 
@@ -84,10 +88,9 @@ pub const Config = struct {
 /// and finish, and waiting for the device's reply.
 pub const Phases = struct { queue_ns: u64 = 0, peer_ns: u64 = 0, finish_ns: u64 = 0, wait_ns: u64 = 0 };
 
-/// Bytes the pipeline keeps clear at the start of the up slot's payload for the token the device writes; the tokens a
-/// host stage reads are staged behind them.
-const token_reply_bytes = 64;
 pub const max_rows_limit = 256;
+/// The most sequences one decode batch holds.
+pub const max_slots = 8;
 
 pub const Pipeline = struct {
     dev: device.ExternalDevice,
@@ -100,16 +103,25 @@ pub const Pipeline = struct {
     seq: u32 = 0,
     /// The rows of the step in flight; 0 when none is.
     rows: u32 = 0,
+    /// The sequences of the step in flight (stable until `collect`: the device's work reads them).
+    slots: [max_slots]u8 = undefined,
+    nslots: u8 = 0,
     phases: Phases = .{},
     work: Step = undefined,
     /// Host memory for the stamped hidden rows the device stage reads (`metal_first`); `max_rows * hidden_bytes` long.
     scratch: []u8,
     tokens: [max_rows_limit * 4]u8 = undefined,
 
+    /// Bytes the pipeline keeps clear at the start of the up slot's payload for the tokens the device writes (one a row of
+    /// a decode batch); the tokens a host stage reads are staged behind them.
+    fn replyBytes(cfg: Config) usize {
+        return (4 * @as(usize, @max(cfg.max_rows, max_slots)) + 63) / 64 * 64;
+    }
+
     /// Slot size for `cfg`: header plus the larger of the stamped hidden rows and a token reply with the staged tokens.
     pub fn slotBytes(cfg: Config) usize {
         const rows = @max(cfg.max_rows, 1);
-        const payload = @max(wire.stampedRowsLen(rows, cfg.hidden_bytes), token_reply_bytes + 4 * rows);
+        const payload = @max(wire.stampedRowsLen(rows, cfg.hidden_bytes), replyBytes(cfg) + 4 * rows);
         return (wire.header_bytes + payload + 63) / 64 * 64;
     }
 
@@ -139,30 +151,42 @@ pub const Pipeline = struct {
         p.up.header().rows = 1;
     }
 
-    /// One token step; returns the token the last layer's head chose. The step's sequence number is the pipeline's count.
+    /// One token step of sequence 0; returns the token the last layer's head chose. The step's sequence number is the pipeline's count.
     pub fn step(p: *Pipeline, token: u32) Error!u32 {
         return p.stepRows(&.{token});
     }
 
-    /// `tokens.len` consecutive positions in one step (a prompt chunk); returns the token after the last of them.
+    /// `tokens.len` consecutive positions of sequence 0 in one step (a prompt chunk); returns the token after the last of them.
     pub fn stepRows(p: *Pipeline, tokens: []const u32) Error!u32 {
         try p.submit(tokens);
         return p.collect();
     }
 
+    /// Starts a step of sequence 0 (`submitSlots` with one slot).
+    pub fn submit(p: *Pipeline, tokens: []const u32) Error!void {
+        return p.submitSlots(tokens, &.{0});
+    }
+
     /// Starts a step: the device's work is queued and the host's part that comes first has run. `collect` finishes it.
     /// Another pipeline over the same device may submit in between; the device runs the queued steps in order.
-    pub fn submit(p: *Pipeline, tokens: []const u32) Error!void {
+    /// One slot: `tokens` are consecutive positions of that sequence. Several: `tokens[i]` is the next position of sequence
+    /// `slots[i]`, no sequence twice, at most `max_slots` and `max_rows`.
+    pub fn submitSlots(p: *Pipeline, tokens: []const u32, slots: []const u8) Error!void {
         if (tokens.len == 0 or tokens.len > p.cfg.max_rows or p.rows != 0) return error.BadStep;
+        if (slots.len == 0 or slots.len > max_slots or (slots.len > 1 and slots.len != tokens.len)) return error.BadStep;
+        for (slots, 0..) |a, i| for (slots[0..i]) |b| if (a == b) return error.BadStep;
         const rows: u32 = @intCast(tokens.len);
+        const nout: u32 = if (slots.len == 1) 1 else rows;
         p.seq += 1;
         const seq = p.seq;
         p.work = .{ .p = p, .seq = seq, .rows = rows };
         p.rows = rows;
+        p.nslots = @intCast(slots.len);
+        @memcpy(p.slots[0..slots.len], slots);
         const tok_bytes = p.tokens[0 .. 4 * tokens.len];
         for (tokens, 0..) |t, i| std.mem.writeInt(u32, tok_bytes[4 * i ..][0..4], t, .little);
         const hidden = p.cfg.order == .external_first;
-        p.up.header().bytes = @intCast(if (hidden) rows * p.cfg.hidden_bytes else 4);
+        p.up.header().bytes = @intCast(if (hidden) rows * p.cfg.hidden_bytes else 4 * nout);
         p.up.header().rows = rows;
         var t = device.nowNs();
         switch (p.cfg.order) {
@@ -178,9 +202,9 @@ pub const Pipeline = struct {
                 const region = p.down.data();
                 const level = p.cfg.level;
                 // the tokens the host stage reads sit in the window, behind the room the device's token reply has
-                const staged = p.up.data()[token_reply_bytes..][0..tok_bytes.len];
+                const staged = p.up.data()[replyBytes(p.cfg)..][0..tok_bytes.len];
                 @memcpy(staged, tok_bytes);
-                const n = peer.step(peer.ptr, seq, rows, staged, region, level) catch return p.fail(error.PeerLost);
+                const n = peer.step(peer.ptr, seq, p.slots[0..p.nslots], rows, staged, region, level) catch return p.fail(error.PeerLost);
                 std.debug.assert(n == rows * p.cfg.hidden_bytes);
                 t = p.lap(&p.phases.peer_ns, t);
                 // level A: the stage is complete, so the word follows the data; level B: the word may go first
@@ -193,23 +217,37 @@ pub const Pipeline = struct {
         }
     }
 
-    /// Finishes the step `submit` started: waits for the device's reply, runs the host's part that comes last, and returns the token.
+    /// Finishes the step `submit` started: waits for the device's reply, runs the host's part that comes last, and returns the token
+    /// (for a decode batch, the first row's: `collectAll` takes them all).
     pub fn collect(p: *Pipeline) Error!u32 {
+        var one: [1]u32 = undefined;
+        if (p.nslots > 1) return error.BadStep;
+        try p.collectAll(&one);
+        return one[0];
+    }
+
+    /// Finishes the step and writes its tokens: one for a single slot, one a row for a decode batch (`out.len` must match).
+    pub fn collectAll(p: *Pipeline, out: []u32) Error!void {
         if (p.rows == 0) return error.BadStep;
         const seq = p.seq;
         const rows = p.rows;
+        const nout: usize = if (p.nslots == 1) 1 else rows;
+        if (out.len != nout) return error.BadStep;
         p.rows = 0;
         const t = device.nowNs();
         const h = p.up.wait(seq, p.cfg.timeout_ns) catch |err| return p.lose(err);
         var t2 = p.lap(&p.phases.wait_ns, t);
-        if (p.cfg.order != .external_first) return std.mem.readInt(u32, p.up.data()[0..4], .little);
-        const peer = p.peer.?;
-        // the token lands where the device's input tokens were: the device has read them
-        const out = p.down.data()[0..4];
-        const n = peer.step(peer.ptr, seq, rows, p.up.data()[0..h.bytes], out, .a) catch return p.fail(error.PeerLost);
-        std.debug.assert(n == 4);
-        t2 = p.lap(&p.phases.peer_ns, t2);
-        return std.mem.readInt(u32, out, .little);
+        var from = p.up.data()[0 .. 4 * nout];
+        if (p.cfg.order == .external_first) {
+            const peer = p.peer.?;
+            // the tokens land where the device's input tokens were: the device has read them
+            const reply = p.down.data()[0 .. 4 * nout];
+            const n = peer.step(peer.ptr, seq, p.slots[0..p.nslots], rows, p.up.data()[0..h.bytes], reply, .a) catch return p.fail(error.PeerLost);
+            std.debug.assert(n == 4 * nout);
+            t2 = p.lap(&p.phases.peer_ns, t2);
+            from = reply;
+        }
+        for (out, 0..) |*o, i| o.* = std.mem.readInt(u32, from[4 * i ..][0..4], .little);
     }
 
     /// Adds the time since `since` to `slot` and returns now.
@@ -256,6 +294,7 @@ pub const Pipeline = struct {
         p.prepare();
         p.seq = 0;
         p.rows = 0;
+        p.nslots = 0;
     }
 };
 
@@ -273,6 +312,7 @@ const Step = struct {
             .out = p.up,
             .seq = s.seq,
             .rows = s.rows,
+            .slots = p.slots[0..p.nslots],
             .stamped = p.cfg.order == .metal_first,
             .retries = p.cfg.stamp_retries,
             .scratch = p.scratch,

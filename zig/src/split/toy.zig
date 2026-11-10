@@ -50,7 +50,8 @@ pub const Stage = struct {
     last: usize,
     embed: bool,
     head: bool,
-    state: [layers][hidden]i32 = @splat(@splat(0)),
+    /// The layers' state, one set a sequence slot.
+    state: [pipeline.max_slots][layers][hidden]i32 = @splat(@splat(@splat(0))),
 
     pub fn external(self: *Stage) pipeline.ExternalStage {
         return .{ .ptr = self, .run = runFn };
@@ -66,7 +67,7 @@ pub const Stage = struct {
             _ = try wire.readStampedRows(rows, io.in.data(), io.rows, io.hidden_bytes, io.seq, io.retries);
             break :blk rows;
         } else io.in.data()[0..h.bytes];
-        _ = try self.runRows(io.rows, input, io.out.data());
+        _ = try self.runSlots(io.slots, io.rows, input, io.out.data());
     }
 
     /// One position: `input` is a token (4 bytes) when the stage embeds, else a hidden row of i32; the output is a token
@@ -75,11 +76,21 @@ pub const Stage = struct {
         return self.runRows(1, input, out);
     }
 
-    /// `rows` consecutive positions, in order: the state of every layer advances once a row. The output is the token
-    /// after the last row when the stage has the head, else the `rows` hidden rows.
+    /// `rows` consecutive positions of sequence 0, in order: the state of every layer advances once a row. The output is
+    /// the token after the last row when the stage has the head, else the `rows` hidden rows.
     pub fn runRows(self: *Stage, rows: usize, input: []const u8, out: []u8) !usize {
+        return self.runSlots(&.{0}, rows, input, out);
+    }
+
+    /// With one slot, `rows` consecutive positions of that sequence; with `rows` slots, the next position of each. The
+    /// output with the head is the token after the last row (one slot) or a token a row (a batch), else the hidden rows.
+    pub fn runSlots(self: *Stage, slots: []const u8, rows: usize, input: []const u8, out: []u8) !usize {
         if (rows == 0 or input.len != rows * (if (self.embed) @as(usize, 4) else hidden_bytes)) return error.BadHidden;
+        if (slots.len != 1 and slots.len != rows) return error.BadHidden;
+        for (slots) |sl| if (sl >= pipeline.max_slots) return error.BadHidden;
+        const batch = slots.len > 1;
         for (0..rows) |r| {
+            const slot: usize = slots[if (batch) r else 0];
             var x: [hidden]i32 = undefined;
             if (self.embed) {
                 const t = std.mem.readInt(u32, input[4 * r ..][0..4], .little);
@@ -89,16 +100,16 @@ pub const Stage = struct {
                 const row = input[r * hidden_bytes ..][0..hidden_bytes];
                 for (&x, 0..) |*d, i| d.* = std.mem.readInt(i32, row[i * 4 ..][0..4], .little);
             }
-            for (self.first..self.last) |l| layer(self, l, &x);
+            for (self.first..self.last) |l| layer(self, slot, l, &x);
             if (self.head) {
-                if (r + 1 == rows) std.mem.writeInt(u32, out[0..4], draw(self.params, &x), .little);
+                if (batch) std.mem.writeInt(u32, out[4 * r ..][0..4], draw(self.params, &x), .little) else if (r + 1 == rows) std.mem.writeInt(u32, out[0..4], draw(self.params, &x), .little);
             } else for (x, 0..) |v, i| std.mem.writeInt(i32, out[r * hidden_bytes + i * 4 ..][0..4], v, .little);
         }
-        return if (self.head) 4 else rows * hidden_bytes;
+        return if (self.head) (if (batch) 4 * rows else 4) else rows * hidden_bytes;
     }
 
-    fn layer(self: *Stage, l: usize, x: *[hidden]i32) void {
-        const s = &self.state[l];
+    fn layer(self: *Stage, slot: usize, l: usize, x: *[hidden]i32) void {
+        const s = &self.state[slot][l];
         var y: [hidden]i32 = undefined;
         for (&y, self.params.w[l]) |*d, row| {
             var acc: i32 = 0;
@@ -178,10 +189,10 @@ pub const CpuPeer = struct {
         return .{ .ptr = self, .step = stepFn, .finish = finishFn };
     }
 
-    fn stepFn(ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+    fn stepFn(ptr: *anyopaque, seq: u32, slots: []const u8, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const self: *CpuPeer = @ptrCast(@alignCast(ptr));
         var plain: [max_rows * hidden_bytes]u8 = undefined;
-        const n = try self.stage.runRows(rows, input, &plain);
+        const n = try self.stage.runSlots(slots, rows, input, &plain);
         if (self.stage.head) {
             @memcpy(out[0..n], plain[0..n]);
             return n;
@@ -241,10 +252,10 @@ const SlowPeer = struct {
         return .{ .ptr = self, .step = stepFn, .finish = finishFn };
     }
 
-    fn stepFn(ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+    fn stepFn(ptr: *anyopaque, seq: u32, slots: []const u8, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const self: *SlowPeer = @ptrCast(@alignCast(ptr));
         device.pause(self.ns);
-        return CpuPeer.stepFn(self.inner, seq, rows, input, out, level);
+        return CpuPeer.stepFn(self.inner, seq, slots, rows, input, out, level);
     }
 
     fn finishFn(ptr: *anyopaque, seq: u32) anyerror!void {
@@ -394,6 +405,39 @@ test "several sequences share a device and each gets its own reference's tokens"
                 }
                 try streams.generate(&pipes, &works, chunk);
                 for (want, got) |w, g| try std.testing.expectEqualSlices(u32, &w, &g);
+            }
+        }
+    }
+}
+
+test "decode batches: sequences of different lengths in lanes of up to eight each get their own reference's tokens" {
+    const params = try std.testing.allocator.create(Params);
+    defer std.testing.allocator.destroy(params);
+    params.* = .init(42);
+    // eight prompts of different lengths and different amounts to generate: the batches shrink as sequences finish
+    const prompts = [8][]const u32{ &.{ 5, 17, 3, 90 }, &.{ 8, 8, 61, 2, 9 }, &.{71}, &.{ 12, 44 }, &.{ 33, 19, 7 }, &.{ 60, 1, 2, 3, 4, 5 }, &.{ 40, 41 }, &.{ 90, 91, 92 } };
+    const lens = [8]usize{ 9, 14, 3, 12, 1, 7, 11, 5 };
+    var want: [8][14]u32 = undefined;
+    for (prompts, lens, &want) |pr, n, *w| try reference(params, pr, w[0..n]);
+    // lane layouts: one lane of eight, two of four, three of (3, 3, 2); every order and level
+    const layouts = [_][]const usize{ &.{8}, &.{ 4, 4 }, &.{ 3, 3, 2 } };
+    for (layouts) |layout| {
+        for ([_]pipeline.Order{ .external_first, .metal_first, .external_only }) |order| {
+            for ([_]pipeline.Level{ .a, .b }) |level| {
+                if (order != .metal_first and level == .b) continue;
+                const r = try Rig.create(order, level, level == .b, if (order == .external_only) layers else 6, layout.len, 0);
+                defer r.destroy();
+                var got: [8][14]u32 = undefined;
+                var works: [8]streams.Work = undefined;
+                for (&works, prompts, lens, &got) |*w, pr, n, *g| w.* = .{ .prompt = pr, .out = g[0..n] };
+                var lanes: [3]streams.Lane = undefined;
+                var at: usize = 0;
+                for (layout, 0..) |n, i| {
+                    lanes[i] = .{ .pipe = &r.pipes[i], .works = works[at..][0..n] };
+                    at += n;
+                }
+                try streams.generateLanes(lanes[0..layout.len], 3);
+                for (lens, want, got) |n, w, g| try std.testing.expectEqualSlices(u32, w[0..n], g[0..n]);
             }
         }
     }

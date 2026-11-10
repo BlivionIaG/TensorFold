@@ -183,10 +183,10 @@ pub const MetalPeer = struct {
         return at - base;
     }
 
-    fn stepFn(ptr: *anyopaque, seq: u32, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+    fn stepFn(ptr: *anyopaque, seq: u32, slots: []const u8, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const self: *MetalPeer = @ptrCast(@alignCast(ptr));
         const st = self.stage;
-        if (rows != 1) return error.BadStep;
+        if (rows != 1 or slots.len != 1 or slots[0] != 0) return error.BadStep;
         self.input_offset = null;
         if (st.embed) {
             std.mem.writeInt(u32, self.tok_in.contents()[0..4], std.mem.readInt(u32, input[0..4], .little), .little);
@@ -309,14 +309,14 @@ test "all layers on metal alone equal the unsplit reference" {
     for (prompt) |t| {
         std.mem.writeInt(u32, &b, t, .little);
         seq += 1;
-        _ = try pe.step(pe.ptr, seq, 1, &b, &out, .a);
+        _ = try pe.step(pe.ptr, seq, &.{0}, 1, &b, &out, .a);
         token = std.mem.readInt(u32, &out, .little);
     }
     for (&got) |*g| {
         g.* = token;
         std.mem.writeInt(u32, &b, token, .little);
         seq += 1;
-        _ = try pe.step(pe.ptr, seq, 1, &b, &out, .a);
+        _ = try pe.step(pe.ptr, seq, &.{0}, 1, &b, &out, .a);
         token = std.mem.readInt(u32, &out, .little);
     }
     try std.testing.expectEqualSlices(u32, &want, &got);
