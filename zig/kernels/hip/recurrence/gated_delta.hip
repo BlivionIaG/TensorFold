@@ -220,11 +220,170 @@ gated_delta_tile(const float* __restrict__ q, const float* __restrict__ k, const
                                            blockIdx.z);
 }
 
+// The plan kernel's window of steps staged in LDS. A decode round is one row: 16 steps stage 16.6 KB, three blocks a CU on gfx900's 64 KiB
+// LDS, so the grid's 512 live blocks ran in three rounds; four steps stage 4.2 KB and one round holds them. The scan is the same.
+#if defined(__gfx900__)
+constexpr int kPlanSteps = 4;
+#else
+constexpr int kPlanSteps = 16;
+#endif
+
+#if defined(__gfx900__)
+// gfx900's plan scan: gated_delta_tile_body<DK, 8, kPlanSteps> with its arithmetic and its LDS tile unchanged, and the loads reordered. The tile
+// body's staging loops and its conditional state loads each wait for their load before the next one goes out (a decode step is about a dozen
+// dependent round trips to memory); here the slot's count, first row and descriptor address go out together, then the state pointer and the window's
+// k, q, gate, beta and v, then the state, and only the stores to LDS wait.
+template <int DK>
+__device__ __forceinline__ void
+gated_delta_plan_scan(const float* q, const float* k, const float* v, const float* gate, const float* beta, float* y,
+                      int key_heads, int value_heads, int dv, PlanArgs plan, int layer) {
+    constexpr int ROWS = 8;
+    constexpr int STEPS = kPlanSteps;
+    constexpr int SPAN = (DK + 31) / 32;
+    constexpr int WIDTH = 32 * ROWS;
+    constexpr int ITER = (STEPS * (DK / 4) + WIDTH - 1) / WIDTH;
+    const int slot = blockIdx.z;
+    const int length = plan.count[slot];
+    const long long row0 = plan.first[slot];
+    const unsigned long long desc_at = plan.desc[slot];
+    // the loads above stay above the return (the padding slot's descriptor is only an address: not read)
+    asm volatile("" ::: "memory");
+    if (length == 0) return;
+    const unsigned long long* desc = reinterpret_cast<const unsigned long long*>(desc_at);
+    float* state = reinterpret_cast<float*>(desc[plan_second(layer)]);
+    const bool replayed = length > 1 && slot + 1 < static_cast<int>(gridDim.z);
+    const int lane = threadIdx.x & 31;
+    const int local = threadIdx.y;
+    const int row = blockIdx.x * ROWS + local;
+    const int head = blockIdx.y;
+    const int key_head = head / (value_heads / key_heads);
+    const int tid = local * 32 + lane;
+    const float* qr = q + row0 * key_heads * DK;
+    const float* kr = k + row0 * key_heads * DK;
+    const float* vr = v + row0 * value_heads * dv;
+    const float* gr = gate + row0 * value_heads;
+    const float* br = beta + row0 * value_heads;
+    float* yr = y + row0 * value_heads * dv;
+
+    __shared__ float ks[STEPS][DK];
+    __shared__ float qs[STEPS][DK];
+    __shared__ float gs[STEPS];
+    __shared__ float bs[STEPS];
+    __shared__ float vs[STEPS][ROWS];
+
+    // a window's inputs in registers: the indices clamp to the window's last, the stores below are the ones that are guarded
+    float4 kw[ITER], qw[ITER];
+    float gw, bw, vw;
+    auto fetch = [&](int t0) {
+        const int n = min(STEPS, length - t0);
+        const int nvec = n * (DK / 4);
+#pragma unroll
+        for (int j = 0; j < ITER; ++j) {
+            const int i = min(tid + j * WIDTH, nvec - 1);
+            const int elem = i * 4;
+            const int step = elem / DK;
+            const int col = elem - step * DK;
+            const size_t at = (static_cast<size_t>(t0 + step) * key_heads + key_head) * DK + col;
+            kw[j] = *reinterpret_cast<const float4*>(kr + at);
+            qw[j] = *reinterpret_cast<const float4*>(qr + at);
+        }
+        const int g = min(tid, n - 1);
+        gw = gr[static_cast<size_t>(t0 + g) * value_heads + head];
+        bw = br[static_cast<size_t>(t0 + g) * value_heads + head];
+        const int vi = min(tid, n * ROWS - 1);
+        const int vstep = vi / ROWS;
+        vw = vr[(static_cast<size_t>(t0 + vstep) * value_heads + head) * dv + blockIdx.x * ROWS + (vi - vstep * ROWS)];
+    };
+    fetch(0);
+    // the window's loads go out before the state loads that wait for the descriptor's
+    asm volatile("" ::: "memory");
+
+    float s[4] = {0.f, 0.f, 0.f, 0.f};
+    const size_t state_row = (static_cast<size_t>(head) * dv + row) * DK;
+#pragma unroll
+    for (int i = 0; i < SPAN; ++i) {
+        const int idx = lane + i * 32;
+        if (idx < DK) s[i] = state[state_row + idx];
+    }
+
+    for (int t0 = 0; t0 < length; t0 += STEPS) {
+        const int n = min(STEPS, length - t0);
+        const int nvec = n * (DK / 4);
+        if (t0 > 0) fetch(t0);
+#pragma unroll
+        for (int j = 0; j < ITER; ++j) {
+            const int i = tid + j * WIDTH;
+            if (i < nvec) {
+                const int elem = i * 4;
+                const int step = elem / DK;
+                const int col = elem - step * DK;
+                ks[step][col] = kw[j].x;
+                ks[step][col + 1] = kw[j].y;
+                ks[step][col + 2] = kw[j].z;
+                ks[step][col + 3] = kw[j].w;
+                qs[step][col] = qw[j].x;
+                qs[step][col + 1] = qw[j].y;
+                qs[step][col + 2] = qw[j].z;
+                qs[step][col + 3] = qw[j].w;
+            }
+        }
+        if (tid < n) {
+            gs[tid] = gw;
+            bs[tid] = bw;
+        }
+        if (tid < n * ROWS) vs[tid / ROWS][tid % ROWS] = vw;
+        __syncthreads();
+
+        for (int tt = 0; tt < n; ++tt) {
+            const float decay = gs[tt];
+            const float step_beta = bs[tt];
+            const float value = vs[tt][local];
+            float remembered = 0.f;
+            float held[4] = {0.f, 0.f, 0.f, 0.f};
+#pragma unroll
+            for (int i = 0; i < SPAN; ++i) {
+                const int idx = lane + i * 32;
+                if (idx < DK) {
+                    held[i] = ks[tt][idx];
+                    s[i] = s[i] * decay;
+                    remembered = remembered + s[i] * held[i];
+                }
+            }
+            const float delta = (value - lane0_sum(remembered)) * step_beta;
+#pragma unroll
+            for (int i = 0; i < SPAN; ++i) {
+                const int idx = lane + i * 32;
+                if (idx < DK) s[i] = s[i] + held[i] * delta;
+            }
+            float readout = 0.f;
+#pragma unroll
+            for (int i = 0; i < SPAN; ++i) {
+                const int idx = lane + i * 32;
+                if (idx < DK) readout = readout + s[i] * qs[tt][idx];
+            }
+            readout = lane0_sum(readout);
+            if (lane == 0) yr[static_cast<size_t>(t0 + tt) * value_heads * dv + static_cast<size_t>(head) * dv + row] = readout;
+        }
+        __syncthreads();
+    }
+
+    if (replayed) return;
+#pragma unroll
+    for (int i = 0; i < SPAN; ++i) {
+        const int idx = lane + i * 32;
+        if (idx < DK) state[state_row + idx] = s[i];
+    }
+}
+#endif
+
 // A round's windows in one launch, a grid plane a slot; rows, state and snapshots come from the plan, same scan.
 template <int DK>
 __device__ __forceinline__ void
 gated_delta_plan_body(const float* q, const float* k, const float* v, const float* gate, const float* beta, float* y,
                       int key_heads, int value_heads, int dv, PlanArgs plan, int layer) {
+#if defined(__gfx900__)
+    gated_delta_plan_scan<DK>(q, k, v, gate, beta, y, key_heads, value_heads, dv, plan, layer);
+#else
     const int slot = blockIdx.z;
     const int length = plan.count[slot];
     if (length == 0) return;
@@ -233,10 +392,11 @@ gated_delta_plan_body(const float* q, const float* k, const float* v, const floa
     float* state = reinterpret_cast<float*>(desc[plan_second(layer)]);
     // a window of rows leaves the state as the round found it, for its keep to replay (padding rows keep nothing)
     const bool replayed = length > 1 && slot + 1 < static_cast<int>(gridDim.z);
-    gated_delta_tile_body<DK, 8, 16>(q + row0 * key_heads * DK, k + row0 * key_heads * DK, v + row0 * value_heads * dv,
-                                     gate + row0 * value_heads, beta + row0 * value_heads, state,
-                                     y + row0 * value_heads * dv, length, key_heads, value_heads, dv, nullptr, 0,
-                                     !replayed);
+    gated_delta_tile_body<DK, 8, kPlanSteps>(q + row0 * key_heads * DK, k + row0 * key_heads * DK, v + row0 * value_heads * dv,
+                                             gate + row0 * value_heads, beta + row0 * value_heads, state,
+                                             y + row0 * value_heads * dv, length, key_heads, value_heads, dv, nullptr, 0,
+                                             !replayed);
+#endif
 }
 
 // A keep: each slot's state run from the round's start through its kept rows, by the same scan on the inputs kept.
