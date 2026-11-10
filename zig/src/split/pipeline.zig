@@ -59,6 +59,9 @@ pub const Config = struct {
     stamp_retries: u32 = 20_000_000,
 };
 
+/// Where a pipeline's steps spent their time, summed: recording the device's work, the host stage, waiting for a reply.
+pub const Phases = struct { queue_ns: u64 = 0, peer_ns: u64 = 0, finish_ns: u64 = 0, wait_ns: u64 = 0 };
+
 pub const Pipeline = struct {
     dev: device.ExternalDevice,
     window: device.Window,
@@ -69,6 +72,7 @@ pub const Pipeline = struct {
     down: wire.Slot,
     up: wire.Slot,
     seq: u32 = 0,
+    phases: Phases = .{},
     work: Step = undefined,
     /// Host memory for the stamped hidden row the device stage reads (`metal_first`); `hidden_bytes` long.
     scratch: []u8,
@@ -107,31 +111,47 @@ pub const Pipeline = struct {
         std.mem.writeInt(u32, &tok_bytes, token, .little);
         switch (p.cfg.order) {
             .external_first, .external_only => {
+                var t = device.nowNs();
                 try p.queue(seq);
                 p.down.publish(seq, .token, 0, 1, &tok_bytes, .ok) catch return error.Oversize;
+                t = p.lap(&p.phases.queue_ns, t);
                 const h = p.up.wait(seq, timeout) catch |err| return p.lose(err);
+                t = p.lap(&p.phases.wait_ns, t);
                 if (p.cfg.order == .external_only) return std.mem.readInt(u32, p.up.data()[0..4], .little);
                 var out: [4]u8 = undefined;
                 const peer = p.peer.?;
                 const n = peer.step(peer.ptr, seq, p.up.data()[0..h.bytes], &out, .a) catch return p.fail(error.PeerLost);
+                _ = p.lap(&p.phases.peer_ns, t);
                 std.debug.assert(n == 4);
                 return std.mem.readInt(u32, &out, .little);
             },
             .metal_first => {
+                var t = device.nowNs();
                 try p.queue(seq);
+                t = p.lap(&p.phases.queue_ns, t);
                 const peer = p.peer.?;
                 const region = p.down.data();
                 const level = p.cfg.level;
                 const n = peer.step(peer.ptr, seq, &tok_bytes, region, level) catch return p.fail(error.PeerLost);
                 std.debug.assert(n == p.cfg.hidden_bytes);
+                t = p.lap(&p.phases.peer_ns, t);
                 // level A: the stage is complete, so the word follows the data; level B: the word may go first
                 if (level == .a) peer.finish(peer.ptr, seq) catch return p.fail(error.PeerLost);
                 p.down.publishHeader(seq, .hidden, 0, 1, @intCast(wire.stampedLen(n)), .ok);
                 if (level == .b) peer.finish(peer.ptr, seq) catch return p.fail(error.PeerLost);
+                t = p.lap(&p.phases.finish_ns, t);
                 _ = p.up.wait(seq, timeout) catch |err| return p.lose(err);
+                _ = p.lap(&p.phases.wait_ns, t);
                 return std.mem.readInt(u32, p.up.data()[0..4], .little);
             },
         }
+    }
+
+    /// Adds the time since `since` to `slot` and returns now.
+    fn lap(_: *Pipeline, slot: *u64, since: u64) u64 {
+        const now = device.nowNs();
+        slot.* += now - since;
+        return now;
     }
 
     fn queue(p: *Pipeline, seq: u32) Error!void {
