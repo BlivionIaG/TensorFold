@@ -32,7 +32,7 @@ What the measurements say, on this M4 Pro (48 GiB) and the Vega card:
 | Question | Answer |
 | --- | --- |
 | Does the offload beat plain Metal for one stream on the Vega card? | No. All-Metal decodes the 35B-A3B at 91.6 tok/s; the best single-stream split is a few percent below it (layer split, 84 tok/s modelled) or well below it (expert split, 52 tok/s modelled). Vega's whole-token decode bandwidth is below the M4 Pro's. |
-| What does the Vega card buy? | Capacity (a 24 GiB Mac holds 12 GiB instead of 19 GiB of weights) and, on the 4B, no aggregate throughput: two pipelined streams decode 120-130 tok/s, the Mac alone batching two sequences in one round 116 (one engine, same prompts), and the Mac alone is ahead at three and four (155 and 198 against the split's 120). For the 35B-A3B the Mac alone batches 88.8 / 135.8 / 176.4 / 206.9 tok/s at 1 / 2 / 4 / 8 sequences (measured, mlx_lm); the implemented split (single-row steps) cannot beat it beyond two sequences, and a split whose stages batch rows of several sequences is modelled 1.1-1.2x ahead on the Vega [INFERENCE] (see M4 groundwork). |
+| What does the Vega card buy? | Capacity (a 24 GiB Mac holds 12 GiB instead of 19 GiB of weights) and, on the 4B, no aggregate throughput: two pipelined streams decode 120-130 tok/s, the Mac alone batching two sequences in one round 116 (one engine, same prompts), and the Mac alone is ahead at three and four (155 and 198 against the split's 120). For the 35B-A3B the Mac alone batches 88.8 / 135.8 / 176.4 / 206.9 tok/s at 1 / 2 / 4 / 8 sequences (measured, mlx_lm); the implemented split (single-row steps) cannot beat it beyond two sequences, and the batched-stage split built for it reaches parity at four sequences and falls behind at eight on the 4B, because the Vega's marginal row costs 7.5 ms against the Mac's 1.3 (see batched stages, card results). |
 | Where does the speed come from? | A faster external GPU. Modelled 7900 XTX-class: 158 tok/s resident; 5090-class: 299 tok/s resident, 3.5x all-Metal [INFERENCE]. |
 | Can Metal wait on a flag written by the external GPU (or the CPU)? | No. A running kernel never reliably sees a store from another agent; GPU stores are not visible mid command buffer either. Every handoff is a command-buffer boundary. Measured wake cost 65 us. |
 | Can Metal wrap the memory the external GPU DMAs into? | Yes. `newBufferWithBytesNoCopy` accepted 16 KiB to 1 GiB shm-backed mappings, including `MAP_FIXED` inside a `PROT_NONE` arena the way `hipmac` lays out its sysmem. |
@@ -534,7 +534,7 @@ Each milestone has a stop criterion; none needs more than one Mac and one card.
 | M1 (receipt measured; relay round trips at 4 KiB / 64 KiB not separately) | on the card: flag round trip each way through the relay at 4 KiB and 64 KiB, `hipStreamWaitValue32`-class wait latency, GPU read of a 64 KiB host window; 4B dispatch counts with fused boundary kernels | eGPU to Metal to eGPU at 8 KiB p50 <= 250 us, p99 <= 500 us |
 | M2 | Level B stamped replies: stale-stamp rate and retry cost against the card's PCIe reads | zero accepted stale words in 10^6 replies, else stay at Level A |
 | M3 (done on the 4B: tokens identical, cosine >= 0.9996; 2 streams 120-130 tok/s: 1.6-1.8x ONE Mac stream but only 1.03-1.13x the Mac alone batching two sequences (116), and below it at 3-4 sequences (155, 198): the gate as worded (against one Metal queue) is met, the honest comparison is not a win on this model; one stream 16-24 ms against 14 ms all-Metal, the 5% single-stream clause not met, as the model says) | Qwen3.5-4B layer split Metal + Vega, tokens against the unsplit runs (gate 4) and fidelity (gate 3); single stream and 2 streams | 2-stream throughput >= 1.5x one Metal queue (model 1.7x); single stream within 5% of all-Metal |
-| M4 (Mac-alone baseline measured: 88.8 / 135.8 / 176.4 / 206.9 tok/s at 1 / 2 / 4 / 8 sequences, mlx_lm; native Metal cannot run the shape) | 35B-A3B layer split with stages that batch rows of several sequences, KV hand-off after Metal prefill, 24 GiB-class memory cap emulated with a lower budget | fits the cap; tok/s at 2, 4 and 8 sequences above the Mac alone's, within 15% of the model |
+| M4 (Mac-alone baseline measured: 88.8 / 135.8 / 176.4 / 206.9 tok/s at 1 / 2 / 4 / 8 sequences, mlx_lm; native Metal cannot run the shape; stages that batch rows done and measured on the 4B, parity at four sequences) | 35B-A3B layer split on the batched stages, KV hand-off after Metal prefill, 24 GiB-class memory cap emulated with a lower budget; first the card's multi-row kernels (b near the Mac's) | fits the cap; tok/s at 2, 4 and 8 sequences above the Mac alone's |
 | M5 | expert split on the card with resident layers | 14 crossings fewer than all-split, tok/s within 15% of the model; if single-stream is below 50 tok/s it stays opt-in |
 | M6 | hot-expert cache: per-layer routing histograms on real prompts (code, prose), hit rate versus cache size | an all-hit layer rate that pays the cache's copy cost; otherwise drop PR 3 |
 | M7 | a stronger card (7900 XTX class, 5090 class) through the same interface | resident decode within 15% of the planner's prediction |
@@ -826,7 +826,11 @@ sequences, 67 against 53 at one) gives for the 35B-A3B:
 * To beat it as a *split* (the card does not hold the model, as the Vega): the stages must batch rows of different sequences. With
   batched stages the card needs r above 0.50 at two sequences, 0.32 at four and 0.19 at eight (free crossings), and the Vega at r 0.68
   clears all three, by 1.11x, 1.20x and 1.23x [INFERENCE]; with single-row steps (what is written) it wins only at two sequences (1.11x) and
-  loses at four and eight.
+  loses at four and eight. The card measurement that followed (batched stages, card results) corrects the model: it assumed the card is r
+  times slower on every part of a round, but the Vega's marginal row (b 7.5 ms) is 5.8 times the Mac's (1.3 ms) while its fixed part is not
+  worse, so the break-even is on b: at eight sequences in two lanes (each lane step pays the Mac side's `a`) a split with free crossings and
+  perfect overlap beats the Mac's 24.7 ms round only for a card b below about 6 ms, and is 10% ahead at about 4 ms [INFERENCE: this
+  arithmetic from the fitted a and b; 295 tok/s measured against the 307 it gives for b 7.5].
 * Capacity, not speed, is the case for a card below 20 GiB or a model above the Mac's budget (a 24 GiB Mac holds 12 GiB of weights).
 
 The implication for the pull-request plan: before the MoE layer split (pull request 2) there is a stage that steps *rows of several sequences*
@@ -834,6 +838,71 @@ The implication for the pull-request plan: before the MoE layer split (pull requ
 2-stream measurement. Not measured: the card on the 35B (the HIP MoE layer range does not exist), any native-Metal 35B number, routing overlap between
 real rows beyond eight sequences, and the mlx and TensorFold Metal engines' difference on the 4B (84.6 against 70.1 tok/s one sequence), which says the
 TensorFold Metal baseline above is not the Mac's best.
+
+### Stages that step rows of several sequences (pull request 2, offline half)
+
+The M4 groundwork showed what a split must do to beat the Mac alone: put several sequences in one step, so each side reads its
+weights once for all of them. The step now names its sequences:
+
+* `StepIo.slots` (and `Peer.step`'s `slots`, and the wire `Request`'s `nslots`/`slots`): one slot is a prompt chunk or one decode
+  position of that sequence (rows consecutive positions of it, as before); `rows` slots are a decode batch, row i the next position
+  of sequence `slots[i]`, each at its own position, no sequence twice, at most eight (`pipeline.max_slots`). The stage keeps the
+  per-sequence state (KV pages and positions on the card; the `Runner` slots on the Mac).
+* A head stage writes one token per row of a batch (the token after the last row for a single slot), so the reply area of the
+  window is 4 bytes a row, 64-byte rounded. `Pipeline.submitSlots` and `collectAll` carry it; `submit` and `collect` are sequence 0.
+* The scheduler (`streams.generateLanes`) works on lanes: a `Pipeline` with its own two window slots and the sequences it serves.
+  Each lane steps prompts one sequence at a time in chunks, then decodes every sequence that still has tokens in one batch (batches
+  shrink as sequences finish). Lanes pipeline over the device as before (the two-stream result), so the sides stay busy while each
+  step reads each side's weights once for all the sequences of its lane.
+* Metal: `LayerPeer` over one model with a slot per sequence; a batch is one shared `Round` with a window per slot at that slot's
+  offset. HIP: `HipLayerStage` with `Options.slots` sequences (caches and positions each), a batch is one decode round over rows from
+  different caches (`Engine.stageRows`, the lane rounds' machinery with a per-row external hand-off); the engine is opened with
+  `batch_rows >= slots` and `warm()` covers 2..slots rows. Rows are exactly the batch's size (no padding rows: they would read window
+  memory behind the batch).
+* The resident placement batches the same way: `tf-offload-card MODEL REF unsplit streams=N lanes=L` is the whole model on the card
+  with only tokens crossing, N sequences in L lanes. The options after `unsplit` were silently ignored before this change; they are
+  now read.
+
+**Exactness.** The rule is the same as before: every sequence is token-identical to its own unsplit run. Offline, on the real 4B
+(Metal+Metal, the device half on the CPU stand-in of the stage), 104 runs of up to eight sequences (prompts of 5-20 tokens, 10-32
+tokens each so batches shrink) in one to four lanes, cuts 1, 16 and 31, both orders, both levels, were token-identical to each
+sequence's own unsplit run; on the generated-weights model 116 runs. At the logits level a batch row equals the same row run alone:
+0 of 36 logits rows differ in any bit on the 4B for batches of 2-4 rows (subsets in varying order); batches of 5-8 rows are covered by
+token identity only. The toy model runs lanes of up to eight sequences in every order and level against each sequence's reference.
+HIP plumbing (consume per row at the right window offset, plan words per row, only the named slots advance, two lanes with disjoint plan
+buffers) is tested on the recording stand-in; that a 3-row batch equals three 1-row steps on the device is only provable on the card.
+
+**Card results (4B, batched stages; raw lines in `metal-tb4-split-moe-probe/card_batches.txt`).** Every sequence token-identical.
+
+| Sequences | Mac alone, TensorFold Metal | Mac alone, mlx_lm | Resident on the Vega | Split (best of the cuts tried) |
+| --- | --- | --- | --- | --- |
+| 1 | 70.1 | 83.6 | 64.8 | 52-57 (earlier runs) |
+| 2 | 116.5 | 153.2 | 76.2 | 104-130 (2 lanes of one row; 84-87 with one lane of two rows) |
+| 4 | 199.0 | 216.6 | 104.9 | 196 (cut 22, 2 lanes of 2 rows) |
+| 8 | 331.4 | 243.5 | 115.4 | 295 (cut 24, 2 lanes of 4 rows) |
+
+The batched stage works end to end, and the split reaches parity with the Mac alone at four sequences and falls behind at eight
+(295 against 331). The prediction of the groundwork (a split with batched stages 1.1-1.2x ahead) did not come true on the 4B, and the
+cause is in the measurements, not in the pipeline: a round of N rows costs t(N) = a + b N, and the fits are
+
+| Engine | a (ms) | b (ms a row) |
+| --- | --- | --- |
+| Mac, TensorFold Metal | 14.3 | 1.3 |
+| Mac, mlx_lm | 7.5 | 3.1 |
+| Vega, resident | 9.1 | 7.5 |
+
+The Vega's decode kernels amortize the weight read across rows poorly: its second row costs 7.5 ms, a single row 15.4 ms in all, so eight
+rows cost 69 ms where a bandwidth-bound round with shared weights would cost under 25 ms [INFERENCE: the cause is the multi-row GEMV path
+on gfx900, which was tuned for one row; not profiled]. The Mac's rows are nearly free (1.3 ms). The planner's batched model assumed a
+card that is r times slower on every part of a round; the card's marginal row is 5.8 times the Mac's, not 1.5 times. A split pays each
+side's `a` once per lane step, so two lanes pay it twice: at eight sequences the Mac side alone costs 0.75 x (14.3 + 1.3 x 4) = 14.6 ms a
+lane step, 29 ms a round of two lanes, against 24.7 ms for the Mac running the whole model on eight rows: that bound gives 274 tok/s against the 295 measured (the card side overlaps).
+So on the 4B the Vega does not help a Mac that holds the model; it will, in this design, only if its multi-row kernels reach about the
+Mac's b (an engineering item for the HIP backend, measured by `streams=N lanes=1` resident rounds), or for models the Mac cannot hold.
+Resident on the Vega is slower than the Mac alone at every N, so the 4B on this card is a capacity and correctness vehicle, not a
+speed one. The conclusion for 24-32 GiB
+cards stands in a sharper form: the resident path needs the card's one-row decode above the Mac's *and* multi-row kernels with a b near
+the Mac's; both are properties of the card's kernels, measurable with the same command.
 
 ### Rebase onto upstream main
 
