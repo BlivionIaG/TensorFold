@@ -103,6 +103,62 @@ pub const Pull = struct {
     }
 };
 
+/// TF_DSV41_HANDOFF_FILE: a hand-off file (families/deepseek_v41/handoff/blob.zig) as the remote source, with no network:
+/// a prompt that extends the file's tokens gets that prefix landed from it; any other prompt is prefilled here. It runs the
+/// lane host's own remote path (`wants`, `fill`, the restore in `Backend.prefill`, `drop`, the keep rule) against a file.
+pub const FileSource = struct {
+    gpa: std.mem.Allocator,
+    model: *ds.Model,
+    arena: std.heap.ArenaAllocator,
+    blob: ho.blob.Blob,
+    running: std.atomic.Value(u32) = .init(0),
+
+    pub fn open(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, path: []const u8) !*FileSource {
+        const f = try gpa.create(FileSource);
+        errdefer gpa.destroy(f);
+        f.* = .{ .gpa = gpa, .model = m, .arena = .init(gpa), .blob = undefined };
+        errdefer f.arena.deinit();
+        const a = f.arena.allocator();
+        f.blob = try ho.blob.Blob.parse(a, try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(8 << 30)));
+        return f;
+    }
+
+    pub fn close(f: *FileSource) void {
+        f.arena.deinit();
+        f.gpa.destroy(f);
+    }
+
+    pub fn source(f: *FileSource) api.LaneHost.Remote.Source {
+        return .{ .ptr = f, .wants = fileWants, .fill = fileFill, .drop = fileDrop, .running = &f.running };
+    }
+
+    fn fileWants(ptr: *anyopaque, len: u64, cached: u64) bool {
+        const f: *FileSource = @ptrCast(@alignCast(ptr));
+        return len > f.blob.tokens.len and cached < f.blob.tokens.len;
+    }
+
+    fn fileFill(ptr: *anyopaque, prompt: []const u32, _: u64) anyerror!?Filled {
+        const f: *FileSource = @ptrCast(@alignCast(ptr));
+        const tokens = f.blob.tokens;
+        if (prompt.len <= tokens.len or !std.mem.eql(u32, prompt[0..tokens.len], tokens)) return null;
+        const at: u32 = @intCast(tokens.len);
+        const snap = try f.model.snapshotBlank();
+        errdefer f.model.snapshotDrop(snap);
+        var landing: ho.landing.Landing = undefined;
+        try landing.init(f.gpa, at, .{ .@"packed" = packedOf(f.model, snap) });
+        defer landing.deinit();
+        try f.blob.feed(landing.decoderSink());
+        _ = try landing.complete();
+        try f.model.snapshotSeal(snap, prompt, at);
+        return .{ .saved = snap, .at = at };
+    }
+
+    fn fileDrop(ptr: *anyopaque, saved: *anyopaque) void {
+        const f: *FileSource = @ptrCast(@alignCast(ptr));
+        f.model.snapshotDrop(@ptrCast(@alignCast(saved)));
+    }
+};
+
 /// What serve refuses before loading: one flag without the other, or a separate drafter model.
 pub fn refusal(f: Flags, drafter: bool) ?[]const u8 {
     if (!f.on()) return null;

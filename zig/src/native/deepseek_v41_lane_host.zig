@@ -23,6 +23,8 @@ pub const Host = struct {
     cache: ?api.prompt_cache.Store = null,
     /// --prefill-from's link and pull (null: every prompt is prefilled here).
     link: ?*remote.Link = null,
+    /// TF_DSV41_HANDOFF_FILE's source (null: none).
+    file: ?*remote.FileSource = null,
 
     pub fn engine(h: *Host) api.Engine {
         return h.host.engine();
@@ -192,6 +194,15 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         const id = try remote.checkpointId(a, io, o.dir);
         try remote.attach(h, io, a, o.remote_prefill, id, problem);
     }
+    if (std.c.getenv("TF_DSV41_HANDOFF_FILE")) |path| {
+        if (h.link != null) {
+            problem.* = "TF_DSV41_HANDOFF_FILE and --prefill-from both name a remote source: use one";
+            return error.InvalidEnvironment;
+        }
+        h.file = try remote.FileSource.open(gpa, io, model_ptr, std.mem.span(path));
+        h.host.remote = h.file.?.source();
+        h.host.keep_remote = try remote.keeps();
+    }
     h.host.explain = .{ .text = words };
     h.warm = .{ .queue = model_ptr.queue };
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
@@ -246,6 +257,7 @@ pub fn close(ctx: *anyopaque) void {
     const h: *Host = @ptrCast(@alignCast(ctx));
     h.host.stop();
     if (h.link) |l| l.stop(h.gpa);
+    if (h.file) |f| f.close();
     if (h.cache) |*store| store.deinit();
     h.core.deinit();
     h.cfg.deinit(h.gpa);

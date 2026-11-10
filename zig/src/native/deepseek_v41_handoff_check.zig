@@ -6,7 +6,8 @@
 //! library's blob: tokens, protocol 2 manifest, parts; a synthetic one or a dump of a producer's export): it lands the same
 //! way and is compared with a local prefill of the same prompt. The full prompt comes from TF_DSV41_HANDOFF_TOKENS (decimal
 //! ids, white space or commas): the file covers its first `upto` tokens and at least one more must follow. A remote prefix
-//! is outside the exactness contract: agreement is reported, not required.
+//! is outside the exactness contract: agreement is reported, not required. TF_DSV41_HANDOFF_DUMP=<path> keeps the round trip's
+//! file, which TF_DSV41_HANDOFF_FILE then serves as the remote source of a later (or this) server.
 const std = @import("std");
 const tf = @import("tensorfold");
 const ds = tf.deepseek_v41;
@@ -146,6 +147,10 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8) !
     const snap = try m.snapshotBlank();
     defer m.snapshotDrop(snap);
     const bytes = if (file != null) null else try exportNative(a, m, native, prompt[0..upto]);
+    if (bytes) |b| if (envText("TF_DSV41_HANDOFF_DUMP")) |path| {
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = b });
+        log.info("wrote the round trip's hand-off file ({d} bytes, {d} tokens) to {s}", .{ b.len, upto, path });
+    };
     const landed = if (file) |f| f else try ho.blob.Blob.parse(a, bytes.?);
     var landing: ho.landing.Landing = undefined;
     const t2 = std.Io.Timestamp.now(io, .awake).toNanoseconds();
