@@ -96,6 +96,10 @@ in delivery order; a synthetic one from `synth.zig`, or a producer's parts dumpe
 lands the hand-off in a blank Snapshot, then compares the next N logit rows (the reference's tokens fed to both): top-1
 agreement and NRMS, and the free-running token streams. Agreement is reported, not required.
 
+`TF_DSV41_HANDOFF_DUMP=<path>` keeps the round trip's file; `TF_DSV41_HANDOFF_FILE=<path>` serves such a file as the lane
+host's remote source (instead of `--prefill-from`): a request whose prompt extends the file's tokens gets that prefix landed
+from it, through the lane's own `wants` / `fill` / restore / `drop` path and keep rule, and any other prompt is prefilled here.
+
 ## Tests
 
 `zig build test-dsv41-handoff` (host only): codec exhaustively against independent tables, packers against independent
