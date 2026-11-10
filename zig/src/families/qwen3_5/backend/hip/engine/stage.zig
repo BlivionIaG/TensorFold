@@ -2,6 +2,7 @@
 //! span of several rows, over a sequence's caches, recorded on the engine's stream and not waited for. The boundary rows
 //! cross through a `fwd.Handoff`; every launch is eager (a graph would bake in the hand-off's stamp and addresses).
 
+const std = @import("std");
 const hip = @import("hip");
 const state = @import("../forward/state.zig");
 const win = @import("../forward/window.zig");
@@ -15,29 +16,47 @@ pub fn newPlan(e: *Engine) !plan.Buffer {
     return plan.Buffer.init(&e.driver, e.o.batch_rows, e.model().spec.n_layers, e.pool.count);
 }
 
-/// One decode step (one row, one slot) of the layers of `e`'s range over `caches` at slot `pos`: the plan words go up
-/// in the stream, then the forward. `tokens` is the device address of the u32 token id (layer 0's stage); `hand` the
-/// boundary rows of the stages that have one; `argmax_at` the device address of the i32 the head's greedy pick lands in
-/// (the last stage). Returns the head's logits row, or null short of the head.
+/// A sequence a decode round takes a row of: its caches and the position the row is.
+pub const Row = struct { caches: *state.Caches, pos: usize };
+
+/// One decode step (one row, one slot) of the layers of `e`'s range over `caches` at slot `pos`: `decodeRows` of one.
+pub fn decode(e: *Engine, buf: *plan.Buffer, caches: *state.Caches, pos: usize, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !?hip.ops.Tensor {
+    return decodeRows(e, buf, &.{.{ .caches = caches, .pos = pos }}, tokens, hand, argmax_at);
+}
+
+/// One decode round of the layers of `e`'s range over `seqs.len` rows, row i the next position of the sequence `seqs[i]`
+/// (its own caches, its own position, no sequence twice): the plan words go up in the stream, then one forward, so the
+/// weights are read once for all the rows. `tokens` is the device address of the u32 token ids, one a row (layer 0's
+/// stage); `hand` the boundary rows of the stages that have one, `seqs.len` of them; `argmax_at` the device address of
+/// the i32 each row's greedy pick lands in (the last stage), one a row. Returns the head's logits rows, or null short of
+/// the head. The round runs exactly `seqs.len` rows, never padded to a bucket: a stage's rows come from the window,
+/// and padding rows would read what lies behind them [INFERENCE: the plan kernels take any row count and every row is
+/// bitwise serial, as the lane rounds' padding relies on; only a run on a device can show it].
 ///
 /// The plan's words go up from the pinned host words of `buf` by an asynchronous copy that runs when the stream reaches
 /// it, so `buf` must not be filled again before that copy ran. Every sequence's stage owns its buffers (`newPlan`) and
 /// takes them in turn: with n buffers a stage may have n - 1 earlier steps recorded and not collected when it records
 /// one more. The rest a step touches is written while recording (the shared round's host rows) or ordered by the stream.
-pub fn decode(e: *Engine, buf: *plan.Buffer, caches: *state.Caches, pos: usize, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !?hip.ops.Tensor {
+pub fn decodeRows(e: *Engine, buf: *plan.Buffer, seqs: []const Row, tokens: u64, hand: fwd.Handoff, argmax_at: u64) !?hip.ops.Tensor {
     const st = &e.round;
     const m = e.model();
     if (e.stopped) return error.GroupStopped;
-    if (pos >= caches.covered()) return error.ContextFull;
+    if (seqs.len == 0 or seqs.len > e.o.batch_rows) return error.WindowTooWide;
+    var visible: usize = 0;
+    for (seqs, 0..) |q, i| {
+        if (q.pos >= q.caches.covered()) return error.ContextFull;
+        for (seqs[0..i]) |p| if (p.caches == q.caches) return error.WindowTooWide;
+        visible = @max(visible, q.pos + 1);
+    }
+    const cap = std.mem.alignForward(usize, e.o.capacity, plan.min_span);
+    const shape: plan.Shape = .{ .rows = @intCast(seqs.len), .slots = @intCast(seqs.len + 1), .span = @intCast(@min(plan.spanOf(visible), cap)) };
     const none = [1]u32{0};
-    const rows = [1]round.Rows{.{ .caches = caches, .pos = pos, .tokens = &none }};
-    const shape = try round.shapeOf(e, &rows);
-    st.wins[0] = .{ .desc = caches.desc.base(), .pos = pos, .tokens = &none };
+    for (seqs, st.wins[0..seqs.len]) |q, *w| w.* = .{ .desc = q.caches.desc.base(), .pos = q.pos, .tokens = &none };
     e.rounds.reset();
     const o = e.ops(&e.rounds);
     try win.kept(o, m, shape.rows, st.snaps);
     const l = plan.Layout.of(shape.rows, shape.slots, m.spec.n_layers);
-    buf.fill(l, shape, st.wins[0..1], st.scratch.desc.base(), st.snaps);
+    buf.fill(l, shape, st.wins[0..seqs.len], st.scratch.desc.base(), st.snaps);
     const words = buf.dev.base();
     const p: hip.plan_ops.Plan = .{ .args = buf.args(l), .rows = shape.rows, .slots = shape.slots };
     const r: win.Round = .{ .plan = p, .tokens = tokens, .span = shape.span, .inputs = st.snaps, .positions3 = words + 4 * l.rope, .rotary = words + 4 * l.rotary, .hand = hand };

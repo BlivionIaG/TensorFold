@@ -4,9 +4,11 @@
 //! forced on the tokens in the reference file (`tf-offload-metal ref`) and compared position by position, then free
 //! running. Opens the card: run it only with the card to yourself.
 //!   tf-offload-card MODEL_DIR REF_FILE unsplit
-//!   tf-offload-card MODEL_DIR REF_FILE SOCKET metal_first|external_first CUT [streams=N] [chunk=C] [repeat=R]
-//! With `streams`, `chunk` or `repeat` (any of them, `streams=1` too) the run is the pipelined one instead: N sequences share the card and the Mac's GPU
-//! (`tf-offload-metal serve SOCKET FIRST LAST N`), each prompt (the reference's, repeated R times) goes through in steps of
+//!   tf-offload-card MODEL_DIR REF_FILE SOCKET metal_first|external_first CUT [streams=N] [lanes=L] [chunk=C] [repeat=R]
+//!   tf-offload-card MODEL_DIR REF_FILE unsplit [streams=N] [lanes=L] [chunk=C] [repeat=R]
+//! With `streams`, `lanes`, `chunk` or `repeat` (any of them, `streams=1` too) the run is the pipelined one instead: N sequences share the card and the Mac's GPU
+//! (`tf-offload-metal serve SOCKET FIRST LAST L ceil(N/L)`), in L lanes (default N, one sequence each); the sequences of a lane decode in one
+//! batched step, a row each. `unsplit` is the whole model resident on the card with only tokens crossing the link. Each prompt (the reference's, repeated R times) goes through in steps of
 //! C positions, then the reference's tokens are generated; the prefill and the decode rates are printed, and every sequence's
 //! tokens are checked (R = 1: against the reference file; else against the same run with one position a step).
 const std = @import("std");
@@ -33,15 +35,16 @@ const Half = struct {
     stages: []Stage,
     dev: *hip.offload.HipExternal,
 
-    fn init(a: std.mem.Allocator, io: std.Io, dir: []const u8, range: qwen35.view.Range, sequences: usize, max_rows: usize) !Half {
-        const e = try Engine.open(a, io, dir, .{ .capacity = capacity, .streams = 1, .batch_rows = 1, .prompt_rows = max_rows, .range = range });
+    /// `lanes` stages, each serving `slots` sequences (a decode batch is a row of each).
+    fn init(a: std.mem.Allocator, io: std.Io, dir: []const u8, range: qwen35.view.Range, lanes: usize, slots: usize, max_rows: usize) !Half {
+        const e = try Engine.open(a, io, dir, .{ .capacity = capacity, .streams = 1, .batch_rows = slots, .prompt_rows = max_rows, .range = range });
         errdefer e.deinit();
-        const stages = try a.alloc(Stage, sequences);
+        const stages = try a.alloc(Stage, lanes);
         errdefer a.free(stages);
         var made: usize = 0;
         errdefer for (stages[0..made]) |*st| st.deinit();
-        while (made < sequences) : (made += 1) {
-            stages[made] = try Stage.init(e, capacity, .{ .max_rows = max_rows });
+        while (made < lanes) : (made += 1) {
+            stages[made] = try Stage.init(e, capacity, .{ .max_rows = max_rows, .slots = slots });
             try stages[made].warm();
         }
         const dev = try hip.offload.HipExternal.create(a, &e.driver, 0, .{ .peak_bandwidth = 410_000_000_000, .stream = e.stream });
@@ -178,36 +181,39 @@ fn fidelity(a: std.mem.Allocator, half: Half, window: split.device.Window, cfg: 
     std.debug.print("  cosine min {d:.6} (position {d}), mean {d:.6}; top-1 differs at {d}\n", .{ min_cos, worst, sum_cos / @as(f64, @floatFromInt(seq.len)), differ });
 }
 
-/// `outs.len` sequences of the same prompt through one pipeline each over the shared window, the prompt in steps of up to
-/// `chunk` positions, then `outs[i].len` greedy tokens; returns the wall time. Both sides start every sequence at position 0.
-fn pipelined(a: std.mem.Allocator, half: Half, window: split.device.Window, base: pl.Config, client: *split.remote.Client, chunk: usize, prompt: []const u32, outs: []const []u32) !u64 {
-    const n = outs.len;
-    for (half.stages[0..n]) |*st| try st.reset();
-    try client.reset();
+/// `outs.len` sequences of the same prompt in `lanes` pipelines over the shared window (a lane's sequences decode in one batched
+/// step), the prompt in steps of up to `chunk` positions, then `outs[i].len` greedy tokens; returns the wall time. Both sides
+/// start every sequence at position 0. `client` null: the whole model is on the card.
+fn pipelined(a: std.mem.Allocator, half: Half, window: split.device.Window, base: pl.Config, client: ?*split.remote.Client, chunk: usize, prompt: []const u32, outs: []const []u32) !u64 {
+    const lanes = half.stages.len;
+    const per = (outs.len + lanes - 1) / lanes;
+    const used = (outs.len + per - 1) / per;
+    for (half.stages[0..used]) |*st| try st.reset();
+    if (client) |cl| try cl.reset();
     @memset(window.bytes(), 0);
     const slot = pl.Pipeline.slotBytes(base);
-    const scratch = try a.alloc(u8, n * base.max_rows * base.hidden_bytes);
+    const row = base.max_rows * base.hidden_bytes;
+    const scratch = try a.alloc(u8, used * row);
     defer a.free(scratch);
     var pipes: [split.streams.max_streams]pl.Pipeline = undefined;
-    var ptrs: [split.streams.max_streams]*pl.Pipeline = undefined;
-    var works: [split.streams.max_streams]split.streams.Work = undefined;
-    for (0..n) |i| {
+    var lane_list: [split.streams.max_streams]split.streams.Lane = undefined;
+    var works: [split.streams.max_streams * pl.max_slots]split.streams.Work = undefined;
+    for (outs, works[0..outs.len]) |o, *w| w.* = .{ .prompt = prompt, .out = o };
+    for (0..used) |i| {
         var cfg = base;
         cfg.window_offset = i * 2 * slot;
-        const mine = scratch[i * base.max_rows * base.hidden_bytes ..][0 .. base.max_rows * base.hidden_bytes];
-        pipes[i] = .init(half.dev.external(), window, cfg, half.stages[i].external(), client.peerOf(@intCast(i)), mine);
-        ptrs[i] = &pipes[i];
-        works[i] = .{ .prompt = prompt, .out = outs[i] };
+        const peer: ?pl.Peer = if (client) |cl| cl.peerOf(@intCast(i)) else null;
+        pipes[i] = .init(half.dev.external(), window, cfg, half.stages[i].external(), peer, scratch[i * row ..][0..row]);
+        lane_list[i] = .{ .pipe = &pipes[i], .works = works[i * per .. @min((i + 1) * per, outs.len)] };
     }
     const t0 = nowNs();
-    try split.streams.generate(ptrs[0..n], works[0..n], chunk);
+    try split.streams.generateLanes(lane_list[0..used], chunk);
     return nowNs() - t0;
 }
 
 /// The pipelined run (see the header): one untimed pass, then the prompt alone and the prompt with the tokens, so the
 /// decode time is the difference; every sequence's tokens against `want`.
-fn pipelinedReport(a: std.mem.Allocator, half: Half, window: split.device.Window, cfg: pl.Config, client: *split.remote.Client, chunk: usize, prompt: []const u32, want: []const u32) !void {
-    const n = half.stages.len;
+fn pipelinedReport(a: std.mem.Allocator, half: Half, window: split.device.Window, cfg: pl.Config, client: ?*split.remote.Client, chunk: usize, prompt: []const u32, want: []const u32, n: usize) !void {
     const full = try a.alloc(u32, n * want.len);
     defer a.free(full);
     const outs = try a.alloc([]u32, n);
@@ -231,10 +237,11 @@ fn pipelinedReport(a: std.mem.Allocator, half: Half, window: split.device.Window
     }.of;
     const nf: f64 = @floatFromInt(n);
     const dec = all -| pre;
-    std.debug.print("{s:<14} {s:<5} streams {d} chunk {d}: prefill {d} positions x {d} in {d:.1} ms = {d:.1} tok/s; decode {d} tokens x {d} in {d:.1} ms = {d:.1} tok/s ({d:.1} a stream); {d}/{d} sequences token-identical\n", .{
+    std.debug.print("{s:<14} {s:<5} streams {d} lanes {d} chunk {d}: prefill {d} positions x {d} in {d:.1} ms = {d:.1} tok/s; decode {d} tokens x {d} in {d:.1} ms = {d:.1} tok/s ({d:.1} a stream); {d}/{d} sequences token-identical\n", .{
         @tagName(cfg.order),
         @tagName(cfg.level),
         n,
+        half.stages.len,
         chunk,
         prompt.len,
         n,
@@ -291,14 +298,19 @@ pub fn main(init: std.process.Init) !void {
     const n_streams = try option(extra, "streams", 1);
     const chunk = try option(extra, "chunk", 1);
     const repeat = try option(extra, "repeat", 1);
-    const piped = n_streams > 1 or chunk > 1 or repeat > 1 or try option(extra, "streams", 0) > 0;
-    if (piped and unsplit) return error.PipelinedNeedsASplit;
-    if (n_streams == 0 or n_streams > split.streams.max_streams or chunk == 0 or repeat == 0) return error.BadOption;
-    const half = try Half.init(a, io, dir, range, n_streams, chunk);
+    const n_lanes = try option(extra, "lanes", n_streams);
+    const piped = n_streams > 1 or chunk > 1 or repeat > 1 or try option(extra, "streams", 0) > 0 or try option(extra, "lanes", 0) > 0;
+    if (n_streams == 0 or n_lanes == 0 or n_lanes > n_streams or n_lanes > split.streams.max_streams or chunk == 0 or repeat == 0) return error.BadOption;
+    const per_lane = (n_streams + n_lanes - 1) / n_lanes;
+    if (per_lane > pl.max_slots) return error.BadOption;
+    // the lanes actually used: the sequences go to them `per_lane` at a time
+    const used_lanes = (n_streams + per_lane - 1) / per_lane;
+    const max_rows: usize = @max(chunk, per_lane);
+    const half = try Half.init(a, io, dir, range, used_lanes, per_lane, max_rows);
     defer half.deinit();
     const dev = half.dev.external();
     const hidden_bytes: usize = @as(usize, ref.hidden) * 4;
-    const window = try dev.allocWindow(pl.Pipeline.windowBytes(.{ .order = order, .hidden_bytes = hidden_bytes, .max_rows = @intCast(chunk) }, n_streams));
+    const window = try dev.allocWindow(pl.Pipeline.windowBytes(.{ .order = order, .hidden_bytes = hidden_bytes, .max_rows = @intCast(max_rows) }, used_lanes));
     defer dev.freeWindow(window);
     var client: split.remote.Client = undefined;
     if (!unsplit) {
@@ -317,14 +329,13 @@ pub fn main(init: std.process.Init) !void {
         const want = try a.dupe(u32, ref.want);
         defer a.free(want);
         for (levels) |level| {
-            const cfg: pl.Config = .{ .order = order, .level = level, .hidden_bytes = hidden_bytes, .max_rows = @intCast(chunk), .timeout_ns = 60_000_000_000 };
+            const cfg: pl.Config = .{ .order = order, .level = level, .hidden_bytes = hidden_bytes, .max_rows = @intCast(max_rows), .timeout_ns = 60_000_000_000 };
             if (repeat > 1 and level == levels[0]) {
-                var one = cfg;
-                one.max_rows = 1;
+                // the tokens a long prompt must give: the same run one position a step, one sequence
                 const outs = [1][]u32{want};
-                _ = try pipelined(a, half, window, one, cl.?, 1, prompt, &outs);
+                _ = try pipelined(a, half, window, cfg, cl, 1, prompt, &outs);
             }
-            try pipelinedReport(a, half, window, cfg, cl.?, chunk, prompt, want);
+            try pipelinedReport(a, half, window, cfg, cl, chunk, prompt, want, n_streams);
         }
         return;
     }
