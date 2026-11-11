@@ -11,10 +11,13 @@ struct Routing {
     int x_div = 1;
     int first = 0;  // set by the kernel from its item
 #if defined(TF_EXPERT_PTRS)
-    // Offloaded experts (caps `expert_ptrs`): nonzero, item expert e's weights are the blob at ptab[e] + ptab_off (words, scales, biases in that
-    // order, each of the projection's own size), not the stack's e-th slice: a VRAM cache slot's address or a host-tier address.
+    // Offloaded experts (caps `expert_ptrs`): nonzero, item expert e's weights are the blob at ptab[2e] + ptab_off (words, scales, biases in that
+    // order, each of the projection's own size), not the stack's e-th slice: a VRAM cache slot's address or a host-tier address. ptab[2e + 1] is
+    // 0, or the address of a VRAM cache line the stream tile writes the blob it reads into (read-through admission: the miss's one trip over the link
+    // is also its admission); the kernel keeps the byte distance between the two blobs in `dst_delta`.
     const unsigned long long* ptab = nullptr;
     long long ptab_off = 0;
+    long long dst_delta = 0;  // set by the kernel from its item
 #endif
 };
 

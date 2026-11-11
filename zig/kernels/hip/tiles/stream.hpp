@@ -231,6 +231,32 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                     const unsigned short (&br)[CB]) {
         const bool live = base + j < nch;
         const int q = live ? base + j : nch - 1;
+#if defined(TF_EXPERT_PTRS)
+        // Read-through admission (offloaded experts): when the item's blob has a cache line (route.dst_delta), the words, scales and biases this lane
+        // fetched are stored there too, so the one trip a miss makes over the link is also its admission. Row blocks past the first fetch the same
+        // bytes again; the lanes clamped onto a last chunk or column store what the live lane stores.
+        if (a.route.dst_delta != 0 && by == 0 && live) {
+            const long long delta = a.route.dst_delta;
+#pragma unroll
+            for (int c = 0; c < CB; ++c) {
+                char* d = reinterpret_cast<char*>(const_cast<uint32_t*>(wp[c] + static_cast<long long>(q) * Dec::kWords)) + delta;
+                if constexpr (WIDE && Dec::kWords % 4 == 0) {
+#pragma unroll
+                    for (int i = 0; i < Dec::kWords / 4; ++i) {
+                        reinterpret_cast<u32x4*>(d)[i] = u32x4{w[c][4 * i], w[c][4 * i + 1], w[c][4 * i + 2], w[c][4 * i + 3]};
+                    }
+                } else {
+#pragma unroll
+                    for (int i = 0; i < Dec::kWords; ++i) reinterpret_cast<uint32_t*>(d)[i] = w[c][i];
+                }
+                if ((q & ((1 << gshift) - 1)) == 0) {
+                    const long long at = sb[c] + (q >> gshift);
+                    *reinterpret_cast<unsigned short*>(reinterpret_cast<char*>(const_cast<unsigned short*>(terms.scale + at)) + delta) = sr[c];
+                    *reinterpret_cast<unsigned short*>(reinterpret_cast<char*>(const_cast<unsigned short*>(terms.bias + at)) + delta) = br[c];
+                }
+            }
+        }
+#endif
         float sc[CB];
         float bi[CB];
 #pragma unroll
