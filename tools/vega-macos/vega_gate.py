@@ -24,7 +24,8 @@ QUESTION = "What is the capital of France? Answer in one short sentence."
 STORY = "Write a long story about a dragon who learns to code."
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--lib", default=os.path.join(HOME, "Projects/Infra/ut4g-usbgpu/hipmac/build/libamdhip64.dylib"))
+ap.add_argument("--lib", default=os.environ.get("TENSORFOLD_HIP") or os.path.join(os.environ.get("UT4G_USBGPU", os.path.join(HOME, "Projects/Infra/ut4g-usbgpu")), "hipmac/build/libamdhip64.dylib"),
+                help="libamdhip64.dylib of hipmac (default $TENSORFOLD_HIP, else $UT4G_USBGPU/hipmac/build/libamdhip64.dylib)")
 ap.add_argument("--backend", default="ut4g", help="HIPMAC_BACKEND (ut4g card, mock offline)")
 ap.add_argument("--bin", default=os.path.join(ROOT, "zig-out/native-hip/bin/tensorfold-native"))
 ap.add_argument("--test-bin", default=os.path.join(ROOT, "zig-out/bin/tf-qwen35-test"))
