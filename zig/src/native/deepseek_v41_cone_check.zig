@@ -52,6 +52,11 @@ const Run = struct {
 fn prefill(m: *ds.Model, a: std.mem.Allocator, io: std.Io, ids: []const u32) !struct { []f32, f64 } {
     const rows = m.workspace.plan.rows;
     try m.reset();
+    // beyond the position the buffers hold the last run's rows: start both paths from zeros
+    const state = &m.caches[0];
+    @memset(state.storage.contents()[0..state.plan.packedBytes()], 0);
+    @memset(state.live.contents()[0..state.plan.mutableBytes()], 0);
+    @memset(m.taps.contents()[0..m.taps.length()], 0);
     const t0 = seconds(io);
     var at: usize = 0;
     var last: []f32 = &.{};

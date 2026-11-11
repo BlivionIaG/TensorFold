@@ -166,6 +166,7 @@ pub fn replay(m: *Model, logits: Logits) ![]const f32 {
         for (c.chunks[0..c.count], 0..) |ch, i| {
             const a = @max(ch.pos, start);
             const b = ch.pos + ch.rows;
+            const row0 = m.taps_row;
             // the drafter's tap ring advances as the full pass advances it, over rows the replay skips too
             if (final and model.tapsOn()) {
                 const extra = @min(ch.rows, 128) - (if (a < b) @min(b - a, 128) else 0);
@@ -179,6 +180,8 @@ pub fn replay(m: *Model, logits: Logits) ![]const f32 {
             for (0..b - a) |k| ids[k] = c.ids[(a + k) % cap];
             const last = final and i + 1 == c.count;
             out = try impl.forwardCore(m, &.{.{ .slot = c.slot, .ids = ids[0 .. b - a], .p0 = a }}, if (last) logits else .none);
+            // the ring's base is the full pass's chunk start, not the replay's
+            if (final and model.tapsOn() and model.tapsSharedBaseOn()) m.taps_base = if (model.condAlignOn()) ch.pos % 128 else row0;
         }
     }
     return out;
