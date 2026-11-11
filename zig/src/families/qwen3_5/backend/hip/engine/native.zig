@@ -138,8 +138,8 @@ fn expertMode(o: Options) engine.ExpertMode {
 
 /// Experts the cache admits a round at most (TF_EXPERT_COPIES).
 fn expertCopies() usize {
-    const v = @import("sys").getenv("TF_EXPERT_COPIES") orelse return 8;
-    return std.fmt.parseInt(usize, v, 10) catch 8;
+    const v = @import("sys").getenv("TF_EXPERT_COPIES") orelse return 32;
+    return std.fmt.parseInt(usize, v, 10) catch 32;
 }
 
 fn prepare(

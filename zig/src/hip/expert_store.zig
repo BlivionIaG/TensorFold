@@ -39,6 +39,9 @@ const HostBuffer = memory.HostBuffer;
 const Stream = stream_mod.Stream;
 const Event = stream_mod.Event;
 
+extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+const c_setenv = setenv;
+
 pub const Error = runtime.Error || std.mem.Allocator.Error || error{ BadShape, NotSized, NoValueOps, StageFailed };
 
 /// The six tensors of one expert in blob order: fused words, scales, biases, then down's.
@@ -199,6 +202,9 @@ pub const Store = struct {
         const lib: *@TypeOf(r.lib) = @constCast(&r.lib);
         const wait32 = lib.lookup(WaitValue32, "hipStreamWaitValue32") orelse return error.NoValueOps;
         const write32 = lib.lookup(WriteValue32, "hipStreamWriteValue32") orelse return error.NoValueOps;
+        // hipmac bounds a value wait from its submission (10 s by default), and a forward queues all its layers' waits at once: a prompt span whose
+        // earlier layers take longer than that would be released early. The host worker answers every wait, so none is left unbounded for long.
+        _ = c_setenv("HIPMAC_WAIT_VALUE_TIMEOUT_MS", "0", 0);
         const head = headBytes(shape);
         const least = 2 * (shape.experts + 8);
         var want = window_bytes;
