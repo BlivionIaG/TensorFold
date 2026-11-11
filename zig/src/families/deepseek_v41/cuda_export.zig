@@ -85,7 +85,7 @@ fn clearRows(r: ex.Ring, rows: u32, from: u64, to: u64) void {
     }
 }
 
-/// A replayed layer's ring holds the last `replay_rows` positions only: the window's older rows are zeroed, never stale.
+/// A replayed layer's ring holds the last `replay_rows` positions only: the window's older row is zeroed, not stale.
 fn clearUnreplayed(st: State, swa: []const ?ex.Ring, rows: u32) Error!void {
     if (st.replay_rows == 0 or rows == 0) return;
     const window: u64 = @min(st.pos, g.release.window);
