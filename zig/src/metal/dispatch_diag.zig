@@ -2,8 +2,8 @@
 //!
 //! Armed by TF_DSV41_DIAG_FILE=<path>; the file is re-read at every forward when it changes. One directive a line:
 //! `skip NAME` (the dispatch is dropped, output garbage, timing only), `double NAME` (run twice, timing only),
-//! `dump` (print the last forward's per-pipeline dispatch counts and threadgroups to stderr), `clear`. NAME matches
-//! a pipeline name by substring. Unarmed, the cost is one branch on a bool a dispatch.
+//! `nobarrier` (memory barriers dropped; serial encoders only), `dump` (print the last forward's per-pipeline dispatch
+//! counts and threadgroups to stderr), `clear`. NAME matches a pipeline name by substring.
 const std = @import("std");
 
 const max_pipes = 1024;
@@ -14,6 +14,8 @@ const Pipe = struct { id: usize = 0, name: [name_cap]u8 = undefined, len: u8 = 0
 const Rule = struct { text: [name_cap]u8 = undefined, len: u8 = 0, twice: bool = false };
 
 pub var armed: bool = false;
+/// `nobarrier`: memory barriers are dropped (a serial encoder orders dispatches itself; a concurrent one would race).
+pub var no_barrier: bool = false;
 var pipes: [max_pipes]Pipe = undefined;
 var npipes: usize = 0;
 var counts: [max_pipes]u32 = @splat(0);
@@ -79,6 +81,7 @@ fn dump() void {
 
 fn load(text: []const u8) void {
     nrules = 0;
+    no_barrier = false;
     var want_dump = false;
     var lines = std.mem.tokenizeAny(u8, text, "\r\n");
     while (lines.next()) |line| {
@@ -86,6 +89,7 @@ fn load(text: []const u8) void {
         const verb = f.next() orelse continue;
         if (std.mem.eql(u8, verb, "dump")) want_dump = true;
         if (std.mem.eql(u8, verb, "clear")) nrules = 0;
+        if (std.mem.eql(u8, verb, "nobarrier")) no_barrier = true;
         const arg = f.next() orelse continue;
         const twice = std.mem.eql(u8, verb, "double");
         if (!twice and !std.mem.eql(u8, verb, "skip")) continue;
