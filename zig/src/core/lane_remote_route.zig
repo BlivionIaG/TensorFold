@@ -78,8 +78,8 @@ pub const Route = struct {
     held: bool = false,
     /// when the pull under way is expected to end, on the clock of `enter`'s callers
     ends: u64 = 0,
-    /// this machine's prompt tokens a second (seed: 950, the notes' Mac)
-    local_tps: Rate = .{ .v = 950 },
+    /// this machine's prompt tokens a second (seed: 1500, the served Metal cone prefill)
+    local_tps: Rate = .{ .v = 1500 },
     /// a pull's prefix tokens a second, end to end (seed: 1000, the pair's export profile)
     remote_tps: Rate = .{ .v = 1000 },
     /// the Mac's pass after the pull, in seconds: restore, the last token, its first reply (seed: 1)
@@ -95,7 +95,7 @@ pub const Route = struct {
     }
 
     /// The knobs, as their values: `mode` is the word's index in TF_PREFILL_ROUTE's list.
-    pub const Knobs = struct { mode: u64 = 0, local_tps: f64 = 950, remote_tps: f64 = 1000, trip: u64 = 3, cooldown_s: u64 = 30, timeout_s: u64 = 0 };
+    pub const Knobs = struct { mode: u64 = 0, local_tps: f64 = 1500, remote_tps: f64 = 1000, trip: u64 = 3, cooldown_s: u64 = 30, timeout_s: u64 = 0 };
 
     /// TF_PREFILL_ROUTE, _LOCAL_TPS, _REMOTE_TPS, _BREAKER, _COOLDOWN_S and _TIMEOUT_S, each checked by name.
     pub fn fromEnv() !Route {
