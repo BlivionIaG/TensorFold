@@ -42,23 +42,25 @@ pub fn runPositions(f: *Forward, r: *run.Runner, c: *const calls.Call) !void {
     for (m.segs, m.row0) |sg, r0| try k.positions(@intCast(sg.start), @intCast(sg.ids.len), pos, mpos + 8 * r0, lo);
 }
 
-/// ced_stash (`store`): a segment's last rows into the ring at row p % ring; ced_load: ring rows back to rows 0 .. n.
-pub fn stashCopy(f: *Forward, r: *run.Runner, c: *const calls.Call, store: bool) !void {
+/// ced_stash (`store`): a segment's tail into the ring at p % ring; ced_load: back to rows 0 .. n; `cone`: cone ring
+pub fn stashCopy(f: *Forward, r: *run.Runner, c: *const calls.Call, store: bool, cone: bool) !void {
     const p = f.slot.pending orelse return error.BadGlue;
-    if (f.pf_stash) |h| try h.run(h.ctx); // the ring holds this slot's rows (slots.zig swaps it lazily)
+    // the slot's ring holds this slot's rows (slots.zig swaps it lazily); the cone ring is one set a process
+    if (!cone) if (f.pf_stash) |h| try h.run(h.ctx);
     const x = c.args;
     if (x.len != 2 * ced.roles.len) return error.BadGlue;
-    const k: u64 = @min(p.n, ced.ring);
+    const ring: u32 = if (cone) ced.cone_keep else ced.ring;
+    const k: u64 = @min(p.n, ring);
     const a0: u64 = p.start + p.n - k;
     var sp: [2]ced.Span = undefined;
     for (0..ced.roles.len) |j| {
         const t = x[j].arg.t;
         const rg = x[ced.roles.len + j].arg.t;
         const row = dim(t, 1) * buffers.dtSize(t.dt);
-        if (dim(rg, 1) * buffers.dtSize(rg.dt) != row or ld(t) != dim(t, 1) or dim(rg, 0) != ced.ring) return error.BadGlue;
+        if (dim(rg, 1) * buffers.dtSize(rg.dt) != row or ld(t) != dim(t, 1) or dim(rg, 0) != ring) return error.BadGlue;
         const ta = try r.tensorAddr(t);
         const ra = try r.tensorAddr(rg);
-        for (ced.spans(a0, a0 + k, &sp)) |s| {
+        for (ced.spansIn(ring, a0, a0 + k, &sp)) |s| {
             const tr = ta + (a0 - p.start + s.at) * row;
             const rr = ra + @as(u64, s.row) * row;
             if (store) try copy(r, rr, tr, s.n * row) else try copy(r, tr, rr, s.n * row);
@@ -195,7 +197,8 @@ pub fn glueOne(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!v
     if (eql(u8, step, "tbo_join")) return;
     if (eql(u8, step, "pf_seg")) return segGlue(f, r, c);
     if (eql(u8, step, "mpositions")) return runPositions(f, r, c);
-    if (eql(u8, step, "ced_stash") or eql(u8, step, "ced_load")) return stashCopy(f, r, c, eql(u8, step, "ced_stash"));
+    if (eql(u8, step, "ced_stash") or eql(u8, step, "ced_load")) return stashCopy(f, r, c, eql(u8, step, "ced_stash"), false);
+    if (eql(u8, step, "cone_stash") or eql(u8, step, "cone_load")) return stashCopy(f, r, c, eql(u8, step, "cone_stash"), true);
     if (eql(u8, step, "zeros")) return zero(r, try r.tensorAddr(x[0].arg.t), bytesOf(x[0].arg.t));
     if (eql(u8, step, "image_keep")) return (try hooks.vision()).keep(f, r, c);
     if (eql(u8, step, "image_split") or eql(u8, step, "image_merge")) return (try hooks.vision()).split(f, r, c, eql(u8, step, "image_merge"));

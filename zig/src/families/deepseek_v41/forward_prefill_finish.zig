@@ -20,6 +20,7 @@ const glueFn = pf_glue.glueFn;
 const k4Release = pf_k4.k4Release;
 const log = pf.log;
 const ready = pf_glue.ready;
+const pf_cone = @import("forward_prefill_cone.zig");
 
 /// Several slots' prompt segments in one run, each committed as `segment` would; error.Unsupported: one at a time.
 pub fn promptMulti(f: *Forward, segs: []const MultiSeg) !void {
@@ -189,6 +190,8 @@ pub fn finish(f: *Forward) !void {
     const end = f.slot.pos;
     const t = ced.tailOf(end);
     if (t.m == 0) return;
+    st.replay_exact = false;
+    if (try pf_cone.finish(f)) return;
     if (!f.slot.ced.covers(t.r0, end)) {
         log.err("CED replay of [{d}, {d}), but the stash holds [{d}, {d})", .{ t.r0, end, f.slot.ced.lo(), f.slot.ced.hi });
         return error.StashGap;

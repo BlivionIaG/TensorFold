@@ -103,7 +103,8 @@ pub fn capture(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64) !*Capture {
         .pieces = c.pieces,
         .pages = c.pages,
         .decoder_from = if (replay) try ced.decoderStart(f.cfg) else cx.State.none,
-        .replay_rows = if (replay) ced.keep else 0,
+        // the exact replay (pf_cone) wrote every ring row of the window; the bounded one's older row is zeroed
+        .replay_rows = if (replay and !pf.state(f).replay_exact) ced.keep else 0,
     };
     return c;
 }

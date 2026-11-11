@@ -24,10 +24,10 @@ pub fn selection(e: *E, src: u32) ![2]Arg {
     };
 }
 
-/// The segment's rows of the run's per-row candidates (layer 20's, read by the reindex layers).
+/// The segment's rows of the run's per-row candidates (layer 20's); `cand0`: the exact replay's later programs' shift.
 fn cands(e: *E) !Arg {
     const cb: i64 = e.cfg.candidate_blocks;
-    return e.view(.{ .buf = "w.cand" }, .i32, &.{ e.n, cb }, &.{ cb, 1 }, e.row0 * cb * 4);
+    return e.view(.{ .buf = "w.cand" }, .i32, &.{ e.n, cb }, &.{ cb, 1 }, (e.row0 + e.cand0) * cb * 4);
 }
 
 /// Rows [a, a + rows) of a row-major [n, cols] role.

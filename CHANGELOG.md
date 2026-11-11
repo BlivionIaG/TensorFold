@@ -18,6 +18,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - DeepSeek-V4.1 on CUDA: a `TF_DSV41_PREFILL=replay` prompt is exportable (`--mcdma-produce`): the cut stands after the decoder replay, the decoder layers' rings and the drafter's rings are read from the live slot (the window's oldest row, never replayed, is zero), so the GB10 pair exports at its replay prefill speed (about 2.2k to 2.6k tokens/s at 8k to 32k) instead of about 1.2k.
 
+- DeepSeek-V4.1 on CUDA: `TF_DSV41_PREFILL=replay` now runs the decoder layers' replay over the exact cone (`TF_DSV41_REPLAY_EXACT`, on by default; `0` keeps the bounded 127-row replay): the encoder pass also keeps the last 2,541 rows of the first decoder layer's input, and the decoder pass runs in programs of `TF_DSV41_REPLAY_GROUP` layers (default 4) over each layer's own cone, so the decoder layers' SWA rings and the drafter's taps equal a full prefill's and an exported hand-off no longer zeroes the window's oldest row. It runs about 30.5k layer-rows against 2.5k for the bounded replay (not yet timed on the pair); a prompt resumed from a saved session, or run with `TF_DSV41_PF_TBO=1`, keeps the bounded replay. `aot-needs` lists the new programs' variants.
+
 ## 1.2.7
 
 - GLM-5.3-Flash on CUDA: with `TF_GLM_LAYERS=N`, serve's start-up memory check counts the weights by tensor from the shard headers, only those the load reads (the first N layers, the MTP layer when drafts are on, the embedding, norm and head), where it counted every checkpoint file. A 20-layer thin load of the 163.6 GiB checkpoint now counts 66.6 GiB without drafts. Unset, the count is the files' as before (#2788, fixes #2745). Thanks to @wojo.
