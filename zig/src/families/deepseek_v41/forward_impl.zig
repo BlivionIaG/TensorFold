@@ -109,6 +109,7 @@ pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         if (m.host_prof) m.host_hash_ns = nowNs() - hash_start;
     }
     const host_enc_start: u64 = nowNs();
+    const enc_start_s: f64 = if (m.host_prof) mtl.clock.seconds() else 0;
     const dispatches_before = mtl.command.dispatch_count.load(.monotonic);
     // TF_DSV41_LAYER_CB: one command buffer a layer, with the GPU's own seconds for each.
     const layer_cb = std.c.getenv("TF_DSV41_LAYER_CB") != null;
@@ -428,6 +429,7 @@ pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     e.commit();
     e.wait();
     const host_done: u64 = nowNs();
+    const done_s: f64 = if (m.host_prof) mtl.clock.seconds() else 0;
     try completed(e);
     hid.report();
     scan_probe.report();
@@ -481,6 +483,20 @@ pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
             mtl.command.dispatch_count.load(.monotonic) - dispatches_before,
             pipe_layers,
         });
+    }
+    if (m.host_prof) {
+        // The GPU's own timeline on the host clock: where the step's 25 ms is device time and where it is a wait.
+        const first = if (pipe_prev_set) pipe_prev else e;
+        const prev_end = m.prof_gpu_end;
+        std.log.info("timeline: host gap before encode {d:.3} ms, encode of the first cb to gpu start {d:.3} ms, first cb {d:.3} ms, bubble {d:.3} ms, last cb {d:.3} ms, wake {d:.3} ms", .{
+            if (prev_end > 0) (enc_start_s - prev_end) * 1e3 else 0,
+            (first.gpuStart() - enc_start_s) * 1e3,
+            first.gpuSeconds() * 1e3,
+            if (pipe_prev_set) (e.gpuStart() - pipe_prev.gpuEnd()) * 1e3 else 0,
+            if (pipe_prev_set) e.gpuSeconds() * 1e3 else 0,
+            (done_s - e.gpuEnd()) * 1e3,
+        });
+        m.prof_gpu_end = e.gpuEnd();
     }
     for (segs) |sg| try m.caches[sg.slot].append(@intCast(sg.ids.len));
     m.last_gpu_seconds = e.gpuSeconds() + pipe_gpu_extra / 1e3;
