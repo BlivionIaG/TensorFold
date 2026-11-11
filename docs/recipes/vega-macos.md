@@ -470,3 +470,52 @@ warmed bench is in `tools/vega-macos/experiments/multirow-2026-11-11.patch` (`gi
 Next: the ablations that dropped the extraction (`TF_ABL&2`) or the LDS x reads (`&4`) fed garbage to the dots and ran 22-480 ms or wedged the card; redo them with finite data
 (x and weights kept in range, e.g. extraction replaced by a cheap pass of valid fp16 pairs) to split the 161 us between LDS reads, extraction and mads. Then m = 8 as one 8-row
 block (weights read once) and lm_head (m4 2071 vs m1 1037 us), which depend on that split.
+
+## Serving performance report (`tools/vega-macos/serve_bench.py`)
+
+Reporting standard: prefill (tok/s), decode (tok/s), TTFT (s) and ITL (ms) at c = 1, 2, 4, 8 concurrent requests, per request (mean / p50 / p90) and
+aggregate, for two fixed loads: **1024 input / 512 output tokens** and **16384 input / 1024 output tokens**. `serve_bench.py` drives any OpenAI-compatible
+streaming server (`/v1/chat/completions`, greedy, thinking off, `max_tokens` = `min_tokens` = the output length with `ignore_eos`): every prompt is
+exactly the asked number of tokens as the server counts them (chat template included; the filler is cut at a token boundary of the model's tokenizer,
+calibrated against `usage.prompt_tokens`), with an eight-digit salt in front, unique to each request, so no prefix cache serves it. Prefill tok/s =
+prompt tokens / TTFT (so a request that waits behind others' prefill shows a lower per-request rate; "agg" = all the round's prompt tokens over the
+time to the last first token); decode tok/s = (out - 1) / (last chunk - first chunk); total tok/s agg = output tokens / the round's wall time
+(prefill included). One untimed warm-up round of every c precedes the cells. Run it with `uv run --with tokenizers tools/vega-macos/serve_bench.py
+--url http://127.0.0.1:PORT --model NAME --tokenizer MODEL_DIR --json out.json --label "server, model, hardware, clocks"`.
+
+### Mac alone (M4 Pro), measured 2026-11-11 offline, card not in use
+
+`mlx_lm.server` (mlx-lm from `uvx`, `--decode-concurrency 8 --prompt-concurrency 8 --prompt-cache-size 1 --temp 0`), Qwen3.5-4B-MLX-4bit, 2 rounds a cell
+(raw: `serve_bench` JSON of that run). Nothing else was running on the Mac during these rows except the benchmark client.
+
+| load | c | prefill tok/s agg | prefill tok/s per request (mean) | decode tok/s agg | decode tok/s per request (mean) | total tok/s agg | TTFT s (mean / p90) | ITL ms (mean / p50 / p90) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1k / 512 | 1 | 764.8 | 764.8 | 57.2 | 57.2 | 49.6 | 1.34 / 1.35 | 18.1 / 15.1 / 26.3 |
+| 1k / 512 | 2 | 647.3 | 323.9 | 104.2 | 52.1 | 78.6 | 3.16 / 3.24 | 19.6 / 19.4 / 24.2 |
+| 1k / 512 | 4 | 776.8 | 194.2 | 181.3 | 45.3 | 123.7 | 5.27 / 5.35 | 22.1 / 22.1 / 23.0 |
+| 1k / 512 | 8 | 431.6 | 54.1 | 203.1 | 25.4 | 104.8 | 18.95 / 19.43 | 39.4 / 39.1 / 40.7 |
+| 16k / 1k | 1 | 664.4 | 664.4 | 56.5 | 56.5 | 23.9 | 24.69 / 25.39 | 17.7 / 17.7 / 18.4 |
+| 16k / 1k | 2 | 670.1 | 335.1 | 90.7 | 45.4 | 28.7 | 48.93 / 50.29 | 22.0 / 21.9 / 23.2 |
+| 16k / 1k | 4 | 690.8 | 172.7 | 127.0 | 31.7 | 32.2 | 95.02 / 98.88 | 31.5 / 31.2 / 32.5 |
+| 16k / 1k | 8 | 697.4 | 87.2 | 141.1 | 17.6 | 33.3 | 187.96 / 189.32 | 56.7 / 55.9 / 56.9 |
+
+`mlx_lm.server`, Qwen3.6-35B-A3B-4bit, 1 round a cell (a pass of `moe_ref`, an mlx run of another job, shared the Mac during the first minutes of this run;
+its client had no connection retry yet: one of the eight 1k c = 8 requests failed with a socket error, those figures are the other seven):
+
+| load | c | prefill tok/s agg | prefill tok/s per request | decode tok/s agg | decode tok/s per request | total tok/s agg | TTFT s | ITL ms (mean / p50 / p90) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1k / 512 | 1 | 939.5 | 939.5 | 72.6 | 72.6 | 63.0 | 1.09 | 13.8 / 13.7 / 14.1 |
+| 1k / 512 | 2 | 990.2 | 495.3 | 117.7 | 58.9 | 95.3 | 2.07 | 17.0 / 16.9 / 17.2 |
+| 1k / 512 | 4 | 1023.3 | 255.9 | 161.4 | 40.3 | 122.9 | 4.00 | 24.8 / 24.7 / 25.0 |
+| 1k / 512 | 8 (7 of 8 requests) | 1041.4 | 148.8 | 178.4 | 25.5 | 133.1 | 6.88 | 39.2 / 39.2 / 39.6 |
+| 16k / 1k | 1 | 850.5 | 850.5 | 63.2 | 63.2 | 28.9 | 19.26 | 15.8 / 15.7 / 16.2 |
+| 16k / 1k | 2 | 851.3 | 425.6 | 91.6 | 45.8 | 33.7 | 38.49 | 22.0 / 21.7 / 22.4 |
+| 16k / 1k | 4 | 857.8 | 214.5 | 119.0 | 29.7 | 37.0 | 76.40 | 33.6 / 33.6 / 34.0 |
+| 16k / 1k | 8 | does not fit | | | | | | the server's Metal command buffer died with `Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)`; all 8 requests failed |
+
+TensorFold's Metal server cannot serve the 4B: `tensorfold-native serve` (the Metal build of this branch) stops at start with `the native Qwen engine cannot
+load this checkpoint (UnsupportedQwenGeometry)` (upstream's Metal Qwen3.5 backend is the pinned 2B; the 4B runs on the Mac only through the `qwen27` layer-range
+engine of the offload branch, which has no HTTP server). So there is no TensorFold-Metal row for the 4B. The Vega row (`tensorfold-native` from `native-hip`,
+`--parallel 8 --context 17600`) is not measured yet: the card was not available for this job. Note for it: 8 sequences of 17.6k tokens need the KV pages of
+all of them in the card's 8 GiB beside the weights; if the engine's memory budget refuses that, the cell is reported as "does not fit" with the
+budget's own message, not run at a smaller load.
