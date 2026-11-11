@@ -142,6 +142,12 @@ pub fn wins(h: *LaneHost, job: *const Job) bool {
     return f.at > kept;
 }
 
+/// Where a landed remote prefix that beats the cache's own starts the pass (0: none), for the lookup's marks.
+pub fn resumeAt(h: *LaneHost, job: *const Job) u32 {
+    if (!wins(h, job)) return 0;
+    return job.ticket.?.filled.?.at;
+}
+
 /// The stream restores a landed remote prefix unless the cache holds at least as much; an entry it beats is released.
 pub fn use(h: *LaneHost, job: *Job, reuse: *lanes.stream.Reuse) void {
     defer if (reuse.remote and !reuse.pulled) ownFirst(h, job, reuse); // a kept remote state stands, pull or none
@@ -157,7 +163,7 @@ pub fn use(h: *LaneHost, job: *Job, reuse: *lanes.stream.Reuse) void {
     job.entry = null;
     // TF_PREFILL_KEEP: the cache's marks past the prefix keep remote states; else no marks and no hook, nothing kept
     const marks = if (h.keep_remote) past(reuse.marks, f.at) else &.{};
-    reuse.* = .{ .saved = f.saved, .at = f.at, .remote = true, .pulled = true, .marks = marks, .hook = if (h.keep_remote) .{ .ptr = job, .at = Job.kept } else null };
+    reuse.* = .{ .saved = f.saved, .at = f.at, .remote = true, .pulled = true, .marks = marks, .snap_at = if (h.keep_remote) reuse.snap_at else 0, .hook = if (h.keep_remote) .{ .ptr = job, .at = Job.kept } else null };
 }
 
 /// A kept remote state slot 0's exact state reaches is let go; if a stream takes slot 0 first, the pass starts at 0.

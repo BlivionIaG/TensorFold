@@ -117,6 +117,7 @@ pub const Lookup = struct { entry: ?*Entry = null, marks: []const u32 = &.{}, sn
 pub const Store = struct {
     image_frame: u32 = 0,
     image_query: ?[]const @import("lanes").stream.Image = null, // scoped to one serial lookup or keep
+    resume_floor: u32 = 0, // scoped to one lookup: a landed remote prefix's end, where its pass starts
     keep_remote: bool = false, // scoped to one keep: the state was built on another machine's prefix (#1594 step 2b)
     restore_log: ?RestoreLog = null,
     gpa: Allocator,
@@ -327,7 +328,7 @@ pub const Store = struct {
         else
             s.find(prompt, starts, spans);
         if (e == null) s.counts.misses += 1;
-        const from = if (e) |x| x.at else 0;
+        const from = @max(s.resume_floor, if (e) |x| x.at else 0);
         var tail_at: u32 = 0;
         const ordinary = if (s.active_rewind_at == 0)
             try s.fitting(a, try cache_marks.marksRewind(s, a, prompt, from, history_len, 0, shared, starts, spans, if (e) |x| x.last else &.{}, &tail_at))
