@@ -113,7 +113,7 @@ pub const Pull = struct {
         const took = fabric.words.nowNs() - t0;
         p.pulls += 1;
         p.ns += took;
-        p.route.observe(.{ .pass = .remote, .rows = at, .ns = took });
+        p.route.observePull(at, p.http.cached, took);
         outcome.* = .ok;
         if (p.remote.peers.len > 0) std.log.info("remote prefill: {d} tokens pulled over {d} links in {d:.0} ms", .{ at, 1 + p.remote.peers.len, @as(f64, @floatFromInt(pulled_ns)) / 1e6 });
         return .{ .saved = snap, .at = at, .phases = .{ .queue_ns = p.waited_ns, .trigger_ns = p.remote.trigger_ns, .pull_ns = took -| p.remote.trigger_ns, .land_ns = landing.land_ns, .bytes = p.remote.bytes } };
