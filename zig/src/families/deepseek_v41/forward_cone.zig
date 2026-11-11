@@ -1,4 +1,4 @@
-//! Cone prefill (TF_DSV41_CONE, on by default): encoder layers over every prompt row, the decoder layers over the cone's last rows.
+//! Cone prefill (TF_DSV41_CONE): every prompt row through the encoder layers, the cone's last rows through the decoder.
 const std = @import("std");
 const mtl = @import("metal");
 const ced = @import("ced.zig");
