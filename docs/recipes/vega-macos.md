@@ -6,8 +6,10 @@ by its macOS name, `libamdhip64.dylib`, which is the native HIP runtime of jkuep
 docs/HIPMAC.md there, <https://github.com/jkuepker/ut4g-usbgpu>). This page is the TensorFold side:
 the toolchain that builds the kernels, the port of the kernels to gfx900, the checkpoint, and what has and has not been run.
 
-Status: everything below that is marked built or tested was run on the Mac without the card. No kernel of the
-gfx900 code objects has run on a GPU yet; the first run on the card is the next step (see "Not yet verified").
+Status (2026-11-11): everything marked built or tested was run on the Mac; the gfx900 code objects have run on the Vega 56 over Thunderbolt (hipmac) since 2026-11-09:
+`hip-affine-test` 30/30, `hip-kernel-test` 157 passed, 14 skipped, 2 failed of 173 (two nemotron epilogue cases that also fail on the rebase base), greedy tokens identical to
+`mlx_lm` (sha gate), decode 81.4 tok/s at DPM auto ("Retest on upstream `fb8fdf3d85`" below). `hip-gpu-test` has never been run on the card. The command lines of every
+measurement are in "Reproducing the numbers on this page" at the end.
 
 ## Toolchain on macOS: `tools/vega-macos/`
 
@@ -310,10 +312,10 @@ Profiling: `tools/vega-macos/hipprof.c` is a shim `libamdhip64` that forwards to
 
 ## Not yet verified
 
-- Logits cosine against mlx on the card (`vega_gate.py --logits` exists; the greedy tokens match for the checked prompts). `zig build
-  tf-qwen35-test` does not compile on upstream main (`zig/tests/qwen35/main.zig:170`), so `--logits` cannot run on this branch.
+- `hip-gpu-test` on the card (never run; against the mock backend six of its runtime tests fail because they need a GPU: 34 pass, 6 fail of 40, 2026-11-11), and the stream test's other recorded pins on a second card.
+- Logits cosine against mlx on the card: run (`vega_gate.py --logits`, 87 rows, "Retest on upstream `fb8fdf3d85`" above): cosine min 0.998616, which does **not** reach the script's own bar of 0.999 (`--logits` exits 1; the argmax gate passes 87/87). No document accepts or explains the gap.
+- The two nemotron `hip-kernel-test` failures (`epilogue.zig`: relu^2, fc1 + shared up) are not diagnosed; they fail on the rebase base too.
 - The default `--mtp-drafts 3` of a discrete GPU is irrelevant for this checkpoint (it has no MTP head).
-- `hip-gpu-test`, and the stream test's other recorded pins on a second card.
 
 ## Dense MLP gate/up + silu_mul in one launch (gfx900)
 
@@ -371,22 +373,28 @@ interleaved scale-and-bias table, one 32-bit load a group, is the idea not tried
 halving its blocks does not move it, so its limit is the access pattern, not the number of waves. Note that `--prof` replays one kernel back to
 back (the same weights twice in the L2's reach), so a profile's gain from a load change can be absent in the decode: the tok/s decides.
 
-## Building on a Mac whose Xcode license is not accepted
+## Building on this Mac: Xcode license, SDK and the Metal toolchain
 
-`clang`, `xcrun` and `make` stop with "You have not agreed to the Xcode license agreements" until the license is accepted (needs sudo). The builds
-here do not need Xcode, only the command line tools' SDK and Zig's C compiler:
+2026-11-11: the Xcode license of the Mac these numbers come from **is accepted** (Xcode 27.2, Apple clang 21.0.0), so `clang`, `xcrun` and `make` work and `SDKROOT`, `TF_CC="zig cc"` and
+`DEVELOPER_DIR` are no longer needed for the C builds (`make -C hipmac`, the hipprof shim). The documented numbers were built with the command line tools' SDK; keep it for byte-identical
+objects: `export TF_SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk` (Xcode's default SDK is now 27.x). On a Mac whose license is not accepted (needs sudo) the builds still work
+without Xcode:
 
-    export PATH=$HOME/.local/zig-0.17.0:$PATH
+    export PATH=$HOME/.local/zig-0.17.0:$PATH       # tools in ut4g-usbgpu: tools/macos/fetch_zig.sh pins the tarball (sha256 b607e9b9...c536a)
     export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk TF_SDKROOT=$SDKROOT
     export TF_CC="zig cc"                      # tools/vega-macos/vega_gate.py builds the hipprof shim with it (default clang)
 
-`zig build test` (the Metal tests) and `make -C hipmac` (clang) do not work without it.
+and `zig build test` (the Metal tests) and `make -C hipmac` (clang) do not.
 
-The Metal compiler of Xcode 27 is a downloadable component (`xcodebuild -downloadComponent MetalToolchain`, which needs the license too). If it was
-downloaded before, it sits in `/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-*/Metal.xctoolchain/usr/bin` and runs
-without Xcode: a script named `xcrun` first on `PATH` that drops `-sdk macosx`, answers `--show-sdk-path` with the command line tools' SDK and
-execs `metal`, `metallib` and `metal-ar` from that directory makes `zig build test-split`, `tf-offload-metal` and `test-qwen27-split` build with
-`-Dmetal-std=metal4.0`. The script is not part of the tree.
+**The Metal toolchain** is a separate component that Xcode 27.2 on this Mac does not have (`xcrun metal` fails: "missing Metal Toolchain; use xcodebuild -downloadComponent MetalToolchain").
+The macOS asset of it is mounted under `/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-*/Metal.xctoolchain/usr/bin` (metal 32023.883 here) and runs without Xcode.
+`tools/vega-macos/xcrun-metal-shim/xcrun` is a script for `PATH` that answers `--show-sdk-path` (and drops `-sdk macosx`) with the command line tools' SDK and runs `metal`, `metallib` and
+`metal-ar` from that asset (everything else goes to `/usr/bin/xcrun`):
+
+    PATH=$PWD/tools/vega-macos/xcrun-metal-shim:$PATH zig build test-split -Dmetal-std=metal4.0     # likewise tf-offload-metal, test-qwen27-split, test
+
+`-Dmetal-std=metal4.0` is still needed (Xcode's Metal compiler here predates macOS 27). Untested: `xcodebuild -downloadComponent MetalToolchain` instead of the shim, and whether the
+downloaded component still needs the flag. The Vega-only builds (`native-hip`, `hip-*-test`, `tf-qwen35-test`) need neither.
 
 ## Several rows a round (N streams), gfx900
 
@@ -483,3 +491,60 @@ from the window into a one-layer VRAM scratch by SDMA before its GEMMs (a 466-to
 The server log carries `experts interval/total` lines (hit rate, misses/token and MiB/token over the link, window fill, admissions, stage ms/token, round ms) and an `experts span` line a prompt span.
 Checks: `tools/vega-macos/moe_ref.py` (mlx_lm greedy references, 8 prompts incl. a 466- and a ~1100-token one) and `moe_gate.py` (shas of a running server, `--against` for cache on vs `TF_EXPERT_COPIES=0`).
 Recovery after a wedge ("GC TLB invalidation did not acknowledge", "not a GPU this engine supports"): `ut4g-boot --force`, then DPM auto (`hipmac-smi`).
+
+## Reproducing the numbers on this page (command lines as run)
+
+Everything below ran on one Mac (M4 Pro, macOS 27.2) with the card booted by `ut4g-usbgpu`'s `hipmac/tools/ut4g-boot` and `hipmac-smi --set-dpm auto`. Each line is marked **V** (copied from the
+shell call that produced the numbers) or **R** (reconstructed from the pieces). The recorded run scripts and the raw outputs (`serve_bench` JSON, server logs, metrics CSVs) are kept in
+`ut4g-usbgpu`, `artifacts/results/` (index: `artifacts/results/README.md`); `docs/REPRODUCE.md` there walks through all of it from a clean Mac.
+
+Environment of the builds and runs (**V**, `/tmp/up_all.sh`, `/tmp/k2/env_up.sh`; adapt the paths):
+
+    export PATH=$PWD/tools/vega-macos/xcrun-metal-shim:$HOME/.local/zig-0.17.0:$PATH           # the shim only for the Metal targets
+    ROCM=$HOME/.cache/tensorfold-vega/rocm-10.1.0a20260822                                      # tools/vega-macos/fetch-rocm.sh
+    export HIPMAC_BACKEND=ut4g TENSORFOLD_HIP=<ut4g-usbgpu>/hipmac/build/libamdhip64.dylib      # card; HIPMAC_BACKEND=mock for the offline tests
+    export UT4G_METRICS_LOG=/tmp/metrics.csv:1                                                  # optional: one telemetry sample a second
+
+Card state before a run (**V**): `cd ut4g-usbgpu && AM_FW_DIR=$PWD/work/fw python3 hipmac/tools/ut4g-boot` (boots when needed; `--force` after a wedge, "GC TLB invalidation did not
+acknowledge" or a killed test binary), then `hipmac/dev/build/hipmac-smi --set-dpm auto`. Since ut4g-usbgpu `16dde97` the boot leaves the DPM range AUTO by itself; the first gate of
+the rebase ran at the forced-HIGH state of a `--force` boot (80.9 tok/s). `AM_SMU_DPM=1` (powerplay on) was the KernelTune2 boot variable before that commit; without it the card stays at
+the VBIOS bootup clocks (852 MHz: 64.1 tok/s against 81.6 with DPM).
+
+Build and the test suites (**V**; `-Dhip-arch=gfx900` is the default on macOS):
+
+    zig build -Dhip=true -Dhipcc=$ROCM/bin/hipcc -Doptimize=ReleaseFast -Dhip-arch=gfx900 native-hip tf-qwen35-test hip-kernel-build hip-affine-build hip-host-test      # about 3 min; 78/78 host tests
+    zig build -Dhip=true -Dhipcc=$ROCM/bin/hipcc -Doptimize=ReleaseFast -Dhip-arch=gfx900 hip-kernel-test --summary all    # card: 157 passed, 14 skipped, 2 failed of 173
+    zig build -Dhip=true -Dhipcc=$ROCM/bin/hipcc -Doptimize=ReleaseFast -Dhip-arch=gfx900 hip-affine-test --summary all    # card: All 30 tests passed
+    HIPMAC_BACKEND=mock zig build hip-host-test -Dhip=true                                                                # offline: 78 passed
+
+A cached result prints `run test cached` and does not touch the card; the runs also executed the cached test binary directly (`.zig-cache/o/<hash>/test`, cache-busted with
+`-Dhip-cflags="-DTF_RERUN=1"`), or with the KernelTune2 helper that runs the `zig test` command of `hip-{kernel,affine}-build --verbose` with a `--test-filter`. A test binary that hangs and is
+killed leaves the card needing `ut4g-boot --force`. `hip-gpu-test` was never run on the card. The gfx1030 identity check: build `hip-kernel-build -Dhip-arch=gfx1030` in this tree and in an
+`upstream/main` checkout with the same wrapper (`--cache-dir`/`-p` apart), `llvm-objcopy -O binary --only-section=.text groupN.hsaco`, `cmp` for the 16 groups (**V**: all identical).
+
+Gate, rounds, prefill (**V**; each tag leaves `~/.cache/tensorfold-vega/bench/<tag>.server.log` and a row in `results.jsonl`):
+
+    tools/vega-macos/setup-mlx-env.sh                                                           # once; or `uvx --from mlx-lm ...`
+    ~/.cache/tensorfold-vega/mlxenv/bin/python tools/vega-macos/mlx_ref.py ~/models/Qwen3.5-4B-MLX-4bit ~/.cache/tensorfold-vega/ref      # references (R: no run line was recorded)
+    UT4G_METRICS_LOG=/tmp/up_a_gate.csv:1 python3 tools/vega-macos/vega_gate.py --tag up-auto-gate --speed 3          # sha gate + decode median of 3: 81.39 tok/s
+    python3 tools/vega-macos/vega_gate.py --tag up-auto-logits --speed 0 --logits                                       # logits: cosine min 0.998616, FAILS the 0.999 bar
+
+The round-time and prefill tables ran with a throw-away client (`up_bench.py rounds BIN MODEL N TAG` and `prefill BIN MODEL 1 TAG`: N concurrent 128-token story requests, then unique-salted
+prompts of 53/105/225/531/1024 tokens; kept in `ut4g-usbgpu` `artifacts/results/scripts/vega-4b/`); `vega_gate.py` itself spawns `tensorfold-native serve MODEL --parallel 1 --context 4096 --port
+18099 --no-thinking --temperature 0 --no-drafts`.
+
+Serving report, Vega rows (**V**, script `up_vega_sb.sh`; port 18210; `$M` = `~/models/Qwen3.5-4B-MLX-4bit`; one server per load, stopped with SIGINT after the client):
+
+    UT4G_METRICS_LOG=/tmp/up_sb/vega_1k.csv:1  zig-out/native-hip/bin/tensorfold-native serve $M --parallel 8 --context 2048  --port 18210 --no-thinking --temperature 0 --no-drafts > vega_1k.server.log
+    uv run --quiet --with tokenizers tools/vega-macos/serve_bench.py --url http://127.0.0.1:18210 --model $M --tokenizer $M --loads 1024:512 --concurrency 1,2,4,8 --reps 2 \
+       --json /tmp/up_sb/vega_1k.json --label "tensorfold-native serve (HIP, gfx900) --parallel 8 --context 2048, Qwen3.5-4B-MLX-4bit, RX Vega 56, DPM auto" > vega_1k.md 2> vega_1k.err
+    # 16k: --parallel 6 --context 17600, --loads 16384:1024 --concurrency 1,2,4, files vega_16k.*  (--parallel 8 --context 17600 is refused: needs 5.51 GiB, the HIP budget leaves 4.52 GiB)
+
+Mac-alone rows (**V**; ports 18200 / 18201; `uvx --from mlx-lm` was unpinned: the environment was mlx 0.32.4 / mlx-lm 0.32.2, from `tools/vega-macos/requirements-mlx.txt` [R]):
+
+    (uvx --from mlx-lm mlx_lm.server --model $M --port 18200 --decode-concurrency 8 --prompt-concurrency 8 --prompt-cache-size 1 --temp 0 --max-tokens 4096 > /tmp/up_mlx4b.log 2>&1 &)
+    uv run --quiet --with tokenizers tools/vega-macos/serve_bench.py --url http://127.0.0.1:18200 --model $M --tokenizer $M --reps 2 --json /tmp/up_sb/mlx4b.json --label "mlx_lm.server, Qwen3.5-4B-MLX-4bit, M4 Pro"
+    # 35B-A3B: M=$HOME/models/Qwen3.6-35B-A3B-4bit, --port 18201, --reps 1, default loads and concurrency, files mlx35b.*; 16k c=8 ran out of memory on Metal (kIOGPUCommandBufferCallbackErrorOutOfMemory in the server log)
+
+The 4B model: `uvx --from huggingface_hub hf download mlx-community/Qwen3.5-4B-MLX-4bit --revision 32f3e8ecf65426fc3306969496342d504bfa13f3 --local-dir ~/models/Qwen3.5-4B-MLX-4bit`; the 35B-A3B:
+`hf download mlx-community/Qwen3.6-35B-A3B-4bit --revision 38740b847e4cb78f352aba30aa41c76e08e6eb46 --local-dir ~/models/Qwen3.6-35B-A3B-4bit` (17 files, 20.40 GB, 2 min 8 s).
