@@ -6,6 +6,9 @@ const tf = @import("tensorfold");
 const ds = tf.deepseek_v41;
 const lanes = tf.lanes;
 const cache_fit = @import("cache_fit.zig");
+const disk = @import("deepseek_v41_disk.zig");
+const spill = @import("metal_spill.zig");
+const gibBytes = @import("metal_shared.zig").gibBytes;
 const environment = @import("sys").environment;
 const remote = @import("deepseek_v41_remote.zig");
 const Allocator = std.mem.Allocator;
@@ -85,10 +88,10 @@ fn loadLimit(device: mtl.Device) !struct { bytes: u64, asked: bool } {
 }
 
 pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
-    if (o.speed_up != null or o.slide or o.learn != null or
+    if (o.speed_up != null or o.slide or (o.learn != null and !o.learn_conversations) or
         o.drafter != null or o.tp != 1)
     {
-        problem.* = "V4.1 resident serving does not support speed-up pairs, Sliding or Living Weights, a drafter or tensor parallelism yet";
+        problem.* = "V4.1 resident serving does not support speed-up pairs, Sliding or Living Weights, learned shared cuts (--learn keeps conversation states with --learn-conversations), a drafter or tensor parallelism yet";
         return null;
     }
     const map = try std.fmt.allocPrintSentinel(a, "{s}/engram-token-map.bin", .{o.dir}, 0);
@@ -190,10 +193,20 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         h.host.info_.prompt_cache_plan = plan;
         if (plan.budget_bytes > 0) {
             const B = tf.deepseek_v41_backend.Backend;
-            h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = &h.back, .vtable = &.{ .bytes = B.snapBytes, .save = B.snapSave, .restore = B.snapRestore, .drop = B.snapDrop, .charged = B.snapCharged } }, .{ .lookahead = 0, .planned = true, .grid = model_ptr.workspace.plan.rows, .tail = true, .tail_align = 128, .end_mark = if (std.c.getenv("TF_DSV41_END_MARK")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true, .resumed_tail = if (std.c.getenv("TF_DSV41_RESUMED_TAIL")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true }, plan.budget_bytes);
+            h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = &h.back, .vtable = &.{ .bytes = B.snapBytes, .save = B.snapSave, .restore = B.snapRestore, .drop = B.snapDrop, .charged = B.snapCharged, .rows = &disk.image } }, .{ .lookahead = 0, .planned = true, .grid = model_ptr.workspace.plan.rows, .tail = true, .tail_align = 128, .end_mark = if (std.c.getenv("TF_DSV41_END_MARK")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true, .resumed_tail = if (std.c.getenv("TF_DSV41_RESUMED_TAIL")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true }, plan.budget_bytes);
             h.host.cache = &h.cache.?;
             h.host.info_.prompt_cache = true;
+            // --learn-conversations: every kept state also goes to disk, and a state RAM evicted is read back where it pays
+            if (o.learn) |root| {
+                const r = try api.prompt_cache.rows.attach(gpa, &h.cache.?, .{ .root = root, .identity = try disk.identity(a, io, o.dir, model_ptr), .cap = gibBytes(o.learn_gib), .floor = gibBytes(o.learn_min_free_gib), .daily = gibBytes(o.learn_daily_gib), .lookahead = 0, .planned = true, .spill = o.spill, .slots = spill.slots(o) });
+                r.prefill_rate = disk.seed_prefill_rate;
+                std.log.info("deepseek-v41: conversation states on disk in {s} ({d} states, {d} MiB of {d} MiB)", .{ r.dir, r.states.items.len, r.held() >> 20, gibBytes(o.learn_gib) >> 20 });
+            }
         }
+    }
+    if (o.learn != null and h.cache == null) {
+        problem.* = "--learn-conversations keeps the prompt cache's states on disk: give it a prompt cache budget";
+        return null;
     }
     if (o.remote_prefill.on()) {
         const id = try remote.checkpointId(a, io, o.dir);
