@@ -71,7 +71,7 @@ pub const Lanes = struct {
     /// each slot's stream state (null: free)
     by_slot: []?*St,
     retired: [16]bool = @splat(false),
-    /// each slot's hand-off export point while its prompt runs in pieces (armed at `begin`, run by the target at the cut)
+    /// each slot's hand-off export point while its prompt runs in pieces (armed at `begin`, run by the target)
     cuts: [16]Cut = undefined,
     release_requested: [16]bool = @splat(false),
 
