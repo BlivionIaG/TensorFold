@@ -144,7 +144,7 @@ pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
 pub fn replay(m: *Model, logits: Logits) ![]const f32 {
     const c = &m.cone;
     const end = c.next;
-    const start = @max(end -| c.rows, c.first);
+    const start = replayStart(end, c.first, c.rows);
     const state = &m.caches[c.slot];
     c.pending = false;
     defer c.phase = .off;
@@ -207,16 +207,16 @@ pub fn stashRows(m: *Model, enc: mtl.ComputeEncoder, rows: u32, p0: u32) void {
     const c = &m.cone;
     const take = @min(rows, c.rows);
     const q0 = p0 + rows - take;
-    const first = @min(take, cap - q0 % cap);
+    const split = ringRuns(q0, take);
     const src = sources(m);
     for (src, 0..) |s, i| {
         const row = sect[i];
         const base = Cone.sectionOffset(i);
         const dst0: View = .{ .buffer = c.stash.?, .offset = base + @as(usize, q0 % cap) * row };
-        ops.encodeDump(enc, &m.pipelines.ops, s.shifted(@as(usize, rows - take) * row), dst0, @intCast(first * row / 4), false);
-        if (first < take) {
+        ops.encodeDump(enc, &m.pipelines.ops, s.shifted(@as(usize, rows - take) * row), dst0, @intCast(split[0] * row / 4), false);
+        if (split[1] != 0) {
             const dst1: View = .{ .buffer = c.stash.?, .offset = base };
-            ops.encodeDump(enc, &m.pipelines.ops, s.shifted(@as(usize, rows - take + first) * row), dst1, @intCast((take - first) * row / 4), false);
+            ops.encodeDump(enc, &m.pipelines.ops, s.shifted(@as(usize, rows - take + split[0]) * row), dst1, @intCast(split[1] * row / 4), false);
         }
     }
     enc.barrier();
@@ -227,18 +227,50 @@ pub fn loadStash(m: *Model, enc: mtl.ComputeEncoder, rows: u32) void {
     const c = &m.cone;
     const ws = &m.workspace;
     const dst = [5]View{ ws.view(.stream), ws.view(.branch), ws.view(.previous_pre), ws.view(.post), ws.view(.comb) };
-    const first = @min(rows, cap - c.at % cap);
+    const split = ringRuns(c.at, rows);
     for (dst, 0..) |d, i| {
         const row = sect[i];
         const base = Cone.sectionOffset(i);
         const src0: View = .{ .buffer = c.stash.?, .offset = base + @as(usize, c.at % cap) * row };
-        ops.encodeDump(enc, &m.pipelines.ops, src0, d, @intCast(first * row / 4), false);
-        if (first < rows) {
+        ops.encodeDump(enc, &m.pipelines.ops, src0, d, @intCast(split[0] * row / 4), false);
+        if (split[1] != 0) {
             const src1: View = .{ .buffer = c.stash.?, .offset = base };
-            ops.encodeDump(enc, &m.pipelines.ops, src1, d.shifted(@as(usize, first) * row), @intCast((rows - first) * row / 4), false);
+            ops.encodeDump(enc, &m.pipelines.ops, src1, d.shifted(@as(usize, split[0]) * row), @intCast(split[1] * row / 4), false);
         }
     }
     enc.barrier();
     m.stream_alt = false;
     m.pending_expand = true;
+}
+
+/// `n` stash rows from position `at` as up to two ring runs: to the ring's end, then from its start.
+fn ringRuns(at: u32, n: u32) [2]u32 {
+    const first = @min(n, cap - at % cap);
+    return .{ first, n - first };
+}
+
+/// Where the decoder replay of a run that ends at `end` begins: the cone's rows back, but not before the run's start.
+fn replayStart(end: u32, first: u32, rows: u32) u32 {
+    return @max(end -| rows, first);
+}
+
+test "stash rows wrap at the ring end in two runs" {
+    try std.testing.expectEqual([2]u32{ 100, 0 }, ringRuns(0, 100));
+    try std.testing.expectEqual([2]u32{ 100, 0 }, ringRuns(cap - 100, 100));
+    try std.testing.expectEqual([2]u32{ 100, 2568 }, ringRuns(cap - 100, 2668));
+    try std.testing.expectEqual([2]u32{ 100, 2568 }, ringRuns(3 * cap - 100, 2668));
+}
+
+test "the replay starts a cone back, or at the run's first position" {
+    try std.testing.expectEqual(@as(u32, 5332), replayStart(8000, 0, 2668));
+    try std.testing.expectEqual(@as(u32, 4096), replayStart(8000, 4096, 4000));
+    try std.testing.expectEqual(@as(u32, 0), replayStart(2000, 0, 2668));
+    try std.testing.expectEqual(@as(u32, 1000), replayStart(2000, 1000, 2668));
+}
+
+test "the stash holds every section's rows for the whole ring" {
+    var row: usize = 0;
+    for (sect) |b| row += b;
+    try std.testing.expectEqual(@as(usize, 51296), row);
+    try std.testing.expectEqual(row * cap, Cone.totalBytes());
 }

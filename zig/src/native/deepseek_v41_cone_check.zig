@@ -111,9 +111,9 @@ fn compare(m: *const ds.Model, n: usize, full: Run, cone: Run, decode_steps: usi
     log.info("n={d}: last-token logits differ in {d}/{d} values (worst {e}), argmax {d}/{d}", .{ n, lg[0], vocab, lg[1], argmax(full.logits), argmax(cone.logits) });
     log.info("n={d}: greedy {d} tokens sha full {x} cone {x}, {d} step rows differ (worst {e})", .{ n, decode_steps, sha(full.picks), sha(cone.picks), steps_bad, steps_worst });
     log.info("n={d}: storage {d} of {d} bytes differ (first {d}), live {d} of {d} (first {d}, ring layer {d}, ring {d} B), taps {d} of {d}; pos {d}/{d} taps_row {d}/{d} taps_n {d}/{d} last {d}/{d} base {d}/{d}", .{
-        n,                         st,                      full.snap.storage.len,   st_first,                 lv,                      full.snap.live.len, lv_first, lv_first / layer_bytes, ring_bytes, tp,
-        full.snap.taps.len,        full.snap.position,      cone.snap.position,      full.snap.taps_row,       cone.snap.taps_row,      full.snap.taps_n,   cone.snap.taps_n,
-        full.snap.taps_rows_last,  cone.snap.taps_rows_last, full.snap.taps_base,    cone.snap.taps_base,
+        n,                   st,                 full.snap.storage.len, st_first,           lv,                 full.snap.live.len, lv_first,         lv_first / layer_bytes,   ring_bytes,               tp,
+        full.snap.taps.len,  full.snap.position, cone.snap.position,    full.snap.taps_row, cone.snap.taps_row, full.snap.taps_n,   cone.snap.taps_n, full.snap.taps_rows_last, cone.snap.taps_rows_last, full.snap.taps_base,
+        cone.snap.taps_base,
     });
     log.info("n={d}: prefill full {d:.2} s ({d:.0} tok/s), cone {d:.2} s ({d:.0} tok/s), x{d:.2}", .{
         n,
