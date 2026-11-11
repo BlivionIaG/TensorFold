@@ -8,7 +8,7 @@ One server (--parallel 1, greedy, no drafts) answers
   think96   the same with thinking on, 96 tokens, sha must be the mlx_lm one
   speed     N runs of a 128-token story: TensorFold's own decode tokens/s (and prefill) per run
 then, with --logits, `tf-qwen35-test logits --decode` over 87 ids (the decode path row by row) against mlx_lm's float32 logits: cosine
-per row, argmax equality. With --prof the server runs behind tools/vega-macos/hipprof.c: `each` (graphs off, every kernel launched and
+per row, argmax equality. With --prof the server runs behind tools/vega-macos/hipprof.zig (`zig build tf-hipprof`): `each` (graphs off, every kernel launched and
 synced, timed; the table of the decode run is written to the output directory), or `graph` (graphs on, every graph replay timed).
 The mlx_lm references come from `uvx --from mlx-lm python tools/vega-macos/mlx_ref.py` (cached in ~/.cache/tensorfold-vega/ref).
 Env TF_POLICY / --policy and --env K=V reach the engine, which is how a kernel variant is switched on (see docs/recipes/vega-macos.md).
@@ -70,11 +70,8 @@ def engine_env(shim=None):
 
 
 def build_shim():
-    out = os.path.join(a.out, "libhipprof.dylib")
-    src = os.path.join(HERE, "hipprof.c")
-    if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(src):
-        subprocess.check_call(os.environ.get("TF_CC", "clang").split() + ["-O2", "-dynamiclib", "-I", HERE, "-o", out, src])
-    return out
+    subprocess.check_call(os.environ.get("TF_ZIG", "zig").split() + ["build", "tf-hipprof"], cwd=ROOT)  # incremental
+    return os.path.join(ROOT, "zig-out", "lib", "libhipprof.dylib")
 
 
 def post(body, timeout=900):

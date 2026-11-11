@@ -306,9 +306,9 @@ Where a decode token goes (about 393 launches, 15.5 ms of kernel time of the 17.
 `tf_gdn_plan_128` 1.0, `tf_tail` 0.9 (one block a row), `tf_gnorm_out`, `tf_plan_apply_f16`, `tf_conv_split` 0.35 to 0.4 each. Each
 dispatch costs the GPU about 4.4 us (barrier and cache acquire), about 1.7 ms a token (8%).
 
-Profiling: `tools/vega-macos/hipprof.c` is a shim `libamdhip64` that forwards to the runtime and times `hipModuleLaunchKernel`
-(`HIPPROF_REP=N` runs N extra back-to-back launches of each kernel for the pipelined time); `vega_gate.py --prof each` builds it,
-`prof_report.py` prints the per-token table. `--no-gate --story-tokens 16` is enough for a profile.
+Profiling: `tools/vega-macos/hipprof.zig` is a shim `libamdhip64` that forwards to the runtime and times `hipModuleLaunchKernel`
+(`HIPPROF_REP=N` runs N extra back-to-back launches of each kernel for the pipelined time; its modes and variables are in `tools/vega-macos/README.md`);
+`vega_gate.py --prof each` builds it (`zig build tf-hipprof`), `prof_report.py` prints the per-token table. `--no-gate --story-tokens 16` is enough for a profile.
 
 ## Not yet verified
 
@@ -375,14 +375,13 @@ back (the same weights twice in the L2's reach), so a profile's gain from a load
 
 ## Building on this Mac: Xcode license, SDK and the Metal toolchain
 
-2026-11-11: the Xcode license of the Mac these numbers come from **is accepted** (Xcode 27.2, Apple clang 21.0.0), so `clang`, `xcrun` and `make` work and `SDKROOT`, `TF_CC="zig cc"` and
-`DEVELOPER_DIR` are no longer needed for the C builds (`make -C hipmac`, the hipprof shim). The documented numbers were built with the command line tools' SDK; keep it for byte-identical
+2026-11-11: the Xcode license of the Mac these numbers come from **is accepted** (Xcode 27.2, Apple clang 21.0.0), so `clang`, `xcrun` and `make` work and `SDKROOT` and
+`DEVELOPER_DIR` are no longer needed for the C build (`make -C hipmac`; the hipprof shim is Zig, `zig build tf-hipprof`). The documented numbers were built with the command line tools' SDK; keep it for byte-identical
 objects: `export TF_SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk` (Xcode's default SDK is now 27.x). On a Mac whose license is not accepted (needs sudo) the builds still work
 without Xcode:
 
     export PATH=$HOME/.local/zig-0.17.0:$PATH       # tools in ut4g-usbgpu: tools/macos/fetch_zig.sh pins the tarball (sha256 b607e9b9...c536a)
     export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk TF_SDKROOT=$SDKROOT
-    export TF_CC="zig cc"                      # tools/vega-macos/vega_gate.py builds the hipprof shim with it (default clang)
 
 and `zig build test` (the Metal tests) and `make -C hipmac` (clang) do not.
 
