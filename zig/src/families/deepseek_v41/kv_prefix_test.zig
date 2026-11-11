@@ -10,25 +10,18 @@ fn pattern(id: usize, sub: usize, row: usize, byte: usize) u8 {
     return @truncate(id * 131 + sub * 31 + row * 7 + byte * 3 + 1);
 }
 
-/// Where owner `id`'s sub-array `sub` begins in a pool laid out for `capacity`.
-fn subOffset(id: usize, sub: usize, capacity: u32) usize {
-    var off = layout.blockOffset(id, capacity);
-    for (layout.strides[0..sub]) |s| off += @as(usize, capacity / Packed.ratios[id]) * s;
-    return off;
-}
-
 fn fill(buf: []u8, capacity: u32) void {
     for (Packed.ratios, 0..) |r, id| for (layout.strides, 0..) |stride, sub| for (0..capacity / r) |row| for (0..stride) |b| {
-        buf[subOffset(id, sub, capacity) + row * stride + b] = pattern(id, sub, row, b);
+        buf[layout.subOffset(id, sub, capacity) + row * stride + b] = pattern(id, sub, row, b);
     };
 }
 
-/// Every row below `rows[id]` holds the pattern; the rest still holds `rest`.
+/// Every row `position` uses holds the pattern; the rest still holds `rest`.
 fn expectRows(buf: []const u8, capacity: u32, position: u32, rest: u8) !void {
     for (Packed.ratios, 0..) |r, id| for (layout.strides, 0..) |stride, sub| for (0..capacity / r) |row| {
         const used = row < prefix.usedRows(position, r, capacity);
         for (0..stride) |b| {
-            const got = buf[subOffset(id, sub, capacity) + row * stride + b];
+            const got = buf[layout.subOffset(id, sub, capacity) + row * stride + b];
             try t.expectEqual(if (used) pattern(id, sub, row, b) else rest, got);
         }
     };
@@ -38,7 +31,12 @@ test "kv prefix: the layout is the hand-off's packed layout, owner by owner" {
     for ([_]u32{ 2, 128, 1000, 4096, 262144, 1048576 }) |capacity| {
         try t.expectEqual(Packed.storageBytes(capacity), layout.storageBytes(capacity));
         const p: Packed = .{ .live = &.{}, .storage = &.{}, .layers = 40, .capacity = capacity };
-        for (0..Packed.ratios.len) |id| try t.expectEqual(p.mainOff(id), layout.blockOffset(id, capacity));
+        for (0..Packed.ratios.len) |id| {
+            try t.expectEqual(p.mainOff(id), layout.blockOffset(id, capacity));
+            try t.expectEqual(p.mainOff(id), layout.subOffset(id, 0, capacity));
+            // the index rows follow the main rows, as the hand-off lands them
+            try t.expectEqual(p.mainOff(id) + @as(usize, capacity / Packed.ratios[id]) * Packed.main_stride, layout.subOffset(id, 1, capacity));
+        }
     }
     // 890 bytes a token, as the cache plan says
     try t.expectEqual(@as(usize, 1048576 * 890), layout.storageBytes(1048576));
