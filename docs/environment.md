@@ -52,6 +52,7 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
 | `TF_PREFILL_API_KEY_FILE` | With `--prefill-from`: the path of a file only its owner can read, holding the GB10 server's API key, which the trigger sends as a Bearer token; unset sends none, and a GB10 started with `--api-key` then answers 401 |
 | `TF_PRODUCE_HELD_GIB` | With `--mcdma-produce`: whole GiB 1 through 1024 of hand-off exports a GB10 holds at once; an export past it is refused by name and the Mac prefills that prompt itself; default 32 |
 | `TF_DSV41_HANDOFF_DUMP` | A directory path without control characters, used as given; a DeepSeek-V4.1 producer also writes each hand-off export there as a file, with or without `--mcdma-produce`. Unset or blank writes none |
+| `TF_DSV41_CONE` | DeepSeek V4.1 on Metal: `0`, `1` or `2`; `1` prefills a long prompt through the encoder layers only and replays the decoder layers over the last rows the kept state depends on (the CED cone), so the state is the full pass's; `2` replays them in programs of four layers, each over fewer rows; `0` is the full pass; default 2 |
 | `TF_PREFILL_TIMEOUT_S` | With `--prefill-from`: whole seconds 1 through 86400 for the trigger and, with `--mcdma-link http`, separately for the transfer of the export; default 60 plus 1 per 400 tokens sent |
 | `XPU_A8_BITS` | Exactly `4` or `8`, for the XPU quantization study; unset keeps the study's existing setting |
 | `LFM3_FUSE` | Whole u32 fusion mask; default 7 |
@@ -102,7 +103,7 @@ These settings retain their existing boolean policies rather than gaining new al
   `TF_DSV41_ATTN_COUNT`, `TF_DSV41_ATTN_COUNT_LAYERS`, `TF_DSV41_ATTN_DENSE_VALUES`, `TF_DSV41_ATTN_PROF`, `TF_DSV41_ATTN_PROF_LAYERS`,
   `TF_DSV41_ATTN_SCAN_BARRIER`, `TF_DSV41_ATTN_SPLITS`, `TF_DSV41_BATCH`, `TF_DSV41_BATCH_DEBUG`, `TF_DSV41_BLOCK_FILTER`,
   `TF_DSV41_BLOCK_PROF`, `TF_DSV41_CLEAR_PARTIALS`, `TF_DSV41_CLEAR_STALE`, `TF_DSV41_CONCURRENT`, `TF_DSV41_COND_NOALIGN`,
-  `TF_DSV41_COND_NOROPE`, `TF_DSV41_COND_ONE`, `TF_DSV41_COND_PROF`, `TF_DSV41_COND_ROWS`, `TF_DSV41_CPU_HASH`,
+  `TF_DSV41_COND_NOROPE`, `TF_DSV41_COND_ONE`, `TF_DSV41_COND_PROF`, `TF_DSV41_COND_ROWS`, `TF_DSV41_CONE_CHECK`, `TF_DSV41_CONE_STEPS`, `TF_DSV41_CONE_TOKENS`, `TF_DSV41_CPU_HASH`,
   `TF_DSV41_DENSE_COL`, `TF_DSV41_DENSE_COL_SPEC`, `TF_DSV41_DOUBLE_ATTN_COMPRESSOR`, `TF_DSV41_DOUBLE_ATTN_DENSE`, `TF_DSV41_DOUBLE_ATTN_INDEXER`,
   `TF_DSV41_DOUBLE_ATTN_MERGE`, `TF_DSV41_DOUBLE_ATTN_NORM`, `TF_DSV41_DOUBLE_ATTN_PACK`, `TF_DSV41_DOUBLE_ATTN_POOL`, `TF_DSV41_DOUBLE_ATTN_PUBLISH`,
   `TF_DSV41_DOUBLE_ATTN_QKV`, `TF_DSV41_DOUBLE_ATTN_SCAN`, `TF_DSV41_DOUBLE_ATTN_SCANX`, `TF_DSV41_DOUBLE_ATTN_WOA`, `TF_DSV41_DOUBLE_CLEAR`,
