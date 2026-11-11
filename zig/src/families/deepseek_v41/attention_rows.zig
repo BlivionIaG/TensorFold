@@ -69,6 +69,12 @@ fn chunkView(work: *const Workspace) View {
 /// Every slot's query rotated and its window row normed, rotated and packed, in two dispatches.
 pub fn head(p: *const Pipelines, e: mtl.ComputeEncoder, w: *const weights.Attention, work: *Workspace, q: View, raw: View, c: config.Config, ratio: u32, segs: []const Seg) !void {
     try upload(p, work, segs);
+    // The kernels reach these buffers by address, so the encoder must be told it uses them (and order them).
+    for (segs, 0..) |sg, s| {
+        e.useResource(sg.state.live, mtl.ResourceUsage.read | mtl.ResourceUsage.write);
+        e.useResource(sg.state.storage, mtl.ResourceUsage.read);
+        e.useResource(work.selectionFor(s).buffer, mtl.ResourceUsage.read);
+    }
     const n: u32 = @intCast(segs.len);
     const spectrum: rope.Spectrum = if (ratio == 0) .normal else .compressed;
     const pos = view(work, RowsScratch.pos_at);
