@@ -61,7 +61,7 @@ pub const Options = struct {
     /// `auto` does it when the weights do not fit the budget, `on` always, `off` never (the checkpoint then loads whole or is refused).
     experts: ExpertMode = .auto,
     /// Experts the cache admits a round at most: the copy budget, bytes the link spares from the misses' own reads.
-    expert_copies: usize = 8,
+    expert_copies: usize = 32,
     /// Device bytes of the expert cache (null: what the plan leaves).
     expert_gib: ?f64 = null,
 };

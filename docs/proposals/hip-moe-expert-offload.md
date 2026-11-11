@@ -30,3 +30,12 @@ window -> line queued at the round's end. `TF_EXPERT_OFFLOAD=0|1|auto`, `--ssd-e
 ## Not done
 
 serve_bench tables (1k/512, 16k/1k at c=1,2,4,8), copy-budget tuning, prefill prestage of layer L+1, seeding the cache from prefill counts, Metal miss path.
+
+## Update: admissions 32 a round, value-wait timeout, serve_bench 1k/512
+
+`TF_EXPERT_COPIES` default is now 32 (8 gave 36-42 % hits and 4.4-6.6 tok/s; 32 gives 75-91 % and 11-22 tok/s on story / salted-filler prompts). The 10 s hipmac
+value-wait timeout counts from submission and a forward queues every layer's wait at once, so a prompt span longer than ~10 s was released early (HipFailed): the store now
+sets `HIPMAC_WAIT_VALUE_TIMEOUT_MS=0`. serve_bench 1k in / 512 out, c = 1, 2, 4, 8, one round a cell: `hip-moe-expert-offload-bench-1k.md` (c=1: prefill 30 tok/s, TTFT 34 s,
+decode 11.0 tok/s, ITL 120 ms; aggregate decode 8.6 / 8.1 / 7.9 tok/s at c = 2 / 4 / 8). Prefill is the weak spot: a prompt span's GEMM tiles read the window in place at a
+fraction of link speed (460 tokens 23.8 s); the 16k/1k load was not run (about 14 min a 16k prefill at 19-30 tok/s). Next: stage a span's experts into a VRAM scratch by SDMA
+instead of reading them in place, prefill prestage of layer L+1, then the 16k rows.

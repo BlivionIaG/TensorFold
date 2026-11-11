@@ -470,3 +470,14 @@ warmed bench is in `tools/vega-macos/experiments/multirow-2026-11-11.patch` (`gi
 Next: the ablations that dropped the extraction (`TF_ABL&2`) or the LDS x reads (`&4`) fed garbage to the dots and ran 22-480 ms or wedged the card; redo them with finite data
 (x and weights kept in range, e.g. extraction replaced by a cheap pass of valid fp16 pairs) to split the 161 us between LDS reads, extraction and mads. Then m = 8 as one 8-row
 block (weights read once) and lm_head (m4 2071 vs m1 1037 us), which depend on that split.
+
+## Qwen3.6-35B-A3B MLX 4-bit by expert offload (`feat/moe-expert-offload`)
+
+The 19.0 GiB checkpoint (16.9 GiB of routed experts) does not fit the card's 7.9 GiB; `tensorfold-native serve ~/models/Qwen3.6-35B-A3B-4bit` offloads the routed
+experts automatically (`TF_EXPERT_OFFLOAD=0|1|auto`, `--ssd-experts GIB` sets the cache). Design, the 1.96 GiB DMA-window finding and results:
+`docs/proposals/hip-moe-expert-offload.md`. Environment: `HIPMAC_BACKEND=ut4g TENSORFOLD_HIP=<hipmac>/build/libamdhip64.dylib`; `TF_EXPERT_COPIES` (admissions
+a round, default 32), `TF_EXPERT_WINDOW_MIB` (pinned window, default 1536; the card maps ~1.96 GiB of host memory in all). The Mac must have ~19 GiB of free, unwired memory
+(an mlx process holding the same model, or several GiB wired, shrinks what `hipHostMalloc` can pin). Decode and prompt spans run eager (value waits are not capturable);
+the server log carries `experts interval/total` lines: hit rate, misses/token and MiB/token over the link, window fill, admissions, stage ms/token, round ms.
+Checks: `tools/vega-macos/moe_ref.py` (mlx_lm greedy references) and `moe_gate.py` (shas of a running server, `--against` for cache on vs `TF_EXPERT_COPIES=0`).
+Recovery after a wedge ("GC TLB invalidation did not acknowledge", "not a GPU this engine supports"): `ut4g-boot --force`, then DPM auto (`hipmac-smi`).
