@@ -352,6 +352,8 @@ pub const Sessions = struct {
         s.f.slot.tail = p.tail;
         s.f.slot.tail_len = p.tail_len;
         s.f.slot.ced = p.stash;
+        s.f.slot.cone_id = 0;
+        if (s.f.prefill_state != null) pf.state(s.f).replay_exact = false;
         s.ds_valid[s.cur()] = p.pos - p.ds_rows;
         s.dsRestored();
     }
@@ -377,6 +379,8 @@ pub const Sessions = struct {
         s.f.slot.tail = m.tail;
         s.f.slot.tail_len = m.tail_len;
         s.f.slot.ced = m.stash;
+        s.f.slot.cone_id = 0;
+        if (s.f.prefill_state != null) pf.state(s.f).replay_exact = false;
         s.ds_valid[s.cur()] = m.pos - m.ds;
         s.dsRestored();
     }
@@ -445,13 +449,15 @@ pub const Sessions = struct {
         return (try s.resumeHit(prompt, hit)).at;
     }
 
-    /// The longest saved entry that strictly prefixes `prompt` (a row must remain to prefill), null: none.
+    /// The longest saved entry strictly prefixing `prompt`; under the exact replay, none short of the cone.
     pub fn find(s: *Sessions, prompt: []const u32) !?sessions.store.Hit {
         const ids = try s.gpa.alloc(i32, prompt.len);
         defer s.gpa.free(ids);
         for (ids, prompt) |*d, t| d.* = @intCast(t);
         const h = (try s.store.find(s.tag(), ids)) orelse return null;
-        return if (h.pos >= prompt.len) null else h;
+        if (h.pos >= prompt.len) return null;
+        if (s.f.prefill_state != null and pf.state(s.f).cone_on and !ced.resumeExact(s.f.cfg, prompt.len - 1, h.pos)) return null;
+        return h;
     }
 
     /// The pool decision for a request (kv/sess.zig `admit`; the round planner's: kv/sched.zig).

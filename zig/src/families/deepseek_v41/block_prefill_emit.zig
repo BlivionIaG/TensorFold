@@ -81,7 +81,14 @@ pub fn emitPrefill(a: std.mem.Allocator, cfg: *const Config, w: *const block.Wid
 }
 
 fn emitPart(a: std.mem.Allocator, cfg: *const Config, w: *const block.Widths, o: block.Options, layers: []const u32, n: i64, start: i64, head: bool, part: Part) ![]calls.Call {
-    return emitMarked(a, cfg, w, o, layers, n, start, head, part, null);
+    return emitMarked(a, cfg, w, o, layers, n, start, head, part, null, null);
+}
+
+/// One program of the exact decoder replay (`.cone_mid` / `.cone_last`) from the cone ring; `cand_at` shifts candidates
+pub fn emitCone(a: std.mem.Allocator, cfg: *const Config, w: *const block.Widths, o: block.Options, layers: []const u32, n: i64, start: i64, part: Part, cand_at: ?i64) ![]calls.Call {
+    std.debug.assert(part == .cone_mid or part == .cone_last);
+    if (layers.len == 0) return error.Unsupported;
+    return emitMarked(a, cfg, w, o, layers, n, start, false, part, null, cand_at);
 }
 
 pub const tbo_min: i64 = 512; // TF_DSV41_PF_TBO: micro-batches of at least this many rows (smaller run alone)
@@ -160,8 +167,8 @@ pub fn emitTbo(a: std.mem.Allocator, cfg: *const Config, w: *const block.Widths,
     if (o.pool) |pl| if (pl.split) return error.Unsupported;
     var ma: std.ArrayList(usize) = .empty;
     var mb: std.ArrayList(usize) = .empty;
-    const pa = try emitMarked(a, cfg, w, o, layers, na, start, false, .encoder, &ma);
-    const pb = try emitMarked(a, cfg, w, o, layers, nb, start + na, false, .encoder, &mb);
+    const pa = try emitMarked(a, cfg, w, o, layers, na, start, false, .encoder, &ma, null);
+    const pb = try emitMarked(a, cfg, w, o, layers, nb, start + na, false, .encoder, &mb, null);
     if (ma.items.len != mb.items.len) return error.Unsupported;
     // the phases: alternating attention / MoE parts, the last the encoder's end (D's site + compressor)
     const nph = ma.items.len + 1;
@@ -218,16 +225,16 @@ pub fn emitTbo(a: std.mem.Allocator, cfg: *const Config, w: *const block.Widths,
     return out.items;
 }
 
-fn emitMarked(a: std.mem.Allocator, cfg: *const Config, w: *const block.Widths, o: block.Options, layers: []const u32, n: i64, start: i64, head: bool, part: Part, marks: ?*std.ArrayList(usize)) ![]calls.Call {
+fn emitMarked(a: std.mem.Allocator, cfg: *const Config, w: *const block.Widths, o: block.Options, layers: []const u32, n: i64, start: i64, head: bool, part: Part, marks: ?*std.ArrayList(usize), cand_at: ?i64) ![]calls.Call {
     if (n < 1 or n > o.prefill_rows or n > rowsCap(o)) return error.Unsupported;
-    var e: E = .{ .a = a, .cfg = cfg, .w = w, .o = o, .n = n, .start = start, .marks = marks };
+    var e: E = .{ .a = a, .cfg = cfg, .w = w, .o = o, .n = n, .start = start, .marks = marks, .cand0 = cand_at orelse 0 };
     const W: i64 = cfg.window;
     // forward.staging: the slot's ring holds 2 x window rows; a longer segment goes through the staging ring
     const staged = n + W - 1 > 2 * W;
     const stage: i64 = @intCast(std.math.ceilPowerOfTwo(u64, @intCast(o.prefill_rows + W - 1)) catch return error.Unsupported);
     const ring = if (staged) stage else 2 * W;
     if (ring < n + W - 1) return error.Unsupported; // attn_pf: the ring must hold the rows and their windows
-    var s: Seg = .{ .e = &e, .staged = staged, .ring = ring, .short = n <= 16, .part = part };
+    var s: Seg = .{ .e = &e, .staged = staged, .ring = ring, .short = n <= 16, .part = part, .cand = cand_at != null };
     try s.run(layers, head);
     if (o.holdsDeferred(n)) calls.holdDeferred(e.out.items);
     return e.out.items;

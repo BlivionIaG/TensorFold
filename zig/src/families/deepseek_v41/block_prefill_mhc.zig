@@ -46,7 +46,7 @@ pub fn site(s: *Seg, L: u32, which: []const u8, mode: moe.Mode) !void {
     const pend = s.pend;
     s.pend = 0;
     // the decoder replay's boundaries write the streams in place (replay.finish's Streams has no `alt`)
-    if (s.short) return moe.mhcInto(e, L, which, mode, s.part == .decoder);
+    if (s.short) return moe.mhcInto(e, L, which, mode, s.part.decoding());
     const n = e.n;
     if (pend > 1 and mode == .boundary and n >= pend * pf_rows and n > split_rows) return s.sitePieces(L, which, pend, true);
     // TF_DSV41_MHC_SITE_ROWS: the boundary in row pieces, each piece's inputs still in L2 for its `_finish_k`
@@ -66,7 +66,7 @@ pub fn site(s: *Seg, L: u32, which: []const u8, mode: moe.Mode) !void {
     const c = try e.buf("L.mhc.c", .{}, .bf16, &.{ n, D });
     const tap = try tapOf(e, L, which, mode);
     // the forward's second streams buffer (mhc.out_of_place): a boundary of at most 32 rows writes it
-    const spare = post and n <= split_rows and s.part != .decoder;
+    const spare = post and n <= split_rows and !s.part.decoding();
     const xout = if (spare) try e.spare() else x;
     if (n >= pf_rows) {
         try e.ext("tf_dsv41_mhc_pf_v1.run", &.{

@@ -12,6 +12,7 @@ const pieceAt = prefill.Seg.pieceAt;
 const selection = prefill.Seg.selection;
 const rowsOf = prefill.Seg.rowsOf;
 const stashArgs = prefill.stashArgs;
+const coneArgs = prefill.coneArgs;
 const pf_heads = @import("prefill_heads.zig");
 
 // -- attention -----------------------------------------------------------------------------------------------
@@ -153,7 +154,9 @@ pub fn encoderEnd(s: *Seg, L: u32) !void {
     const p = try s.compProj(L);
     const segs = s.multi orelse {
         try s.compress(L, p);
-        return e.glue("ced_stash", &try stashArgs(e));
+        try e.glue("ced_stash", &try stashArgs(e));
+        if (s.part == .encoder_cone) try e.glue("cone_stash", &try coneArgs(e));
+        return;
     };
     // blocks.compress_rows: the projection over every row, then each segment's compressor and stash (replay.encode)
     const total = e.n;
@@ -177,7 +180,7 @@ pub fn attention(s: *Seg, L: u32) !void {
     const x = try e.buf("w.out", .{}, .bf16, &.{ n, D });
     const indexer = md == .full or md == .reindex;
     // the decoder replay skips the kv source's compressor (blocks.Context.comp_done: the encoder pass stored it)
-    const own_kv = md == .full and s.part != .decoder;
+    const own_kv = md == .full and !s.part.decoding();
     // the x projections (wq_a, wkv, a KV source's compressor), each its own matmul
     const qa = try e.buf("L.qa", .{}, .bf16, &.{ n, e.cfg.q_lora });
     const kva = try e.buf("L.kva", .{}, .bf16, &.{ n, hd });

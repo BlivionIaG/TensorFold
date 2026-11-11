@@ -65,6 +65,54 @@ pub fn suffixRows(cfg: *const Config, kept: u32) Error!u32 {
     return kept + (cfg.layers - d) * (cfg.window - 1);
 }
 
+/// The exact decoder replay's rows: layer k of `nd` needs `window + (nd - 1 - k) * (window - 1)` rows behind the end.
+pub fn coneRows(window: u32, nd: u32) u32 {
+    return window + (nd -| 1) * (window - 1);
+}
+
+/// The release's cone (window 128, 20 decoder layers): the stash's and the device ring's rows.
+pub const cone_keep = ft.cone_keep;
+pub const ConeStash = ft.ConeStash;
+
+/// The cone ring's roles (persistent, one set a process): the entering stream state of the layer a program starts at.
+pub const cone_roles = [_][]const u8{ "s.cone.x", "s.cone.out", "s.cone.pre", "s.cone.post", "s.cone.comb" };
+
+/// One program of the exact replay: decoder layers [first, first + count) of the pass.
+pub const Group = struct { first: u32, count: u32 };
+
+/// The programs: a cut before an index source below every drafter tap once `group` layers have run since the last.
+pub fn groups(cfg: *const Config, dec: []const u32, group: u32, out: []Group) []const Group {
+    var n: usize = 0;
+    var first: u32 = 0;
+    const below: u32 = if (cfg.dspark_targets.items().len == 0) std.math.maxInt(u32) else std.mem.min(u32, cfg.dspark_targets.items());
+    for (1..dec.len) |i| {
+        const k: u32 = @intCast(i);
+        if (k - first < group or !cfg.isIndexSource(dec[i]) or dec[i] >= below or n + 1 >= out.len) continue;
+        out[n] = .{ .first = first, .count = k - first };
+        n += 1;
+        first = k;
+    }
+    out[n] = .{ .first = first, .count = @as(u32, @intCast(dec.len)) - first };
+    return out[0 .. n + 1];
+}
+
+/// The rows a program starting at decoder layer `first` runs over, given `avail` rows of stash behind the prompt's end.
+pub fn groupRows(window: u32, nd: u32, first: u32, avail: u64) u32 {
+    return @intCast(@min(avail, window + (nd - 1 - first) * (window - 1)));
+}
+
+/// The exact replay's stash rule: the stash from `lo` holds the cone of a prompt prefilled to `end`, or starts at 0.
+pub fn coneHeld(window: u32, nd: u32, end: u64, lo: u64) bool {
+    return lo == 0 or end - lo >= groupRows(window, nd, 0, end);
+}
+
+/// Whether a prompt prefilled to `end` stays exact when it resumes a snapshot at `at` (its stash starts there).
+pub fn resumeExact(cfg: *const Config, end: u64, at: u64) bool {
+    if (end <= keep) return true;
+    const nd = cfg.layers - (decoderStart(cfg) catch return true);
+    return coneHeld(cfg.window, nd, end, @max(at, end -| cone_keep));
+}
+
 /// Every row: an encoder layer is not cone-limited.
 pub const all_rows: u32 = std.math.maxInt(u32);
 
@@ -112,11 +160,16 @@ pub const Span = struct { row: u32, n: u32, at: u32 };
 
 /// Positions [a, b) (at most `ring`) as at most two contiguous ring runs; `at` counts from a.
 pub fn spans(a: u64, b: u64, out: *[2]Span) []const Span {
-    std.debug.assert(b >= a and b - a <= ring);
+    return spansIn(ring, a, b, out);
+}
+
+/// `spans` over a ring of `rows` rows (the cone ring's).
+pub fn spansIn(rows: u32, a: u64, b: u64, out: *[2]Span) []const Span {
+    std.debug.assert(b >= a and b - a <= rows);
     const total: u32 = @intCast(b - a);
     if (total == 0) return out[0..0];
-    const r: u32 = @intCast(a % ring);
-    const first = @min(total, ring - r);
+    const r: u32 = @intCast(a % rows);
+    const first = @min(total, rows - r);
     out[0] = .{ .row = r, .n = first, .at = 0 };
     if (first == total) return out[0..1];
     out[1] = .{ .row = 0, .n = total - first, .at = first };
@@ -251,4 +304,40 @@ test "CED restore or rewind cannot reuse stale rows before the replacement segme
         stash.tail(restart, restart + replacement.len, &got);
         try t.expectEqualSlices(u32, &replacement, &got);
     }
+}
+
+test "the exact replay's cone: rows per program, the cuts at index sources below the drafter's taps, the stash ring" {
+    const t = std.testing;
+    const cfg: Config = .{};
+    try t.expectEqual(cone_keep, coneRows(cfg.window, 20));
+    try t.expectEqual(try layerRows(&cfg, cfg.window, 20), coneRows(cfg.window, 20));
+    var dec: [20]u32 = undefined;
+    for (&dec, 0..) |*l, i| l.* = @intCast(20 + i);
+    var buf: [20]Group = undefined;
+    // four layers a program: cuts before 24, 28, 32 and 36 (the taps 37-39 stay in the last program)
+    const g4 = groups(&cfg, &dec, 4, &buf);
+    try t.expectEqualSlices(Group, &.{ .{ .first = 0, .count = 4 }, .{ .first = 4, .count = 4 }, .{ .first = 8, .count = 4 }, .{ .first = 12, .count = 4 }, .{ .first = 16, .count = 4 } }, g4);
+    // a size between index sources rounds up to the next; 20 and more: one program
+    try t.expectEqualSlices(Group, &.{ .{ .first = 0, .count = 8 }, .{ .first = 8, .count = 8 }, .{ .first = 16, .count = 4 } }, groups(&cfg, &dec, 5, &buf));
+    try t.expectEqualSlices(Group, &.{.{ .first = 0, .count = 20 }}, groups(&cfg, &dec, 20, &buf));
+    // the rows: the cone's, less where the prompt is shorter
+    try t.expectEqual(@as(u32, 2541), groupRows(cfg.window, 20, 0, 1 << 20));
+    try t.expectEqual(@as(u32, 2033), groupRows(cfg.window, 20, 4, 1 << 20));
+    try t.expectEqual(@as(u32, 509), groupRows(cfg.window, 20, 16, 1 << 20));
+    try t.expectEqual(@as(u32, 700), groupRows(cfg.window, 20, 0, 700));
+    // the stash: the last cone_keep rows of consecutive segments, two ring runs at most
+    var s: ConeStash = .{};
+    var ids: [3000]u32 = undefined;
+    for (&ids, 0..) |*x, i| x.* = @intCast(i);
+    s.extend(0, ids[0..1000]);
+    s.extend(1000, ids[1000..3000]);
+    try t.expectEqual(@as(u64, 3000 - cone_keep), s.lo());
+    try t.expect(s.covers(3000 - cone_keep, 3000));
+    try t.expect(!s.covers(3000 - cone_keep - 1, 3000));
+    var sp: [2]Span = undefined;
+    const runs = spansIn(cone_keep, 3000 - 700, 3000, &sp);
+    var total: u32 = 0;
+    for (runs) |r| total += r.n;
+    try t.expectEqual(@as(u32, 700), total);
+    try t.expectEqual(@as(u32, @intCast(2300 % cone_keep)), runs[0].row);
 }

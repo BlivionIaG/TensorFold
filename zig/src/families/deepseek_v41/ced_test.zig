@@ -224,3 +224,173 @@ test "CED: the decoder pass writes the tail's DSpark taps (layers 37-39, rows 0 
         try testing.expect(reads >= 1);
     }
 }
+
+test "CED: the exact replay's programs: the encoder fills the cone ring, a program hands the next its rows, candidates shift" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const cfg: Config = .{};
+    var w = try widths(a);
+    const d = try ced.decoderStart(&cfg);
+    var layers: [25]u32 = undefined;
+    for (&layers, 0..) |*l, i| l.* = @intCast(i);
+    const dec = layers[d..];
+    const o: block.Options = .{ .limit = limit, .rope_rows = limit + 2048 };
+    // the encoder pass with the cone ring: the plain pass, then its stash again into the cone's ring
+    const plain = try bp.emitReplay(a, &cfg, &w, o, layers[0 .. d + 1], 300, 1000, .encoder);
+    const enc = try bp.emitReplay(a, &cfg, &w, o, layers[0 .. d + 1], 300, 1000, .encoder_cone);
+    try testing.expectEqual(plain.len + 1, enc.len);
+    try testing.expectEqualStrings("glue.ced_stash", enc[enc.len - 2].name);
+    const stash = enc[enc.len - 1];
+    try testing.expectEqualStrings("glue.cone_stash", stash.name);
+    for (ced.cone_roles, 5..) |role, j| {
+        try testing.expectEqualStrings(role, roleOf(stash.args[j].arg));
+        try testing.expectEqual(@as(i64, ced.cone_keep), stash.args[j].arg.t.shape[0]);
+    }
+    // the programs: [20, 24) with the next one's first site, then [24, 25) from the ring, candidates 40 rows in
+    var buf: [8]ced.Group = undefined;
+    const gs = ced.groups(&cfg, dec, 4, &buf);
+    try testing.expectEqual(@as(usize, 2), gs.len);
+    const mid = try bp.emitCone(a, &cfg, &w, o, dec[gs[0].first .. gs[0].first + gs[0].count + 1], 300, 1000, .cone_mid, null);
+    try testing.expectEqualStrings("glue.positions", mid[0].name);
+    try testing.expectEqualStrings("glue.cone_load", mid[1].name);
+    try testing.expectEqualStrings("glue.cone_stash", mid[mid.len - 1].name);
+    try testing.expectEqual(@as(i64, 1000), mid[0].args[3].arg.i);
+    for (ced.cone_roles, 5..) |role, j| try testing.expectEqualStrings(role, roleOf(mid[1].args[j].arg));
+    const last = try bp.emitCone(a, &cfg, &w, o, dec[gs[1].first .. gs[1].first + gs[1].count], 200, 1100, .cone_last, 40);
+    try testing.expectEqualStrings("glue.cone_load", last[1].name);
+    for (last) |c| try testing.expect(!std.mem.eql(u8, c.name, "glue.cone_stash") and !std.mem.eql(u8, c.name, "glue.ced_stash"));
+    // layer 24 (an index source) reads layer 20's candidates from the program's first row: 40 rows into them
+    var shifted: usize = 0;
+    const cb: i64 = cfg.candidate_blocks;
+    for (last) |c| for (c.args) |x| if (x.arg == .t and std.mem.eql(u8, roleOf(x.arg), "w.cand")) {
+        try testing.expect(x.arg.t.offset >= 40 * cb * 4);
+        shifted += 1;
+    };
+    try testing.expect(shifted > 0);
+    // the first program computes them (nothing shifted), and the decoder replay's own part is unchanged by the new ones
+    for (mid) |c| for (c.args) |x| if (x.arg == .t and std.mem.eql(u8, roleOf(x.arg), "w.cand")) try testing.expect(x.arg.t.offset < 40 * cb * 4);
+    try testing.expectError(error.Unsupported, bp.emitCone(a, &cfg, &w, o, &.{}, 300, 1000, .cone_last, null));
+}
+
+fn programNames(a: std.mem.Allocator, cs: []const calls.Call, out: *std.ArrayList([]const u8)) !void {
+    for (cs) |c| try out.append(a, c.name);
+}
+
+test "CED: the exact replay's programs, chained, run the decoder pass's calls in its order; every shape emits to the 1M limit" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const cfg: Config = .{};
+    var w = try widths(a);
+    var layers: [40]u32 = undefined;
+    for (&layers, 0..) |*l, i| l.* = @intCast(i);
+    const dec = layers[try ced.decoderStart(&cfg)..];
+    const big: i64 = 1 << 20;
+    const pages = @divExact(big, block.Pool.page);
+    for ([_]u32{ 1, 4, 5, 20 }) |group| for ([_]bool{ false, true }) |k4| for ([_]i64{ 300, 2033, 2541 }) |n| for ([_]i64{ 0, 4096, 524288 - 1 }) |start| {
+        var o: block.Options = .{ .limit = big, .rope_rows = big + 2048, .index_budget = 64 << 20, .taps = true };
+        o.pool = .{ .comp_pages = pages + 1, .ik_pages = pages + 1, .pts = pages };
+        if (k4) {
+            o.prefill_rows = 4096;
+            o.pf4k = true;
+        } else if (n > o.prefill_rows) continue;
+        var buf: [20]ced.Group = undefined;
+        const gs = ced.groups(&cfg, dec, group, &buf);
+        const whole = try bp.emitReplay(a, &cfg, &w, o, dec, n, start, .decoder);
+        var want: std.ArrayList([]const u8) = .empty;
+        try programNames(a, whole[2..], &want);
+        var got: std.ArrayList([]const u8) = .empty;
+        for (gs, 0..) |g, gi| {
+            const last = gi + 1 == gs.len;
+            const lay = dec[g.first .. g.first + g.count + @intFromBool(!last)];
+            const cs = try bp.emitCone(a, &cfg, &w, o, lay, n, start, if (last) .cone_last else .cone_mid, if (gi == 0) null else 0);
+            try testing.expectEqualStrings("glue.cone_load", cs[1].name);
+            try programNames(a, cs[2 .. cs.len - @intFromBool(!last)], &got);
+            if (!last) try testing.expectEqualStrings("glue.cone_stash", cs[cs.len - 1].name);
+        }
+        try testing.expectEqual(want.items.len, got.items.len);
+        for (want.items, got.items) |x, y| try testing.expectEqualStrings(x, y);
+        // the drafter's taps: written once each, by the last program, whose first layer is below every target
+        var taps: usize = 0;
+        for (gs, 0..) |g, gi| {
+            const last = gi + 1 == gs.len;
+            const cs = try bp.emitCone(a, &cfg, &w, o, dec[g.first .. g.first + g.count + @intFromBool(!last)], n, start, if (last) .cone_last else .cone_mid, if (gi == 0) null else 0);
+            for (cs) |c| for (c.args) |x| if (x.arg == .t and std.mem.eql(u8, roleOf(x.arg), "w.taps")) {
+                taps += 1;
+                try testing.expect(last);
+            };
+        }
+        var whole_taps: usize = 0;
+        for (whole) |c| for (c.args) |x| if (x.arg == .t and std.mem.eql(u8, roleOf(x.arg), "w.taps")) {
+            whole_taps += 1;
+        };
+        try testing.expectEqual(whole_taps, taps);
+    };
+}
+
+const prompt_lengths = [_]u64{ 128, 328, 1024, 1810, 2047, 2048, 2600, 4096, 10572 };
+
+test "CED: the exact replay's rows per layer equal the cone rule's, for prompts from the window past the cone" {
+    const cfg: Config = .{};
+    const d = try ced.decoderStart(&cfg);
+    const nd = cfg.layers - d;
+    var layers: [64]u32 = undefined;
+    for (layers[0..cfg.layers], 0..) |*l, i| l.* = @intCast(i);
+    const dec = layers[d..cfg.layers];
+    const W = cfg.window;
+    try testing.expectEqual(ced.cone_keep, ced.groupRows(W, nd, 0, std.math.maxInt(u64)));
+    for (prompt_lengths) |n| for ([_]u32{ 1, 4, 5, 20 }) |group| {
+        const end = n - 1;
+        var buf: [32]ced.Group = undefined;
+        const gs = ced.groups(&cfg, dec, group, &buf);
+        var prev: u32 = std.math.maxInt(u32);
+        var seen: u32 = 0;
+        for (gs) |g| {
+            const rows = ced.groupRows(W, nd, g.first, end);
+            // the program starts on its first layer's cone and a later program never runs more rows than an earlier one
+            try testing.expectEqual(@min(end, try ced.layerRows(&cfg, ced.replay_rows, d + g.first)), rows);
+            try testing.expect(rows <= prev and rows <= ced.cone_keep and rows <= end);
+            prev = rows;
+            for (g.first..g.first + g.count) |k| {
+                const rule = try ced.layerRowsOf(&cfg, ced.replay_rows, d + @as(u32, @intCast(k)), @intCast(end));
+                // every layer of the program replays its cone's rows (a group of one: exactly them)
+                try testing.expect(rows >= rule);
+                if (g.count == 1) try testing.expectEqual(rule, rows);
+                seen += 1;
+            }
+        }
+        try testing.expectEqual(nd, seen);
+        // the first program starts at the prompt's start when the cone is not shorter, else on cone rows of the stash
+        try testing.expectEqual(@min(end, ced.cone_keep), ced.groupRows(W, nd, gs[0].first, end));
+        // the last program: the window's rows (or the whole prompt below it)
+        try testing.expectEqual(@min(end, W), ced.groupRows(W, nd, gs[gs.len - 1].first + gs[gs.len - 1].count - 1, end));
+        // the stash a prompt run from 0 leaves holds every program's rows
+        try testing.expect(ced.coneHeld(W, nd, end, end -| ced.cone_keep));
+    };
+}
+
+test "CED: a prompt resumed from a snapshot keeps the exact replay only when the stash after it holds the cone" {
+    const cfg: Config = .{};
+    const T = struct { n: u64, at: u64, exact: bool };
+    const cases = [_]T{
+        .{ .n = 128, .at = 64, .exact = true }, // 127 prefilled rows: the bounded replay is already exact
+        .{ .n = 129, .at = 0, .exact = true },
+        .{ .n = 129, .at = 64, .exact = false },
+        .{ .n = 329, .at = 320, .exact = false }, // the 328-token prompt's snapshot under a longer one
+        .{ .n = 1811, .at = 0, .exact = true },
+        .{ .n = 1811, .at = 320, .exact = false }, // the 1,810-token export resumed at the 328-token one's snapshot
+        .{ .n = 2048, .at = 16, .exact = false },
+        .{ .n = 2049, .at = 16, .exact = false },
+        .{ .n = 2601, .at = 59, .exact = true }, // end 2,600: the cone is 2,541 rows, 2,541 remain behind 59
+        .{ .n = 2601, .at = 64, .exact = false },
+        .{ .n = 4097, .at = 1024, .exact = true },
+        .{ .n = 4097, .at = 1600, .exact = false },
+        .{ .n = 10573, .at = 1792, .exact = true }, // the 10,572-token export resumed at the 1,810-token one's snapshot
+        .{ .n = 10573, .at = 8031, .exact = true },
+        .{ .n = 10573, .at = 8032, .exact = false },
+    };
+    for (cases) |c| try testing.expectEqual(c.exact, ced.resumeExact(&cfg, c.n - 1, c.at));
+    // a resume at 0 is a cold prompt: exact for every length
+    for (prompt_lengths) |n| try testing.expect(ced.resumeExact(&cfg, n - 1, 0));
+}
