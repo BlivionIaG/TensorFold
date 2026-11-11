@@ -69,6 +69,7 @@ fn eligible(r: *const Request) bool {
 /// Fills start for queued requests whose remote prefix beats the cache's, at most TF_PREFILL_AHEAD (engine thread).
 pub fn queue(h: *LaneHost) void {
     const source = h.remote orelse return;
+    keepWarm(h);
     var holding: usize = 0;
     for (h.queued.items) |job| holding += @intFromBool(if (job.ticket) |t| t.state.load(.acquire) == Ticket.running or t.filled != null else false);
     for (h.queued.items) |job| {
@@ -142,19 +143,18 @@ pub fn wins(h: *LaneHost, job: *const Job) bool {
     return f.at > kept;
 }
 
-/// Whether a queued request waits for its remote fill, the engine having no work of its own meanwhile (lock held).
-pub fn waiting(h: *LaneHost) bool {
-    for (h.queued.items) |job| if (held(job)) return true;
-    return false;
-}
+/// The engine thread's last keepalive tick while a queued request awaited its remote fill (the awake clock, ns).
+threadlocal var warm_tick: i96 = 0;
 
-/// A keepalive tick when one is due: macOS unwires an idle model after 1-2 s, and the first pass then pays the re-wire.
-pub fn keepWarm(h: *LaneHost) void {
+/// A keepalive tick while a queued request awaits its fill: macOS unwires an idle model after 1-2 s (engine thread).
+fn keepWarm(h: *LaneHost) void {
     const target = h.keepalive_target orelse return;
     const now = std.Io.Clock.awake.now(h.io).toNanoseconds();
-    if (now - h.warm_tick < api.keepalive.served_interval_ns) return;
-    h.warm_tick = now;
-    target.tick(target.ctx);
+    if (now - warm_tick < api.keepalive.served_interval_ns) return;
+    for (h.queued.items) |job| if (held(job)) {
+        warm_tick = now;
+        return target.tick(target.ctx);
+    };
 }
 
 /// Where a landed remote prefix that beats the cache's own starts the pass (0: none), for the lookup's marks.
