@@ -48,7 +48,7 @@ fn flag(name: [:0]const u8) !bool {
 
 /// The store's policy from the family's options: an unset residency stays unlimited, as sessions.Policy reads null.
 fn policy(o: Options) sessions.store.Policy {
-    return .{ .ram_bytes = o.ram_bytes, .chats = o.resident, .resident_bytes = o.resident_bytes, .skip_covered = o.skip_covered, .delta = o.delta };
+    return .{ .ram_bytes = o.ram_bytes, .chats = o.resident, .resident_bytes = o.resident_bytes, .skip_covered = o.skip_covered, .delta = o.delta, .write_through = o.disk != null };
 }
 
 test "the default session options keep idle chats unlimited; an explicit 0 keeps none" {

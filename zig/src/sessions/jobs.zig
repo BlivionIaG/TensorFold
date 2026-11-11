@@ -12,6 +12,8 @@ pub const Job = struct {
     kind: Kind,
     /// the store's entry
     entry: u32,
+    /// park: the entry stays in RAM once its file is written (a write-through copy)
+    keep_ram: bool = false,
     state: std.atomic.Value(State) = .init(.queued),
     err: ?anyerror = null,
     started_ns: i96 = 0,

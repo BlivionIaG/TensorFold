@@ -223,6 +223,53 @@ test "two split ranks make the same decisions on the same calls and each restore
     try testing.expectEqualSlices(u64, t0.items, t1.items);
 }
 
+/// Two turns of one chat saved with write-through, none evicted: each is on the tier while the chat stays in RAM.
+fn writeThrough(gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32) !u64 {
+    var r: Rank = undefined;
+    try r.init(gpa, root, world, rank, .{ .write_through = true });
+    defer r.deinit();
+    const s = try r.pool.newSlot(64 * page);
+    const a = try chatIds(gpa, 1, 20 * page);
+    defer gpa.free(a);
+    try testing.expectEqualStrings("fresh", try turn(gpa, &r, s, 1, a[0 .. 5 * page + 10]));
+    try testing.expectEqual(@as(u64, 1), r.store.stats.write_throughs);
+    try testing.expect(r.store.entry(0).ram and r.store.entry(0).extra.file);
+    try testing.expectEqualStrings("ram", try turn(gpa, &r, s, 1, a[0 .. 8 * page + 3]));
+    try testing.expectEqual(@as(u64, 2), r.store.stats.write_throughs);
+    try testing.expectEqual(@as(u64, 0), r.store.stats.write_fails);
+    try testing.expectEqual(@as(usize, 2), r.disk.recs.items.len - r.disk.free_recs.items.len);
+    return r.disk.used;
+}
+
+test "write-through: a saved turn is on the tier at once and stays in RAM; a restart finds it (one rank, and two split ranks)" {
+    const gpa = testing.allocator;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const solo = try tmpRoot(gpa, &tmp, "wt1");
+    defer gpa.free(solo);
+    const used = try writeThrough(gpa, solo, 1, 0);
+    {
+        var r: Rank = undefined;
+        try r.init(gpa, solo, 1, 0, .{});
+        defer r.deinit();
+        try testing.expectEqual(@as(u32, 2), try r.store.reconcile());
+        try testing.expectEqual(used, r.disk.used);
+        const s = try r.pool.newSlot(64 * page);
+        const a = try chatIds(gpa, 1, 20 * page);
+        defer gpa.free(a);
+        try testing.expectEqualStrings("disk", try turn(gpa, &r, s, 1, a[0 .. 12 * page]));
+    }
+    const pair = try tmpRoot(gpa, &tmp, "wt2");
+    defer gpa.free(pair);
+    try testing.expectEqual(try writeThrough(gpa, pair, 2, 0), try writeThrough(gpa, pair, 2, 1));
+    for ([_]u32{ 0, 1 }) |rank| {
+        var r: Rank = undefined;
+        try r.init(gpa, pair, 2, rank, .{});
+        defer r.deinit();
+        try testing.expectEqual(@as(u32, 2), try r.store.reconcile());
+    }
+}
+
 test "historyOf: a RAM entry's ids come from the index, an NVMe entry's only from the prompt that names it" {
     const gpa = testing.allocator;
     var tmp = testing.tmpDir(.{});

@@ -44,6 +44,8 @@ pub const Policy = struct {
     delta: bool = true,
     /// parks and restores on the tier thread (settled by the plan)
     async_io: bool = false,
+    /// a saved entry's file is written at once and the entry stays in RAM, so a restart finds it on the tier
+    write_through: bool = false,
 };
 
 pub const Extra = struct {
@@ -73,6 +75,8 @@ pub const Stats = struct {
     hits_ram: u64 = 0,
     hits_disk: u64 = 0,
     parks: u64 = 0,
+    write_throughs: u64 = 0,
+    write_fails: u64 = 0,
     delta_parks: u64 = 0,
     drops: u64 = 0,
     covered_drops: u64 = 0,
@@ -253,11 +257,34 @@ pub const Store = struct {
 
     /// Starts a park of a RAM entry (null: nothing to write, the entry is already settled out of RAM).
     pub fn beginPark(s: *Store, id: u32) !?*Job {
+        return s.beginFile(id, false);
+    }
+
+    /// Starts the same file write but the entry stays in RAM (null: a file already holds it).
+    pub fn beginWrite(s: *Store, id: u32) !?*Job {
+        return s.beginFile(id, true);
+    }
+
+    /// A saved entry's file now, the entry kept in RAM; a failed write leaves it RAM-only (counted, never an error).
+    pub fn writeThrough(s: *Store, id: u32) void {
+        const d = s.disk orelse return;
+        const e = s.index.get(id);
+        if (!e.live or !e.ram or e.extra.job != null or !d.accepts(e.pos)) return;
+        const j = (s.beginWrite(id) catch return s.writeFailed()) orelse return;
+        s.stats.write_throughs += 1;
+        if (!s.policy.async_io) _ = s.settle(j) catch s.writeFailed();
+    }
+
+    fn writeFailed(s: *Store) void {
+        s.stats.write_fails += 1;
+    }
+
+    fn beginFile(s: *Store, id: u32, keep: bool) !?*Job {
         const d = s.disk orelse return error.NoDisk;
         const e = s.index.get(id);
         if (!e.ram or e.extra.job != null) return error.NotParkable;
         if (e.extra.file and d.get(e.key) != null) {
-            try s.leaveRam(id);
+            if (!keep) try s.leaveRam(id);
             return null;
         }
         if (d.opts.world > 1 and e.extra.bounded.?.logical_bytes == null) return error.MissingLogicalCharge;
@@ -276,7 +303,7 @@ pub const Store = struct {
             };
         };
         const j = try s.gpa.create(Job);
-        j.* = .{ .kind = .park, .entry = id };
+        j.* = .{ .kind = .park, .entry = id, .keep_ram = keep };
         errdefer j.deinit(s.gpa);
         j.ids = try s.gpa.alloc(i32, e.pos);
         try s.index.idsOf(id, j.ids);
@@ -323,7 +350,7 @@ pub const Store = struct {
                     _ = try s.index.members(j.entry, &m, usedOf);
                     for (m.items) |o| s.index.get(o).extra.covered_by = true;
                 }
-                try s.leaveRam(j.entry);
+                if (!j.keep_ram) try s.leaveRam(j.entry);
                 try s.trimDisk();
                 return null;
             },
