@@ -11,6 +11,11 @@ const t = std.testing;
 
 const s: u64 = std.time.ns_per_s;
 
+/// The old seeds (950 a second here, 1000 a pull, 1 s of tail), for the tests whose numbers are written for them.
+fn slowMac() Route {
+    return .{ .local_tps = .{ .v = 950 }, .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } };
+}
+
 test "directive: the body's word names auto, force or never and nothing else" {
     try t.expectEqual(@as(?Directive, .force), Directive.parse("force"));
     try t.expectEqual(@as(?Directive, .never), Directive.parse("never"));
@@ -19,7 +24,7 @@ test "directive: the body's word names auto, force or never and nothing else" {
 }
 
 test "directive: force sends a prompt the weighing would keep here, busy pair or slower pull, and never is not weighed" {
-    var r: Route = .{};
+    var r: Route = slowMac();
     const ask: remote.Ask = .{ .len = 8192, .cached = 0, .decoding = 0 };
     var forced = ask;
     forced.directive = .force;
@@ -31,7 +36,7 @@ test "directive: force sends a prompt the weighing would keep here, busy pair or
 }
 
 test "directive: a forced prompt waits for the pull under way however long it runs, an auto one goes local" {
-    var r: Route = .{};
+    var r: Route = slowMac();
     const e = r.estimate(8191, 8192);
     try t.expectEqual(.entered, r.enter(0, 0, e));
     const pinned = r.estimateFor(8191, 8192, .force);
@@ -45,7 +50,8 @@ test "directive: a forced prompt waits for the pull under way however long it ru
 
 /// The pair as a source: the gate a family's pull keeps, `delay_ms` per pull, and what each fill was told.
 const Pair = struct {
-    route: Route = .{ .local_tps = .{ .v = 5 } }, // 6 tokens, a pull of 4: an idle pair is faster, a busy one is not
+    /// 6 tokens, a pull of 4: an idle pair is faster, a busy one is not (the old 1000 a second and 1 s tail)
+    route: Route = .{ .local_tps = .{ .v = 5 }, .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } },
     delay_ms: i64 = 600,
     fills: std.atomic.Value(u32) = .init(0),
     forced: std.atomic.Value(u32) = .init(0),
