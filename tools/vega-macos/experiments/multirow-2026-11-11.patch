@@ -1,0 +1,452 @@
+diff --git a/zig/kernels/hip/tiles/stream.hpp b/zig/kernels/hip/tiles/stream.hpp
+index 7d4f53c82e..a78aa4c03f 100644
+--- a/zig/kernels/hip/tiles/stream.hpp
++++ b/zig/kernels/hip/tiles/stream.hpp
+@@ -12,6 +12,12 @@
+ namespace tf {
+ namespace rocm {
+ 
++#ifndef TF_ABL
++#define TF_ABL 0
++#endif
++#ifndef TF_PAIR_MAJOR
++#define TF_PAIR_MAJOR 1
++#endif
+ constexpr int kStreamWaves = 4;
+ 
+ // A block's most threads. gfx900: a several-row tile of at most 8 accumulators a lane (under 128 VGPRs, 2 waves a SIMD) runs 16 wave groups a block, so
+@@ -124,6 +130,38 @@ __device__ inline void stream_stage(const typename Dec::Args& a, int row0, uint3
+ }
+ #endif
+ 
++// gfx900, x staged: pairs 4V .. 4V + 3 of a chunk, pair by pair: each column's code pair is made once and dotted into every row's chain at once (a row's
++// chain d[r][c] still takes pairs 0 .. 15 in order, so its bits are those of the row-by-row form). `xv[r]` holds row r's x pairs 4V .. 4V + 3.
++template <class Dec, typename T, int R, int CB, int V, int... K>
++__device__ inline void stream_pair_major(const u32x4 (&xv)[R], const uint32_t (&w)[CB][Dec::kWords], float (&d)[R][CB],
++                                         std::integer_sequence<int, K...>) {
++    (([&] {
++         constexpr int I = 4 * V + K;
++         typename T::pair q[CB];
++#pragma unroll
++         for (int c = 0; c < CB; ++c) {
++#if TF_ABL & 2
++             q[c] = __builtin_bit_cast(typename T::pair, w[c][I & 3]);
++#else
++             q[c] = Dec::template stream_pair<T, I>(w[c]);
++#endif
++         }
++#pragma unroll
++         for (int r = 0; r < R; ++r) {
++             const uint32_t xb = K == 0 ? xv[r].x : K == 1 ? xv[r].y : K == 2 ? xv[r].z : xv[r].w;
++#pragma unroll
++             for (int c = 0; c < CB; ++c) {
++#if TF_ABL & 1
++                 d[r][c] = __uint_as_float(__float_as_uint(d[r][c]) ^ xb ^ __builtin_bit_cast(uint32_t, q[c]));
++#else
++                 d[r][c] = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(typename T::pair, xb)), q[c], d[r][c]);
++#endif
++             }
++         }
++     }()),
++     ...);
++}
++
+ // One column's 16 code pairs of a chunk, made once for every row of the block.
+ template <class Dec, typename T, int... I>
+ __device__ inline void stream_codes(const uint32_t (&w)[Dec::kWords], typename T::pair (&qp)[16],
+@@ -164,7 +202,7 @@ __device__ inline void stream_codes(const uint32_t (&w)[Dec::kWords], typename T
+ }
+ 
+ // Epi::kPair: a lane's CB columns are CB / 2 gate columns and the same up columns; out is silu(gate) * up.
+-template <class Dec, class Act, class T, class Epi, int R, int CB, bool WIDE, bool SHARED>
++template <class Dec, class Act, class T, class Epi, int R, int CB, bool WIDE, bool SHARED, bool PERSIST = false>
+ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, int gshift, int bx, int by, int pair_cols,
+                                    float limit) {
+     using pair = typename T::pair;
+@@ -206,7 +244,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
+     }
+     // SHARED (gfx900, one row): the lanes read x pairs and sums of x from the block's stage instead of loading x (same values, same bits)
+ #if defined(__gfx900__)
+-    extern __shared__ uint32_t stage[];
++    extern __shared__ __attribute__((aligned(16))) uint32_t stage[];
+     const uint32_t* xs = stage;
+     const float* sums = reinterpret_cast<const float*>(stage + R * (a.k >> 5) * 16);
+ #else
+@@ -214,10 +252,27 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
+     [[maybe_unused]] const float* sums = nullptr;
+ #endif
+     const typename Dec::StreamTerms terms(a);
++#ifdef TF_TIMELINE
++    unsigned long long tl[12];
++    int tln = 0;
++    {
++        unsigned hw;
++        asm volatile("s_getreg_b32 %0, hwreg(HW_REG_HW_ID)" : "=s"(hw));
++        tl[tln++] = hw;
++        tl[tln++] = __builtin_amdgcn_s_memrealtime();
++    }
++#define TL_MARK() do { if (tln < 11) tl[tln++] = __builtin_amdgcn_s_memrealtime(); } while (0)
++#else
++#define TL_MARK() do {} while (0)
++#endif
+ 
+     // The loads of one round: every column's chunk and its scale and bias, none waited for before the dots.
+     auto fetch = [&](int base, uint32_t (&w)[CB][Dec::kWords], unsigned short (&sr)[CB], unsigned short (&br)[CB]) {
++#if TF_ABL & 8
++        const int q = 0;
++#else
+         const int q = base + j < nch ? base + j : nch - 1;
++#endif
+ #pragma unroll
+         for (int c = 0; c < CB; ++c) {
+             Dec::template load<WIDE>(wp[c] + static_cast<long long>(q) * Dec::kWords, w[c]);
+@@ -297,6 +352,44 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
+             }
+             return;
+         }
++        // gfx900, a block's rows all there: pair by pair over every row's staged x, no code pairs kept (a short block takes the row by row form below)
++        if constexpr (SHARED && R > 1 && TF_PAIR_MAJOR) {
++            if (row0 + R <= a.m) {
++                float d[R][CB];
++#pragma unroll
++                for (int r = 0; r < R; ++r) {
++#pragma unroll
++                    for (int c = 0; c < CB; ++c) d[r][c] = 0.f;
++                }
++                const auto group = [&](auto vc) {
++                    constexpr int V = decltype(vc)::value;
++                    u32x4 xv[R];
++#pragma unroll
++                    for (int r = 0; r < R; ++r) {
++#if TF_ABL & 4
++                        xv[r] = u32x4{w[0][0] + r, w[0][1], w[0][2], w[0][3]};
++#else
++                        xv[r] = *reinterpret_cast<const u32x4*>(xs + ((r * 4 + V) * nch + q) * 4);
++#endif
++                    }
++                    stream_pair_major<Dec, T, R, CB, V>(xv, w, d, std::make_integer_sequence<int, 4>{});
++                };
++                group(std::integral_constant<int, 0>{});
++                group(std::integral_constant<int, 1>{});
++                group(std::integral_constant<int, 2>{});
++                group(std::integral_constant<int, 3>{});
++#pragma unroll
++                for (int r = 0; r < R; ++r) {
++                    const float sx = sums[r * nch + q];
++#pragma unroll
++                    for (int c = 0; c < CB; ++c) {
++                        acc[r][c] = Dec::fold_scale(acc[r][c], d[r][c], sc[c]);
++                        acc[r][c] = Dec::fold_bias(acc[r][c], sx, bi[c]);
++                    }
++                }
++                return;
++            }
++        }
+         // every column's code pairs are made once, then each row in turn dots them in the order a row alone takes
+         pair qp[CB][16];
+ #pragma unroll
+@@ -371,14 +464,40 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
+         }
+     } else {
+         // several rows: the dots cover the loads' latency, and registers go to the rows' x. gfx900: the rows' x staged in LDS first
++        // (a persistent block, PERSIST, staged them before its first tile)
+ #if defined(__gfx900__)
+-        if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
++        if constexpr (SHARED && !PERSIST) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
++#endif
++        TL_MARK();
++#if TF_PF
++        if constexpr (R == 4) {
++            uint32_t wb[CB][Dec::kWords];
++            unsigned short sbb[CB], bbb[CB];
++            fetch(at(0), wa, sa, ba);
++            for (int r = 0; r < rounds; r += 2) {
++                if (r + 1 < rounds) fetch(at(r + 1), wb, sbb, bbb);
++                work(at(r), wa, sa, ba);
++                if (r + 1 >= rounds) break;
++                if (r + 2 < rounds) fetch(at(r + 2), wa, sa, ba);
++                work(at(r + 1), wb, sbb, bbb);
++            }
++        } else
+ #endif
+         for (int r = 0; r < rounds; ++r) {
+             fetch(at(r), wa, sa, ba);
+             work(at(r), wa, sa, ba);
++            TL_MARK();
+         }
+     }
++#ifdef TF_TIMELINE
++    TL_MARK();
++    if (threadIdx.x == 0 || threadIdx.x == blockDim.x - 1) {
++        unsigned long long* slot = reinterpret_cast<unsigned long long*>(reinterpret_cast<char*>(a.out) + static_cast<size_t>(a.m) * a.n * 4 + 8192) +
++                                   (static_cast<size_t>(bx) * 2 + (threadIdx.x != 0)) * 12;
++        for (int i = 0; i < tln; ++i) slot[i] = tl[i];
++        for (int i = tln; i < 12; ++i) slot[i] = 0;
++    }
++#endif
+ 
+ #pragma unroll
+     for (int r = 0; r < R; ++r) {
+@@ -425,6 +544,51 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
+     }
+ }
+ 
++#if defined(__gfx900__)
++// gfx900, 2 to 4 rows with x staged: a block takes column tiles in turn (blockIdx.x, then every gridDim.x) and stages x once, where a block a tile
++// staged it for 8 columns a wave group and left the CU between tiles (the launch of a 16-group block, its stage and its stragglers were 40% of a tile's
++// time). Each tile is stream_body's own, so every sum has its order and the bytes of the block-a-tile launch; the wave groups run on without a barrier.
++// The grid is gridDim.x persistent blocks, y row blocks, z items (launches/affine.zig).
++template <class Dec, class Act, class T, class Epi, int R, int CB, class Sides>
++__device__ inline void stream_persistent(const typename Dec::Args& a, const Sides& sides, int lpc_log2, int gshift) {
++    constexpr bool PAIR = Epi::kPair;
++    constexpr int CH = PAIR ? CB / 2 : CB;
++    const int by = static_cast<int>(blockIdx.y);
++    {
++        typename Dec::Args first = a;
++        if (!Dec::take_item(first, blockIdx.z) || by * R >= first.m) return;
++        extern __shared__ __attribute__((aligned(16))) uint32_t stage[];
++        stream_stage<Dec, Act, T, R>(first, by * R, stage, reinterpret_cast<float*>(stage + R * (first.k >> 5) * 16));
++    }
++    const int per_block = (32 >> lpc_log2) * CH * (static_cast<int>(blockDim.x) >> 5);
++    const int tiles = sides.count > 0 ? sides.first[sides.count] : ((PAIR ? sides.pair_cols : a.n) + per_block - 1) / per_block;
++    for (int tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
++        typename Dec::Args at = a;
++        int bx = tile;
++        if (sides.count > 0) {
++            int s = 0;
++            while (s + 1 < sides.count && bx >= sides.first[s + 1]) ++s;
++            bx -= sides.first[s];
++            Dec::bind(at, sides, s);
++            at.n = sides.n[s];
++            if (sides.out_half) {
++                at.out16 = static_cast<__half*>(sides.out[s]);
++            } else {
++                at.out = static_cast<float*>(sides.out[s]);
++            }
++        }
++        Dec::take_item(at, blockIdx.z);
++        if constexpr (Dec::kWideBytes != 4) {
++            if (Dec::wide_aligned(at)) {
++                stream_body<Dec, Act, T, Epi, R, CB, true, true, true>(at, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
++                continue;
++            }
++        }
++        stream_body<Dec, Act, T, Epi, R, CB, false, true, true>(at, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
++    }
++}
++#endif
++
+ // Item z of the plan (or plain product, or a group's side) at CB columns a lane, R rows; chunk group is q >> gshift.
+ // gfx900: bit 8 of lpc_log2 asks a one-row launch to stage x in LDS (the launch's dynamic shared bytes).
+ template <class Dec, class Act, class T, class Epi, int R, int CB, class Sides>
+@@ -432,6 +596,11 @@ __device__ inline void stream_tile(typename Dec::Args& a, const Sides& sides, in
+ #if defined(__gfx900__)
+     const bool shared = (lpc_log2 & 0x100) != 0;
+     lpc_log2 &= 0xff;
++#endif
++#if defined(__gfx900__)
++    if constexpr (R > 1 && R <= 4) {
++        if (shared) return stream_persistent<Dec, Act, T, Epi, R, CB>(a, sides, lpc_log2, gshift);
++    }
+ #endif
+     // a one-row grid over more than R rows interleaves (launches/stream_layout.zig grid): row blocks neighbour on x
+     // the row-group tiles run 2 rows (stream_pick.zig rowTile), one row block, so they skip the interleave's index math
+diff --git a/zig/src/hip/kernel_tests/affine/stream.zig b/zig/src/hip/kernel_tests/affine/stream.zig
+index 3a3e18014f..8dd9221581 100644
+--- a/zig/src/hip/kernel_tests/affine/stream.zig
++++ b/zig/src/hip/kernel_tests/affine/stream.zig
+@@ -147,6 +147,93 @@ fn wall_ns() u64 {
+     return @intCast(@as(i64, ts.sec) * 1_000_000_000 + ts.nsec);
+ }
+ 
++// TF_TIMELINE (a -Dhip-cflags=-DTF_TIMELINE build): each block's first and last wave stamp s_memrealtime at the start, after the x stage, after each
++// round, past the loop, into the output buffer behind the rows. Prints the blocks' durations and how a CU's blocks overlap.
++fn timeline(t: *prod.Rig, out: *Buffer, a: affine.Arg, n: usize, m: usize, us: f64) !void {
++    const offset = m * n * 4 + 8192;
++    const max_blocks: usize = @min(@as(usize, 4096), (out.buf.len - offset) / (2 * 12 * 8));
++    try out.fill8(0, null);
++    try t.kernels.streamGo(&t.base.r, a, .{}, @intCast(n), 1, t.base.stream.handle);
++    try t.base.stream.synchronize();
++    const raw = try gpa.alloc(u64, max_blocks * 2 * 12);
++    defer gpa.free(raw);
++    try out.download(offset, std.mem.sliceAsBytes(raw));
++    const Blk = struct { cu: u64, start: u64, end: u64 };
++    var blks: std.ArrayList(Blk) = .empty;
++    defer blks.deinit(gpa);
++    var first: u64 = std.math.maxInt(u64);
++    var last: u64 = 0;
++    var sum_total: f64 = 0;
++    var sum_stage: f64 = 0;
++    var sum_round: f64 = 0;
++    var rounds_seen: f64 = 0;
++    var sum_gap: f64 = 0; // first wave's end to the last wave's end
++    for (0..max_blocks) |b| {
++        const r0 = raw[(b * 2) * 12 ..][0..12];
++        const r1 = raw[(b * 2 + 1) * 12 ..][0..12];
++        if (r0[1] == 0 or r1[1] == 0) continue;
++        var e0: usize = 11;
++        while (e0 > 2 and r0[e0] == 0) e0 -= 1;
++        var e1: usize = 11;
++        while (e1 > 2 and r1[e1] == 0) e1 -= 1;
++        const start = @min(r0[1], r1[1]);
++        const end = @max(r0[e0], r1[e1]);
++        first = @min(first, start);
++        last = @max(last, end);
++        sum_total += @floatFromInt(end - start);
++        sum_stage += @floatFromInt(r0[2] -| r0[1]);
++        sum_round += @floatFromInt(r0[e0] -| r0[2]);
++        rounds_seen += @floatFromInt(e0 - 2);
++        sum_gap += @floatFromInt(if (r0[e0] > r1[e1]) r0[e0] - r1[e1] else r1[e1] - r0[e0]);
++        const hw: u64 = r0[0];
++        const cu = ((hw >> 8) & 15) + 16 * ((hw >> 12) & 1) + 32 * ((hw >> 13) & 7);
++        try blks.append(gpa, .{ .cu = cu, .start = start, .end = end });
++    }
++    const nb = blks.items.len;
++    if (nb == 0) return;
++    std.mem.sort(Blk, blks.items, {}, struct {
++        fn lt(_: void, x: Blk, y: Blk) bool {
++            return if (x.cu != y.cu) x.cu < y.cu else x.start < y.start;
++        }
++    }.lt);
++    var cus: usize = 0;
++    var busy: f64 = 0;
++    var gaps: f64 = 0;
++    var ngaps: f64 = 0;
++    var overlap: usize = 0;
++    var first_start: f64 = 0; // a CU's first block start after the launch's first
++    var last_end: f64 = 0; // a CU's last block end before the launch's last
++    var max_per_cu: usize = 0;
++    var per_cu: usize = 0;
++    for (blks.items, 0..) |blk, i| {
++        busy += @floatFromInt(blk.end - blk.start);
++        if (i == 0 or blks.items[i - 1].cu != blk.cu) {
++            cus += 1;
++            per_cu = 0;
++            first_start += @floatFromInt(blk.start - first);
++            if (i > 0) last_end += @floatFromInt(last - blks.items[i - 1].end);
++        } else {
++            const prev = blks.items[i - 1];
++            if (blk.start >= prev.end) {
++                gaps += @floatFromInt(blk.start - prev.end);
++                ngaps += 1;
++            } else overlap += 1;
++        }
++        per_cu += 1;
++        max_per_cu = @max(max_per_cu, per_cu);
++    }
++    last_end += @floatFromInt(last - blks.items[nb - 1].end);
++    const span: f64 = @floatFromInt(last - first);
++    const nbf: f64 = @floatFromInt(nb);
++    const cusf: f64 = @floatFromInt(cus);
++    std.debug.print("    timeline (25 MHz ticks): {d} blocks on {d} CUs (most {d}), span {d:.0} (launch {d:.1} us), block {d:.0} = stage {d:.0} + {d:.1} marks x {d:.0}, wave skew {d:.0}\n", .{
++        nb, cus, max_per_cu, span, us, sum_total / nbf, sum_stage / nbf, rounds_seen / nbf, sum_round / @max(1.0, rounds_seen), sum_gap / nbf,
++    });
++    std.debug.print("      CU busy {d:.0}% of span; gap between a CU's blocks {d:.0} ({d} overlapping); a CU's first start +{d:.0}, its last end -{d:.0}\n", .{
++        100.0 * busy / (cusf * span), gaps / @max(1.0, ngaps), overlap, first_start / cusf, last_end / cusf,
++    });
++}
++
+ // TF_STREAM_BENCH=1: the stream tile's time at the 4B's decode shapes by row count, back to back on a stream (what a graph replay pays).
+ test "time the stream tile by rows" {
+     if (std.c.getenv("TF_STREAM_BENCH") == null) return error.SkipZigTest;
+@@ -179,6 +266,7 @@ test "time the stream tile by rows" {
+         var out = try Buffer.alloc(t.base, most * n * 4);
+         defer out.free();
+         for (rows) |m| {
++            if (m == 16 and std.c.getenv("TF_TIMELINE") != null) continue;
+             const a: affine.Arg = .{
+                 .x = x.ptr,
+                 .words = words.ptr,
+@@ -192,14 +280,20 @@ test "time the stream tile by rows" {
+                 .group = 64,
+                 .fp16 = @intFromBool(t.fp16),
+             };
+-            for (0..4) |_| try t.kernels.streamGo(&t.base.r, a, .{}, @intCast(n), 1, t.base.stream.handle);
+-            try t.base.stream.synchronize();
++            // DPM AUTO ramps the clocks under load, so each row count first runs for 300 ms before it is timed
++            const warm_until = wall_ns() + 300_000_000;
++            while (wall_ns() < warm_until) {
++                for (0..8) |_| try t.kernels.streamGo(&t.base.r, a, .{}, @intCast(n), 1, t.base.stream.handle);
++                try t.base.stream.synchronize();
++            }
++            const reps: usize = 100;
+             const t0 = wall_ns();
+-            for (0..40) |_| try t.kernels.streamGo(&t.base.r, a, .{}, @intCast(n), 1, t.base.stream.handle);
++            for (0..reps) |_| try t.kernels.streamGo(&t.base.r, a, .{}, @intCast(n), 1, t.base.stream.handle);
+             try t.base.stream.synchronize();
+-            const us = @as(f64, @floatFromInt(wall_ns() - t0)) / 1000.0 / 40.0;
++            const us = @as(f64, @floatFromInt(wall_ns() - t0)) / 1000.0 / @as(f64, @floatFromInt(reps));
+             const bytes = @as(f64, @floatFromInt(n * k)) * 0.5625;
+             std.debug.print("  stream n{d} k{d} m{d}: {d:.1} us  {d:.0} GB/s of weights\n", .{ n, k, m, us, bytes / us / 1000.0 });
++            if (std.c.getenv("TF_TIMELINE") != null and m <= 8) try timeline(&t, &out, a, n, m, us);
+         }
+     }
+ }
+diff --git a/zig/src/hip/launches.zig b/zig/src/hip/launches.zig
+index 5d3c644de7..651da13bcb 100644
+--- a/zig/src/hip/launches.zig
++++ b/zig/src/hip/launches.zig
+@@ -330,6 +330,10 @@ pub const Launcher = struct {
+         const dot2 = l.mods[@backingInt(kernels.Group.affine_dot2)];
+         const chip = caps.Caps.of(kernels.arch) orelse return error.Invalid;
+         l.affine = try affine.Kernels.load(tiles, dot2, chip, choices.products);
++        // the persistent stream tile's blocks: one a compute unit (device 0's count; any other GPU a rank uses is the same model, and 0 is a block a tile)
++        var units: c_int = 0;
++        if (r.api.hipDeviceGetAttribute(&units, .multiprocessor_count, 0) != 0) units = 0;
++        l.affine.cus = units;
+         l.dense = try dense.Kernels.load(tiles, chip.act == .bf16, chip.matrix == .wmma12, choices.products.matrix);
+         try l.affine.fillByteLut(r, dot2);
+         l.fnx = try flashnext.Fns.load(l.mods[@backingInt(kernels.Group.flashnext)]);
+diff --git a/zig/src/hip/launches/affine.zig b/zig/src/hip/launches/affine.zig
+index bb20508fd0..e05f9c7260 100644
+--- a/zig/src/hip/launches/affine.zig
++++ b/zig/src/hip/launches/affine.zig
+@@ -153,6 +153,8 @@ pub const Kernels = struct {
+     stream_interleave: bool,
+     /// Off (the tests' comparison) keeps every lane of the gfx900 stream tile loading its own x: the staged x's bits.
+     stage_on: bool,
++    /// The device's compute units (set by the launcher; 0 where unknown): gfx900's persistent stream blocks are one a unit.
++    cus: c_int,
+     tune: StreamTune,
+     block: [bit_widths.len]Function,
+     gemm: [bit_widths.len]Function,
+@@ -182,6 +184,7 @@ pub const Kernels = struct {
+         k.stream_on = choices.stream;
+         k.stream_interleave = true;
+         k.stage_on = true;
++        k.cus = 0;
+         k.tune = StreamTune.fromEnv();
+         k.reg = Registry.init(tableFor(caps), &mlx_entries.all);
+         k.reg.verify(k.env(), .mlx) catch return error.Invalid;
+@@ -429,7 +432,12 @@ pub const Kernels = struct {
+         const table = if (sides.pair_cols > 0) &k.pairs else if (relu2) &k.relu2 else &k.stream;
+         const f = table[b][ri][tile.at].?;
+         // a column block's row blocks run next to each other on x, so the later ones read its weights from cache
+-        const grid = stream_layout.grid(k.stream_interleave, blocks, cdiv(a.m, stream_rows[ri]), items);
++        const ny = cdiv(a.m, stream_rows[ri]);
++        // gfx900's staged several-row tiles are persistent (tiles/stream.hpp stream_persistent): blocks of the device's compute units in all, taking column tiles in turn
++        const grid = if (k.caps.generation == .gcn5 and stream_rows[ri] > 1 and stage > 0)
++            stream_layout.persistent(blocks, ny, items, k.cus)
++        else
++            stream_layout.grid(k.stream_interleave, blocks, ny, items);
+         try goShared(r, f, grid, .{ .x = @intCast(32 * groups) }, stage, s, &args);
+     }
+ 
+diff --git a/zig/src/hip/launches/stream_layout.zig b/zig/src/hip/launches/stream_layout.zig
+index ad5876b7c7..54e1b7de46 100644
+--- a/zig/src/hip/launches/stream_layout.zig
++++ b/zig/src/hip/launches/stream_layout.zig
+@@ -22,6 +22,13 @@ pub fn grid(interleave: bool, blocks: c_uint, ny: c_uint, items: c_int) hl.Dim3
+     return .{ .x = blocks, .y = ny, .z = @intCast(items) };
+ }
+ 
++/// The persistent stream tile's grid (tiles/stream.hpp stream_persistent): row blocks on y, items on z, and on x blocks that take the `tiles` column tiles in
++/// turn: the compute units' worth in all (`cus` 0 where unknown: a block a tile).
++pub fn persistent(tiles: c_uint, ny: c_uint, items: c_int, cus: c_int) hl.Dim3 {
++    const resident: c_uint = if (cus > 0) @max(1, @as(c_uint, @intCast(cus)) / ny) else tiles;
++    return .{ .x = @min(tiles, resident), .y = ny, .z = @intCast(items) };
++}
++
+ test "a round's row blocks interleave on x only when there are several and the launch asks" {
+     const on = grid(true, 30, 4, 2);
+     try std.testing.expect(on.x == 120 and on.y == 1 and on.z == 2);

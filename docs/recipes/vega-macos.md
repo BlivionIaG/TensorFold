@@ -387,3 +387,38 @@ Kept:
 Not kept: the one-row tile's weight prefetch at every row count (no change), `TF_STREAM_CB`, `TF_STREAM_LPC`, forced occupancy.
 Open: at DPM the 2-row k = 9216 launch measured 106 us after dropping an `amdgpu_waves_per_eu(1)` experiment attribute (67 us with it; whether that launch
 ran at 195 VGPRs and 512 threads is unchecked) and N = 2 is 17.1 against 16.6 ms; the per-row small kernels (gdn plan, conv split, plan apply) are not batched.
+
+### Per-kernel decode cost and the in-SIMD bound (AUTO, ~1290 MHz sclk, 800 MHz HBM, 180 W, edge 36-44 C)
+
+Profiling: `hipprof` in events mode (`HIPPROF_EVENTS=1`) works at `--parallel` > 1. The earlier hang was a dyld segfault: the engine `dlclose`s the
+runtime after reading caps and the shim's watcher thread was left in unmapped text; `init()` now pins the image (`RTLD_NODELETE`). Event timestamps
+and `s_memrealtime` tick at 27 MHz, not 100 MHz (hipmac fixed in c95d708); tables below are for the older 100 MHz conversion times 4.
+
+Baseline round 12.31 ms at N=1 (81 tok/s), 24.0 ms at N=4. Stream gemv 9.4 ms at N=1, 19.0 ms at N=4 (129 launches a round): about 3.2 ms of b = 4.3.
+
+| kernel | m=1 us | m=4 us | ms per extra sequence |
+| --- | --- | --- | --- |
+| gate/up | 100 | 215 | 1.23 |
+| down (k 9216) | 55 | 113 | 0.62 |
+| qkv (12352) | 76 | 131 | 0.49 |
+| out (k 4096) | 29 | 67 | 0.40 |
+| lm_head | 1115 | 2150 | 0.35 |
+| gdn plan (all slots, one launch) | 0.62 ms | 1.82 ms | 0.40 (fp32 state, memory bound, not reducible bit-identically) |
+
+plan_apply ~0.09 ms and gdn_replay ~0.11 ms a sequence; conv_split, tail and the rest ~0. Warmed tile bench, gate/up (n18432 k2560), us at m = 1/2/3/4/8/16:
+89/130/158/179/320/604 (down m4 107, qkv 122, out 56, lm_head m1 1037 / m4 2071 / m8 4015).
+
+Finding: at m >= 2 the stream tile is bound inside the SIMDs, not by HBM or latency. With every weight load redirected to chunk 0 (no HBM traffic) gate/up m4
+still takes 161 us (190 with the loads), m1 57 us (91), m8 290 us (333). VALU is ~40% busy (440 instrs a round, 256 `v_mad_mix`, ~2.75 ops a code pair);
+`v_mad_mix`/`v_fma` chains reach 3.7-4.4 T lane-ops/s in a microbench even at one chain and one wave a SIMD, with no VGPR bank effect (all operands in one bank:
+same rate). So neither dependency latency, bank conflicts, nor bytes in flight is the limit; LDS reads or issue stalls remain (unmeasured).
+
+Rejected (gate/up m4 us, 179 baseline; none went through the gate): one-round weight prefetch in the several-row tile (R=4: 127 VGPR + spill, 186; R=2: spills,
+lm_head m2 9.2 ms); persistent staged tile, x staged once per block (190; down 113 vs 107; lm_head m4 2158 vs 2071; with prefetch 235); pair-major inner loop,
+each column's code pair made once and dotted into all rows, `ds_read_b128` x reads (189.6, still 108 VGPR, occupancy 2).
+The code of all three, the timeline instrumentation (`TF_TIMELINE`, block timestamps behind the output rows: at m16 it writes past the buffer and faults the card) and the
+warmed bench is in `tools/vega-macos/experiments/multirow-2026-11-11.patch` (`git apply`; against 165e94fe4e).
+
+Next: the ablations that dropped the extraction (`TF_ABL&2`) or the LDS x reads (`&4`) fed garbage to the dots and ran 22-480 ms or wedged the card; redo them with finite data
+(x and weights kept in range, e.g. extraction replaced by a cheap pass of valid fp16 pairs) to split the 161 us between LDS reads, extraction and mads. Then m = 8 as one 8-row
+block (weights read once) and lm_head (m4 2071 vs m1 1037 us), which depend on that split.
