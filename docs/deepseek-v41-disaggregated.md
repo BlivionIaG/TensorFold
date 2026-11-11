@@ -119,10 +119,10 @@ The listen daemon logs `peer ready over roce` once the Mac connects. `NAME` is t
 ## 6. The prefill pair
 
 Rank 1 is `tf-dsv41 follow`; rank 0 is `tensorfold-dsv41 serve` with one more flag. The pair needs a profile whose
-prefill state can be exported: replicated KV, whole-prompt prefill, a paged pool. It must **not** run
-`TF_DSV41_PREFILL=replay` (decoder layers' state for the prefix never exists), `TF_DSV41_PREFILL_PIECES=1` (a prompt in
-pieces never stands at the cut) or `TF_DSV41_KV_SPLIT=1` (half the pages are on the other rank); the server refuses to
-start, by name, with any of them.
+prefill state can be exported: replicated KV, whole-prompt prefill, a paged pool. It may run
+`TF_DSV41_PREFILL=replay` (the cut stands after the decoder replay; see below). It must **not** run
+`TF_DSV41_PREFILL_PIECES=1` (a prompt in pieces never stands at the cut) or `TF_DSV41_KV_SPLIT=1` (half the pages are on
+the other rank); the server refuses to start, by name, with either.
 
 ```
 # both machines
@@ -148,13 +148,16 @@ three, prompt length 1k / 8k / 32k:
 | profile | 1k | 8k | 32k | exportable |
 |---|---|---|---|---|
 | serving profile (replay prefill, 4,096-row pieces, split KV) | 1.60k | 2.16k | 2.53k | no |
+| replay prefill, 4,096 rows, replicated KV, no pieces | 1.64k | 2.17k | 2.59k | yes |
 | export profile, no tuning | 0.98k | 1.18k | 1.19k | yes |
 | export profile with the knobs above | 1.04k | 1.19k | 1.23k | yes, byte-identical to the untuned export |
 
-The knobs above add 0.5 to 6 %: they are optional. What makes the serving profile fast needs replay prefill
-(`TF_DSV41_PF_4K`, `TF_DSV41_PF_TBO` and `TF_DSV41_PREFILL_ROWS` above 2048 are refused without it), and replay computes the
-decoder layers over a tail of the prompt only, so there is no decoder-layer state for the prefix to export. Prefill on the
-export profile costs about 0.83 ms a row at every length from 1k to 32k: it is GPU-compute bound, not Engram bound (7 %).
+The knobs above add 0.5 to 6 %: they are optional. What makes the serving profile fast is replay prefill
+(`TF_DSV41_PF_4K`, `TF_DSV41_PF_TBO` and `TF_DSV41_PREFILL_ROWS` above 2048 are refused without it). Replay computes the
+decoder layers over the last 127 rows only, at the cut: the export carries those layers' rings from that replay (the
+window's oldest row is zero), so the decoder layers' rings differ from a full prefill's (normalized RMS 0.3 to 0.5, growing
+with layer depth) while the sliding-window rows below layer 20, the carries, the compressed pages and the index keys are
+byte-identical. Prefill on the plain export profile costs about 0.83 ms a row at every length from 1k to 32k: it is GPU-compute bound, not Engram bound (7 %).
 A prompt of 61k tokens (the pool's 65,536-token cap) exports in 51 s.
 Of the knobs tried, `TF_DSV41_ENGRAM_GATE`, `TF_DSV41_ENGRAM_PREFETCH`, `TF_DSV41_INDEX_BUDGET_MIB`,
 `TF_DSV41_ROUTER_GROUP_ROT` and `TF_DSV41_KV_NORM_STORE` together made the export fail (HTTP 409, "the prompt pass ended
