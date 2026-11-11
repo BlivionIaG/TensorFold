@@ -27,6 +27,7 @@ pub fn promptMulti(f: *Forward, segs: []const MultiSeg) !void {
     const st = pf.state(f);
     const sw = f.pf_switch orelse return error.Unsupported;
     if (segs.len == 0 or segs.len > 16) return error.BadWindow;
+    try pf_cone.settle(f, false);
     var sa = std.heap.ArenaAllocator.init(f.gpa);
     defer sa.deinit();
     const a = sa.allocator();
@@ -124,6 +125,7 @@ pub fn finishMulti(f: *Forward, slots: []const u32, out: []Replayed) !void {
     const st = pf.state(f);
     const sw = f.pf_switch orelse return error.Unsupported;
     if (st.mode != .replay or slots.len < 2 or slots.len > 16 or out.len < slots.len) return error.BadWindow;
+    try pf_cone.settle(f, false);
     var sa = std.heap.ArenaAllocator.init(f.gpa);
     defer sa.deinit();
     const a = sa.allocator();
@@ -187,6 +189,7 @@ pub fn finish(f: *Forward) !void {
     const st = pf.state(f);
     if (st.mode != .replay) return;
     if (f.slot.pending != null) return error.BadWindow;
+    try pf_cone.settle(f, false);
     const end = f.slot.pos;
     const t = ced.tailOf(end);
     if (t.m == 0) return;

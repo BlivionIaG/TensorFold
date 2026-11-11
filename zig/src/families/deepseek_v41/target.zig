@@ -76,10 +76,11 @@ pub const GpuTarget = struct {
     }
 
     /// The slot's armed export point, once: it stands after the prompt's tokens but the last (a hand-off's cut).
-    fn runCut(t: *GpuTarget, slot: u32) void {
+    fn runCut(t: *GpuTarget, slot: u32) !void {
         if (slot >= t.cut.len) return;
         const c = t.cut[slot] orelse return;
         t.cut[slot] = null;
+        try pf.settleReplay(t.f, true); // the export reads the replay's rows: its end event first
         c.run(c.ptr);
     }
 
@@ -120,7 +121,7 @@ pub const GpuTarget = struct {
             try t.f.finishPrompt();
             try t.handTaps(slot);
             // the slot stands after the prompt's tokens but the last: the hand-off's export point
-            t.runCut(slot);
+            try t.runCut(slot);
             var one: [1]u32 = undefined;
             var out = [_][]u32{&one};
             try window(p, &.{.{ .slot = slot, .start = ids.len - sp.window, .tokens = ids[ids.len - sp.window ..], .parents = null, .draws = &.{draw}, .sampling = sampling }}, &out);
@@ -222,7 +223,7 @@ pub const GpuTarget = struct {
             try t.f.finishPrompt();
             try t.handTaps(slot);
         }
-        t.runCut(slot); // the hand-off's export point: the replay is in, the last token's window is not
+        try t.runCut(slot); // the hand-off's export point: the replay is in, the last token's window is not
         var one: [1]u32 = undefined;
         var out = [_][]u32{&one};
         try window(p, &.{.{ .slot = slot, .start = ids.len - 1, .tokens = ids[ids.len - 1 ..], .parents = null, .draws = &.{draw}, .sampling = sampling }}, &out);
@@ -285,7 +286,7 @@ pub const GpuTarget = struct {
             try t.f.finishPrompt();
             try t.handTaps(slot);
         }
-        t.runCut(slot); // the hand-off's export point, as in `finish`
+        try t.runCut(slot); // the hand-off's export point, as in `finish`
         return null;
     }
 
@@ -348,6 +349,7 @@ pub const GpuTarget = struct {
         for (rows[0..h.n], 0..) |*r, i| r.* = base + h.row0 + @as(u32, @intCast(i));
         const k: u32 = @intCast(t.f.cfg.dspark_targets.items().len);
         const tp: iface.Taps = .{ .address = t.f.runner.addressOf("w.taps") orelse return error.Unbound, .rows = base + n, .stride = k * t.f.cfg.hidden };
+        try pf.settleReplay(t.f, true); // the ingest reads the replay's taps: its end event first
         try ps.ingest(slot, h.start, tp, rows[0..h.n]);
     }
 

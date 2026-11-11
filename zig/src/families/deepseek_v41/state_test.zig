@@ -13,6 +13,8 @@ test {
     inline for (.{ @import("forward.zig").Forward, @import("run.zig").Runner, @import("graphs.zig").Statics, @import("graphs.zig").EngramStage, @import("cuda_kv.zig").Kv, @import("forward_prefill.zig"), @import("longpf.zig"), @import("ced.zig"), @import("sessions_gpu.zig").Sessions, @import("slots.zig").SlotSet, @import("engine_hooks.zig") }) |m| std.testing.refAllDecls(m);
     _ = @import("kv_state.zig");
     _ = @import("ced_test.zig");
+    _ = @import("replay_overlap_test.zig");
+    _ = @import("replay_fence_test.zig");
     _ = @import("longpf_test.zig");
     _ = @import("mhc_pfdec_test.zig");
     _ = @import("kv_glue_emit_test.zig");

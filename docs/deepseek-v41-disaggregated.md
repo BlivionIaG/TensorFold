@@ -170,6 +170,20 @@ Of the knobs tried, `TF_DSV41_ENGRAM_GATE`, `TF_DSV41_ENGRAM_PREFETCH`, `TF_DSV4
 `TF_DSV41_ROUTER_GROUP_ROT` and `TF_DSV41_KV_NORM_STORE` together made the export fail (HTTP 409, "the prompt pass ended
 before its state was saved") and bought nothing; which one is the cause was not bisected.
 
+The exact replay stays on the prompt's one stream; `TF_DSV41_REPLAY_OVERLAP` (default 1) only moves the host's wait.
+A second stream beside the next prompt's encoder segment shares the forward's window, layer, expert and router scratch (72
+roles in the forward's buffers, 74 in the 4K workspace, from the segment's first call): event ordering alone overlaps
+nothing. A replay namespace of its own (host test `replay_overlap_test`) leaves only the five cone-ring roles shared, ordered
+by one event before the segment's last call, but costs 1.2 GiB a rank at 2,541 rows beside the workspace's, and the roles
+are not the only shared scratch: the gm_plan mask, the long-prompt scratch and the exchange buffers are single buffers, and
+two streams' collectives on one communicator cannot be shown deadlock-free off the GPU. It also buys nothing in the
+serving flow: the round issues pieces before finals, and the hand-off ingest or the last token's window waits for the
+replay before the next prompt's piece can be issued. So with the knob on, a replay in the forward's buffers ends on an
+event pair and the host waits for it where it reads its rows (the DSpark ingest, the export cut); a replay in the workspace
+or the lazy index scratch still waits at its end, to free them. The result is the same bytes. The `replay cone:` line prints
+the replay's GPU ms, the ms it was issued in, the ms the host waited and the ms overlapped; compare `=0` and `=1` over 1k to
+32k prompts in the replay profile. [INFERENCE: the gain is the host's issue bubble only, not yet measured on the pair.]
+
 The end-to-end comparison against a Mac that prefills at about 0.9 to 1.0k tokens a second is in [Measured](#11-measured).
 Freeing the Mac's GPU from long prompts while it decodes other requests is the other expected gain; it is not measured here.
 

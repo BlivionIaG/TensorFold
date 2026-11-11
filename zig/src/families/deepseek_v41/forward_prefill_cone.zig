@@ -50,6 +50,7 @@ pub fn finish(f: *Forward) !bool {
     const ok = usable(f, end);
     f.slot.cone_id = 0;
     if (!ok) return false;
+    try settle(f, true);
     const t0 = pf_k4.nowMs();
     var sa = std.heap.ArenaAllocator.init(f.gpa);
     defer sa.deinit();
@@ -74,6 +75,7 @@ pub fn finish(f: *Forward) !bool {
     }
     f.runner.glue = .{ .ctx = f, .run = pf_glue.glueFn };
     defer f.slot.pending = null;
+    try st.fence.arm(f.runner.d, f.runner.stream);
     var layer_rows: u64 = 0;
     var last_n: u32 = n0;
     {
@@ -108,14 +110,24 @@ pub fn finish(f: *Forward) !bool {
         }
     }
     f.last_rows = 0;
-    try f.runner.stream.synchronize();
+    try st.fence.mark(f.runner.stream, .{ .end = end, .rows = n0, .programs = gs.len, .group = st.cone_group, .layer_rows = layer_rows, .issue_ms = pf_k4.nowMs() - t0 });
+    // a replay in the workspace or in the lazy index scratch is freed below, after it ran: the host waits for it here
+    const held = st.k4ws.buf != null or (if (st.long.lazy) |z| z.buf != null else false);
+    if (!st.cone_overlap or held) try settle(f, true);
     try pf_k4.k4Release(f);
     try longpf.release(&st.long, f.runner);
     st.taps_at = end - last_n;
     st.taps_rows = last_n;
     st.replay_exact = true;
-    if (f.comm.rank() == 0) log.info("replay cone: end {d}: {d} rows, {d} programs of {d} layers, {d} layer-rows, {d:.1} ms", .{ end, n0, gs.len, st.cone_group, layer_rows, pf_k4.nowMs() - t0 });
     return true;
+}
+
+/// Reads the replay in flight: `wait` blocks the host for its end, else only a finished one is read; logs its line.
+pub fn settle(f: *Forward, wait: bool) !void {
+    const r = (try pf.state(f).fence.settle(wait, pf_k4.nowMs)) orelse return;
+    if (f.comm.rank() != 0) return;
+    const p = r.replay;
+    log.info("replay cone: end {d}: {d} rows, {d} programs of {d} layers, {d} layer-rows, {d:.1} ms (issued in {d:.1}, host waited {d:.1}, overlapped {d:.1})", .{ p.end, p.rows, p.programs, p.group, p.layer_rows, r.gpu_ms, p.issue_ms, r.waited_ms, r.overlapped_ms });
 }
 
 /// The exact replay's programs for a plan, at the first and the last start each emits at (forward's or workspace's).
