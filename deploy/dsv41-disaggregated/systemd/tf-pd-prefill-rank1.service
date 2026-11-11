@@ -1,0 +1,30 @@
+# Rank 1 (the follower) of the DeepSeek-V4.1 prefill pair. Needs no listen daemon: only rank 0 exports.
+# Start it before rank 0 (a rank 0 that starts first waits for it up to TF_TP_PLAN_TIMEOUT).
+[Unit]
+Description=DeepSeek-V4.1 prefill pair, rank 1 (follower)
+After=network-online.target
+Wants=network-online.target
+Conflicts=@PROD_UNIT@
+StartLimitIntervalSec=1800
+StartLimitBurst=20
+
+[Service]
+Type=simple
+User=@TF_USER@
+WorkingDirectory=@TF_STATE@
+EnvironmentFile=/etc/tensorfold/prefill.env
+Environment=TF_TP_RANK=1
+# MANDATORY: see rank 0. This machine's port to the Mac has carrier as well.
+Environment="NCCL_IB_HCA==@PAIR_DEV_A@,@PAIR_DEV_B@"
+ExecStartPre=/usr/bin/mkdir -p @TF_STATE@/sessions
+ExecStart=@TF_PREFIX@/bin/tf-dsv41 follow @MODEL@ @TF_ASSETS@
+Restart=always
+RestartSec=60
+TimeoutStartSec=infinity
+TimeoutStopSec=150
+LimitMEMLOCK=infinity
+LimitNOFILE=1048576
+SyslogIdentifier=tf-pd-prefill-rank1
+
+[Install]
+WantedBy=multi-user.target

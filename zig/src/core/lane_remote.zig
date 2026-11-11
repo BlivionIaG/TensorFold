@@ -6,18 +6,28 @@ const lanes = @import("lanes");
 const LaneHost = @import("lane_host.zig").LaneHost;
 const Job = @import("lane_job.zig").Job;
 const Request = api.Request;
+const route = @import("lane_remote_route.zig");
+
+/// The gate and decider every remote source keeps: one pull at a time, and a prompt goes to the pair only when it pays.
+pub const Route = route.Route;
+pub const Ask = route.Ask;
+pub const Verdict = route.Verdict;
+pub const Directive = route.Directive;
+pub const Measured = route.Measured;
 
 /// A family's remote prefill (fabric/prefill_source.zig behind it): opt-in, and outside the exactness contract.
 pub const Source = struct {
     ptr: *anyopaque,
-    /// Whether a prompt of `len` tokens, `cached` of them in the engine's own cache, gets a remote prefix.
-    wants: *const fn (ptr: *anyopaque, len: u64, cached: u64) bool,
+    /// Whether a queued prompt gets a remote prefix, or why not (a `later` reason is weighed again).
+    wants: *const fn (ptr: *anyopaque, ask: Ask) Verdict,
     /// Fill a prefix of `prompt` beyond `cached` into new storage, blocking; null leaves the prompt to this engine.
-    fill: *const fn (ptr: *anyopaque, prompt: []const u32, cached: u64) anyerror!?Filled,
+    fill: *const fn (ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive) anyerror!?Filled,
     /// Free the storage `fill` returned.
     drop: *const fn (ptr: *anyopaque, saved: pc.Saved) void,
     /// Fills under way, the last thing each one's thread touches: the family waits for 0 before it goes.
     running: *std.atomic.Value(u32),
+    /// A pass the lane host timed (this engine's own prompt pass, or the last-token pass after a pull), if it learns.
+    measured: ?*const fn (ptr: *anyopaque, m: Measured) void = null,
 };
 
 /// Where the backend resumes a prompt without any copy (slot 0's standing state): its own prefix, as good as cached.
@@ -52,6 +62,7 @@ pub const Ticket = struct {
     filled: ?Filled = null,
     prompt: []u32, // the thread's own copy: the request may go before the fill does
     cached: u64,
+    directive: Directive,
     host: *LaneHost,
     source: Source,
 
@@ -71,21 +82,27 @@ pub fn queue(h: *LaneHost) void {
     const source = h.remote orelse return;
     keepWarm(h);
     var holding: usize = 0;
+    const decoding: u32 = @intCast(h.admitted.items.len -| h.filling.items.len); // streams a prompt pass here would stall
     for (h.queued.items) |job| holding += @intFromBool(if (job.ticket) |t| t.state.load(.acquire) == Ticket.running or t.filled != null else false);
     for (h.queued.items) |job| {
         if (holding >= ahead()) return; // the rest are weighed once one of these is admitted
         if (job.ticket != null or job.remote_looked) continue;
         job.remote_looked = true;
         const r = job.request;
-        if (!eligible(r)) continue;
+        if (!eligible(r) or r.prefill == .never) continue;
         const kept: u64 = if (h.cache) |store| if (store.find(job.cacheKey(), r.chunks, h.spans(r))) |e| e.at else 0 else 0;
         const cached = @max(kept, if (h.resume_peek) |p| p.at(p.ctx, r.prompt, h.spans(r)) else 0);
-        if (!source.wants(source.ptr, r.prompt.len, cached)) continue;
+        const verdict = source.wants(source.ptr, .{ .len = r.prompt.len, .cached = cached, .decoding = decoding, .directive = r.prefill });
+        if (verdict != .remote) {
+            job.remote_looked = !verdict.later(); // busy, slower or down: weighed again at the next look
+            said(job, verdict, cached);
+            continue;
+        }
         const t = h.gpa.create(Ticket) catch continue;
         t.* = .{ .prompt = h.gpa.dupe(u32, r.prompt) catch {
             h.gpa.destroy(t);
             continue;
-        }, .cached = cached, .host = h, .source = source };
+        }, .cached = cached, .directive = r.prefill, .host = h, .source = source };
         _ = source.running.fetchAdd(1, .acq_rel);
         const thread = std.Thread.spawn(.{}, fill, .{t}) catch {
             _ = source.running.fetchSub(1, .acq_rel);
@@ -98,6 +115,23 @@ pub fn queue(h: *LaneHost) void {
     }
 }
 
+/// A prompt kept off the pair for now, said once per reason (a `later` verdict only: the rest are the usual case).
+fn said(job: *Job, v: Verdict, cached: u64) void {
+    if (!v.later() or job.remote_said == v) return;
+    job.remote_said = v;
+    std.log.info("remote prefill: a prompt of {d} tokens ({d} cached) is prefilled here: {s}", .{ job.request.prompt.len, cached, v.why() });
+}
+
+/// The source learns what a prompt pass cost here: the engine's own pass, or the last-token pass after a pull.
+pub fn prefilled(h: *LaneHost, job: *const Job, ns: i96) void {
+    const source = h.remote orelse return;
+    const learn = source.measured orelse return;
+    const rows = job.request.prompt.len - job.stream.cached;
+    const took: u64 = @intCast(@max(0, ns));
+    if (job.stream.reuse.pulled) return learn(source.ptr, .{ .pass = .tail, .rows = rows, .ns = took });
+    if (!job.stream.reuse.remote) learn(source.ptr, .{ .pass = .local, .rows = rows, .ns = took });
+}
+
 fn ahead() usize {
     return @import("sys").environment.read(usize, "TF_PREFILL_AHEAD", 4) catch 4;
 }
@@ -106,7 +140,7 @@ fn fill(t: *Ticket) void {
     const source = t.source;
     const h = t.host;
     const left = t.state.load(.acquire) == Ticket.left; // its job ended before this thread began: nothing to ask
-    const got = if (left) null else source.fill(source.ptr, t.prompt, t.cached) catch |err| blk: {
+    const got = if (left) null else source.fill(source.ptr, t.prompt, t.cached, t.directive) catch |err| blk: {
         std.log.warn("remote prefill failed ({s}); the prompt is prefilled here", .{@errorName(err)});
         break :blk null;
     };

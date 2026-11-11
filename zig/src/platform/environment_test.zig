@@ -66,6 +66,8 @@ const valid = [_]Case{
     .{ .name = "TF_ROCE_GID_INDEX", .raw = "2147483647", .n = 2147483647 },
     .{ .name = "TF_DRAMA_PREFILL_ROWS", .raw = " 128 ", .n = 128 },
     .{ .name = "TF_DRAMA_REFERENCE_CACHE", .raw = "0", .n = 0 },
+    .{ .name = "TF_FLASHNEXT_GROUPED_ROWS", .raw = "0", .n = 0 },
+    .{ .name = "TF_FLASHNEXT_GROUPED_ROWS", .raw = "32", .n = 32 },
     .{ .name = "TF_GEMMA4_CHUNK_SOLO", .raw = "2048", .n = 2048 },
     .{ .name = "TF_GEMMA4_CHUNK_SOLO", .raw = "0", .n = 0 },
     .{ .name = "TF_GEMMA4_CHUNK_SOLO", .raw = "1000", .n = 1000 },
@@ -81,15 +83,23 @@ const valid = [_]Case{
     .{ .name = "TF_PROMPT_ROWS", .raw = "2048", .n = 2048 },
     .{ .name = "TF_ANE_COLUMNS", .raw = "0", .n = 0 },
     .{ .name = "TF_ANE_COLUMNS", .raw = "3072", .n = 3072 },
+    .{ .name = "TF_FLASHNEXT_SCALE_INDEX", .raw = "0", .n = 0 },
+    .{ .name = "TF_FLASHNEXT_SCALE_INDEX", .raw = "1", .n = 1 },
     .{ .name = "GLM_EHPROJ_NAX", .raw = "0", .n = 0 },
     .{ .name = "GLM_EHPROJ_NAX", .raw = "1", .n = 1 },
     .{ .name = "TF_PREFILL_MIN", .raw = "0", .n = 0 },
     .{ .name = "TF_PREFILL_MIN", .raw = "4096", .n = 4096 },
     .{ .name = "TF_PREFILL_CHUNK", .raw = "16", .n = 16 },
     .{ .name = "TF_PREFILL_CHUNK", .raw = "512", .n = 512 },
+    .{ .name = "TF_PREFILL_TAIL", .raw = "0", .n = 0 },
+    .{ .name = "TF_PREFILL_TAIL", .raw = "1", .n = 1 },
+    .{ .name = "TF_PREFILL_TAIL", .raw = "128", .n = 128 },
     .{ .name = "TF_PREFILL_KEEP", .raw = "1", .n = 1 },
     .{ .name = "TF_PREFILL_AHEAD", .raw = "1", .n = 1 },
     .{ .name = "TF_PREFILL_TIMEOUT_S", .raw = "86400", .n = 86400 },
+    .{ .name = "TF_PREFILL_ROUTE", .raw = "auto", .n = 0 },
+    .{ .name = "TF_PREFILL_LOCAL_TPS", .raw = "950", .n = @bitCast(@as(f64, 950)) },
+    .{ .name = "TF_PREFILL_REMOTE_TPS", .raw = " 1250.5", .n = @bitCast(@as(f64, 1250.5)) },
     .{ .name = "TF_PREFILL_API_KEY_FILE", .raw = "/etc/tensorfold/gb10.key", .n = 0 },
     .{ .name = "TF_PRODUCE_HELD_GIB", .raw = "32", .n = 32 },
     .{ .name = "TF_DSV41_HANDOFF_DUMP", .raw = "/tmp/handoff exports", .n = 0 },
@@ -138,6 +148,7 @@ test "environment: range, enum, whitespace and native prompt geometry refusals a
         .{ "TF_DRAMA_PREFILL_ROWS", "4096x" },  .{ "TF_DRAMA_REFERENCE_CACHE", "4294967296" },
         .{ "TF_PREFILL_CHUNK", "0" },           .{ "TF_PREFILL_CHUNK", "520" },
         .{ "TF_PREFILL_KEEP", "true" },         .{ "TF_PREFILL_AHEAD", "0" },
+        .{ "TF_PREFILL_TAIL", "-1" },           .{ "TF_PREFILL_TAIL", "1.5" },
         .{ "TF_PREFILL_TIMEOUT_S", "0" },       .{ "TF_PREFILL_TIMEOUT_S", "86401" },
     }) |c| try t.expectError(error.InvalidEnvironment, e.parse(c[0], c[1]));
     try t.expectEqual(@as(?u64, null), try e.parse("TF_CUDA_DEVICE", "   "));
@@ -249,6 +260,7 @@ test "environment: real settings are finite, keep their lower bound and optional
         .{ "TF_DSV41_FLOOR_HARD_GIB", "0" },   .{ "TF_DSV41_FLOOR_HARD_GIB", "-1" },
         .{ "TF_DSV41_PREFILL_SHARE", "1.1" },  .{ "TF_DSV41_EXPERT_TOPP", "nan" },
         .{ "TF_DSV41_EXPERT_TOPP", "-inf" },   .{ "TF_DSV41_FLOOR_GIB", "4 GiB" },
+        .{ "TF_PREFILL_LOCAL_TPS", "0" },      .{ "TF_PREFILL_REMOTE_TPS", "fast" },
     }) |c| try t.expectError(error.InvalidEnvironment, e.parse(c[0], c[1]));
 }
 
@@ -260,6 +272,9 @@ test "environment: ranges, word lists and whole-number bounds refuse ignored tai
     try t.expectEqual(@as(?u64, 1), try e.parse("TF_DSV41_IMAGES", " native "));
     try t.expectEqual(@as(?u64, 0), try e.parse("TF_DSV41_IMAGES", "0"));
     for ([_][]const u8{ "Native", "1", "nativee" }) |raw| try t.expectError(error.InvalidEnvironment, e.parse("TF_DSV41_IMAGES", raw));
+    try t.expectEqual(@as(?u64, 0), try e.parse("TF_PREFILL_ROUTE", " auto"));
+    try t.expectEqual(@as(?u64, 1), try e.parse("TF_PREFILL_ROUTE", "always"));
+    for ([_][]const u8{ "Always", "1", "always-on" }) |raw| try t.expectError(error.InvalidEnvironment, e.parse("TF_PREFILL_ROUTE", raw));
     for ([_][2][]const u8{ .{ "TF_DSV41_ENGRAM_READERS", "32" }, .{ "TF_DSV41_SLOTS", "16" }, .{ "TF_DSV41_ROWS_CAP", "12" }, .{ "TF_DSV41_CONTEXT", "9223372036854775807" } }) |c|
         try t.expect(try e.parse(c[0], c[1]) != null);
     for ([_][2][]const u8{ .{ "TF_DSV41_ENGRAM_READERS", "33" }, .{ "TF_DSV41_SLOTS", "0" }, .{ "TF_DSV41_SLOTS", "17" }, .{ "TF_DSV41_ROWS_CAP", "9" }, .{ "TF_DSV41_CONTEXT", "9223372036854775808" }, .{ "TF_DSV41_PREFILL_ADAPT_MIN", "15" } }) |c|

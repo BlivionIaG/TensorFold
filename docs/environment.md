@@ -42,15 +42,21 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
 | `TF_GLM_DRAFT_CONFIDENCE` | Finite number 0 through 1 where a DFlash2 chain's chance product stops it; default 0.7 |
 | `TF_PROMPT_ROWS` | Native serving: a multiple of 16 from 128 through 2048; unset keeps the chip/family default |
 | `TF_ANE_COLUMNS` | Whole u32 count; zero disables the experimental share; default zero |
+| `TF_FLASHNEXT_SCALE_INDEX` | Flash Next on Metal before tensor units: exactly `0` or `1`; `1` has the 4-bit expert kernels read each group's scale and bias through a 16-bit index into its tensor's table of pairs, the same values with fewer weight bytes; default 0 |
+| `TF_FLASHNEXT_GROUPED_ROWS` | Flash Next on Metal without tensor units: `0`, or the rows (`1` through `32`) from which a decode window runs its 4-bit experts grouped by expert, with the same output bits; default 5; ignored with `--ssd-experts` and in speed-up mode |
 | `GLM_EHPROJ_NAX` | GLM-5.3-Flash on Metal: exactly `0` or `1`; `0` serves the MTP head's prompt eh_proj on the scalar kernel; default 1, the tile kernel where it builds |
 | `TF_PREFILL_MIN` | With `--prefill-from`: whole prompt-token count a pull must reach past the Mac's own prefix; default 4096 |
-| `TF_PREFILL_CHUNK` | With `--prefill-from`: positive multiple of 16; a pulled prefix ends on this boundary; default 512 |
+| `TF_PREFILL_CHUNK` | With `--prefill-from`: positive multiple of 16; a pulled prefix ends on this boundary; default 512 (Qwen3.8-27B, and DeepSeek V4.1 with `TF_PREFILL_TAIL=0`) |
+| `TF_PREFILL_TAIL` | DeepSeek V4.1 with `--prefill-from`: whole count of prompt tokens the Mac prefills itself after the pull, so the producer prefills all but these; default 1 (one decode-class step, no prefill pass here); `0` cuts the prefix on the `TF_PREFILL_CHUNK` boundary as before; 9 to 63 runs the slow shared-body kernels and is warned about |
 | `TF_PREFILL_KEEP` | With `--prefill-from`: exactly `0` or `1`; keeps states built on a pulled prefix, marked remote, so a chat's next turn resumes on the Mac; default 1 |
 | `TF_PREFILL_AHEAD` | With `--prefill-from`: whole count from 1 of queued requests with a fill under way or landed; default 4 |
 | `TF_PREFILL_API_KEY_FILE` | With `--prefill-from`: the path of a file only its owner can read, holding the GB10 server's API key, which the trigger sends as a Bearer token; unset sends none, and a GB10 started with `--api-key` then answers 401 |
 | `TF_PRODUCE_HELD_GIB` | With `--mcdma-produce`: whole GiB 1 through 1024 of hand-off exports a GB10 holds at once; an export past it is refused by name and the Mac prefills that prompt itself; default 32 |
 | `TF_DSV41_HANDOFF_DUMP` | A directory path without control characters, used as given; a DeepSeek-V4.1 producer also writes each hand-off export there as a file, with or without `--mcdma-produce`. Unset or blank writes none |
 | `TF_PREFILL_TIMEOUT_S` | With `--prefill-from`: whole seconds 1 through 86400 for the trigger and, with `--mcdma-link http`, separately for the transfer of the export; default 60 plus 1 per 400 tokens sent |
+| `TF_PREFILL_ROUTE` | DeepSeek V4.1 with `--prefill-from`: exactly `auto` or `always`; default `auto`. The pair takes one pull at a time. Under `auto` a prompt goes to it only when a stream is decoding on the Mac (a prompt pass there would stall it) or the pull is predicted no slower than the Mac's own prefill, and never behind a pull that costs more than prefilling here (unless that pull ends soon enough for the wait to pay); a prompt kept off the pair is prefilled on the Mac. `always` pulls every prompt that reaches `TF_PREFILL_MIN`, queued behind any pull under way, as before |
+| `TF_PREFILL_LOCAL_TPS` | DeepSeek V4.1 with `--prefill-from`: finite prompt tokens a second greater than 0, default 950: what the `auto` route assumes of the Mac's own prefill until it has timed prompts of its own (a running average replaces it) |
+| `TF_PREFILL_REMOTE_TPS` | DeepSeek V4.1 with `--prefill-from`: finite prompt tokens a second greater than 0, default 1000: what the `auto` route assumes of a pull, end to end, until it has timed pulls of its own (a running average replaces it) |
 | `XPU_A8_BITS` | Exactly `4` or `8`, for the XPU quantization study; unset keeps the study's existing setting |
 | `LFM3_FUSE` | Whole u32 fusion mask; default 7 |
 | `TF_SLIDE_POCKET_KEY` | Exactly `auto`, `reply`, `subject` or `both`; default `auto` |

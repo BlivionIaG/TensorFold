@@ -28,6 +28,7 @@ test {
     _ = @import("family_sampling.zig");
     _ = @import("auth_scope_http_test.zig");
     _ = @import("handoff_routes_test.zig");
+    _ = @import("prefill_param.zig");
     _ = @import("admission_cli.zig");
     _ = @import("request_admission_test.zig");
     _ = @import("request_admission_http_test.zig");
@@ -44,6 +45,13 @@ test {
     _ = @import("idle_unload_test.zig");
     _ = @import("wait_reason_test.zig");
     _ = @import("name_priority_http_test.zig");
+    _ = @import("ws_frame.zig");
+    _ = @import("ws_upgrade.zig");
+    _ = @import("ws_cache.zig");
+    _ = @import("responses_ws_read.zig");
+    _ = @import("responses_ws_events.zig");
+    _ = @import("responses_ws_turn.zig");
+    _ = @import("responses_ws_test.zig");
     @import("std").testing.refAllDecls(@This());
     _ = @import("json");
     _ = @import("std_options.zig");
@@ -207,6 +215,7 @@ test {
     _ = @import("slide_talks.zig");
     _ = @import("startup.zig");
     _ = @import("responses_include_test.zig");
+    _ = @import("responses_store.zig");
     _ = @import("cortheon/cortheon.zig");
     _ = @import("cortheon/cortheon_test.zig");
     _ = @import("cortheon/research.zig");

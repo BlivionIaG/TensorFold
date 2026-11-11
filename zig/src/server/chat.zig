@@ -195,6 +195,8 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
     var handoff_why: []const u8 = ""; // kv_transfer_params.mcdma_handoff: the state is exported, one token drawn
     request.handoff = @import("handoff_param.zig").parse(f, &handoff_why) catch return cx.refuse(handoff_why);
     if (request.handoff != null) request.max_tokens = @min(request.max_tokens, 1);
+    var prefill_why: []const u8 = ""; // prefill: the client's say on a remote prefill, auto when absent
+    request.prefill = @import("prefill_param.zig").parse(f, &prefill_why) catch return cx.refuse(prefill_why);
     try srv.checkFeatures(cx, f, input.tools.len > 0, reasoning, rendered.ids, input.tools, &request);
     server_mod.nameStructure(input.format, &request);
     errdefer srv.release(false, request);
