@@ -407,7 +407,7 @@ test "a prefix restored from a heap image continues like the state it was copied
         try from.append(at);
     }
 
-    // The heap image (what a Snapshot holds) is laid out for the prefix's own rows and goes into the larger state, as snapshotRestore does it.
+    // The heap image (a Snapshot's) is laid out for the prefix's rows and goes into the larger state, as restore does.
     const kept = prefix.capacityFor(at, plan.capacity);
     const storage = try std.testing.allocator.alloc(u8, cache.pool_layout.storageBytes(kept));
     defer std.testing.allocator.free(storage);

@@ -1,10 +1,9 @@
-//! Row-sized copies of a Metal slot's packed pool: a kept state holds the rows its position uses, not the slot's capacity.
+//! Row-sized copies of a Metal slot's packed pool: a kept state holds the rows its position uses, not the capacity.
 const std = @import("std");
 
 pub const Error = error{SnapshotLayout};
 
-/// `storage` is one block per owner, back to back; an owner of ratio r holds `capacity / r` rows of each
-/// sub-array, the sub-arrays (`strides`: bytes a row) one after the other.
+/// One block per owner, back to back: an owner of ratio r holds `capacity / r` rows of each sub-array (`strides`).
 pub const Layout = struct {
     ratios: []const u32,
     strides: []const usize,
@@ -29,7 +28,7 @@ pub const Layout = struct {
         return n;
     }
 
-    /// Where sub-array `sub` of owner `id` begins in a pool laid out for `capacity`: its rows are contiguous from there.
+    /// Where sub-array `sub` of owner `id` begins in a pool laid out for `capacity`; its rows run on from there.
     pub fn subOffset(l: Layout, id: usize, sub: usize, capacity: u32) usize {
         var n = l.blockOffset(id, capacity);
         for (l.strides[0..sub]) |s| n += @as(usize, capacity / l.ratios[id]) * s;

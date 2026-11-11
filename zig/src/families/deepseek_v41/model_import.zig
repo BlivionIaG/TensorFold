@@ -7,7 +7,7 @@ const model = @import("model.zig");
 const Model = model.Model;
 const Snapshot = Model.Snapshot;
 
-/// A zeroed Snapshot for a prefix of `rows` tokens: `storage` laid out for those rows only, `live`, the taps ring; position 0.
+/// A zeroed Snapshot for a prefix of `rows` tokens: `storage` laid out for those rows only, `live`, taps; position 0.
 pub fn blank(m: *Model, rows: u32) !*Snapshot {
     const plan = m.caches[0].plan;
     if (rows > plan.capacity) return error.SnapshotOutOfRange;

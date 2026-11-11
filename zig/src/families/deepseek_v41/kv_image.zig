@@ -1,4 +1,4 @@
-//! A kept state as a byte image for the disk store: its own words, window rings, taps, then each owner's rows by position.
+//! A kept state as the disk store's byte image: its words, window rings, taps, then each owner's rows by position.
 const std = @import("std");
 const prefix = @import("kv_prefix.zig");
 
@@ -40,8 +40,7 @@ fn regions(l: prefix.Layout, s: State, out: *[max_regions]Region) []Region {
     return out[0..n];
 }
 
-/// Copy each of `ranges` (`.off`, `.len` into the image) between the state and `buf`, back to back:
-/// out of the state into `buf`, or `buf` into the state.
+/// Copy `ranges` (`.off`, `.len` into the image) between the state and `buf`, back to back; `into_state` lands `buf`.
 pub fn move(l: prefix.Layout, s: State, ranges: anytype, buf: []u8, into_state: bool) void {
     var table: [max_regions]Region = undefined;
     const regs = regions(l, s, &table);
