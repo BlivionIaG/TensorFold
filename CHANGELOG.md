@@ -8,6 +8,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - DeepSeek V4.1 on Metal: a batched forward's one-row attention windows run each stage as one dispatch for all slots (`TF_DSV41_BATCH_ATTN=0` restores the per-slot chain), batched forwards carry up to eight windows (`TF_DSV41_BATCH_MAX`, was four), and local prefill yields between chunks so decoding streams are not stalled for the whole prompt (`TF_DSV41_PREFILL_INTERLEAVE=0` restores the whole-prompt call).
 
+- DeepSeek V4.1 on Metal: a batched forward's one-row attention windows can run each stage as one dispatch for all slots (`TF_DSV41_BATCH_ATTN=1`, off by default), batched forwards can carry up to eight windows (`TF_DSV41_BATCH_MAX`, four by default), and local prefill yields between chunks so decoding streams are not stalled for the whole prompt (`TF_DSV41_PREFILL_INTERLEAVE=0` restores the whole-prompt call).
+
 ## 1.2.7
 
 - GLM-5.3-Flash on CUDA: with `TF_GLM_LAYERS=N`, serve's start-up memory check counts the weights by tensor from the shard headers, only those the load reads (the first N layers, the MTP layer when drafts are on, the embedding, norm and head), where it counted every checkpoint file. A 20-layer thin load of the 163.6 GiB checkpoint now counts 66.6 GiB without drafts. Unset, the count is the files' as before (#2788, fixes #2745). Thanks to @wojo.
