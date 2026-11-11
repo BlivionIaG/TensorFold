@@ -28,5 +28,8 @@ pub const arch: []const u8 = objects.arch;
 /// TF_G9_MIX the gfx900 objects were built with (common/fdot2.hpp; 2 unless -Dhip-cflags says otherwise): the kernel tests' bound follows it.
 pub const g9_mix: u8 = objects.g9_mix;
 
+/// The objects' routed tiles take expert pointers (caps `expert_ptrs`, built with -DTF_EXPERT_PTRS): the kernel arguments carry the table's address.
+pub const expert_ptrs: bool = objects.expert_ptrs;
+
 /// The objects in `Group` order; empty in a build without hipcc.
 pub const images: [group_count][]align(8) const u8 = objects.images;

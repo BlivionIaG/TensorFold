@@ -127,7 +127,21 @@ fn served(e: *Engine, streams: usize, capacity: usize, readouts: ?Readouts) !usi
 
 const Readouts = struct { cfg: @import("core").joint_schema.Config, bounds: hip.joint_schema.plan.Bounds };
 
-/// Loads this rank's share of the model, admits the streams its memory holds (with the other ranks) and sizes them.
+/// --ssd-experts GIB asks for the expert cache; TF_EXPERT_OFFLOAD=0|1 turns the offload off or on regardless of fit (auto otherwise).
+fn expertMode(o: Options) engine.ExpertMode {
+    if (o.experts_gib != null) return .on;
+    const v = @import("sys").getenv("TF_EXPERT_OFFLOAD") orelse return .auto;
+    if (std.mem.eql(u8, v, "0")) return .off;
+    if (std.mem.eql(u8, v, "1")) return .on;
+    return .auto;
+}
+
+/// Experts the cache admits a round at most (TF_EXPERT_COPIES).
+fn expertCopies() usize {
+    const v = @import("sys").getenv("TF_EXPERT_COPIES") orelse return 8;
+    return std.fmt.parseInt(usize, v, 10) catch 8;
+}
+
 fn prepare(
     a: std.mem.Allocator,
     gpa: std.mem.Allocator,
@@ -151,6 +165,9 @@ fn prepare(
         .world = o.world,
         .group = dev.group,
         .startup = steps,
+        .experts = expertMode(o),
+        .expert_gib = o.experts_gib,
+        .expert_copies = expertCopies(),
     }) catch |err| return switch (err) {
         error.PeerRefused, error.LinkFailed => steps.stoppedBy(a, problem),
         error.WeightsDoNotFit => steps.refuseAll(
@@ -253,7 +270,8 @@ fn prepare(
     const left = room - need;
     const policy = dev.policy;
     const keep: usize = policy.slots;
-    var budget: usize = if (o.cache_gib) |g| @intFromFloat(g * (1 << 30)) else left;
+    // offloaded experts take what the streams leave, so the prompt cache is only what --prompt-cache-gib names
+    var budget: usize = if (o.cache_gib) |g| @intFromFloat(g * (1 << 30)) else if (e.weights.experts != null) 0 else left;
     if (budget > left and !o.cache_over_cap) {
         return steps.refuseAll(
             a,
@@ -343,6 +361,8 @@ fn openEngine(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip
         own.joint = try openJoint(a, gpa, p.e, loaded, p.bounds, &steps, problem);
         try own.backend.useReadout(own.joint.?.readout());
     }
+    // the rest of the device, after every other allocation of the plan, is the offloaded experts' cache
+    p.e.attachExperts(io) catch |err| return steps.refuseAll(a, problem, "the native HIP engine cannot size its expert cache ({s})", .{@errorName(err)});
     // rank 0 serves only once every follower is ready behind it
     _ = try steps.together(a, .{ 0, 0 }, .first, problem);
     // a lone rank times its forwards for the depth rule; the ranks of a group draft without costs; bf16 drafts none

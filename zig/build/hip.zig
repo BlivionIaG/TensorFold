@@ -103,6 +103,7 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     hip_gpu_module.addIncludePath(.{ .cwd_relative = hip_include });
     hip_gpu_module.addCSourceFile(.{ .file = b.path("zig/src/hip/device_arch.c"), .flags = &.{"-D__HIP_PLATFORM_AMD__"} });
     hip_gpu_module.addImport("hip_probe", hip_probe);
+    hip_gpu_module.addImport("core", coreModule(b, target));
     const hip_gpu_test = b.addTest(.{ .root_module = hip_gpu_module });
     b.step("hip-gpu-build", "Compile HIP runtime tests without running GPU work").dependOn(&hip_gpu_test.step);
     b.step("hip-gpu-test", "Real HIP copies, fills and architecture-selected module launches").dependOn(&b.addRunArtifact(hip_gpu_test).step);
@@ -535,7 +536,7 @@ const headers = [_][]const u8{
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-ffp-contract=off" };
 /// `-Dhip-cflags`: appended to every kernel compile (set by `options`).
 var extra_flags: []const []const u8 = &.{};
-const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const g9_mix: u8 = 2;\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
+const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const g9_mix: u8 = 2;\npub const expert_ptrs = true;\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, relax_branches: bool, arch: []const u8) *std.Build.Module {
     const files = objectFiles(b, .{ .name = hipcc, .resolved = hipcc_resolved, .device_lib = device_lib, .relax_branches = relax_branches }, arch);
@@ -550,7 +551,8 @@ pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u
     for (extra_flags) |flag| {
         if (std.mem.startsWith(u8, flag, "-DTF_G9_MIX=")) mix = std.fmt.parseInt(u8, flag["-DTF_G9_MIX=".len..], 10) catch mix;
     }
-    return b.createModule(.{ .root_source_file = files.add("kernels.zig", b.fmt("pub const arch = \"{s}\";\npub const g9_mix: u8 = {d};\n{s}pub const images = [_][]align(8) const u8{{ {s}}};\n", .{ arch, mix, decls, refs })) });
+    const expert_ptrs = caps.Caps.of(arch).?.expert_ptrs;
+    return b.createModule(.{ .root_source_file = files.add("kernels.zig", b.fmt("pub const arch = \"{s}\";\npub const g9_mix: u8 = {d};\npub const expert_ptrs = {any};\n{s}pub const images = [_][]align(8) const u8{{ {s}}};\n", .{ arch, mix, expert_ptrs, decls, refs })) });
 }
 
 /// The HIP compiler as the build found it, the device bitcode it links, and whether gfx1100 relaxes branches earlier.
@@ -587,6 +589,7 @@ fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, o
     run.addArg(b.fmt("-DTF_SDOT8={d}", .{@intFromBool(c.sdot8)}));
     run.addArg(b.fmt("-DTF_MATRIX={d}", .{@intFromBool(c.matrix != .none)}));
     run.addArg(b.fmt("-DTF_DOT2_SIGNED_ZERO={d}", .{@intFromBool(c.dot2_signed_zero)}));
+    if (c.expert_ptrs) run.addArg("-DTF_EXPERT_PTRS=1");
     run.addArgs(extra_flags);
     run.addArg(b.fmt("--rocm-path={s}", .{root}));
     const lib = cc.device_lib orelse b.fmt("{s}/lib/llvm/amdgcn/bitcode", .{root});

@@ -28,8 +28,13 @@ pub const Experts = struct {
     count: usize,
 };
 
+/// Routed experts offloaded: the stacks stay in a host tier, `trace_rows` the most rows of a decode round the picks are traced for.
+pub const Offload = struct { trace_rows: usize = 128 };
+
+const host_mlx = quant.mlx.Host;
+
 /// Router rows [E + 1, D], the shared gate row last: bf16 as the Python holds them and `rows32` widened.
-pub const Routed = struct { router: Buf, rows32: Buf, experts: Experts, top_k: usize, remap: ?Buf = null };
+pub const Routed = struct { router: Buf, rows32: Buf, experts: Experts, top_k: usize, remap: ?Buf = null, offload: ?hip.expert_store.Ref = null };
 
 /// `gate` and `up` are the halves of `gate_up` when the loader stacked them (gfx900: one launch writes silu(gate) * up), else uploaded alone.
 pub const DenseMlp = struct { gate: Projection, up: Projection, down: Projection, gate_up: ?Projection = null };
@@ -95,6 +100,69 @@ pub const MtpHead = struct {
 /// Device memory of one model; every `Buf` of it is freed by `deinit`.
 const Uploader = struct {
     up: hip.Upload,
+    offload: ?Offload = null,
+    slot: ?*?*hip.expert_store.Store = null,
+    layers: usize = 0,
+    index: usize = 0,
+
+    /// A MoE layer whose routed experts go to the host tier: its stacks are packed into per-expert blobs, and its projections name them
+    /// through the layer's table. Tensors the kernels read there are not uploaded.
+    fn offloaded(u: Uploader, r: host.Routed) !Routed {
+        const o = u.offload.?;
+        const e = r.experts;
+        if (e.separate != null or r.remap != null) return error.UnsupportedOffload;
+        const f = switch (e.fused) {
+            .mlx => |m| m,
+            else => return error.UnsupportedOffload,
+        };
+        const d = switch (e.down) {
+            .mlx => |m| m,
+            else => return error.UnsupportedOffload,
+        };
+        const tensors = [_]Tensor{ f.words, f.scales, f.biases, d.words, d.scales, d.biases };
+        var bytes: [hip.expert_store.parts][]const u8 = undefined;
+        var part: [hip.expert_store.parts]usize = undefined;
+        for (tensors, &bytes, &part) |t, *b, *p| {
+            if (t.rank < 2 or t.shape[0] != e.count or t.bytes.len % e.count != 0) return error.UnsupportedOffload;
+            b.* = t.bytes;
+            p.* = t.bytes.len / e.count;
+        }
+        const shape: hip.expert_store.Shape = .{ .layers = u.layers, .experts = e.count - 1, .picks = r.top_k + 1, .trace_rows = o.trace_rows, .part_bytes = part };
+        const slot = u.slot.?;
+        if (slot.* == null) {
+            const s = try u.up.gpa.create(hip.expert_store.Store);
+            errdefer u.up.gpa.destroy(s);
+            s.* = try hip.expert_store.Store.init(u.up.gpa, u.up.r, shape);
+            slot.* = s;
+        }
+        const store = slot.*.?;
+        if (!std.meta.eql(store.shape, shape)) return error.UnsupportedOffload;
+        try store.addLayer(u.index, bytes);
+        const ref = store.ref(u.index);
+        // the buffers the projections' views read their geometry from: the addresses are the layer's host tier, which the kernels never read there
+        var devs: [2]quant.Device = undefined;
+        for (&devs, [_]host_mlx{ f, d }) |*dev, h| {
+            dev.* = .{ .mlx = .{
+                .words = stub(h.words, ref.anchor),
+                .scales = stub(h.scales, ref.anchor),
+                .biases = stub(h.biases, ref.anchor),
+                .bits = h.bits,
+                .group = h.group,
+            } };
+        }
+        return .{
+            .router = try u.tensor(r.router),
+            .rows32 = try u.tensor(r.rows32),
+            .experts = .{ .fused = devs[0], .gated = e.gated, .down = devs[1], .width = e.width, .dims = e.dims, .count = e.count },
+            .top_k = r.top_k,
+            .remap = null,
+            .offload = ref,
+        };
+    }
+
+    fn stub(t: Tensor, anchor: u64) Buf {
+        return .{ .ptr = anchor, .len = t.bytes.len, .dtype = t.dtype, .rank = t.rank, .shape = t.shape };
+    }
 
     fn tensor(u: Uploader, t: Tensor) !Buf {
         return u.up.uploader().tensor(t);
@@ -119,6 +187,7 @@ const Uploader = struct {
                 return .{ .dense = .{ .gate = try u.projection(d.gate), .up = try u.projection(d.up), .down = try u.projection(d.down) } };
             },
             .routed => |r| {
+                if (u.offload != null) return .{ .routed = try u.offloaded(r) };
                 const e = r.experts;
                 return .{ .routed = .{
                     .router = try u.tensor(r.router),
@@ -138,7 +207,9 @@ const Uploader = struct {
         }
     }
 
-    fn layer(u: Uploader, l: host.Layer) !Layer {
+    fn layer(u: Uploader, l: host.Layer, index: usize) !Layer {
+        var v = u;
+        v.index = index;
         switch (l.body) {
             .linear => |x| return .{ .linear = .{
                 .input_norm = try u.tensor(x.input_norm),
@@ -152,7 +223,7 @@ const Uploader = struct {
                 .dt_bias = try u.tensor(x.dt_bias),
                 .gnorm = try u.tensor(x.gnorm),
                 .out = try u.projection(x.out),
-                .mlp = try u.mlp(x.mlp),
+                .mlp = try v.mlp(x.mlp),
             } },
             .full => |x| return .{ .full = .{
                 .input_norm = try u.tensor(x.input_norm),
@@ -163,7 +234,7 @@ const Uploader = struct {
                 .o = try u.projection(x.o),
                 .q_norm = try u.tensor(x.q_norm),
                 .k_norm = try u.tensor(x.k_norm),
-                .mlp = try u.mlp(x.mlp),
+                .mlp = try v.mlp(x.mlp),
             } },
         }
     }
@@ -202,6 +273,8 @@ pub const Model = struct {
     mtp: ?MtpHead = null,
     /// A tensor-parallel rank's share: the output projections hold fp32 shares of a sum.
     sliced: bool = false,
+    /// The routed experts' host tier and device cache when the model was loaded with `Offload` (its projections' tensors are not on the device).
+    experts: ?*hip.expert_store.Store = null,
 
     /// The text tower of the checkpoint in `dir`, one layer at a time through host memory.
     pub fn load(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Runtime, dir: []const u8) !Model {
@@ -210,28 +283,33 @@ pub const Model = struct {
 
     /// As `load`, keeping only tensor-parallel rank `rank`'s share (null: the whole model).
     pub fn loadRank(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Runtime, dir: []const u8, rank: ?slicing.Rank) !Model {
-        return loadRankWith(gpa, io, d, dir, rank, false);
+        return loadRankWith(gpa, io, d, dir, rank, false, null);
     }
 
     /// `loadRank`, with a bf16 checkpoint's projections widened to fp32 dense when `widen` (a chat checkpoint).
-    pub fn loadRankWith(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Runtime, dir: []const u8, rank: ?slicing.Rank, widen: bool) !Model {
+    pub fn loadRankWith(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Runtime, dir: []const u8, rank: ?slicing.Rank, widen: bool, offload: ?Offload) !Model {
         var ck = try checkpoint.Checkpoint.open(gpa, io, dir);
         defer ck.close();
         ck.main.widen = widen;
-        return fromCheckpointRank(gpa, d, &ck, std.math.maxInt(usize), rank);
+        return fromCheckpointRank(gpa, d, &ck, std.math.maxInt(usize), rank, offload);
     }
 
     /// The first `limit` layers of `ck` (all when `limit` is large), with the MTP head only when every layer loads.
     pub fn fromCheckpoint(gpa: std.mem.Allocator, d: *const hip.Runtime, ck: *const checkpoint.Checkpoint, limit: usize) !Model {
-        return fromCheckpointRank(gpa, d, ck, limit, null);
+        return fromCheckpointRank(gpa, d, ck, limit, null, null);
     }
 
     /// `fromCheckpoint` for one tensor-parallel rank, `spec` being what that rank sees.
-    pub fn fromCheckpointRank(gpa: std.mem.Allocator, d: *const hip.Runtime, ck: *const checkpoint.Checkpoint, limit: usize, rank: ?slicing.Rank) !Model {
+    pub fn fromCheckpointRank(gpa: std.mem.Allocator, d: *const hip.Runtime, ck: *const checkpoint.Checkpoint, limit: usize, rank: ?slicing.Rank, offload: ?Offload) !Model {
         const whole = ck.spec();
         var m: Model = .{ .gpa = gpa, .spec = if (rank) |r| try slicing.localSpec(whole, r) else whole, .sliced = rank != null };
         errdefer m.deinit();
-        const u: Uploader = .{ .up = .{ .r = d, .buffers = &m.buffers, .gpa = gpa } };
+        var slot: ?*hip.expert_store.Store = null;
+        errdefer if (slot) |s| {
+            s.deinit();
+            gpa.destroy(s);
+        };
+        const u: Uploader = .{ .up = .{ .r = d, .buffers = &m.buffers, .gpa = gpa }, .offload = offload, .slot = &slot, .layers = m.spec.n_layers };
         var scratch: std.heap.ArenaAllocator = .init(gpa);
         defer scratch.deinit();
         const embed = try ck.embed(scratch.allocator());
@@ -249,10 +327,12 @@ pub const Model = struct {
             var host_layer = try ck.layer(i);
             defer host_layer.deinit();
             if (rank) |r| try slicing.layer(&host_layer, whole, r);
-            try list.append(gpa, try u.layer(host_layer));
+            try list.append(gpa, try u.layer(host_layer, i));
             ck.release(i);
         }
         m.layers = try list.toOwnedSlice(gpa);
+        m.experts = slot;
+        slot = null; // the model frees it from here
         // under tp only rank 0 drafts: its head is whole, logits rows included (its own or the model's whole head)
         const drafts = if (rank) |r| r.rank == 0 else true;
         if (drafts and m.layers.len == m.spec.n_layers) if (try ck.mtp()) |head_layer| {
@@ -271,6 +351,10 @@ pub const Model = struct {
     }
 
     pub fn deinit(m: *Model) void {
+        if (m.experts) |s| {
+            s.deinit();
+            m.gpa.destroy(s);
+        }
         for (m.buffers.items) |*b| b.free();
         m.buffers.deinit(m.gpa);
         m.gpa.free(m.layers);

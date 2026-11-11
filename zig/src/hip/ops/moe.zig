@@ -42,6 +42,11 @@ pub fn moeRoute(o: Ops, picks: u64, pairs: usize, experts: usize, tile: usize, m
     try o.l.tf_moe_route(@ptrFromInt(picks), int(pairs), int(experts), int(tile), i(members), i(items), int(capacity), o.stream);
 }
 
+/// A layer's picks (`pairs` ids) into the offloaded experts' trace at `dst`, where the host reads which experts the round used.
+pub fn expertTrace(o: Ops, picks: u64, pairs: usize, dst: u64) Error!void {
+    try o.l.tf_expert_trace(@ptrFromInt(picks), int(pairs), i(dst), o.stream);
+}
+
 pub fn moeAct(o: Ops, both: u64, out: Tensor, pairs: usize, width: usize, limit: f32) Error!void {
     try o.l.tf_moe_act(f(both), p(out.ptr), @backingInt(out.kind), int(pairs), int(width), limit, o.stream);
 }

@@ -48,7 +48,9 @@ pub const Affine = struct {
     group: u16,
     /// A tensor-parallel slice along K: the product stays fp32, one rank's share of a sum.
     partial: bool = false,
-
+    /// An offloaded stack: expert e's blob is at the u64 `ptab[e]` + `ptab_off` (see quant.mlx.Matrix); 0 is a stack at `words`.
+    ptab: u64 = 0,
+    ptab_off: u64 = 0,
     pub fn check(a: Affine) Error!void {
         const ok_bits = switch (a.bits) {
             2, 3, 4, 5, 6, 8 => true,

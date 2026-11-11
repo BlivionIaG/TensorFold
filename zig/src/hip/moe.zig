@@ -21,6 +21,8 @@ pub const Experts = struct {
     dims: usize,
     limit: f32 = 0,
     shared: ?Shared = null,
+    /// Offloaded experts: where this layer's picks of a decode round are written for the host (row-major, `top_k + 1` ids a row; 0: untraced).
+    trace: u64 = 0,
 };
 
 /// The router's rows in fp32 (E + 1, D), the shared expert's gate last, and the experts.
@@ -164,6 +166,8 @@ fn expertParts(o: Ops, kind: Kind, r: Routed, x: Tensor, rows: usize, logits: u6
         tile = tileFor(o, rows);
         try o.moeRoute(pick, pairs, r.rows, tile, members, items, cap);
     }
+    // offloaded experts: the host learns a decode round's picks from this (a prompt span's experts are all read in place, nothing is admitted from it)
+    if (ex.trace != 0 and !o.prefill) try o.expertTrace(pick, pairs, ex.trace);
     // beside the stack the shared pair's id is the stack's first id past its experts: zero its item, never read its row
     if (ex.shared != null) try o.moeForeignItems(items, count, ex.count);
     // the gate and up's activation is the launch's epilogue when the tile takes the shape

@@ -47,6 +47,19 @@ __device__ inline bool take_item(Affine& a, int z) {
     const long long expert = item[0];
     const long long groups = a.k / a.group;
     const int table = a.scale.kind == kScaleF32 ? 4 : 2;
+#if defined(TF_EXPERT_PTRS)
+    if (a.route.ptab) {
+        const char* blob = reinterpret_cast<const char*>(a.route.ptab[expert]) + a.route.ptab_off;
+        const long long words_bytes = static_cast<long long>(a.n) * (static_cast<long long>(a.k) * a.bits / 32) * 4;
+        const long long table_bytes = static_cast<long long>(a.n) * groups * table;
+        a.words = reinterpret_cast<const uint32_t*>(blob);
+        a.scale.p = blob + words_bytes;
+        a.bias.p = blob + words_bytes + table_bytes;
+        a.route.first = item[1];
+        a.m = count;
+        return true;
+    }
+#endif
     a.words += expert * a.n * (static_cast<long long>(a.k) * a.bits / 32);
     a.scale.p = static_cast<const char*>(a.scale.p) + expert * a.n * groups * table;
     a.bias.p = static_cast<const char*>(a.bias.p) + expert * a.n * groups * table;
