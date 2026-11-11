@@ -199,7 +199,7 @@ decides each prompt that reaches `TF_PREFILL_MIN` when it is queued, and again w
   pair's measured rate plus the Mac's last-token pass, against the rest of the prompt at the Mac's measured rate. The rates
   are running averages of the pulls and prompt passes this server timed (a pass under 1024 rows says too little to count;
   one sample moves a rate by a third to three times at most). Until it has timed its own it assumes 1500 tokens a second for
-  the Mac (`TF_PREFILL_LOCAL_TPS`), 1000 for a pull (`TF_PREFILL_REMOTE_TPS`) and 1 s for the last-token pass, the export
+  the Mac (`TF_PREFILL_LOCAL_TPS`), 2000 for a pull (`TF_PREFILL_REMOTE_TPS`) and 0.6 s for the last-token pass, the export
   profile's numbers: with them a lone prompt of under about 19k tokens stays on the Mac, whose prefill is as fast as the
   pair's there (the pair's gain is the Mac's freedom, not the first token). The pair's rate is learned only from pulls, so
   a pair that is faster than that (a replay export) is first used when a stream decodes or the prompt is long; set

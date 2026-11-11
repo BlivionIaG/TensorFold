@@ -16,17 +16,16 @@ fn weigh(r: *Route, now: u64, len: u64, decoding: u32) Verdict {
     return r.weigh(now, .{ .len = len, .cached = 0, .decoding = decoding }, len - 1);
 }
 
-/// A route whose own prefill is the old 950 tokens a second seed, for the tests whose numbers are written for it.
+/// A route with the old seeds (950 a second here, 1000 a pull, 1 s of tail), for the tests whose numbers are written for them.
 fn slowMac() Route {
-    return .{ .local_tps = .{ .v = 950 } };
+    return .{ .local_tps = .{ .v = 950 }, .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } };
 }
 
-test "seeds: a Mac prefilling 1500 a second keeps an idle prompt unless the pair's measured rate beats it" {
+test "seeds: with the default priors an idle pair takes a 16k prompt and a 2k prompt stays here" {
     var r: Route = .{};
-    try t.expectEqual(Verdict.slower, weigh(&r, 0, 8192, 0)); // 9.2 s pulled at the seed 1000 against 5.5 s here
-    r.observePull(8191, 0, 3 * s + 600 * std.time.ns_per_ms); // the pair's 8k replay: 2.3k a second
-    try t.expectEqual(Verdict.remote, weigh(&r, 0, 8192, 0)); // 3.6 s and 1 s against 5.5 s
-    try t.expectEqual(Verdict.slower, weigh(&r, 0, 4096, 0)); // 1.8 s and 1 s against 2.7 s: close, the tail decides
+    try t.expectEqual(Verdict.remote, weigh(&r, 0, 16384, 0)); // 8.8 s pulled against 10.9 s here
+    try t.expectEqual(Verdict.slower, weigh(&r, 0, 2048, 0)); // 1.6 s pulled against 1.4 s here
+    try t.expectEqual(Verdict.remote, weigh(&r, 0, 4096, 0)); // break-even is about 3.6k tokens
 }
 
 test "route: a prompt that finds the pair busy goes elsewhere unless waiting for it is faster, and a wait is bounded" {
@@ -123,7 +122,7 @@ test "weigh: always sends every prompt, and auto only one the pair is predicted 
 }
 
 test "observePull: a pull that hit the producer's prompt cache does not move the remote rate, a computed one does" {
-    var r: Route = .{};
+    var r: Route = slowMac();
     r.observePull(16384, 16384 - 512, 300 * std.time.ns_per_ms); // a warm-up prompt cached there: 512 computed tokens
     try t.expect(!r.remote_tps.seen and r.remote_tps.v == 1000);
     r.observePull(16384, 0, 8192 * std.time.ns_per_ms); // 2000 tokens a second computed
@@ -146,7 +145,7 @@ test "weigh: a busy pair is not waited for beyond what prefilling here costs, ev
 }
 
 test "observe: measured rates replace the seeds a third to three times at a time, and thin or empty passes say nothing" {
-    var r: Route = .{};
+    var r: Route = slowMac();
     try t.expectEqual(Verdict.slower, weigh(&r, 0, 8192, 0));
     r.observe(.{ .pass = .remote, .rows = 8191, .ns = 4100 * std.time.ns_per_ms }); // 2000 tokens a second end to end
     r.observe(.{ .pass = .tail, .rows = 1, .ns = 500 * std.time.ns_per_ms });
@@ -163,7 +162,7 @@ test "observe: measured rates replace the seeds a third to three times at a time
 
 test "knobs: the route's knobs default to auto, the notes' rates and a breaker of 3 failures and 30 s, and refuse bad text" {
     const env = @import("sys").environment;
-    const d = Route.build(.{ .mode = try env.value(u64, "TF_PREFILL_ROUTE", null, 0), .local_tps = try env.value(f64, "TF_PREFILL_LOCAL_TPS", null, 1500), .remote_tps = try env.value(f64, "TF_PREFILL_REMOTE_TPS", "", 1000) });
+    const d = Route.build(.{ .mode = try env.value(u64, "TF_PREFILL_ROUTE", null, 0), .local_tps = try env.value(f64, "TF_PREFILL_LOCAL_TPS", null, 1500), .remote_tps = try env.value(f64, "TF_PREFILL_REMOTE_TPS", "", 2000) });
     try t.expectEqual(route.Mode.auto, d.mode);
     try t.expectEqual((Route{}).local_tps.v, d.local_tps.v);
     try t.expectEqual((Route{}).remote_tps.v, d.remote_tps.v);
@@ -172,7 +171,7 @@ test "knobs: the route's knobs default to auto, the notes' rates and a breaker o
     const set = Route.build(.{
         .mode = try env.value(u64, "TF_PREFILL_ROUTE", "always", 0),
         .local_tps = try env.value(f64, "TF_PREFILL_LOCAL_TPS", "2000", 1500),
-        .remote_tps = try env.value(f64, "TF_PREFILL_REMOTE_TPS", " 3000.5", 1000),
+        .remote_tps = try env.value(f64, "TF_PREFILL_REMOTE_TPS", " 3000.5", 2000),
         .trip = try env.value(u64, "TF_PREFILL_BREAKER", "5", 3),
         .cooldown_s = try env.value(u64, "TF_PREFILL_COOLDOWN_S", " 7", 30),
         .timeout_s = try env.value(u64, "TF_PREFILL_TIMEOUT_S", "90", 0),
@@ -185,7 +184,7 @@ test "knobs: the route's knobs default to auto, the notes' rates and a breaker o
     try t.expectEqual(@as(u64, 90), set.timeout_s);
     try t.expectError(error.InvalidEnvironment, env.value(u64, "TF_PREFILL_ROUTE", "sometimes", 0));
     try t.expectError(error.InvalidEnvironment, env.value(f64, "TF_PREFILL_LOCAL_TPS", "0", 1500));
-    try t.expectError(error.InvalidEnvironment, env.value(f64, "TF_PREFILL_REMOTE_TPS", "fast", 1000));
+    try t.expectError(error.InvalidEnvironment, env.value(f64, "TF_PREFILL_REMOTE_TPS", "fast", 2000));
     try t.expectError(error.InvalidEnvironment, env.value(u64, "TF_PREFILL_COOLDOWN_S", "0", 30));
 }
 
@@ -332,7 +331,7 @@ fn twoPrompts(mode: route.Mode) !struct { prefilled_ms: i64, fills: u32 } {
     var host = api.LaneHost.init(t.allocator, t.io, &core, .{ .lanes = 2 });
     var pair: Pair = .{ .route = .{ .mode = mode } };
     // 6 token prompts, a pull of 4: at 5 tokens a second an idle pair is faster, a busy one not worth waiting for
-    pair.route.local_tps = .{ .v = 5 };
+    pair.route = .{ .mode = mode, .local_tps = .{ .v = 5 }, .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } };
     host.remote = pair.source();
     try host.start();
     defer host.stop();
