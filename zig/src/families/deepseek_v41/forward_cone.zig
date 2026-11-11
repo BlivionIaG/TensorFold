@@ -1,4 +1,4 @@
-//! Cone prefill (TF_DSV41_CONE=1): encoder layers over every prompt row, the decoder layers over the cone's last rows.
+//! Cone prefill (TF_DSV41_CONE, on by default): encoder layers over every prompt row, the decoder layers over the cone's last rows.
 const std = @import("std");
 const mtl = @import("metal");
 const ced = @import("ced.zig");
@@ -68,7 +68,7 @@ pub fn active(m: *Model) bool {
 
 fn enabled(m: *Model) bool {
     if (m.cone.on) |v| return v;
-    return configure(m, @import("sys").environment.read(u32, "TF_DSV41_CONE", 0) catch 0);
+    return configure(m, @import("sys").environment.read(u32, "TF_DSV41_CONE", 2) catch 2);
 }
 
 /// Set the cone mode (0 off, 1 one replay program, 2 layer groups); on only where the cone rule covers the config.
