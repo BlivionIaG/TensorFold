@@ -15,6 +15,7 @@ pub const format = @import("format.zig");
 pub const disk = @import("disk.zig");
 pub const Disk = disk.Disk;
 pub const jobs = @import("jobs.zig");
+pub const rank_narrow = @import("rank_narrow.zig");
 pub const restore = @import("restore.zig");
 pub const store = @import("store.zig");
 pub const Store = store.Store;
@@ -32,6 +33,7 @@ test {
     _ = lanes;
     _ = format;
     _ = disk;
+    _ = rank_narrow;
     _ = jobs;
     _ = store;
     _ = @import("disk_test.zig");
