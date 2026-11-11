@@ -1,4 +1,4 @@
-//! TF_DSV41_CONE_CHECK=<sizes>: the cone prefill against the full path on slot 0 (logits, kept state, greedy ids, time).
+//! TF_DSV41_CONE_CHECK=<sizes>: the cone prefill against the full path on slot 0 (logits, kept state, ids, time).
 const std = @import("std");
 const tf = @import("tensorfold");
 const ds = tf.deepseek_v41;
