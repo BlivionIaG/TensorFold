@@ -23,7 +23,7 @@ pub fn recall(s: *Store, prompt: []const u32, born: u32, starts: []const u32, sp
     }
     if (bytes > s.budget) return have;
     const e = s.gpa.create(Entry) catch return have;
-    e.* = .{ .tokens = &.{}, .at = m.at, .saved = undefined, .bytes = bytes, .born = born, .used = s.clock, .last = &.{}, .shared = true };
+    e.* = .{ .tokens = &.{}, .at = m.at, .saved = undefined, .bytes = bytes, .born = born, .used = s.clock, .seen = .of(s, m.tokens, &.{}, m.starts, m.at), .last = &.{}, .shared = true };
     e.tokens = s.gpa.dupe(u32, m.tokens) catch return drop(s, e, have, false);
     e.last = s.gpa.dupe(u32, prompt) catch return drop(s, e, have, false);
     const key = m.key;

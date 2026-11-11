@@ -392,7 +392,7 @@ test "a prefix restored from a heap image continues like the state it was copied
     for (std.mem.bytesAsSlice(f32, f32s.contents()[0 .. 2 * 512 * 4 * 8])) |*v| v.* = rnd.floatNorm(f32);
     for (std.mem.bytesAsSlice(u16, weight.contents()[0..1024])) |*v| v.* = bf(1.0);
 
-    // The prefix: FP4 main rows and FP8-scaled index rows into owner 0, the window ring of layer 2, one carried raw row.
+    // The prefix: FP4 main rows and FP8-scaled index rows into owner 0, layer 2's window ring, one carried raw row.
     {
         const src = try from.source(2, 2);
         const cb = queue.commandBuffer();

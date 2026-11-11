@@ -102,7 +102,7 @@ pub const Host = struct {
     }
 };
 
-/// The reply's state at `stands` (its end or one short), born with its request's prompt: that request's marks stay.
+/// The reply-end snapshot, retaining a matching pre-reply cache state too when both fit; its marks stay.
 fn keepEnd(store: *pc.Store, keep_remote: bool, gpa: Allocator, s: *lanes.Stream, stands: u32) void {
     if (s.reuse.remote and !s.reuse_failed and !keep_remote) return; // on another machine's prefix: only with TF_PREFILL_KEEP
     const prompt: u32 = @intCast(s.prompt_len);
@@ -114,6 +114,13 @@ fn keepEnd(store: *pc.Store, keep_remote: bool, gpa: Allocator, s: *lanes.Stream
     const keyed = if (s.key.len == prompt) gpa.dupe(u32, tokens) catch return else tokens;
     defer if (keyed.ptr != tokens.ptr) gpa.free(keyed);
     if (keyed.ptr != tokens.ptr) @memcpy(keyed[0..prompt], s.key);
+    // Keep the history too when both copies fit; otherwise the reply end keeps its ordinary priority.
+    const history = if (s.history_len > 0) store.find(keyed[0..@min(keyed.len, @as(usize, s.history_len) + 1)], s.chunks, spans) else null;
+    const pin = if (history) |e| if (@import("qwen27_resume.zig").pinReplyHistory(store, e, s.history_len, stands)) e else null else null;
+    if (pin) |e| e.borrowers += 1;
+    defer if (pin) |e| {
+        e.borrowers -= 1;
+    };
     store.keep_remote = s.reuse.remote and !s.reuse_failed; // a turn resuming it is remote too (#1594 step 2b)
     defer store.keep_remote = false;
     _ = store.keepBorn(keyed, prompt, stands, s, s.chunks, spans);
@@ -262,32 +269,7 @@ test "--prompt-cache-gib 40: a later 192k-token slot takes its room back from ke
 }
 
 test "a reply's end is born with its request's prompt (the history mark it kept outlives it), and on a pulled prefix is kept only with TF_PREFILL_KEEP, marked remote" {
-    const gpa = std.testing.allocator;
-    const at: u32 = 5000; // a history mark at 5000 tokens, then a 7-token generation prompt and a 100-token reply
-    var fake: FakeStates = .{};
-    var store = pc.Store.init(gpa, .{ .ptr = &fake, .vtable = &.{ .bytes = FakeStates.bytes, .save = FakeStates.save, .restore = FakeStates.restore, .drop = FakeStates.drop } }, .{ .warm = .on }, (3 * at + 100) << 16);
-    defer store.deinit();
-    var other: [at + 7]u32 = undefined; // another conversation's prompt, its history kept first
-    for (&other, 0..) |*t, i| t.* = @intCast(i);
-    try std.testing.expect(store.keep(&other, at, null, &.{}, &.{}));
-    var tokens: [at + 107]u32 = undefined;
-    for (&tokens, 0..) |*t, i| t.* = @intCast(1_000_000 + i);
-    const prompt = tokens[0 .. at + 7];
-    try std.testing.expect(store.keep(prompt, at, null, &.{}, &.{}));
-    var s = try lanes.Stream.init(gpa, .{ .id = "reply", .prompt = prompt, .max_new = 100 });
-    defer s.deinit(gpa);
-    try s.context.appendSlice(gpa, tokens[at + 7 ..]);
-    keepEnd(&store, false, gpa, &s, tokens.len); // three states pass the budget: the least recently used goes
-    try std.testing.expect(store.find(&other, &.{}, &.{}) == null);
-    const history = store.find(prompt, &.{}, &.{}) orelse return error.HistoryEvicted; // a regenerate resumes it
-    try std.testing.expectEqual(at, history.at);
-    try std.testing.expectEqual(@as(u32, at + 7), store.entries.items[1].born);
-    try std.testing.expectEqual(@as(usize, 2), fake.live);
-    s.reuse.remote = true; // a reply on a pulled prefix (#1594 step 2b): with TF_PREFILL_KEEP off, never kept
-    keepEnd(&store, false, gpa, &s, tokens.len - 1);
-    try std.testing.expectEqual(@as(u64, 3), store.counts.kept);
-    keepEnd(&store, true, gpa, &s, tokens.len - 1); // with it on, kept and marked remote
-    try std.testing.expect(store.entries.items[store.entries.items.len - 1].remote and !store.keep_remote);
+    try @import("qwen27_remote_keep_test.zig").exercise(keepEnd, FakeStates);
 }
 
 /// Memory the slots past the ready ones take on first use: their K/V rows and taps rings.
@@ -439,14 +421,15 @@ pub fn attach(parent: Allocator, io: std.Io, model: *q.model.Model, drafter: ?*q
         if (model.ane) |share| share.footprint_growth = platform.memory_policy.growth(before, cache_fit.footprint());
     }
     ane.end();
-    // slot 0's rewind point where the cache cannot keep a whole context, wired before the cache's budget is read
+    // Slot 0's history rewind when two full-context copies do not fit, wired before cache sizing.
     const rewind_room = laterRoom(h);
-    if (slot_state.rewindInit(h.back, rewind_room, if (o.cache_gib) |g| gibBytes(g) else @min(rewind_room, cache_fit.DEFAULT_CEILING))) |buf| if (h.resident) |*r| r.addNow(&.{buf});
+    if (slot_state.rewindInit(h.back, rewind_room, if (o.cache_gib) |g| gibBytes(g) else cache_fit.defaultBudget(rewind_room))) |buf| if (h.resident) |*r| r.addNow(&.{buf});
     try enableCache(h, o.cache_gib, o.cache_over_cap, a, why);
     errdefer if (h.cache) |*store| store.deinit();
     if (o.learn) |l| try disk.attach(h, io, a, l);
     errdefer if (h.cache) |*store| if (store.disk) |r| r.deinit();
-    h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
+    // a wide prompt pass commits its buffers at once: the probe keeps the sets in use while it runs
+    h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick, .probe = mtl.keepalive.Target.busy };
     try remote.attach(h, io, a, o.remote, o.remote_id, .{ .ctx = h.back, .at = slot_state.resumeAt }, why); // --prefill-from
     errdefer if (h.link) |l| l.stop(h.gpa);
     if (h.trace) |*t| t.enabled = true; // serving rounds count from here: measure() timed whole, unsplit buffers
@@ -531,7 +514,7 @@ pub fn cacheRules(chunk: u32) pc.Rules {
     return .{ .warm = .on, .chunk = chunk, .chunk_marks = false };
 }
 
-/// Prompt reuse in up to 16 GiB of what 70% of RAM leaves once every slot has its memory; CacheOverCap: `why` says why.
+/// Prompt reuse from room under the memory cap once slot memory is counted; CacheOverCap explains the refusal.
 fn enableCache(h: *Host, gib: ?f64, over: bool, a: Allocator, why: *[]const u8) !void {
     const later = try laterFootprint(h);
     const plan = try cache_fit.budgetBeside(gib, over, room(h.model) -| later, later, a, why, "");
@@ -594,4 +577,13 @@ test "Qwen27 interior state uses a guaranteed cold request cut" {
     const followup = try store.beginUser(a, tokens, @intCast(tokens.len - 8), 16, @intCast(tokens.len - 8), &.{}, starts.items, null, &.{});
     try std.testing.expectEqual(@as(u32, 129024), followup.from);
     try std.testing.expect(store.held <= store.budget);
+}
+
+test "qwen27 reply cache: warm work preserves both client histories within rounded budgets" {
+    const Local = struct {
+        fn keep(store: *pc.Store, gpa: Allocator, s: *lanes.Stream, stands: u32) void {
+            keepEnd(store, false, gpa, s, stands);
+        }
+    };
+    try @import("qwen27_reply_cache_test.zig").exercise(Local.keep, slot_state.opening);
 }
