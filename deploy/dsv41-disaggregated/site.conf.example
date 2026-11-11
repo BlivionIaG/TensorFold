@@ -1,0 +1,64 @@
+# Site file for render.sh: KEY=value, the value is the rest of the line (no quotes). Keep one file per machine; keys a
+# target does not use are ignored. Every value below is a stand-in: replace it.
+
+# --- every machine
+TF_USER=serviceuser
+LINK_NAME=tfkv
+LIBEXEC=/usr/local/libexec/tensorfold
+# the mcdma-rpcd binary (MCDMA's `make -C rpc`)
+RPCD=/opt/mcdma/build/rpc/mcdma-rpcd
+# the exchange's UDP port, the same on both ends
+EXCHANGE_PORT=18620
+# this machine's own LAN interface (head: the producer's; mac: the Mac's)
+LAN_IF=LAN_NETDEV
+
+# --- pair machines (target head and worker)
+# the engine's install prefix (bin/, lib/, tp_mailbox.fatbin), its kernel assets, Engram shards and state directory
+TF_PREFIX=/opt/tensorfold/engine
+TF_ASSETS=/opt/tensorfold/assets
+TF_ENGRAM=/opt/tensorfold/engram-tp2
+TF_STATE=/var/lib/tensorfold/prefill
+# the checkpoint directory ON THIS MACHINE (the two machines may keep it in different places)
+MODEL=/opt/tensorfold/checkpoint
+# the directory holding libnccl.so.2
+NCCL_LIB_DIR=/opt/tensorfold/lib
+# the TP pair: rank 0's address on the pair's own link, and the pair's two RoCE devices (exact-match NCCL pin)
+TP_MASTER_ADDR=TP_LINK_ADDRESS_OF_RANK_0
+PAIR_DEV_A=PAIR_ROCE_DEVICE_A
+PAIR_DEV_B=PAIR_ROCE_DEVICE_B
+# the production unit the pair units conflict with
+PROD_UNIT=production-serving.service
+# the port cabled to the Mac, its second PCIe-domain name (or empty), and the Mac's CX5 interface cabled to it
+PEER_IF=MAC_FACING_NETDEV
+PEER_IF_EXTRA=
+MAC_GID=MAC_CX5_LINK_LOCAL_ADDRESS
+MAC_HWADDR=MAC_CX5_MAC_ADDRESS
+
+# --- target head only (rank 0 and the listen daemon)
+BIND_ADDR=ADDRESS_TO_BIND
+PORT=8000
+API_KEY_FILE=/var/lib/tensorfold/prefill/http-api.key
+# the RDMA device of the Mac-facing port and the index of its RoCE v2 link-local GID
+PEER_DEV=MAC_FACING_RDMA_DEVICE
+PEER_GID_INDEX=1
+# the Mac's LAN link-local address (the exchange runs on the LAN, not on the cable)
+MAC_LAN_LL=MAC_LAN_LINK_LOCAL_ADDRESS
+
+# --- target mac
+TF_GROUP=staff
+TF_HOME=SERVICE_USER_HOME_DIRECTORY
+LOG_DIR=/var/log/tensorfold
+PYTHON3=/usr/bin/python3
+MCDMA_DIR=/opt/mcdma
+# space-separated IF,MAC,PEER_GID,PEER_MAC, one per CX5 interface with a cable
+PD_LINKS=mcrdma0,MAC_CX5_MAC_ADDRESS,PEER_LINK_LOCAL_ADDRESS,PEER_MAC_ADDRESS
+# the CX5 RDMA device of the cable to the producer, and the producer's LAN link-local address
+MAC_DEV=rdma_mcrdma0
+PRODUCER_LAN_LL=PRODUCER_LAN_LINK_LOCAL_ADDRESS
+PRODUCER_URL=http://PRODUCER_HOST:8000
+TF_NATIVE=/opt/tensorfold/bin/tensorfold-native
+PACK=/opt/tensorfold/pack
+ENGRAM_STREAM=/opt/tensorfold/engram
+KEY_FILE=/opt/tensorfold/http-api.key
+CONTEXT=32768
+LOAD_LIMIT_GB=240

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- LaunchDaemon (system domain, root): restores the CX5 interfaces' addresses and static neighbours at boot.
+     It only reads and sets local interface state, so it needs no Local Network access. Runs once; a failure retries. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.tensorfold.pd-restore-links</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>@LIBEXEC@/tf-pd-restore-links</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PD_LINKS</key>
+        <string>@PD_LINKS@</string>
+        <key>PD_RESTORE_PY</key>
+        <string>@MCDMA_DIR@/tools/restore-rdma.py</string>
+        <key>PD_PYTHON3</key>
+        <string>@PYTHON3@</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>@LOG_DIR@/restore-links.log</string>
+    <key>StandardErrorPath</key>
+    <string>@LOG_DIR@/restore-links.log</string>
+</dict>
+</plist>
