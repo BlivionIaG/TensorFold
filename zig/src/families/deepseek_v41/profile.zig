@@ -11,7 +11,9 @@ pub const Profile = struct {
     path: []const u8,
     events: std.ArrayList(cuda.Event) = .empty,
     /// this window's calls: name and the index of its start event
-    open: std.ArrayList(struct { name: []const u8, at: usize }) = .empty,
+    open: std.ArrayList(struct { name: []const u8, at: usize, layer: u32 }) = .empty,
+    /// the layer position within the open window (calls begin .layer at each layer after the first)
+    layer: u32 = 0,
     used: usize = 0,
     totals: std.StringArrayHashMapUnmanaged(Total) = .empty,
     windows: u64 = 0,
@@ -115,8 +117,9 @@ pub const Profile = struct {
     /// Before a call: its start event on the stream.
     pub fn before(p: *Profile, s: cuda.Stream, c: *const calls.Call) !void {
         const at = p.used;
+        if (c.begin == .window) p.layer = 0 else if (c.begin == .layer) p.layer += 1;
         try (try p.event()).record(s);
-        try p.open.append(p.gpa, .{ .name = c.name, .at = at });
+        try p.open.append(p.gpa, .{ .name = c.name, .at = at, .layer = p.layer });
     }
 
     /// After a call: its end event.
@@ -147,6 +150,15 @@ pub const Profile = struct {
             g.value_ptr.calls += 1;
             g.value_ptr.ns += ns;
             if (p.prefill) p.pf.gpu_ns += ns else p.gpu_ns += ns;
+            var kb: [24]u8 = undefined;
+            const lk = std.fmt.bufPrint(&kb, "layer.{d:0>2}", .{o.layer}) catch continue;
+            const lg = try map.getOrPut(p.gpa, lk);
+            if (!lg.found_existing) {
+                lg.key_ptr.* = try p.gpa.dupe(u8, lk);
+                lg.value_ptr.* = .{};
+            }
+            lg.value_ptr.calls += 1;
+            lg.value_ptr.ns += ns;
         }
         p.prefill = false;
     }
