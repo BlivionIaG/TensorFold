@@ -23,6 +23,7 @@ test {
     _ = sess;
     _ = @import("session_slots_test.zig");
     _ = @import("resend_test.zig");
+    _ = @import("sched_slice_test.zig");
     _ = sched;
     _ = progress;
 }

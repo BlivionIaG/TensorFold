@@ -19,9 +19,10 @@ pub fn snapshotPoint(n: u64) u64 {
     return if (n > 0) (n - 1) / grid * grid else 0;
 }
 
-/// A piece of t s is followed by >= t (1 - share) / share s (and a round) of decode; none decoding: no wait.
+/// A piece of t s is followed by >= t (1 - share) / share s of decode, or `slice_s` s when set; none decoding: no wait.
 pub const Fairness = struct {
     share: f64 = 0.5,
+    slice_s: f64 = 0.0,
     debt: f64 = 0.0,
     rounds: u64 = 1,
 
@@ -32,7 +33,7 @@ pub const Fairness = struct {
 
     pub fn after(f: *Fairness, piece_s: f64, round_s: f64, prefilling: bool) void {
         if (piece_s > 0.0) {
-            f.debt = @max(f.debt, 0.0) + piece_s * (1.0 - f.share) / f.share;
+            f.debt = @max(f.debt, 0.0) + (if (f.slice_s > 0.0) f.slice_s else piece_s * (1.0 - f.share) / f.share);
             f.rounds = 0;
         }
         if (round_s > 0.0) {
@@ -170,6 +171,7 @@ pub const Settings = struct {
     rows: u64 = 2048, // TF_DSV41_PREFILL_ROWS: rows of prompt a round (the forward's segment)
     short: u64 = 512, // TF_DSV41_BATCH_SHORT: prompts with at most this many tokens left go every round
     share: f64 = 0.5, // TF_DSV41_PREFILL_SHARE
+    interleave_ms: u64 = 0, // TF_DSV41_PREFILL_INTERLEAVE_MS: decode ms after each piece, not the share
     long_prompt: u64 = 32768, // TF_DSV41_LONG_PROMPT / TF_DSV41_PREFILL_CONCURRENT (0: no limit)
     concurrent: u64 = 1,
     session_min: u64 = 64, // shorter prompts are not snapshotted
@@ -183,6 +185,7 @@ pub const Settings = struct {
         if (try envInt("TF_DSV41_PREFILL_ROWS")) |v| s.rows = v;
         if (try envInt("TF_DSV41_BATCH_SHORT")) |v| s.short = v;
         if (try envFloat("TF_DSV41_PREFILL_SHARE")) |v| s.share = v;
+        if (try envInt("TF_DSV41_PREFILL_INTERLEAVE_MS")) |v| s.interleave_ms = v;
         if (try envInt("TF_DSV41_LONG_PROMPT")) |v| s.long_prompt = v;
         if (try envInt("TF_DSV41_PREFILL_CONCURRENT")) |v| s.concurrent = v;
         if (!(s.share > 0.0 and s.share <= 1.0) or s.long_prompt < 1) return error.BadSettings;
@@ -325,7 +328,7 @@ pub const Planner = struct {
     mem_since: std.AutoHashMapUnmanaged(usize, f64) = .empty, // a request the floor holds back: since when (seconds)
 
     pub fn init(gpa: std.mem.Allocator, s: Settings) Planner {
-        return .{ .gpa = gpa, .s = s, .fair = .{ .share = s.share } };
+        return .{ .gpa = gpa, .s = s, .fair = .{ .share = s.share, .slice_s = @as(f64, @floatFromInt(s.interleave_ms)) / 1000.0 } };
     }
 
     pub fn deinit(p: *Planner) void {

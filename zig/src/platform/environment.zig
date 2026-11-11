@@ -151,6 +151,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_DSV41_GRAPH_COST_MIB", .scope = .dsv41, .kind = .real, .forms = "a finite MiB amount of at least 0" },
     .{ .name = "TF_DSV41_EXPERT_TOPP", .scope = .dsv41, .kind = .signed_real, .forms = "a finite number" },
     .{ .name = "TF_DSV41_PREFILL_SHARE", .scope = .dsv41, .kind = .positive_real, .trim = " ", .max = 1, .forms = "a finite share greater than 0 and at most 1" },
+    .{ .name = "TF_DSV41_PREFILL_INTERLEAVE_MS", .scope = .dsv41, .kind = .u64, .trim = " ", .max = 60000, .forms = "a whole millisecond count from 0 to 60000" },
     .{ .name = "TF_DSV41_FLOOR_GIB", .scope = .dsv41, .kind = .positive_real, .trim = " ", .forms = "a finite GiB amount greater than 0" },
     .{ .name = "TF_DSV41_FLOOR_PF_CHUNK_GIB", .scope = .dsv41, .kind = .real, .trim = " ", .forms = "a finite GiB amount of at least 0" },
     .{ .name = "TF_DSV41_FLOOR_PF_INDEX_GIB", .scope = .dsv41, .kind = .real, .trim = " ", .forms = "a finite GiB amount of at least 0" },
