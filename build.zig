@@ -259,6 +259,7 @@ pub fn build(b: *std.Build) void {
     @import("zig/build/qwen35_layers.zig").wire(b, test_step);
     @import("zig/build/hipprof.zig").steps(b, target, optimize, test_step); // before dev_tools: it lists the tf-* steps declared so far
     @import("zig/build/vega_tools.zig").steps(b, target, optimize, test_step);
+    @import("zig/build/vega_toolchain.zig").steps(b, target, optimize, test_step);
     @import("zig/build/expert_cache_sim.zig").steps(b, target, optimize, test_step);
     @import("zig/build/dev_tools.zig").wire(b, target);
     @import("zig/build/profile.zig").wire(b, test_step);
