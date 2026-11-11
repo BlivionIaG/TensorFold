@@ -119,6 +119,18 @@ test "TF_DSV41_PROMPT_TAIL: Python's server splits a prompt at its last token, F
     }
 }
 
+test "TF_DSV41_REPLAY_OVERLAP: on unless 0, exactly 0 or 1" {
+    Fake.pairs = &.{};
+    defer Fake.pairs = &.{};
+    try testing.expect(try pk.replayOverlap(&Fake.get));
+    Fake.pairs = &.{.{ "TF_DSV41_REPLAY_OVERLAP", "0" }};
+    try testing.expect(!(try pk.replayOverlap(&Fake.get)));
+    Fake.pairs = &.{.{ "TF_DSV41_REPLAY_OVERLAP", "1" }};
+    try testing.expect(try pk.replayOverlap(&Fake.get));
+    Fake.pairs = &.{.{ "TF_DSV41_REPLAY_OVERLAP", "2" }};
+    try testing.expectError(error.InvalidEnvironment, pk.replayOverlap(&Fake.get));
+}
+
 fn widths(a: std.mem.Allocator) !block.Widths {
     var w: block.Widths = .{};
     try check.parseDense(a, &w, @embedFile("fixtures/dense-k2.txt"));
