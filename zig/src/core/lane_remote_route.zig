@@ -80,9 +80,9 @@ pub const Route = struct {
     ends: u64 = 0,
     /// this machine's prompt tokens a second (seed: 1500, the served Metal cone prefill)
     local_tps: Rate = .{ .v = 1500 },
-    /// a pull's prefix tokens a second, end to end (seed: 2000, the exact replay export, 1.9k to 2.5k measured)
+    /// a pull's prefix tokens a second, end to end (seed: 2000, the exact replay export)
     remote_tps: Rate = .{ .v = 2000 },
-    /// the Mac's pass after the pull, in seconds: restore, the last token, its first reply (seed: 0.6, measured 0.6 s at 16k)
+    /// the Mac's pass after the pull, in seconds: restore, the last token, its first reply (seed: 0.6)
     tail_s: Rate = .{ .v = 0.6 },
     /// closed, open or half-open: failures of the pair or its link keep prompts here for a cool-down
     breaker: breaker.Breaker = .{},

@@ -16,7 +16,7 @@ fn weigh(r: *Route, now: u64, len: u64, decoding: u32) Verdict {
     return r.weigh(now, .{ .len = len, .cached = 0, .decoding = decoding }, len - 1);
 }
 
-/// A route with the old seeds (950 a second here, 1000 a pull, 1 s of tail), for the tests whose numbers are written for them.
+/// A route with the old seeds (950 and 1000 a second, 1 s of tail), for the tests whose numbers are written for them.
 fn slowMac() Route {
     return .{ .local_tps = .{ .v = 950 }, .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } };
 }
