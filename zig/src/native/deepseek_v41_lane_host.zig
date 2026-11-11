@@ -221,6 +221,8 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         std.log.err("handoff-check: did not complete: {s}", .{@errorName(err)});
     if (std.c.getenv("TF_DSV41_KROW_CHECK") != null) krowCheck(model_ptr) catch |err|
         std.log.err("krow: the check did not run: {s}", .{@errorName(err)});
+    if (std.c.getenv("TF_LS_CHECK")) |spec| @import("deepseek_v41_layersplit_check.zig").runCheck(gpa, io, model_ptr, std.mem.span(spec)) catch |err|
+        std.log.err("layersplit-check: did not complete: {s}", .{@errorName(err)});
     return .{ .engine = h.host.engine(), .close = close, .ctx = h };
 }
 

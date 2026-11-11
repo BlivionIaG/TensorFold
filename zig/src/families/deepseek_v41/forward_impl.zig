@@ -153,11 +153,16 @@ pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         }
         try engram.encodeCommit(enc, &p.engram, ws.view(.ids), ws.view(.token_map), null, try ws.historyView(slot), rows);
     }
-    ops.encodeEmbedding(enc, &p.ops, ws.view(.ids), tensor(m.weights.embed), ws.view(.collapsed), .{ .rows = rows, .width = 5120, .table_stride = 5120, .y_stride = 5120, .copies = 1 });
-    enc.barrier();
-    mhc.encodeExpand(enc, &p.mhc, ws.view(.collapsed), ws.view(.stream), ws.view(.previous_pre), .{ .rows = rows, .width = 5120, .x_stride = 5120, .stream_stride = 20480 });
-    enc.barrier();
-    hid.record(enc, &p.ops, m.streamView(), rows, .embed, 0);
+    if (m.gate.entry_dir) |_| {
+        if (segs.len != 1) return error.GateStop;
+        try m.gate.loadEntry(ws.view(.stream), ws.view(.previous_pre), segs[0].p0, rows);
+    } else {
+        ops.encodeEmbedding(enc, &p.ops, ws.view(.ids), tensor(m.weights.embed), ws.view(.collapsed), .{ .rows = rows, .width = 5120, .table_stride = 5120, .y_stride = 5120, .copies = 1 });
+        enc.barrier();
+        mhc.encodeExpand(enc, &p.mhc, ws.view(.collapsed), ws.view(.stream), ws.view(.previous_pre), .{ .rows = rows, .width = 5120, .x_stride = 5120, .stream_stride = 20480 });
+        enc.barrier();
+        hid.record(enc, &p.ops, m.streamView(), rows, .embed, 0);
+    }
     var asegs: [8]attention.Seg = undefined;
     {
         var at: u32 = 0;
@@ -167,6 +172,19 @@ pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         }
     }
     for (&m.weights.layers, 0..) |*layer, index| {
+        if (m.gate.entry_dir != null and index < m.gate.k) continue;
+        if (m.gate.stop_dir != null and index == m.gate.stop_k) {
+            if (logits != .none or segs.len != 1) return error.GateStop;
+            if (m.pending_expand) {
+                const cur = m.streamView();
+                const nxt = if (m.stream_alt) ws.view(.stream) else ws.view(.stream_next);
+                mhc.encodePost(enc, &p.mhc, ws.view(.branch), cur, ws.view(.post), ws.view(.comb), nxt, .{ .rows = rows, .width = 5120, .branch_stride = 5120, .residual_stride = 20480, .y_stride = 20480 });
+                m.stream_alt = !m.stream_alt;
+                m.pending_expand = false;
+                enc.barrier();
+            }
+            break;
+        }
         if (pipe_layers != 0 and index == pipe_layers) {
             enc.end();
             e.commit();
@@ -429,6 +447,7 @@ pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     e.wait();
     const host_done: u64 = nowNs();
     try completed(e);
+    if (m.gate.stop_dir != null) try m.gate.dumpStop(m.streamView(), ws.view(.previous_pre), segs[0].p0, rows);
     hid.report();
     scan_probe.report();
     if (pipe_prev_set) {
