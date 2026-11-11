@@ -51,7 +51,7 @@ pub const Session = struct {
     feedv: fd.Feed,
     announced: bool = false,
     abort: std.atomic.Value(bool) = .init(false),
-    state: std.atomic.Value(u8) = .init(@intFromEnum(fd.State.pulling)),
+    state: std.atomic.Value(u8) = .init(@backingInt(fd.State.pulling)),
     first_row_ns: std.atomic.Value(u64) = .init(0),
     rows_ns: std.atomic.Value(u64) = .init(0),
     state_ns: std.atomic.Value(u64) = .init(0),
@@ -86,7 +86,7 @@ pub const Session = struct {
     }
 
     fn fail(s: *Session) void {
-        s.state.store(@intFromEnum(fd.State.failed), .release);
+        s.state.store(@backingInt(fd.State.failed), .release);
         s.stage.fail();
         s.abort.store(true, .release);
     }
@@ -114,7 +114,7 @@ pub const Session = struct {
         return self(p).stage.available();
     }
 
-    fn rows(p: *anyopaque, row0: u64, n: u64) []const u8 {
+    fn rowsOf(p: *anyopaque, row0: u64, n: u64) []const u8 {
         return self(p).stage.slice(row0, n);
     }
 
@@ -128,7 +128,7 @@ pub const Session = struct {
     }
 
     fn stateOf(p: *anyopaque) fd.State {
-        return @enumFromInt(self(p).state.load(.acquire));
+        return @fromBackingInt(@intCast(self(p).state.load(.acquire)));
     }
 
     fn pullOf(p: *anyopaque) fd.Pull {
@@ -151,7 +151,7 @@ pub const Session = struct {
         s.done.store(true, .release);
     }
 
-    const vtable: fd.Feed.VTable = .{ .ready = ready, .rows = rows, .wait = wait, .state = stateOf, .pull = pullOf, .snapshot = snapshot, .finish = finish };
+    const vtable: fd.Feed.VTable = .{ .ready = ready, .rows = rowsOf, .wait = wait, .state = stateOf, .pull = pullOf, .snapshot = snapshot, .finish = finish };
 };
 
 /// The trigger on its own thread: it returns when the pair has finished its prefill, the pull runs meanwhile.
@@ -190,7 +190,7 @@ pub fn run(spec: Spec, prompt: []const u32, upto: u64, gone: *const std.atomic.V
     if (pulled) |n| {
         s.bytes.store(n, .release);
         landed(s, prompt) catch s.fail();
-        if (s.state.load(.acquire) != @intFromEnum(fd.State.failed)) s.state_ns.store(s.since(), .release);
+        if (s.state.load(.acquire) != @backingInt(fd.State.failed)) s.state_ns.store(s.since(), .release);
     } else |err| {
         if (err == error.Refused and reason.len > 0) std.log.warn("layer split: the pair refused ({s})", .{reason.text()});
         s.fail();
@@ -199,8 +199,13 @@ pub fn run(spec: Spec, prompt: []const u32, upto: u64, gone: *const std.atomic.V
     // the trigger returns once the pair is done (or the pull's failure cut it short through `gone`)
     thread.join();
     outcome.* = if (trig.result) |_| .ok else |err| if (remote.pairDown(err)) .down else .other;
-    const trigger_err = if (trig.result) |_| null else |err| err;
-    const pull_err = if (pulled) |_| null else |err| err;
+    var failure: ?anyerror = null; // the trigger's error tells more than the pull's abort it caused
+    trig.result catch |err| {
+        failure = err;
+    };
+    if (failure == null) _ = pulled catch |err| {
+        failure = err;
+    };
     // the engine ends the feed; a pass that never began (the request went) is ended by `gone`
     const deadline = fabric.words.nowNs() + (limit_s + 60) * std.time.ns_per_s;
     while (s.announced and !s.done.load(.acquire)) { // a feed never announced never reached the engine
@@ -219,7 +224,7 @@ pub fn run(spec: Spec, prompt: []const u32, upto: u64, gone: *const std.atomic.V
         std.log.info("layer split: {d} rows at cut {d}: first row {d:.0} ms, last {d:.0} ms, state {d:.0} ms; Mac waited {d:.0} ms, computed {d:.0} ms", .{ upto, s.cut, ms(s.first_row_ns.load(.acquire)), ms(s.rows_ns.load(.acquire)), ms(total), ms(s.stats.wait_ns), ms(s.stats.compute_ns) });
         return;
     }
-    if (trigger_err orelse pull_err) |err| return err;
+    if (failure) |err| return err;
     return error.SplitFailed;
 }
 
@@ -227,7 +232,7 @@ pub fn run(spec: Spec, prompt: []const u32, upto: u64, gone: *const std.atomic.V
 fn landed(s: *Session, prompt: []const u32) !void {
     _ = try s.landing.complete();
     try s.model.snapshotSeal(s.snap, prompt[0..@intCast(s.upto)], @intCast(s.upto));
-    s.state.store(@intFromEnum(fd.State.landed), .release);
+    s.state.store(@backingInt(fd.State.landed), .release);
 }
 
 fn ms(ns: u64) f64 {
