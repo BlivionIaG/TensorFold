@@ -6,6 +6,7 @@ const Driver = @import("driver.zig").Driver;
 const Stream = @import("stream.zig").Stream;
 const registry = @import("graph_registry.zig");
 const quiet = @import("builtin").is_test; // a test's stderr is the build runner's channel
+const misses = @import("graph_cache_misses.zig");
 
 /// One step's launches on `stream`; it must not synchronize, allocate device memory or read the device on the host.
 pub const Body = struct {
@@ -75,6 +76,48 @@ pub const report_every = 256;
 pub const Snapshot = registry.Snapshot;
 pub const snapshots = registry.snapshots;
 
+pub const Stats = struct {
+    replayed: u64 = 0,
+    captured: u64 = 0, // every graph made: on the request path, and at boot (`precaptured`)
+    eager: u64 = 0,
+    evicted: u64 = 0,
+    dropped: u64 = 0,
+    floor_hits: u64 = 0,
+    capture_mib: f64 = 0,
+    misses: u64 = 0, // steps that found no graph: captured on the request path, or run eagerly
+    precaptured: u64 = 0,
+    request_capture_ns: u64 = 0, // host time the request path spent capturing, instantiating and uploading
+    precapture_ns: u64 = 0,
+};
+
+/// What `warm` did with a key (`full`: the cache is at its cap less the caller's reserve).
+pub const Warmed = enum { captured, held, full, no_room, off };
+
+/// `Cache.summary`'s counts as one log line fragment.
+pub const Summary = struct {
+    stats: Stats,
+    held: u32,
+    failed: bool,
+
+    pub fn format(s: Summary, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        const t = s.stats;
+        const ms = struct {
+            fn of(ns: u64) f64 {
+                return @as(f64, @floatFromInt(ns)) / 1e6;
+            }
+        }.of;
+        try w.print("{d} hits, {d} misses ({d} captured on the request path in {d:.1} ms, {d} eager), {d} pre-captured in {d:.1} ms, {d} keys held, {d} evicted, {d} dropped{s}", .{
+            t.replayed, t.misses, t.captured - t.precaptured, ms(t.request_capture_ns), t.eager, t.precaptured, ms(t.precapture_ns), s.held, t.evicted, t.dropped, if (s.failed) " (off after a failed capture)" else "",
+        });
+    }
+};
+
+fn nowNs() u64 {
+    var ts: std.c.timespec = undefined;
+    _ = std.c.clock_gettime(.MONOTONIC, &ts);
+    return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
+}
+
 pub fn Cache(comptime Key: type) type {
     return struct {
         const Self = @This();
@@ -96,7 +139,8 @@ pub fn Cache(comptime Key: type) type {
         under_eager: u64 = 0, // eager steps since `under` began
         slot: ?usize = null, // this cache's registry slot, claimed at its first step; null: every slot taken
         claimed: bool = false,
-        stats: struct { replayed: u64 = 0, captured: u64 = 0, eager: u64 = 0, evicted: u64 = 0, dropped: u64 = 0, floor_hits: u64 = 0, capture_mib: f64 = 0 } = .{},
+        stats: Stats = .{},
+        miss_log: misses.Log(Key) = .{},
 
         /// The cache with `settings.fromEnv()`: every rank sharing an `agree` must hold an equal `Settings.digest`.
         pub fn init(gpa: std.mem.Allocator, engine: Engine, settings: Settings) Self {
@@ -109,6 +153,7 @@ pub fn Cache(comptime Key: type) type {
             if (c.slot) |i| registry.release(i);
             c.dropAll();
             c.entries.deinit(c.gpa);
+            c.miss_log.deinit(c.gpa);
         }
 
         pub fn count(c: *const Self) usize {
@@ -148,7 +193,7 @@ pub fn Cache(comptime Key: type) type {
                 c.slot = registry.claim(c.name);
             }
             const i = c.slot orelse return;
-            registry.publish(i, .{ .held = @intCast(c.entries.count()), .captured = c.stats.captured, .replayed = c.stats.replayed, .eager = c.stats.eager, .floor_hits = c.stats.floor_hits, .under = c.under });
+            registry.publish(i, .{ .held = @intCast(c.entries.count()), .captured = c.stats.captured, .replayed = c.stats.replayed, .eager = c.stats.eager, .floor_hits = c.stats.floor_hits, .under = c.under, .misses = c.stats.misses, .precaptured = c.stats.precaptured, .request_capture_ns = c.stats.request_capture_ns });
         }
 
         fn avail(c: *const Self) ?f64 {
@@ -187,6 +232,7 @@ pub fn Cache(comptime Key: type) type {
                 c.stats.replayed += 1;
                 return .replayed;
             }
+            c.stats.misses += 1; // no graph from here: captured on the request path, or the step runs eagerly
             // a miss: room on every rank (a host map that cannot grow is none), else shed a quarter and lower the cap
             const reserved = if (c.entries.ensureUnusedCapacity(c.gpa, 1)) |_| true else |_| false;
             const room_here = reserved and (if (c.room) |f| f() else true);
@@ -212,28 +258,77 @@ pub fn Cache(comptime Key: type) type {
             }
             while (c.entries.count() >= c.cap) c.evictOldest();
             const before = c.avail();
+            const t0 = nowNs();
+            const exec = (try c.captureAgreed(key, stream, body)) orelse return c.eager(stream, body);
+            const took = nowNs() - t0;
+            c.entries.putAssumeCapacityNoClobber(key, .{ .exec = exec, .used = c.tick });
+            try c.engine.launch(c.engine.ctx, exec, stream);
+            c.stats.captured += 1;
+            c.stats.request_capture_ns += took;
+            c.noteCapture(key, took, before);
+            return .captured;
+        }
+
+        /// `key`'s body captured and every rank agreeing it was; null: some rank failed, so the cache is off and empty.
+        fn captureAgreed(c: *Self, key: Key, stream: Stream, body: Body) !?*anyopaque {
             const exec = c.engine.capture(c.engine.ctx, stream, body) catch |err| blk: {
                 // the only trace of why graphs went off (the step then runs eagerly, which may fail the same way)
                 if (!quiet) std.log.warn("graph capture failed: {s} (key {any}, {d} graphs held)", .{ @errorName(err), key, c.entries.count() });
                 break :blk null;
             };
-            var owned = exec; // freed here until the map holds it, so a failed agreement cannot leak it
-            defer if (owned) |x| c.engine.free(c.engine.ctx, x);
+            errdefer if (exec) |x| c.engine.free(c.engine.ctx, x); // a failed agreement cannot leak it
             if (!try c.agreed(exec != null)) {
+                if (exec) |x| c.engine.free(c.engine.ctx, x);
                 c.failed = true;
                 c.dropAll();
-                return c.eager(stream, body);
+                return null;
             }
-            c.entries.putAssumeCapacityNoClobber(key, .{ .exec = exec.?, .used = c.tick });
-            owned = null;
-            try c.engine.launch(c.engine.ctx, exec.?, stream);
+            return exec;
+        }
+
+        /// MemAvailable after a capture that began at `before`; `capture_mib` is what it cost this rank.
+        fn priced(c: *Self, before: ?f64) ?f64 {
+            const b = before orelse return null;
+            const a = c.avail() orelse return null;
+            c.stats.capture_mib = (b - a) * 1024;
+            return a;
+        }
+
+        /// A request-path capture's price, and its log line (the host ms it stalled the step) at each key's first.
+        fn noteCapture(c: *Self, key: Key, ns: u64, before: ?f64) void {
+            const after = c.priced(before);
+            if (!c.miss_log.first(c.gpa, key, c.stats.captured - c.stats.precaptured) or quiet) return;
+            const ms = @as(f64, @floatFromInt(ns)) / 1e6;
+            if (before != null and after != null) {
+                std.log.info("graph cache {s}: capture on the request path: key {any}: {d:.1} ms, {d} held, MemAvailable {d:.2} -> {d:.2} GiB ({d:.0} MiB)", .{ c.name, key, ms, c.entries.count(), before.?, after.?, c.stats.capture_mib });
+            } else std.log.info("graph cache {s}: capture on the request path: key {any}: {d:.1} ms, {d} held", .{ c.name, key, ms, c.entries.count() });
+        }
+
+        /// `key`'s graph captured, not run or launched (boot pre-capture): `full` within `reserve` of the cap.
+        pub fn warm(c: *Self, key: Key, stream: Stream, fingerprint: u64, body: Body, fits: bool, reserve: u32) !Warmed {
+            defer c.publish();
+            if (!c.settings.on or c.failed or c.settings.max == 0) return .off;
+            if (c.fingerprint != null and c.fingerprint.? != fingerprint) c.dropAll();
+            c.fingerprint = fingerprint;
+            if (c.entries.contains(key)) return .held;
+            if (c.entries.count() + reserve >= c.cap) return .full;
+            const reserved = if (c.entries.ensureUnusedCapacity(c.gpa, 1)) |_| true else |_| false;
+            if (!try c.agreed(reserved and fits and (if (c.room) |f| f() else true))) return .no_room;
+            const before = c.avail();
+            const t0 = nowNs();
+            const exec = (try c.captureAgreed(key, stream, body)) orelse return .off;
+            c.tick += 1;
+            c.entries.putAssumeCapacityNoClobber(key, .{ .exec = exec, .used = c.tick });
             c.stats.captured += 1;
-            // what a graph really costs this rank (the room rule prices it)
-            if (before) |b| if (c.avail()) |a| {
-                c.stats.capture_mib = (b - a) * 1024;
-                if (!quiet) std.log.info("graph cache {s}: captured, {d} held: MemAvailable {d:.2} -> {d:.2} GiB ({d:.0} MiB)", .{ c.name, c.entries.count(), b, a, c.stats.capture_mib });
-            };
+            c.stats.precaptured += 1;
+            c.stats.precapture_ns += nowNs() - t0;
+            _ = c.priced(before);
             return .captured;
+        }
+
+        /// The counts a cache logs at its end (`{f}`): hits and misses, what was captured where, what it holds.
+        pub fn summary(c: *const Self) Summary {
+            return .{ .stats = c.stats, .held = @intCast(c.entries.count()), .failed = c.failed };
         }
     };
 }
@@ -295,269 +390,8 @@ pub fn fingerprintOf(words: []const u64) u64 {
     return h;
 }
 
-// -- host tests: the policy with a fake engine --------------------------------------------------------------------
-
-const Fake = struct {
-    captures: u32 = 0,
-    launches: u32 = 0,
-    live: u32 = 0,
-    fail_capture: bool = false,
-    slots: [64]u8 = undefined,
-
-    fn engine(f: *Fake) Engine {
-        return .{ .ctx = f, .capture = cap, .launch = lau, .free = fre };
-    }
-    fn cap(ctx: *anyopaque, stream: Stream, body: Body) anyerror!*anyopaque {
-        const f: *Fake = @ptrCast(@alignCast(ctx));
-        if (f.fail_capture) return error.CaptureFailed;
-        _ = stream;
-        _ = body; // a capture records the body; nothing runs
-        f.captures += 1;
-        f.live += 1;
-        return &f.slots[f.captures % f.slots.len];
-    }
-    fn lau(ctx: *anyopaque, _: *anyopaque, _: Stream) anyerror!void {
-        const f: *Fake = @ptrCast(@alignCast(ctx));
-        f.launches += 1;
-    }
-    fn fre(ctx: *anyopaque, _: *anyopaque) void {
-        const f: *Fake = @ptrCast(@alignCast(ctx));
-        f.live -= 1;
-    }
-};
-
-const Ran = struct {
-    n: u32 = 0,
-    fn body(r: *Ran) Body {
-        return .{ .ctx = r, .run = go };
-    }
-    fn go(ctx: *anyopaque, _: Stream) anyerror!void {
-        const r: *Ran = @ptrCast(@alignCast(ctx));
-        r.n += 1;
-    }
-};
-
-const no_stream: Stream = .{ .d = undefined, .handle = null };
-
-test "graph cache: capture on first use, replay after, LRU at the cap" {
-    var f: Fake = .{};
-    var r: Ran = .{};
-    var c = Cache(u32).init(std.testing.allocator, f.engine(), .{ .max = 2 });
-    defer c.deinit();
-    try std.testing.expectEqual(Outcome.captured, try c.run(1, no_stream, 7, r.body()));
-    try std.testing.expectEqual(Outcome.replayed, try c.run(1, no_stream, 7, r.body()));
-    try std.testing.expectEqual(Outcome.captured, try c.run(2, no_stream, 7, r.body()));
-    _ = try c.run(1, no_stream, 7, r.body()); // 1 is now the most recent
-    try std.testing.expectEqual(Outcome.captured, try c.run(3, no_stream, 7, r.body())); // evicts 2
-    try std.testing.expect(c.has(1) and c.has(3) and !c.has(2));
-    try std.testing.expectEqual(@as(u32, 0), r.n); // the body never ran eagerly
-    try std.testing.expectEqual(@as(u32, 2), f.live);
-    try std.testing.expectEqual(@as(u32, 5), f.launches);
-}
-
-test "graph cache: a new fingerprint drops every graph" {
-    var f: Fake = .{};
-    var r: Ran = .{};
-    var c = Cache(u32).init(std.testing.allocator, f.engine(), .{});
-    defer c.deinit();
-    _ = try c.run(1, no_stream, 7, r.body());
-    _ = try c.run(2, no_stream, 7, r.body());
-    try std.testing.expectEqual(Outcome.captured, try c.run(1, no_stream, 8, r.body()));
-    try std.testing.expectEqual(@as(usize, 1), c.count());
-    try std.testing.expectEqual(@as(u32, 1), f.live);
-}
-
-const Peer = struct {
-    theirs: []const bool, // the other rank's verdicts, in call order
-    at: usize = 0,
-    fn agree(p: *Peer) Agree {
-        return .{ .ctx = p, .all = all };
-    }
-    fn all(ctx: *anyopaque, ok: bool) anyerror!bool {
-        const p: *Peer = @ptrCast(@alignCast(ctx));
-        const t = p.theirs[p.at];
-        p.at += 1;
-        return ok and t;
-    }
-};
-
-test "graph cache: a capture failing on another rank turns graphs off here too" {
-    var f: Fake = .{};
-    var r: Ran = .{};
-    // per miss: room, then the capture's verdict; the peer's capture fails on the second key
-    var peer: Peer = .{ .theirs = &.{ true, true, true, false } };
-    var c = Cache(u32).init(std.testing.allocator, f.engine(), .{});
-    c.agree = peer.agree();
-    defer c.deinit();
-    try std.testing.expectEqual(Outcome.captured, try c.run(1, no_stream, 7, r.body()));
-    try std.testing.expectEqual(Outcome.eager, try c.run(2, no_stream, 7, r.body()));
-    try std.testing.expect(c.failed);
-    try std.testing.expectEqual(@as(u32, 0), f.live); // this rank's good graphs are freed as well
-    try std.testing.expectEqual(Outcome.eager, try c.run(1, no_stream, 7, r.body()));
-    try std.testing.expectEqual(@as(u32, 2), r.n);
-}
-
-var room_flag = true;
-fn roomFn() bool {
-    return room_flag;
-}
-
-test "graph cache: below the memory floor the least recent quarter goes, the cap follows, the step runs eagerly" {
-    var f: Fake = .{};
-    var r: Ran = .{};
-    var c = Cache(u32).init(std.testing.allocator, f.engine(), .{ .max = 48, .min_keep = 2 });
-    c.room = roomFn;
-    defer c.deinit();
-    room_flag = true;
-    for (0..8) |k| _ = try c.run(@intCast(k), no_stream, 7, r.body());
-    room_flag = false;
-    try std.testing.expectEqual(Outcome.eager, try c.run(100, no_stream, 7, r.body()));
-    try std.testing.expectEqual(@as(usize, 6), c.count());
-    try std.testing.expectEqual(@as(u32, 6), c.cap);
-    try std.testing.expect(!c.has(0) and !c.has(1) and c.has(7));
-    room_flag = true;
-    // room again: the cap is back to max, the miss captures without evicting
-    try std.testing.expectEqual(Outcome.captured, try c.run(100, no_stream, 7, r.body()));
-    try std.testing.expectEqual(@as(usize, 7), c.count());
-    try std.testing.expectEqual(@as(u32, 48), c.cap);
-    try std.testing.expect(c.has(7) and c.has(2));
-    try std.testing.expectEqual(@as(u64, 1), c.stats.floor_hits);
-}
-
-test "graph cache: a dip under the floor does not leave later keys churning once memory is back" {
-    var f: Fake = .{};
-    var r: Ran = .{};
-    var c = Cache(u32).init(std.testing.allocator, f.engine(), .{ .max = 16, .min_keep = 2 });
-    c.room = roomFn;
-    defer c.deinit();
-    room_flag = true;
-    for (0..12) |k| _ = try c.run(@intCast(k), no_stream, 7, r.body());
-    room_flag = false; // a long prompt's workspace held
-    _ = try c.run(200, no_stream, 7, r.body());
-    room_flag = true; // freed: the decode after it meets 12 new keys (a new context bucket), then replays them
-    const before = c.stats.evicted;
-    for (0..12) |k| _ = try c.run(@intCast(300 + k), no_stream, 7, r.body());
-    for (0..12) |k| try std.testing.expectEqual(Outcome.replayed, try c.run(@intCast(300 + k), no_stream, 7, r.body()));
-    try std.testing.expectEqual(@as(u32, 16), c.cap);
-    // only what the cap of 16 forces: 9 left after the dip + 12 new = 21 -> 5 evictions, none during the replays
-    try std.testing.expectEqual(before + 5, c.stats.evicted);
-}
-
-test "graph cache: hold - below the floor a miss runs eagerly, nothing is evicted, the held keys replay" {
-    var f: Fake = .{};
-    var r: Ran = .{};
-    var c = Cache(u32).init(std.testing.allocator, f.engine(), .{ .max = 48, .min_keep = 2, .hold = true });
-    c.room = roomFn;
-    defer c.deinit();
-    room_flag = true;
-    for (0..8) |k| _ = try c.run(@intCast(k), no_stream, 7, r.body());
-    room_flag = false;
-    try std.testing.expectEqual(Outcome.eager, try c.run(100, no_stream, 7, r.body()));
-    try std.testing.expectEqual(Outcome.eager, try c.run(101, no_stream, 7, r.body()));
-    try std.testing.expectEqual(@as(usize, 8), c.count());
-    try std.testing.expectEqual(@as(u32, 48), c.cap);
-    for (0..8) |k| try std.testing.expectEqual(Outcome.replayed, try c.run(@intCast(k), no_stream, 7, r.body()));
-    try std.testing.expectEqual(@as(u64, 0), c.stats.evicted);
-    try std.testing.expectEqual(@as(u64, 2), c.stats.floor_hits);
-    room_flag = true;
-    try std.testing.expectEqual(Outcome.captured, try c.run(100, no_stream, 7, r.body()));
-    try std.testing.expectEqual(@as(usize, 9), c.count());
-}
-
-test "graph cache: the floor's enter / under / leave state and its counts, as /health reads them" {
-    var f: Fake = .{};
-    var r: Ran = .{};
-    var c = Cache(u32).init(std.testing.allocator, f.engine(), .{ .max = 48, .hold = true });
-    c.room = roomFn;
-    c.name = "test floor";
-    defer c.deinit();
-    room_flag = true;
-    for (0..4) |k| _ = try c.run(@intCast(k), no_stream, 7, r.body());
-    try std.testing.expect(!c.under);
-    room_flag = false;
-    for (0..report_every + 3) |k| _ = try c.run(@intCast(1000 + k), no_stream, 7, r.body());
-    try std.testing.expect(c.under);
-    try std.testing.expectEqual(@as(u64, report_every + 3), c.under_eager);
-    // the held keys replay under the floor and leave the state alone
-    try std.testing.expectEqual(Outcome.replayed, try c.run(2, no_stream, 7, r.body()));
-    try std.testing.expect(c.under);
-    var out: [8]Snapshot = undefined;
-    const mine = for (out[0..snapshots(&out)]) |x| {
-        if (std.mem.eql(u8, x.name(), "test floor")) break x;
-    } else return error.NotPublished;
-    try std.testing.expectEqual(registry.Counts{ .held = 4, .captured = 4, .replayed = 1, .eager = report_every + 3, .floor_hits = report_every + 3, .under = true }, mine.counts);
-    // room again: the next miss captures and the floor is left; the counts keep their totals
-    room_flag = true;
-    try std.testing.expectEqual(Outcome.captured, try c.run(2000, no_stream, 7, r.body()));
-    try std.testing.expect(!c.under);
-    try std.testing.expectEqual(@as(u64, report_every + 3), c.stats.floor_hits);
-    // a second dip starts its own count
-    room_flag = false;
-    _ = try c.run(3000, no_stream, 7, r.body());
-    try std.testing.expectEqual(@as(u64, 1), c.under_eager);
-    room_flag = true;
-}
-
-var meter_gib: f64 = 100;
-var meter_reads: u32 = 0;
-fn meterFn() ?f64 {
-    meter_reads += 1;
-    defer meter_gib -= 0.25; // each read sees a quarter GiB less: a capture's before and after differ by that
-    return meter_gib;
-}
-
-test "graph cache: the meter prices a capture, replays never read it, a freed cache leaves the snapshots" {
-    var f: Fake = .{};
-    var r: Ran = .{};
-    var out: [8]Snapshot = undefined;
-    const others = snapshots(&out);
-    {
-        var c = Cache(u32).init(std.testing.allocator, f.engine(), .{ .max = 4 });
-        defer c.deinit();
-        c.meter = meterFn;
-        c.name = "metered";
-        meter_reads = 0;
-        try std.testing.expectEqual(Outcome.captured, try c.run(1, no_stream, 7, r.body()));
-        try std.testing.expectEqual(@as(f64, 256), c.stats.capture_mib);
-        try std.testing.expectEqual(@as(u32, 2), meter_reads);
-        try std.testing.expectEqual(Outcome.replayed, try c.run(1, no_stream, 7, r.body()));
-        try std.testing.expectEqual(@as(u32, 2), meter_reads);
-        try std.testing.expectEqual(others + 1, snapshots(&out));
-        const mine = for (out[0 .. others + 1]) |x| {
-            if (std.mem.eql(u8, x.name(), "metered")) break x;
-        } else return error.NotPublished;
-        try std.testing.expectEqual(@as(u64, 1), mine.counts.replayed);
-    }
-    try std.testing.expectEqual(others, snapshots(&out));
-}
-
-test "graph cache: off runs every step eagerly" {
-    var f: Fake = .{};
-    var r: Ran = .{};
-    var c = Cache(u32).init(std.testing.allocator, f.engine(), .{ .on = false });
-    defer c.deinit();
-    try std.testing.expectEqual(Outcome.eager, try c.run(1, no_stream, 7, r.body()));
-    try std.testing.expectEqual(@as(u32, 0), f.captures);
-}
-
-test "graph cache: TF_GRAPH_CACHE=0 or off turns a family's cache off without a rebuild; anything else leaves it" {
-    const on: Settings = .{};
-    for ([_][]const u8{ "0", "off", "OFF" }) |v| try std.testing.expect(!on.operator(v).on);
-    for ([_]?[]const u8{ null, "1", "on", "" }) |v| try std.testing.expect(on.operator(v).on);
-    try std.testing.expect(!(Settings{ .on = false }).operator("1").on); // the operator only turns a cache off
-    var f: Fake = .{};
-    var r: Ran = .{};
-    var c = Cache(u32).init(std.testing.allocator, f.engine(), on.operator("off"));
-    defer c.deinit();
-    for (0..3) |_| try std.testing.expectEqual(Outcome.eager, try c.run(1, no_stream, 7, r.body()));
-    try std.testing.expectEqual(@as(u32, 0), f.captures);
-}
-
-test "graph cache: fingerprint" {
-    try std.testing.expect(fingerprintOf(&.{ 1, 2 }) != fingerprintOf(&.{ 2, 1 }));
-}
-
 test {
+    _ = @import("graph_cache_policy_test.zig");
     _ = @import("graph_cache_regression_test.zig");
     _ = @import("graph_cache_ranks_test.zig");
     _ = @import("graph_cache_shapes_test.zig");

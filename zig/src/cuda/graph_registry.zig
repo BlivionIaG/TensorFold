@@ -5,7 +5,8 @@ const std = @import("std");
 /// A name's bytes kept per slot; a longer name is cut to this many.
 pub const name_max = 32;
 
-pub const Counts = struct { held: u32 = 0, captured: u64 = 0, replayed: u64 = 0, eager: u64 = 0, floor_hits: u64 = 0, under: bool = false };
+/// `misses`: steps that found no graph (captured on the request path, or eager); `precaptured`: made at boot.
+pub const Counts = struct { held: u32 = 0, captured: u64 = 0, replayed: u64 = 0, eager: u64 = 0, floor_hits: u64 = 0, under: bool = false, misses: u64 = 0, precaptured: u64 = 0, request_capture_ns: u64 = 0 };
 
 /// One cache's name and counts at one instant; it owns its name, so it outlives the cache it was taken from.
 pub const Snapshot = struct {

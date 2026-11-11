@@ -4,6 +4,7 @@ const std = @import("std");
 const cuda = @import("cuda");
 const tp = @import("tp");
 const calls = @import("block_calls.zig");
+const round_graph = @import("round_graph.zig");
 
 pub const gc = cuda.graph_cache;
 
@@ -83,6 +84,27 @@ pub const Key = struct { rows: u32, ctx: u32, part: u8 = 0 };
 
 pub const Cache = gc.Cache(Key);
 
+/// The whole window's key: `rows` (its bucket's in row mode) ending at `last`; requests and the pre-capture use it.
+pub fn keyFor(rows: u32, last: u64, s: Settings) Key {
+    return .{ .rows = rows, .ctx = bucketOf(last, s.bucket, s.grow) };
+}
+
+/// A window's calls as graphs: whole, or (TF_DSV41_ROUND_GRAPH=split) the head's layers then the tail's.
+pub const Parts = struct {
+    at: ?usize,
+    spans: [2][2]usize, // the calls of each graph; an empty span has none
+
+    pub fn of(cs: []const calls.Call, rg: round_graph.Settings) Parts {
+        const at = if (rg.split) round_graph.splitAt(cs, rg.head) else null;
+        return .{ .at = at, .spans = if (at) |i| .{ .{ 0, i }, .{ i, cs.len } } else .{ .{ 0, cs.len }, .{ cs.len, cs.len } } };
+    }
+
+    /// Graph `pi`'s key: the window's, with `part` 1 / 2 when it is split.
+    pub fn key(p: Parts, k: Key, pi: usize) Key {
+        return .{ .rows = k.rows, .ctx = k.ctx, .part = if (p.at == null) 0 else @intCast(pi + 1) };
+    }
+};
+
 /// The window's start for emitting a graphed program: its end lands at the bucket's end (the indexer's NK).
 pub fn emitStart(n: u32, b: u32, s: Settings, limit: u64) i64 {
     return @as(i64, @intCast(bucketEnd(b, s.bucket, limit, s.grow))) + 1 - n;
@@ -116,8 +138,13 @@ pub const Room = struct {
     }
 
     pub fn fits(r: Room, avail_gib: f64) bool {
+        return r.fitsPriced(avail_gib, r.cost_gib);
+    }
+
+    /// One more graph costing `price_gib` fits above the floor (the pre-capture prices by the mean it has seen).
+    pub fn fitsPriced(r: Room, avail_gib: f64, price_gib: f64) bool {
         if (r.floor_gib) |f| return avail_gib >= f;
-        return avail_gib - r.cost_gib >= r.keep_gib;
+        return avail_gib - price_gib >= r.keep_gib;
     }
 };
 
