@@ -78,7 +78,7 @@ pub const Pull = struct {
         try p.trigger.trigger().start_fn(p.trigger.trigger().ptr, id, prompt[0 .. upto + 1]);
         const triggered = fabric.words.nowNs();
 
-        const snap = try p.model.snapshotBlank();
+        const snap = try p.model.snapshotBlank(at);
         errdefer p.model.snapshotDrop(snap);
         var landing: ho.landing.Landing = undefined;
         try landing.init(p.gpa, at, .{ .@"packed" = remote.packedOf(p.model, snap) });

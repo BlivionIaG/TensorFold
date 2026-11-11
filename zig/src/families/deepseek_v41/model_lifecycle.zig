@@ -11,6 +11,7 @@ const work = @import("workspace.zig");
 const attention = @import("attention.zig");
 const attention_common = @import("attention_common.zig");
 const kv = @import("kv.zig");
+const prefix = @import("kv_prefix.zig");
 const ops = @import("ops.zig");
 const mhc = @import("mhc.zig");
 const csa2 = @import("csa2.zig");
@@ -302,21 +303,30 @@ pub fn endSnapTail(m: *Model) void {
     m.attention_workspace.publish_limit = 0;
     m.attention_workspace.publish_stash = null;
 }
-pub fn snapshotBytes(m: *const Model) u64 {
+/// What a state kept at `at` tokens takes: the pool rows `at` uses (not the slot's capacity), the rings and the taps.
+pub fn snapshotBytes(m: *const Model, at: u32) u64 {
     const plan = m.caches[0].plan;
-    return @as(u64, plan.packedBytes()) + plan.mutableBytes() + m.taps.length();
+    const capacity = prefix.capacityFor(at, plan.capacity);
+    return @as(u64, kv.cache.pool_layout.storageBytes(capacity)) + plan.mutableBytes() + m.taps.length();
+}
+/// What a kept Snapshot holds.
+pub fn snapshotCharged(snap: *const Snapshot) u64 {
+    return @as(u64, snap.storage.len) + snap.live.len + snap.taps.len;
 }
 pub fn snapshotSave(m: *Model, slot: u32) !*Snapshot {
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const state = &m.caches[slot];
-    const snap = try m.gpa.create(Snapshot);
-    errdefer m.gpa.destroy(snap);
-    const storage = try m.gpa.dupe(u8, state.storage.contents()[0..state.plan.packedBytes()]);
-    errdefer m.gpa.free(storage);
-    const live = try m.gpa.dupe(u8, state.live.contents()[0..state.plan.mutableBytes()]);
-    errdefer m.gpa.free(live);
     // A merged tail chunk's copy is THE STATE AT THE MARK, not at the chunk end.
     const merging = m.publish_limit != 0;
+    const at = if (merging) m.snap_pos else state.position;
+    const capacity = prefix.capacityFor(at, state.plan.capacity);
+    const snap = try m.gpa.create(Snapshot);
+    errdefer m.gpa.destroy(snap);
+    const storage = try m.gpa.alloc(u8, kv.cache.pool_layout.storageBytes(capacity));
+    errdefer m.gpa.free(storage);
+    try prefix.copy(kv.cache.pool_layout, storage, capacity, state.storage.contents()[0..state.plan.packedBytes()], state.plan.capacity, at);
+    const live = try m.gpa.dupe(u8, state.live.contents()[0..state.plan.mutableBytes()]);
+    errdefer m.gpa.free(live);
     const taps_src = if (merging) m.taps_stash else m.taps;
     const taps = try m.gpa.dupe(u8, taps_src.contents()[0..m.taps.length()]);
     errdefer m.gpa.free(taps);
@@ -326,9 +336,10 @@ pub fn snapshotSave(m: *Model, slot: u32) !*Snapshot {
     for (&history, 0..) |*v, i| v.* = std.mem.readInt(u32, head[i * 4 ..][0..4], .little);
     snap.* = .{
         .storage = storage,
+        .capacity = capacity,
         .live = live,
         .taps = taps,
-        .position = if (merging) m.snap_pos else state.position,
+        .position = at,
         .history = if (merging) m.snap_hist else history,
         .taps_row = if (merging) m.snap_taps_row else m.taps_row,
         .taps_n = if (merging) m.snap_taps_n else m.taps_n,
@@ -366,9 +377,9 @@ pub fn snapshotDrop(m: *Model, snap: *Snapshot) void {
 pub fn snapshotRestore(m: *Model, slot: u32, snap: *const Snapshot) !void {
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const state = &m.caches[slot];
-    if (snap.storage.len != state.plan.packedBytes() or snap.live.len != state.plan.mutableBytes() or snap.taps.len != m.taps.length()) return error.SnapshotLayout;
+    if (snap.live.len != state.plan.mutableBytes() or snap.taps.len != m.taps.length()) return error.SnapshotLayout;
     if (snap.position > state.plan.capacity) return error.SnapshotOutOfRange;
-    @memcpy(state.storage.contents()[0..snap.storage.len], snap.storage);
+    try prefix.copy(kv.cache.pool_layout, state.storage.contents()[0..state.plan.packedBytes()], state.plan.capacity, snap.storage, snap.capacity, snap.position);
     @memcpy(state.live.contents()[0..snap.live.len], snap.live);
     @memcpy(m.taps.contents()[0..snap.taps.len], snap.taps);
     const view = try m.workspace.historyView(slot);
