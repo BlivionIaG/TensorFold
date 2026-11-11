@@ -40,7 +40,7 @@ pub const Capture = struct {
 };
 
 /// This rank's pool pages of every KV source for the first `at` tokens, each family's pages back to back in logical
-fn readPages(gpa: std.mem.Allocator, kx: *kvs.Kv, at: u64, bufs: *std.ArrayList([]u8)) ![]cx.Pages {
+fn readPages(gpa: std.mem.Allocator, kx: *kvs.Kv, at: u64, cut: u32, bufs: *std.ArrayList([]u8)) ![]cx.Pages {
     const page = kx.pool.page;
     const npages: u32 = @intCast((at + page - 1) / page);
     if (kx.slot.len < npages) return error.BadWindow;
@@ -67,6 +67,10 @@ fn readPages(gpa: std.mem.Allocator, kx: *kvs.Kv, at: u64, bufs: *std.ArrayList(
     errdefer gpa.free(out);
     const fams = kx.layout.families();
     for (sources, out) |layer, *pg| {
+        if (cut != 0 and layer >= cut) { // a layer-split state: the Mac runs these layers, their pages are not exported
+            pg.* = .{ .layer = layer, .comp = &.{}, .index = &.{} };
+            continue;
+        }
         const comp = kx.layout.compOf(layer).?;
         const index = kx.layout.indexOf(layer).?;
         const comp_bytes = try gpa.alloc(u8, own.len * fams[comp].pageBytes(page));
@@ -82,11 +86,16 @@ fn readPages(gpa: std.mem.Allocator, kx: *kvs.Kv, at: u64, bufs: *std.ArrayList(
 
 /// The active slot's state at `at` tokens, on the engine thread with the slot standing there.
 pub fn capture(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64) !*Capture {
+    return captureCut(gpa, ss, at, 0);
+}
+
+/// `capture` of a layer-split slot (`cut` != 0): only layers [0, cut) ran, no decoder replay stands, no drafter rows.
+pub fn captureCut(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64, cut: u32) !*Capture {
     const f = ss.f;
     const kx = ss.kx;
     if (f.slot.pos != at or f.slot.pending != null or ss.hist[ss.cur()].items.len != at) return error.BadWindow;
     // replay: the cut stands after the decoder replay (target.zig), so the live slot holds the decoder layers' rings
-    const replay = pf.state(f).mode == .replay;
+    const replay = pf.state(f).mode == .replay and cut == 0;
     if (replay and f.slot.ced.hi != at) return error.BadWindow;
     if (kx.layout.opts.kv != .fp8) return error.UnsupportedKvFormat;
     const shards: u32 = if (kx.layout.opts.split and kx.world > 1) kx.world else 1;
@@ -121,7 +130,7 @@ pub fn capture(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64) !*Capture {
             out.* = .{ .role = p.role, .bytes = bytes };
         }
     }
-    c.pages = try readPages(gpa, kx, at, &bufs);
+    c.pages = try readPages(gpa, kx, at, cut, &bufs);
     c.bufs = try bufs.toOwnedSlice(gpa);
     c.st = .{
         .pos = at,
@@ -134,6 +143,7 @@ pub fn capture(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64) !*Capture {
         .replay_rows = if (replay and !pf.state(f).replay_exact) ced.keep else 0,
         .shard = shard,
         .shards = shards,
+        .cut = cut,
     };
     return c;
 }
@@ -143,12 +153,16 @@ pub const Source = struct {
     ss: *sg.Sessions,
 
     pub fn source(s: *Source) cx.Source {
-        return .{ .ptr = s, .take = take, .release = release };
+        return .{ .ptr = s, .take = take, .release = release, .take_cut = takeCut };
     }
 
     fn take(ptr: *anyopaque, gpa: std.mem.Allocator, at: u64) anyerror!cx.Captured {
+        return takeCut(ptr, gpa, at, 0);
+    }
+
+    fn takeCut(ptr: *anyopaque, gpa: std.mem.Allocator, at: u64, cut: u32) anyerror!cx.Captured {
         const s: *Source = @ptrCast(@alignCast(ptr));
-        const c = try capture(gpa, s.ss, at);
+        const c = try captureCut(gpa, s.ss, at, cut);
         return .{ .ctx = c, .state = c.st };
     }
 
