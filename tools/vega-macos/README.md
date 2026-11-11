@@ -10,7 +10,9 @@ Tools for the Vega 10 (gfx900) HIP backend on macOS: the numbers they produce ar
 | `serve_bench.py` | Prefill, decode, TTFT and ITL of any OpenAI-compatible streaming server at c = 1..8 | Python |
 | `prof_report.py` | A hipprof table as a per-token breakdown | Python |
 | `cosine.py` | Per-row cosine and argmax agreement of two logits `.npy` files | Python |
-| `mlx_ref.py` | The mlx_lm references (token ids, logits) the gates compare with | Python (calls mlx_lm) |
+| `mlx_ref.py`, `moe_ref.py` | The mlx_lm references (token ids, logits) the gates compare with | Python (calls mlx_lm) |
+| `moe_gate.py` | Greedy gate of a running Qwen3.6-35B-A3B server against `moe_ref.py`'s mlx_lm references | Python |
+| `expert_cache_sim.py` | Offline replay of decode routing traces against expert-cache policies (numpy) | Python |
 | `fetch-rocm.sh`, `hipcc`, `pins.env` | ROCm headers and device libraries and the macOS `hipcc` wrapper | shell |
 | `setup-mlx-env.sh`, `requirements-mlx.txt` | The mlx environment of the references | shell |
 | `xcrun-metal-shim/` | A `PATH` shim for a Mac whose Xcode lacks the Metal toolchain | shell |
@@ -67,7 +69,8 @@ If these tools should be Zig as well, what it takes (nothing below is built):
 | `prof_report.py` | A `tf-*` executable over the table format above | about 150 lines; pure, diffable against the Python on any table |
 | `cosine.py` | The same, with a `.npy` reader | about 200 lines; pure, diffable on any two files |
 | `serve_bench.py` | `std.http` client with SSE parsing and threads; the exact-token prompts need the model's `tokenizer.json`, which `zig/src/core/tokenizer` already reads | about 600 lines and a fake-server test; replaces `uv run --with tokenizers` |
-| `vega_gate.py` | Process spawn, HTTP and sha comparison against `mlx_ref.py` output, which stays Python | about 250 lines; only the pure parts can be tested without the card |
+| `vega_gate.py`, `moe_gate.py` | Process spawn, HTTP and sha comparison against `mlx_ref.py`/`moe_ref.py` output, which stay Python | about 400 lines; only the pure parts can be tested without the card |
+| `expert_cache_sim.py` | The cache-policy simulator (760 lines, multiprocessing) | about 1000 lines of Zig; diffable on a fixed trace |
 
 The cost of the port is that the fork's `tools/` would then follow a different convention than upstream's, in the tools a pull request to
 upstream would carry; that is the reason it is not done here.
