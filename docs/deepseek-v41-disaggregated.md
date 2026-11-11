@@ -7,6 +7,9 @@ Apple Silicon Mac (Metal, EXL3) **decodes** it and serves the API. The prefill s
 This page is the operator recipe. The wire format, the library and the exactness contract are in
 [deepseek-v41-handoff.md](deepseek-v41-handoff.md); the model lanes are in [deepseek-v41.md](deepseek-v41.md).
 
+> Status: the path works end to end (link, hand-off, landing, fallback) but, with the engines as they are, it does **not**
+> lower time to first token: see [Measured](#11-measured). Use it for capacity, or when the pair prefills faster than the Mac.
+
 > A hand-off prefix is outside the exactness contract: it is opt-in (`--prefill-from`), labelled `remote_prefix` in the
 > reply, and decode after it is not bit-identical to a Mac-only prefill. Everything below keeps the Mac able to prefill
 > by itself: a producer that is down, slow or wrong only costs the Mac its normal prefill.
@@ -123,8 +126,10 @@ start, by name, with any of them.
 
 ```
 # both machines
-export NCCL_IB_HCA==PAIR_DEV_A,PAIR_DEV_B TF_DSV41_FORMS_INPLACE=1 TF_DSV41_SAMPLING=1 TF_DSV41_POOL_TOKENS=POOL
-# (PREFILL_PROFILE: the tuned prefill settings are in the next section)
+export NCCL_IB_HCA==PAIR_DEV_A,PAIR_DEV_B TF_DSV41_FORMS_INPLACE=1 TF_DSV41_SAMPLING=1 TF_DSV41_POOL_TOKENS=65536
+export TF_DSV41_GM_V2=1 TF_DSV41_GM_V3=1 TF_DSV41_PF_DENSE=fused TF_DSV41_PF_DENSE_TABLE=$TABLE TF_DSV41_PF_OVERLAP=4
+export TF_DSV41_L2PF=1 TF_DSV41_L2PF_MB=12 TF_DSV41_L2PF_PACE_GBPS=150 TF_DSV41_PREFETCH_AHEAD=1 TF_DSV41_ENGRAM_AIO=1
+export TF_DSV41_BRANCHES=1 TF_DSV41_BRANCHES_PRIO=side
 # rank 0 only
 tensorfold-dsv41 serve $MODEL --host 0.0.0.0 --port 8000 --name DeepSeek-V4.1-Flash-TF --no-thinking \
     --mcdma-produce NAME --api-key-file $KEYFILE
@@ -134,6 +139,29 @@ Do **not** set `TF_DSV41_HANDOFF_DUMP` in service: it writes each export to disk
 
 Rank 0 logs `mcdma handoff: attached to the listen daemon on link NAME` and `exporting DeepSeek-V4.1 states as MKVH protocol 2
 on link NAME`; a start refusal names the knob.
+
+### How fast the pair prefills, and why not faster
+
+The export-compatible profile above is **not** the pair's fastest. Measured on two GB10 (TP=2), tokens per second, best of
+three, prompt length 1k / 8k / 32k:
+
+| profile | 1k | 8k | 32k | exportable |
+|---|---|---|---|---|
+| serving profile (replay prefill, 4,096-row pieces, split KV) | 1.60k | 2.16k | 2.53k | no |
+| export profile, no tuning | 0.98k | 1.18k | 1.19k | yes |
+| export profile with the knobs above | 1.04k | 1.19k | 1.23k | yes, byte-identical to the untuned export |
+
+The knobs above add 0.5 to 6 %: they are optional. What makes the serving profile fast needs replay prefill
+(`TF_DSV41_PF_4K`, `TF_DSV41_PF_TBO` and `TF_DSV41_PREFILL_ROWS` above 2048 are refused without it), and replay computes the
+decoder layers over a tail of the prompt only, so there is no decoder-layer state for the prefix to export. Prefill on the
+export profile costs about 0.83 ms a row at every length from 1k to 32k: it is GPU-compute bound, not Engram bound (7 %).
+A prompt of 61k tokens (the pool's 65,536-token cap) exports in 51 s.
+Of the knobs tried, `TF_DSV41_ENGRAM_GATE`, `TF_DSV41_ENGRAM_PREFETCH`, `TF_DSV41_INDEX_BUDGET_MIB`,
+`TF_DSV41_ROUTER_GROUP_ROT` and `TF_DSV41_KV_NORM_STORE` together made the export fail (HTTP 409, "the prompt pass ended
+before its state was saved") and bought nothing; which one is the cause was not bisected.
+
+The end-to-end comparison against a Mac that prefills at about 0.9 to 1.0k tokens a second is in [Measured](#11-measured).
+Freeing the Mac's GPU from long prompts while it decodes other requests is the other expected gain; it is not measured here.
 
 ## 7. The Mac decoder
 
@@ -211,4 +239,30 @@ Two GX10 (GB10, TP=2) and an M5 Ultra Mac Studio (256 GB), the 2.9 bpw EXL3 pack
 | hand-off size | 31 MiB for 8,704 tokens (about 3.7 KB a token); 3 requests, all `remote_prefix`, correct answers |
 | bytes on the cable | 34.2 MB sent by the producer's port in one request; the LAN carried about 140 KB |
 
-PREFILL_RESULTS_PLACEHOLDER
+### End to end: time to first token, hand-off against the Mac alone
+
+Same hardware, 2.9 bpw pack, the tuned prefill profile, three prompts per size (distinct text), seconds, median of three
+(`max_tokens` 1). The Mac's tail prefill is the part of the prompt past the last 512-token cache boundary of the prefix.
+
+| prompt tokens | prefix handed over | hand-off, median | Mac alone, median | hand-off / Mac alone |
+|---|---|---|---|---|
+| 1k | none (below `TF_PREFILL_MIN`) | 1.62 | 1.62 | 1.00 |
+| 4k | 4,096 | 7.11 | 4.67 | 1.52 |
+| 8k | 7,680 to 8,192 | 11.89 | 8.33 | 1.43 |
+| 16k | 15,872 to 16,384 | 17.90 | 16.04 | 1.12 |
+| 30k | 29,184 to 30,208 | 32.17 | 29.22 | 1.10 |
+
+**The hand-off does not shorten time to first token on this hardware today.** The pair prefills and exports at about 1.0 to
+1.1k tokens a second, which is what the Mac does alone (0.9 to 1.07k), so the pair's time is not saved; on top of it the
+Mac spends 1.7 to 4.0 s landing the state and prefilling the tail (a Mac prefill of that tail alone is about 0.5 s), and
+the pull over the link adds 0.1 to 0.6 s. The hand-off wins only when the pair prefills substantially faster than the
+Mac: the serving profile reaches 2.2 to 2.5k tokens a second but cannot be exported (see above).
+
+What is checked and works: the payload crosses the cable (the producer port's `tx_bytes_phy` grew 3.9 KB per exported token
+while the LAN carried about 68 KB), the Mac falls back to its own prefill when the link is down
+(`remote prefill: the link is not usable (LinkDown); prompts are prefilled here`, `exact_mode: exact`), and answers
+on the hand-off path are fluent and on topic. Greedy decoding after a hand-off differs from a Mac-only prefill within
+5 to 10 tokens on three 9 to 10k-token prompts: that is the `remote_prefix` contract, not a defect, and no quality benchmark
+has been run on it. Not measured: a producer HTTP failure mid-transfer, concurrent requests, quality.
+
+The remaining case for it is capacity, not latency: a pair that is otherwise idle can take long prompts off the Mac's GPU (expected, not measured).
