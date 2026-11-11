@@ -59,9 +59,9 @@ const Pair = struct {
         return p.route.weigh(Route.nowNs(t.io), ask, 4);
     }
 
-    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive) anyerror!?remote.Filled {
+    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool)) anyerror!?remote.Filled {
         const p: *Pair = @ptrCast(@alignCast(ptr));
-        _ = p.route.admit(t.io, p.route.estimateFor(4, prompt.len - cached, directive), &p.closing) orelse return null;
+        _ = p.route.admit(t.io, p.route.estimateFor(4, prompt.len - cached, directive), &p.closing, gone) orelse return null;
         defer p.route.leave();
         _ = p.fills.fetchAdd(1, .acq_rel);
         if (directive == .force) _ = p.forced.fetchAdd(1, .acq_rel);
