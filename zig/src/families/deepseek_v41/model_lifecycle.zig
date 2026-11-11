@@ -296,9 +296,9 @@ pub fn beginSnapTail(m: *Model, slot: u32, hist: []const u32, at: u32, from: u32
     m.attention_workspace.publish_stash = .{ .buffer = m.snap_ring, .offset = @as(usize, slot) * ring_bytes };
     return true;
 }
-pub fn snapTailAllowed(m: *const Model) bool {
-    _ = m;
-    return condAlignOn();
+/// The tail mark is captured inside its chunk, except under the cone: that cuts at the mark and replays there.
+pub fn snapTailAllowed(m: *Model) bool {
+    return condAlignOn() and !forward_cone.active(m);
 }
 pub fn endSnapTail(m: *Model) void {
     m.publish_limit = 0;

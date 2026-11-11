@@ -209,7 +209,7 @@ pub const Model = struct {
     pub fn beginSnapTail(m: *Model, slot: u32, hist: []const u32, at: u32, from: u32) bool {
         return model_lifecycle.beginSnapTail(m, slot, hist, at, from);
     }
-    pub fn snapTailAllowed(m: *const Model) bool {
+    pub fn snapTailAllowed(m: *Model) bool {
         return model_lifecycle.snapTailAllowed(m);
     }
     pub fn endSnapTail(m: *Model) void {

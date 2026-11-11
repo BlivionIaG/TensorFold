@@ -57,6 +57,11 @@ pub const Cone = struct {
     }
 };
 
+/// Whether the cone serves this model's prompts.
+pub fn active(m: *Model) bool {
+    return enabled(m);
+}
+
 fn enabled(m: *Model) bool {
     if (m.cone.on) |v| return v;
     return configure(m, @import("sys").environment.read(bool, "TF_DSV41_CONE", false) catch false);
