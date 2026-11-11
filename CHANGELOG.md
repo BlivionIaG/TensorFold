@@ -10,6 +10,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - DeepSeek V4.1 on Metal: `TF_DSV41_PROMPT_CACHE_GIB` sets the prompt cache's budget when `--prompt-cache-gib` is absent (`0` keeps none); with neither, the server takes the automatic budget the other Metal engines use, where it kept no prompt cache before.
 
+- DeepSeek V4.1 on Metal: the EXL3 decode matvec computes each mul1 weight with one half FMA on the state's byte sum instead of reading a threadgroup lookup table, and one warp decodes up to four column tiles that share a block's activation loads (`TF_DSV41_EXL3_FMA_TILES`, 4 by default, 0 restores the table bodies). Every output is bit-identical to the table bodies (new GPU test over all widths and codebooks).
+
 - DeepSeek-V4.1 on CUDA: a `TF_DSV41_PREFILL=replay` prompt is exportable (`--mcdma-produce`): the cut stands after the decoder replay, the decoder layers' rings and the drafter's rings are read from the live slot (the window's oldest row, never replayed, is zero), so the GB10 pair exports at its replay prefill speed (about 2.2k to 2.6k tokens/s at 8k to 32k) instead of about 1.2k.
 
 - Remote prefill: a request can name where its prompt is prefilled with `prefill`: `"force"` sends it to the pair without weighing the load or the predicted times and waits for a pull under way, `"never"` keeps it on this machine, `"auto"` (the default) is the load-aware decision of `TF_PREFILL_ROUTE=auto`. A router in front of two servers uses it to choose, per request, between the pair's prefill and the Mac's own
