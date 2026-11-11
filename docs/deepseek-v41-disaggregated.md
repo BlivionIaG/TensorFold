@@ -109,8 +109,8 @@ and keep the pairing that passes; require WRITE and READ in both directions, byt
 # producer machine (rank 0's host), as the user that runs the server, started BEFORE the server
 mcdma-rpcd listen NAME PEER_DEV PEER_GID_INDEX 4096 LAN_IF/fe80::MAC_LAN_LINK_LOCAL:18620 4 64
 
-# Mac, in a session that holds the "Local Network" permission (a Terminal or an ssh session; a detached process gets
-# HostUnreachable to LAN hosts)
+# Mac, from a Terminal or an ssh session (a command-line tool there may use the LAN; a process detached from it gets
+# HostUnreachable). At boot, run it as the launchd job of section 9.
 mcdma-rpcd connect NAME,en0/fe80::PRODUCER_LAN_LINK_LOCAL,18620,rdma_mcrdmaN,0,4096,4,64
 ```
 
@@ -119,10 +119,11 @@ The listen daemon logs `peer ready over roce` once the Mac connects. `NAME` is t
 ## 6. The prefill pair
 
 Rank 1 is `tf-dsv41 follow`; rank 0 is `tensorfold-dsv41 serve` with one more flag. The pair needs a profile whose
-prefill state can be exported: replicated KV, whole-prompt prefill, a paged pool. It must **not** run
-`TF_DSV41_PREFILL=replay` (decoder layers' state for the prefix never exists), `TF_DSV41_PREFILL_PIECES=1` (a prompt in
-pieces never stands at the cut) or `TF_DSV41_KV_SPLIT=1` (half the pages are on the other rank); the server refuses to
-start, by name, with any of them.
+prefill state can be exported: a replicated KV pool and a paged pool. Replay prefill (`TF_DSV41_PREFILL=replay`: the cut
+stands after the decoder replay, see below) and prompts in pieces (`TF_DSV41_PREFILL_PIECES=1`) are exported; it must **not**
+run `TF_DSV41_KV_SPLIT=1` (half the pages are on the other rank); the server refuses to start, by name, with it. A pair that
+serves its own lanes with pieces exports in the same process: the decode lanes keep running while a prompt's pieces and its
+export run.
 
 ```
 # both machines
@@ -148,13 +149,16 @@ three, prompt length 1k / 8k / 32k:
 | profile | 1k | 8k | 32k | exportable |
 |---|---|---|---|---|
 | serving profile (replay prefill, 4,096-row pieces, split KV) | 1.60k | 2.16k | 2.53k | no |
+| replay prefill, 4,096 rows, replicated KV, no pieces | 1.64k | 2.17k | 2.59k | yes |
 | export profile, no tuning | 0.98k | 1.18k | 1.19k | yes |
 | export profile with the knobs above | 1.04k | 1.19k | 1.23k | yes, byte-identical to the untuned export |
 
-The knobs above add 0.5 to 6 %: they are optional. What makes the serving profile fast needs replay prefill
-(`TF_DSV41_PF_4K`, `TF_DSV41_PF_TBO` and `TF_DSV41_PREFILL_ROWS` above 2048 are refused without it), and replay computes the
-decoder layers over a tail of the prompt only, so there is no decoder-layer state for the prefix to export. Prefill on the
-export profile costs about 0.83 ms a row at every length from 1k to 32k: it is GPU-compute bound, not Engram bound (7 %).
+The knobs above add 0.5 to 6 %: they are optional. What makes the serving profile fast is replay prefill
+(`TF_DSV41_PF_4K`, `TF_DSV41_PF_TBO` and `TF_DSV41_PREFILL_ROWS` above 2048 are refused without it). Replay computes the
+decoder layers over the last 127 rows only, at the cut: the export carries those layers' rings from that replay (the
+window's oldest row is zero), so the decoder layers' rings differ from a full prefill's (normalized RMS 0.3 to 0.5, growing
+with layer depth) while the sliding-window rows below layer 20, the carries, the compressed pages and the index keys are
+byte-identical. Prefill on the plain export profile costs about 0.83 ms a row at every length from 1k to 32k: it is GPU-compute bound, not Engram bound (7 %).
 A prompt of 61k tokens (the pool's 65,536-token cap) exports in 51 s.
 Of the knobs tried, `TF_DSV41_ENGRAM_GATE`, `TF_DSV41_ENGRAM_PREFETCH`, `TF_DSV41_INDEX_BUDGET_MIB`,
 `TF_DSV41_ROUTER_GROUP_ROT` and `TF_DSV41_KV_NORM_STORE` together made the export fail (HTTP 409, "the prompt pass ended
@@ -185,6 +189,38 @@ seconds, macOS un-wires an idle model after one to two seconds, and the first pa
 to re-wire it. The keepalive ticks while a hand-off is awaited. A quiet server (a request after more than a few seconds of
 idleness) can still pay that re-wire once.
 
+### Several requests, and when a prompt goes to the pair at all
+
+The pair prefills one prompt at a time, and the Mac holds one hand-off at a time. `TF_PREFILL_ROUTE=auto` (the default)
+decides each prompt that reaches `TF_PREFILL_MIN` when it is queued, and again while it waits for a lane:
+
+* **The pair is busy with another prompt**: the prompt is prefilled on the Mac at once, as a short prompt is, unless the pull
+  under way ends so soon that waiting for it and then pulling still beats the Mac's own prefill. It is not queued behind the
+  pull with the Mac idle (a mutex held across the whole pull did that).
+* **A stream is decoding on the Mac**: the prompt goes to the pair even if the pair is no faster, because a prompt pass on
+  the Mac would stall that stream for seconds (inter-token latency isolation), unless the pair is busy as above.
+* **Otherwise** it goes to the pair only if the pull is predicted no slower than the Mac's own prefill: the prefix at the
+  pair's measured rate plus the Mac's last-token pass, against the rest of the prompt at the Mac's measured rate. The rates
+  are running averages of the pulls and prompt passes this server timed (a pass under 1024 rows says too little to count;
+  one sample moves a rate by a third to three times at most). Until it has timed its own it assumes 950 tokens a second for
+  the Mac (`TF_PREFILL_LOCAL_TPS`), 1000 for a pull (`TF_PREFILL_REMOTE_TPS`) and 1 s for the last-token pass, the export
+  profile's numbers: with them a lone prompt of under about 19k tokens stays on the Mac, whose prefill is as fast as the
+  pair's there (the pair's gain is the Mac's freedom, not the first token). The pair's rate is learned only from pulls, so
+  a pair that is faster than that (a replay export) is first used when a stream decodes or the prompt is long; set
+  `TF_PREFILL_REMOTE_TPS` to what it does to use it from the start.
+
+The server logs `remote prefill: a prompt of N tokens (M cached) is prefilled here: REASON` once for each reason a prompt
+is kept off the pair for now. `TF_PREFILL_ROUTE=always` restores the old behaviour: every prompt past `TF_PREFILL_MIN` goes
+to the pair, queued behind any pull under way, however long that is. Not yet measured on the machines: two concurrent 8k
+prompts, and the rates the average settles at.
+
+A request can overrule the weighing with a `prefill` field in its body (`/v1/chat/completions` and `/v1/completions`): `"force"`
+sends it to the pair whatever the load or the predicted times say and waits for a pull under way instead of prefilling here,
+`"never"` prefills it here, `"auto"` (the default) is the decision above. Both words keep the rules that need no judgement: a
+prompt too short to pull, a pair that is off or not answering, and a prefix the cache already covers are still prefilled here.
+The reply's `remote_prefix` says whether the pair prefilled it. A router in front of the Mac and the Sparks uses the field to
+send a prompt through the Mac to the pair (`force`) or keep it local (`never`) from its own view of both machines.
+
 ## 8. Verify
 
 A reply with a long prompt carries, in its `tensorfold` block, `"exact_mode": "remote_prefix"`, `remote_prefix` and
@@ -197,31 +233,142 @@ sudo ethtool -S PEER_IF | grep tx_bytes_phy      # grows by about 3.7 KB per pro
 
 ## 9. Running it as services
 
-Start order matters: the producer's listen daemon, then rank 1, then rank 0 (which attaches to the daemon while it
-starts), then, at any time, the Mac's connect daemon and its server. Stop in the reverse order.
+Recipes for an unattended pair and Mac are in [`deploy/dsv41-disaggregated/`](../deploy/dsv41-disaggregated/): systemd
+units for the pair machines, launchd jobs for the Mac, a health check, and `render.sh`, which fills their `@NAME@`
+placeholders from one site file per machine.
 
-On each pair machine, a boot unit restores what a reboot loses (the static neighbour and the unmanaged port; the Mac's MAC and
-link-local address are fixed for its CX5):
+| file | runs on | what |
+|---|---|---|
+| `systemd/mcdma-rpcd-listen@.service` | producer (rank 0's host) | the listen daemon, instance name = link name, parameters in `/etc/tensorfold/mcdma-listen-NAME.env` |
+| `systemd/tf-pd-link-up.service`, `bin/tf-pd-link-up` | each pair machine | oneshot: the Mac-facing port unmanaged, MTU 9000, 100G, the Mac's static neighbour (section 3) |
+| `systemd/tf-pd-prefill-rank0.service`, `-rank1.service` | rank 0's host, the other machine | the pair; `prefill.env` is the tuned profile (section 6), identical on both |
+| `macos/dev.tensorfold.pd-restore-links.plist` | Mac | root LaunchDaemon: `restore-rdma.py` for each cabled interface (section 4) |
+| `macos/dev.tensorfold.pd-connect.plist` | Mac | the connect daemon |
+| `macos/dev.tensorfold.pd-decoder.plist`, `macos/bin/tf-pd-decoder-run` | Mac | the decoder and its supervisor |
+| `bin/tf-pd-health` | both sides | the health check |
+| `site.conf.example`, `render.sh` | workstation | placeholders and their substitution |
+
+Nothing here is enabled by being installed: the producer's units have no `WantedBy` on the daemon, and the Mac's jobs
+only start once bootstrapped (below).
+
+### Render
+
+Copy `site.conf.example` once per machine (the checkpoint path, the Mac's interface and the addresses differ), fill it in,
+then `./render.sh head|worker|mac SITE_CONF OUT_DIR`. A placeholder left unset aborts the render, so an unfilled file never
+reaches a machine.
+
+### The pair machines (systemd)
 
 ```
-# /usr/local/bin/mac-link-up  (run by a oneshot unit After=network-online.target)
-nmcli dev set PEER_IF managed no
-ip link set dev PEER_IF mtu 9000 up
-ip -6 neigh replace MAC_GID lladdr MAC_HWADDR nud permanent dev PEER_IF
+# on each pair machine, from the rendered tree
+sudo install -d /etc/tensorfold /usr/local/libexec/tensorfold
+sudo install -m 644 out/systemd/*.service /etc/systemd/system/
+sudo install -m 644 out/etc/* /etc/tensorfold/
+sudo install -m 755 out/libexec/* /usr/local/libexec/tensorfold/
+# the state directory the units name must exist and hold the API key file and the dense-prefill table
+systemd-analyze verify /etc/systemd/system/tf-pd-*.service      # and mcdma-rpcd-listen@NAME.service on rank 0's host
+sudo systemctl daemon-reload
+sudo systemctl enable --now tf-pd-link-up.service               # harmless beside production; at boot, if wanted
 ```
 
+Start the pair with `systemctl start tf-pd-prefill-rank1` on the follower, then `tf-pd-prefill-rank0` on rank 0's host
+(`enable` them for boot only if the pair, not production, should be the default). What the units encode:
+
+* **Order and dependencies.** Rank 0 has `Requires=` and `After=` on `mcdma-rpcd-listen@NAME.service`, which has them on
+  `tf-pd-link-up.service`: starting rank 0 starts the daemon first, as the same user, and a daemon that cannot start fails
+  rank 0's start instead of leaving it to exit with `no mcdma-rpcd listen daemon serves that link`. Rank 1 needs no daemon.
+  Systemd cannot order across machines: start rank 1 first (a rank 0 that starts first waits for it up to
+  `TF_TP_PLAN_TIMEOUT`).
+* **The NCCL pin is in each rank unit**, as `Environment="NCCL_IB_HCA==PAIR_DEV_A,PAIR_DEV_B"`, not in `prefill.env`: an
+  `EnvironmentFile=` overrides `Environment=`, and a profile edit must not be able to drop it.
+* **Production stays the default.** Both rank units say `Conflicts=` on the production unit, and the pair holds the same GPUs:
+  starting one stops the other, so `systemctl start production-unit` (after stopping the pair) is the way back. Enable only
+  one of the two for boot. Neither the oneshot nor the listen daemon conflicts with anything.
+* **Restart policy.** Ranks: `Restart=always`, `RestartSec=60`, at most 20 starts in 30 minutes: a slow failure is
+  retried, a configuration that fails in seconds stops the unit. A lone rank waits for its peer and systemd cannot tie the two
+  machines together, so the follower is restarted by its own policy only. The listen daemon: `Restart=always`, 5 s.
+* **The listen daemon is never SIGKILLed.** Its guide forbids it (SIGKILL skips the teardown of its queue pairs), so
+  `SendSIGKILL=no`; SIGTERM is an orderly, bounded stop. Rank 0 attaches again by itself when the daemon comes back (it logs
+  `attaching again`), so to bounce the daemon use `systemctl kill mcdma-rpcd-listen@NAME`, which restarts only the daemon.
+  `systemctl restart` on it restarts rank 0 too (`Requires=`), an eight-minute start.
+* **No `PrivateTmp`** on the daemon: its lock file and its status socket are in `/tmp`, and rank 0 attaches through that socket.
+* **Logs** go to the journal: `journalctl -u tf-pd-prefill-rank0`; the ready lines are `serving DeepSeek` and `mcdma handoff:
+  attached to the listen daemon on link NAME`, and the listen daemon logs `peer ready over roce`.
+
+### The Mac (launchd)
+
+The Mac's jobs are **LaunchDaemons that drop to the serving user** (`UserName`), not LaunchAgents. That reverses a
+common assumption, so it is worth checking against Apple's own text. Apple's [TN3179, "Understanding local network
+privacy"](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy), section "macOS
+considerations", says macOS automatically allows local network access for "any daemon started by `launchd`", "any program
+running as root" and "command-line tools run from Terminal or over SSH, including any child processes they spawn", and
+then: "The exception for `launchd` daemons doesn't apply to `launchd` agents." An agent is gated by the user's Local
+Network grant (per user account, asked once in the GUI), and a bare executable that is not an app bundle has no good way to
+hold one; a daemon needs none and also starts at boot with nobody logged in, which an agent (a job of the `gui/UID`
+domain) does not. The same note explains the `HostUnreachable` of a detached process: one that `nohup` or `&` reparented
+away from its ssh session is neither a command-line tool under ssh nor a daemon started by launchd, so it loses the
+exemption. A launchd job is the second thing, whatever its user.
+
+Both LAN-facing programs need it: the connect daemon sends its setup datagrams to the producer's LAN address, and the decoder
+opens an HTTP connection to it. `restore-rdma.py` does no LAN traffic, so its job is a plain root LaunchDaemon.
+
 ```
-# mcdma-rpcd-listen.service on the producer machine, User=the serving user, LimitMEMLOCK=infinity
-ExecStart=/path/to/mcdma-rpcd listen NAME PEER_DEV PEER_GID_INDEX 4096 LAN_IF/fe80::MAC_LAN_LINK_LOCAL:18620 4 64
-# the rank-0 unit: Requires=mcdma-rpcd-listen.service After=mcdma-rpcd-listen.service, and the NCCL_IB_HCA pin in its Environment=
+sudo install -d -o root -g wheel -m 755 /usr/local/libexec/tensorfold
+sudo install -o root -g wheel -m 755 out/libexec/* /usr/local/libexec/tensorfold/
+sudo install -d -o SERVICE_USER -m 755 /var/log/tensorfold
+sudo install -o root -g wheel -m 644 out/launchd/*.plist /Library/LaunchDaemons/      # launchd refuses a plist not owned by root or writable by others
+plutil -lint /Library/LaunchDaemons/dev.tensorfold.pd-*.plist
+for job in restore-links connect decoder; do sudo launchctl bootstrap system /Library/LaunchDaemons/dev.tensorfold.pd-$job.plist; done
+sudo launchctl print system/dev.tensorfold.pd-connect | grep -E 'state|pid|last exit'
 ```
 
-On the Mac the daemon, then the server, run in the user's login session (a launchd *agent*, not a system daemon, so that
-macOS Local Network access applies to the logged-in user). The Mac server falls back to its own prefill whenever the producer
-is down, so the units do not depend on each other.
+A plist in `/Library/LaunchDaemons` is loaded and, with `RunAtLoad`, started at the next boot; `sudo launchctl disable
+system/LABEL` keeps one from doing so, and `enable` before `bootstrap` undoes it. To stop a job use `sudo launchctl bootout
+system/LABEL`: SIGTERM to the job's process, then SIGKILL to what is left of its process group after `ExitTimeOut`.
 
-The Mac's restore command (`tools/restore-rdma.py`) and the peer's neighbour are lost on reboot of either side: run both at boot.
+* **Order.** There is none in launchd; each job tolerates the others' absence. `restore-links` retries each interface for
+  three minutes (the enclosure can enumerate late); the connect daemon exits and is restarted until its CX5 device exists;
+  the decoder's supervisor waits up to five minutes for the connect daemon before it starts the server.
+* **Nothing is orphaned.** The jobs' programs are the daemon and the supervisor themselves, with no shell in between, so
+  launchd is the parent and the process-group leader. `AbandonProcessGroup` is `false` (launchd's default, written out): when
+  a job ends, launchd kills what is left of its group. The connect daemon ignores SIGHUP on purpose, which is why the earlier
+  runs left it behind when their ssh session died; started by a launchd job it has no session to lose.
+  Check a hand-started one is gone first: `pgrep -x mcdma-rpcd`. A daemon holds `/tmp/mcdma-rpc.NAME.lock`, and a second one
+  refuses to start while it lives, so a stray daemon makes the job restart in a loop.
+* **The server follows the daemon.** The connect daemon creates its mailbox anew at every start, and the server maps it once
+  at start-up: after a daemon restart the server would keep the old one and prefill every prompt itself. `tf-pd-decoder-run`
+  therefore stops the server (exit 75) when the daemon's pid changes or vanishes, and `KeepAlive` starts it again once the
+  new daemon answers.
+* **Restart policy.** `KeepAlive` with `SuccessfulExit=false`: any failure restarts after `ThrottleInterval` (15 s daemon,
+  30 s decoder); a clean exit stays down, as does `bootout`. `ExitTimeOut` (60 s, 90 s) is how long launchd waits after
+  SIGTERM before it sends SIGKILL, so it must outlast the connect daemon's bounded teardown and the server's drain.
+* **Logs** are in `LOG_DIR`: `connect.log`, `restore-links.log`, and `decoder.log` (the server's output, appended by the
+  supervisor and rotated at each start past 64 MiB, four backups; launchd's own messages for it are in `decoder-launchd.log`).
+  launchd holds the connect daemon's file open, so it is not rotated; it logs a line only on a link change.
 
+If a daemon is nonetheless refused LAN access on a Mac, TN3179 describes a system-wide exemption by network, set with `sudo`
+and applied after a restart (it loosens the privacy gate for those networks for every program):
+`sudo defaults write com.apple.network.local-network AllowedEthernetLocalNetworkAddresses -array "LAN_CIDR" "fe80::/10"`
+(`AllowedWiFiLocalNetworkAddresses` for a Wi-Fi LAN).
+
+### Health check
+
+```
+tf-pd-health producer [--link NAME]     # rank 0's host: listen daemon up, rank 0 attached, rank 0 /health
+tf-pd-health decoder  [--link NAME]     # the Mac: connect daemon up, link up, decoder /health
+```
+
+It reads only the daemon's status socket and the server's open `/health` route, and exits 0 (healthy), 1 (degraded: the link
+is down or nothing is attached, so the Mac prefills by itself, slower but correct) or 2 (a daemon or a server does not answer).
+Run it from a monitor or a timer of your own; no unit here restarts anything on a failed check.
+
+### What this recipe does not do
+
+* Systemd and launchd cannot tie the two pair machines together; a rank 1 whose peer died waits until its own restart policy
+  replaces it.
+* The pair and the production unit share the GPUs: the switch is an outage, by design.
+* Not run on hardware in this form: install it on a spare pair first, and confirm with `tf-pd-health` and one request that
+  carries `remote_prefix` (section 8) that the Mac's daemons reach the producer from a boot with nobody logged in.
 
 ## 10. Troubleshooting
 
@@ -232,7 +379,7 @@ The Mac's restore command (`tools/restore-rdma.py`) and the peer's neighbour are
 | `connect failed with status 6` | the exchange was given the cable's interface | give the LAN interface and the pinned peer address |
 | the TP pair hangs at start at 100 % CPU, NCCL `RETRY_EXC_ERR` | NCCL autodetected the Mac-facing port | `NCCL_IB_HCA==PAIR_DEV_A,PAIR_DEV_B` |
 | rank 0 exits: `no mcdma-rpcd listen daemon serves that link` | the daemon was not running when rank 0 reached the exporter | start the listen daemon first, as the same user |
-| `HostUnreachable` from the Mac's server or daemon | macOS Local Network permission for a detached process | run both in a Terminal or ssh session |
+| `HostUnreachable` from the Mac's server or daemon | a process reparented away from its ssh session or Terminal (`nohup`, `&`) loses macOS's local-network exemption | run both from a launchd job (section 9) or in a live session |
 | `link down (the connect end is silent)` in the listen log | the Mac daemon restarted or slept; it reconnects | none, unless it stays down |
 | reply has no `remote_prefix` | prompt under `TF_PREFILL_MIN`, producer down, checkpoint hash differs | read the Mac's `remote prefill failed (...)` line |
 | `pkill -f PATTERN` ends your ssh command | the pattern matches the command line carrying it | kill by pid |

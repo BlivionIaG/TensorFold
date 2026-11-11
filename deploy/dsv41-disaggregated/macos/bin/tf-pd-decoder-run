@@ -1,0 +1,63 @@
+#!/bin/sh
+# Supervisor for the Mac decoder: tf-pd-decoder-run SERVER-COMMAND [ARGS...]
+# 1. Starts the server only once the connect daemon answers for link PD_LINK (the server maps its mailbox once).
+# 2. Stops the server when that daemon goes away or is replaced: a restarted daemon creates a new mailbox, the server
+#    would keep the old one for good and prefill every prompt itself. The job's KeepAlive then starts it again.
+# 3. Rotates PD_LOG at start (PD_LOG_MAX bytes, four backups) and appends the server's output to it.
+# Exit 75: the daemon was missing or changed; otherwise the server's own status. SIGTERM goes to the server.
+set -u
+LINK=${PD_LINK:?PD_LINK is not set}
+SOCK=${MCDMA_RPCD_SOCKET:-/tmp/mcdma-rpcd.sock}
+WAIT=${PD_WAIT_S:-300}
+[ $# -ge 1 ] || { echo "usage: tf-pd-decoder-run SERVER-COMMAND [ARGS...]" >&2; exit 2; }
+
+rotate() {
+    [ -f "$1" ] || return 0
+    size=$(stat -f %z "$1" 2>/dev/null || echo 0)
+    [ "$size" -gt "${PD_LOG_MAX:-67108864}" ] || return 0
+    n=4
+    while [ "$n" -gt 1 ]; do
+        [ -f "$1.$((n - 1))" ] && mv -f "$1.$((n - 1))" "$1.$n"
+        n=$((n - 1))
+    done
+    mv -f "$1" "$1.1"
+}
+if [ -n "${PD_LOG:-}" ]; then
+    rotate "$PD_LOG"
+    exec >>"$PD_LOG" 2>&1
+fi
+
+daemon_pid() { pgrep -x -u "$(id -u)" mcdma-rpcd | sed -n 1p; }
+link_listed() { printf 'STATUS\n' | nc -U -w 2 "$SOCK" 2>/dev/null | grep -q "^PEER $LINK "; }
+
+waited=0
+until daemon=$(daemon_pid) && [ -n "$daemon" ] && link_listed; do
+    waited=$((waited + 2))
+    if [ "$waited" -gt "$WAIT" ]; then
+        echo "tf-pd-decoder: no connect daemon for link $LINK after ${WAIT}s" >&2
+        exit 75
+    fi
+    sleep 2
+done
+echo "tf-pd-decoder: connect daemon pid $daemon serves link $LINK; starting $1" >&2
+
+"$@" &
+child=$!
+state=run
+trap 'state=stop; kill -TERM "$child" 2>/dev/null' TERM INT
+while kill -0 "$child" 2>/dev/null; do
+    sleep 5 &
+    wait $!
+    if [ "$state" = run ] && [ "$(daemon_pid)" != "$daemon" ]; then
+        echo "tf-pd-decoder: the connect daemon (pid $daemon) is gone or replaced; stopping the server" >&2
+        state=moved
+        kill -TERM "$child" 2>/dev/null
+    fi
+done
+while :; do
+    wait "$child"
+    rc=$?
+    kill -0 "$child" 2>/dev/null || break
+done
+[ "$state" = moved ] && exit 75
+exit "$rc"

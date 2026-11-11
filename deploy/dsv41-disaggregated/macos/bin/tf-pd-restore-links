@@ -1,0 +1,34 @@
+#!/bin/sh
+# Restore the CX5 interfaces' addresses and static neighbours after a boot (tools/restore-rdma.py from the MCDMA
+# checkout). Runs as root from a LaunchDaemon and touches only local interface state: no LAN traffic.
+# PD_LINKS: space-separated IF,MAC,PEER_GID,PEER_MAC entries; PD_RESTORE_PY: the script; PD_PYTHON3: its interpreter.
+# The enclosure can enumerate well after launchd starts the job, so each entry is retried for PD_WAIT_S seconds.
+set -u
+: "${PD_LINKS:?PD_LINKS is not set}" "${PD_RESTORE_PY:?PD_RESTORE_PY is not set}"
+PYTHON3=${PD_PYTHON3:-/usr/bin/python3}
+WAIT=${PD_WAIT_S:-180}
+
+failed=0
+for entry in $PD_LINKS; do
+    old_ifs=$IFS
+    IFS=,
+    # shellcheck disable=SC2086  # the entry is split on commas on purpose
+    set -- $entry
+    IFS=$old_ifs
+    if [ $# -ne 4 ]; then
+        echo "bad PD_LINKS entry '$entry': want IF,MAC,PEER_GID,PEER_MAC" >&2
+        failed=1
+        continue
+    fi
+    waited=0
+    until "$PYTHON3" "$PD_RESTORE_PY" --interface "$1" --expected-mac "$2" --peer-gid "$3" --peer-mac "$4"; do
+        waited=$((waited + 5))
+        if [ "$waited" -gt "$WAIT" ]; then
+            echo "$1: not restored after ${WAIT}s" >&2
+            failed=1
+            break
+        fi
+        sleep 5
+    done
+done
+exit "$failed"

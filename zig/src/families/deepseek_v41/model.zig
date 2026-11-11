@@ -161,7 +161,7 @@ pub const Model = struct {
     stream_alt: bool = false,
     pending_expand: bool = false,
     host_prof: bool = false,
-    /// TF_DSV41_HOST_PROF: when the last command buffer's GPU work ended (host clock, seconds), for the gap before the next.
+    /// TF_DSV41_HOST_PROF: when the last command buffer's GPU work ended (host clock, s), for the gap before the next.
     prof_gpu_end: f64 = 0,
     host_hash_ns: u64 = 0,
     host_stage_ns: u64 = 0,

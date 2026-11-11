@@ -11,6 +11,11 @@ const trigger = @import("remote_trigger.zig");
 const Filled = api.LaneHost.Remote.Filled;
 const http = @import("deepseek_v41_http.zig");
 const Flags = api.LaneHost.Remote.Flags;
+const Route = api.LaneHost.Remote.Route;
+const Ask = api.LaneHost.Remote.Ask;
+const Verdict = api.LaneHost.Remote.Verdict;
+const Directive = api.LaneHost.Remote.Directive;
+const Measured = api.LaneHost.Remote.Measured;
 
 /// The Qwen pull's prefix policy with TF_PREFILL_TAIL: the Mac prefills only the last token by default, no 512 tail.
 pub fn policy() !ps.Policy {
@@ -34,7 +39,7 @@ pub const Pull = struct {
     io: std.Io,
     model: *ds.Model,
     remote: ps.Remote,
-    mutex: std.Io.Mutex = .init,
+    route: Route = .{},
     pulls: u64 = 0,
     ns: u64 = 0,
     running: std.atomic.Value(u32) = .init(0),
@@ -43,13 +48,15 @@ pub const Pull = struct {
     linked: bool = true,
 
     pub fn source(p: *Pull) api.LaneHost.Remote.Source {
-        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running };
+        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running, .measured = measured };
     }
 
     /// A prefix of `prompt` beyond `cached` on a whole chunk, filled remotely and landed whole in a blank Snapshot.
-    pub fn pull(p: *Pull, prompt: []const u32, cached: u64) !?Filled {
-        p.mutex.lockUncancelable(p.io);
-        defer p.mutex.unlock(p.io);
+    pub fn pull(p: *Pull, prompt: []const u32, cached: u64, directive: Directive) !?Filled {
+        if (p.closing.load(.acquire) or p.off.load(.acquire)) return null;
+        const upto = p.remote.policy.upto(prompt.len, cached) orelse return null;
+        _ = p.route.admit(p.io, p.route.estimateFor(upto, prompt.len - cached, directive), &p.closing) orelse return null;
+        defer p.route.leave();
         if (p.closing.load(.acquire) or p.off.load(.acquire)) return null;
         p.remote.client.renew() catch |err| {
             if (p.linked) std.log.warn("remote prefill: the link is not usable ({s}); prompts are prefilled here", .{@errorName(err)});
@@ -75,8 +82,10 @@ pub const Pull = struct {
         };
         _ = landing.complete() catch return error.PartialState;
         try p.model.snapshotSeal(snap, prompt, at);
+        const took = fabric.words.nowNs() - t0;
         p.pulls += 1;
-        p.ns += fabric.words.nowNs() - t0;
+        p.ns += took;
+        p.route.observe(.{ .pass = .remote, .rows = at, .ns = took });
         return .{ .saved = snap, .at = at };
     }
 
@@ -87,16 +96,22 @@ pub const Pull = struct {
         std.log.warn("remote prefill off for this server: the GB10's export does not match ({s})", .{@errorName(err)});
     }
 
-    fn wants(ptr: *anyopaque, len: u64, cached: u64) bool {
+    fn wants(ptr: *anyopaque, ask: Ask) Verdict {
         const p: *Pull = @ptrCast(@alignCast(ptr));
-        if (p.closing.load(.acquire) or p.off.load(.acquire)) return false;
-        const n = p.remote.policy.upto(len, cached) orelse return false;
-        return n - cached >= p.remote.policy.min_prefix;
+        if (p.closing.load(.acquire) or p.off.load(.acquire)) return .off;
+        const n = p.remote.policy.upto(ask.len, ask.cached) orelse return .small;
+        if (n - ask.cached < p.remote.policy.min_prefix) return .small;
+        return p.route.weigh(Route.nowNs(p.io), ask, n);
     }
 
-    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64) anyerror!?Filled {
+    fn measured(ptr: *anyopaque, m: Measured) void {
         const p: *Pull = @ptrCast(@alignCast(ptr));
-        return p.pull(prompt, cached);
+        p.route.observe(m);
+    }
+
+    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive) anyerror!?Filled {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        return p.pull(prompt, cached, directive);
     }
 
     fn drop(ptr: *anyopaque, saved: *anyopaque) void {
@@ -154,12 +169,12 @@ pub const FileSource = struct {
         return .{ .ptr = f, .wants = fileWants, .fill = fileFill, .drop = fileDrop, .running = &f.running };
     }
 
-    fn fileWants(ptr: *anyopaque, len: u64, cached: u64) bool {
+    fn fileWants(ptr: *anyopaque, ask: api.LaneHost.Remote.Ask) Verdict {
         const f: *FileSource = @ptrCast(@alignCast(ptr));
-        return len > f.blob.tokens.len and cached < f.blob.tokens.len;
+        return if (ask.len > f.blob.tokens.len and ask.cached < f.blob.tokens.len) .remote else .small;
     }
 
-    fn fileFill(ptr: *anyopaque, prompt: []const u32, _: u64) anyerror!?Filled {
+    fn fileFill(ptr: *anyopaque, prompt: []const u32, _: u64, _: Directive) anyerror!?Filled {
         const f: *FileSource = @ptrCast(@alignCast(ptr));
         const tokens = f.blob.tokens;
         if (prompt.len <= tokens.len or !std.mem.eql(u32, prompt[0..tokens.len], tokens)) return null;
@@ -201,6 +216,7 @@ pub const Link = struct {
         const l = try gpa.create(Link);
         errdefer gpa.destroy(l);
         const rules = try policy();
+        const gate = try Route.fromEnv();
         l.box = try fabric.mailbox.Mailbox.openConnect(f.link.?);
         errdefer l.box.close();
         l.client = try fabric.mailbox.Client.init(&l.box, fabric.words.native, 30 * std.time.ns_per_s);
@@ -208,7 +224,7 @@ pub const Link = struct {
         const key = try q27.apiKey(gpa, io);
         errdefer if (key) |k| gpa.free(k);
         l.http = .{ .gpa = gpa, .io = io, .url = try std.fmt.allocPrint(gpa, "{s}/v1/completions", .{base}), .model = "", .closing = &l.pull.closing, .key = key };
-        l.pull = .{ .gpa = gpa, .io = io, .model = m, .remote = .{ .gpa = gpa, .policy = rules, .client = &l.client, .trigger = l.http.trigger(), .model = id, .protocol = fabric.wire.recurrent_version } };
+        l.pull = .{ .gpa = gpa, .io = io, .model = m, .route = gate, .remote = .{ .gpa = gpa, .policy = rules, .client = &l.client, .trigger = l.http.trigger(), .model = id, .protocol = fabric.wire.recurrent_version } };
         return l;
     }
 
@@ -279,15 +295,18 @@ test "remote prefill for DeepSeek V4.1 refuses half its flags and a separate dra
 test "the pull wants a prefix only 4096 tokens or more past what the Mac resumes, and stops for good on a mismatch" {
     if (std.c.getenv("TF_PREFILL_MIN") != null or std.c.getenv("TF_PREFILL_CHUNK") != null or std.c.getenv("TF_PREFILL_TAIL") != null) return error.SkipZigTest;
     var p: Pull = undefined;
+    p.io = std.testing.io;
+    p.route = .{};
     p.closing = .init(false);
     p.off = .init(false);
     p.remote.policy = try policy();
-    try std.testing.expect(Pull.wants(&p, 5600, 1000));
-    try std.testing.expect(!Pull.wants(&p, 5600, 2000));
+    const t = std.testing;
+    try t.expectEqual(Verdict.remote, Pull.wants(&p, .{ .len = 5600, .cached = 1000, .decoding = 1 }));
+    try t.expectEqual(Verdict.small, Pull.wants(&p, .{ .len = 5600, .cached = 2000, .decoding = 1 }));
     p.settle(error.Refused);
-    try std.testing.expect(Pull.wants(&p, 8192, 0));
+    try t.expectEqual(Verdict.remote, Pull.wants(&p, .{ .len = 8192, .cached = 0, .decoding = 1 }));
     p.settle(error.Mismatch);
-    try std.testing.expect(!Pull.wants(&p, 8192, 0));
+    try t.expectEqual(Verdict.off, Pull.wants(&p, .{ .len = 8192, .cached = 0, .decoding = 1 }));
 }
 
 test "the pull leaves the last prompt token to the Mac by default, and the producer is asked for all the others" {

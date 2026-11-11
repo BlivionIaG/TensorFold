@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- LaunchDaemon (system domain) that drops to the serving user: the Mac decoder and API front end.
+     tf-pd-decoder-run waits for the connect daemon, starts the server, and stops it when that daemon is replaced
+     (the server maps the daemon's mailbox once). Its output goes to PD_LOG, rotated at each start.
+     The server falls back to prefilling by itself whenever the producer or the link is down. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.tensorfold.pd-decoder</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>@LIBEXEC@/tf-pd-decoder-run</string>
+        <string>@TF_NATIVE@</string>
+        <string>serve</string>
+        <string>@PACK@</string>
+        <string>--engram-stream-dir</string>
+        <string>@ENGRAM_STREAM@</string>
+        <string>--chat-template</string>
+        <string>@PACK@/chat_template.jinja</string>
+        <string>--context</string>
+        <string>@CONTEXT@</string>
+        <string>--parallel</string>
+        <string>1</string>
+        <string>--prompt-cache-gib</string>
+        <string>4</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8899</string>
+        <string>--name</string>
+        <string>DeepSeek-V4.1-Flash</string>
+        <string>--prefill-from</string>
+        <string>@PRODUCER_URL@</string>
+        <string>--mcdma-link</string>
+        <string>@LINK_NAME@</string>
+    </array>
+    <key>UserName</key>
+    <string>@TF_USER@</string>
+    <key>GroupName</key>
+    <string>@TF_GROUP@</string>
+    <key>WorkingDirectory</key>
+    <string>@TF_HOME@</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>@TF_HOME@</string>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PD_LINK</key>
+        <string>@LINK_NAME@</string>
+        <key>PD_LOG</key>
+        <string>@LOG_DIR@/decoder.log</string>
+        <key>GLM_LOAD_LIMIT_GB</key>
+        <string>@LOAD_LIMIT_GB@</string>
+        <key>TF_DSV41_MTP_DRAFTS</key>
+        <string>1</string>
+        <key>TF_DSV41_TAPS</key>
+        <string>1</string>
+        <key>TF_DSV41_LOOKUP_DRAFTS</key>
+        <string>3</string>
+        <key>TF_DSV41_PREFILL_STEP</key>
+        <string>4096</string>
+        <key>TF_PREFILL_API_KEY_FILE</key>
+        <string>@KEY_FILE@</string>
+        <key>TF_PREFILL_TIMEOUT_S</key>
+        <string>300</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Any failure, and the supervisor's exit 75 when the connect daemon changed, starts it again. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>ExitTimeOut</key>
+    <integer>90</integer>
+    <key>AbandonProcessGroup</key>
+    <false/>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>StandardOutPath</key>
+    <string>@LOG_DIR@/decoder-launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>@LOG_DIR@/decoder-launchd.log</string>
+</dict>
+</plist>

@@ -86,15 +86,18 @@ reply is one token, and the state at the cut goes to the producer (`cuda_export_
   is there is complete.
 * The export reads rank 0's active slot: its snapshot (`Sessions.snapshot`) and its pool pages, through the same
   `PageStore` the NVMe park uses. A replicated pool holds the same pages and rings on every rank, so no other rank takes
-  part. The snapshot's raw bytes are converted at once to the library's bf16 parts and freed.
+  part. The snapshot's raw bytes are read at the cut, on the engine thread, and converted to the library's bf16 parts on a thread of
+  their own (at most two at a time, a third converts inline), so the decode lanes keep running; a decoder that asks before the
+  parts are done waits for them (`.wait` on a link, a held request over HTTP). The raw bytes are freed when the parts stand.
 * The model name is `LaneHost.Remote.checkpointId` of the checkpoint folder (config and weight index hashed): the
   decoder must serve identical files, or give the manifest's name.
 
 The engine refuses, at start-up and by name, a configuration it cannot export: no session store (`TF_DSV41_POOL_TOKENS`),
-`TF_DSV41_PREFILL_PIECES=1` (a prompt in pieces
-never stands at the cut), `TF_DSV41_KV_SPLIT=1` (half the pages are on the other rank), a non-default prompt shape, and fp4
-comp rows. Replay prefill is exported, with `TF_DSV41_PF_4K` and the other knobs that need it. The pair's serving profile also
-uses pieces and a split pool, so an export pair runs another profile.
+`TF_DSV41_KV_SPLIT=1` (half the pages are on the other rank), a non-default prompt shape, and fp4 comp rows. Replay prefill is
+exported, with `TF_DSV41_PF_4K` and the other knobs that need it. So is a prompt run in pieces between decode rounds
+(`TF_DSV41_PREFILL_PIECES=1`): the cut stands in the prompt's last step, after its last piece and the decoder replay and before
+the last token's window, and the other streams keep decoding while the pieces run. The pair's serving profile (pieces, replay,
+drafts) therefore exports in the same process, with a replicated pool.
 
 ## Assumptions that the library cannot prove
 
@@ -116,6 +119,16 @@ prefills the tail, exactly as for a kept prompt state. `drop` frees the Snapshot
 built on it are kept (marked remote). The drafter's rings are not in a Snapshot (the lane holds them in a state of its own), so
 `ring` parts are read and dropped; the drafter has no conditioning rows until local forwards fill the taps, which can lower
 draft acceptance and nothing else.
+
+The source decides per prompt (`core/lane_remote_route.zig`, kept by both Mac pulls, see
+[the setup page](deepseek-v41-disaggregated.md#several-requests-and-when-a-prompt-goes-to-the-pair-at-all)): `wants` returns a
+verdict, and `queue` passes it the number of streams decoding. The pair takes one pull at a time, kept by a try-lock gate and
+no longer by a mutex held across the pull: a prompt that finds it busy is prefilled on the Mac, unless the pull under way ends
+soon enough that waiting still pays (a wait already begun ends when it stops paying); a stream decoding on the Mac sends the
+prompt to the pair even when the pair is no faster; otherwise the pull must be predicted no slower than the Mac's prefill, by
+running averages the pull and the lane host feed (`Source.measured`). A `busy`, `slower` or `down` verdict holds for now and
+the prompt is weighed again; `small` and `off` are final. Nothing changes on the wire. `TF_PREFILL_ROUTE=always` pulls every
+prompt past `TF_PREFILL_MIN`, queued behind any pull under way, as it used to.
 
 ### How much of the prompt is handed over
 
@@ -203,9 +216,9 @@ off for the rest of the run, as over a link. The result is labelled remote as ev
 The pair, then the Mac (names and paths are placeholders):
 
 ```
-# each Spark: the export profile (replicated KV, whole-prompt prefill, paged pool), rank 1 as ever `tf-dsv41 follow`
+# each Spark: the export profile (replicated KV, paged pool; replay and pieces are exported), rank 1 as ever `tf-dsv41 follow`
 export TF_EXPERIMENTAL=deepseek TF_DSV41_POOL_TOKENS=65536   # plus the pair's usual TF_TP_* and TF_DSV41_* settings
-unset TF_DSV41_PREFILL TF_DSV41_PREFILL_PIECES TF_DSV41_KV_SPLIT
+unset TF_DSV41_KV_SPLIT
 # rank 0 only: the serve line gains one flag (and a key)
 tensorfold-dsv41 serve $MODEL --host 0.0.0.0 --port 8000 --name DeepSeek-V4.1-Flash-TF --no-thinking \
     --mcdma-produce http --api-key-file $KEYFILE

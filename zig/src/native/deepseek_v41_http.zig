@@ -11,6 +11,11 @@ const remote = @import("deepseek_v41_remote.zig");
 const q27 = @import("qwen27_remote.zig");
 const Filled = api.LaneHost.Remote.Filled;
 const Flags = api.LaneHost.Remote.Flags;
+const Route = api.LaneHost.Remote.Route;
+const Ask = api.LaneHost.Remote.Ask;
+const Verdict = api.LaneHost.Remote.Verdict;
+const Directive = api.LaneHost.Remote.Directive;
+const Measured = api.LaneHost.Remote.Measured;
 
 /// The lane host's remote source over HTTP: one pull at a time, each into a blank Snapshot of this model's shape.
 pub const Pull = struct {
@@ -23,7 +28,7 @@ pub const Pull = struct {
     trigger: trigger.Http,
     from: ho.http.Source,
     reason: fabric.decoder.Reason = .{},
-    mutex: std.Io.Mutex = .init,
+    route: Route = .{},
     next_id: u64 = 1,
     pulls: u64 = 0,
     bytes: u64 = 0,
@@ -33,16 +38,17 @@ pub const Pull = struct {
     off: std.atomic.Value(bool) = .init(false),
 
     pub fn source(p: *Pull) api.LaneHost.Remote.Source {
-        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running };
+        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running, .measured = measured };
     }
 
     /// A prefix of `prompt` beyond `cached` on a whole chunk, asked for, fetched and landed whole in a blank Snapshot.
-    pub fn pull(p: *Pull, prompt: []const u32, cached: u64) !?Filled {
-        p.mutex.lockUncancelable(p.io);
-        defer p.mutex.unlock(p.io);
+    pub fn pull(p: *Pull, prompt: []const u32, cached: u64, directive: Directive) !?Filled {
+        if (p.closing.load(.acquire) or p.off.load(.acquire)) return null;
+        const upto = p.policy.upto(prompt.len, cached) orelse return null;
+        _ = p.route.admit(p.io, p.route.estimateFor(upto, prompt.len - cached, directive), &p.closing) orelse return null;
+        defer p.route.leave();
         if (p.closing.load(.acquire) or p.off.load(.acquire)) return null;
         p.reason.len = 0;
-        const upto = p.policy.upto(prompt.len, cached) orelse return null;
         const at: u32 = std.math.cast(u32, upto) orelse return error.PrefixTooLong;
         if (upto >= prompt.len) return error.PrefixTooLong; // a token past the prefix goes too
         const t0 = fabric.words.nowNs();
@@ -72,9 +78,11 @@ pub const Pull = struct {
         if (got.manifest.first_token != 0) return error.PartialPrefix;
         _ = landing.complete() catch return error.PartialState;
         try p.model.snapshotSeal(snap, prompt, at);
+        const took = fabric.words.nowNs() - t0;
         p.pulls += 1;
         p.bytes += got.bytes;
-        p.ns += fabric.words.nowNs() - t0;
+        p.ns += took;
+        p.route.observe(.{ .pass = .remote, .rows = at, .ns = took });
         return .{ .saved = snap, .at = at };
     }
 
@@ -85,16 +93,22 @@ pub const Pull = struct {
         std.log.warn("remote prefill off for this server: the GB10's export does not match ({s})", .{@errorName(err)});
     }
 
-    fn wants(ptr: *anyopaque, len: u64, cached: u64) bool {
+    fn wants(ptr: *anyopaque, ask: Ask) Verdict {
         const p: *Pull = @ptrCast(@alignCast(ptr));
-        if (p.closing.load(.acquire) or p.off.load(.acquire)) return false;
-        const n = p.policy.upto(len, cached) orelse return false;
-        return n - cached >= p.policy.min_prefix;
+        if (p.closing.load(.acquire) or p.off.load(.acquire)) return .off;
+        const n = p.policy.upto(ask.len, ask.cached) orelse return .small;
+        if (n - ask.cached < p.policy.min_prefix) return .small;
+        return p.route.weigh(Route.nowNs(p.io), ask, n);
     }
 
-    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64) anyerror!?Filled {
+    fn measured(ptr: *anyopaque, m: Measured) void {
         const p: *Pull = @ptrCast(@alignCast(ptr));
-        return p.pull(prompt, cached);
+        p.route.observe(m);
+    }
+
+    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive) anyerror!?Filled {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        return p.pull(prompt, cached, directive);
     }
 
     fn drop(ptr: *anyopaque, saved: *anyopaque) void {
@@ -114,6 +128,7 @@ pub const Link = struct {
         const l = try gpa.create(Link);
         errdefer gpa.destroy(l);
         const rules = try remote.policy();
+        const gate = try Route.fromEnv();
         const key = try q27.apiKey(gpa, io);
         errdefer if (key) |k| gpa.free(k);
         l.base = try gpa.dupe(u8, std.mem.trimEnd(u8, f.url.?, "/"));
@@ -125,6 +140,7 @@ pub const Link = struct {
             .io = io,
             .model = m,
             .policy = rules,
+            .route = gate,
             .checkpoint = id,
             .trigger = .{ .gpa = gpa, .io = io, .url = l.url, .model = "", .key = key },
             .from = .{ .gpa = gpa, .io = io, .base = l.base, .key = key },

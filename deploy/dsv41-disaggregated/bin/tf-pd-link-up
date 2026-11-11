@@ -1,0 +1,22 @@
+#!/bin/sh
+# Restore the Mac-facing port after a boot: release it from NetworkManager, MTU 9000, 100G, the Mac's static neighbour.
+# Reads PEER_IF, PEER_IF_EXTRA, MAC_GID and MAC_HWADDR from the environment (tf-pd-link-up.service). Idempotent.
+set -eu
+: "${PEER_IF:?PEER_IF is not set}" "${MAC_GID:?MAC_GID is not set}" "${MAC_HWADDR:?MAC_HWADDR is not set}"
+
+waited=0
+while [ ! -e "/sys/class/net/$PEER_IF" ]; do
+    waited=$((waited + 1))
+    [ "$waited" -le 60 ] || { echo "$PEER_IF did not appear in 60 s" >&2; exit 1; }
+    sleep 1
+done
+
+for ifc in "$PEER_IF" ${PEER_IF_EXTRA:-}; do
+    nmcli dev set "$ifc" managed no || echo "warning: nmcli could not release $ifc" >&2
+done
+ip link set dev "$PEER_IF" mtu 9000 up
+for ifc in "$PEER_IF" ${PEER_IF_EXTRA:-}; do
+    ethtool -s "$ifc" speed 100000 duplex full autoneg on || echo "warning: ethtool -s failed on $ifc" >&2
+done
+ip -6 neigh replace "$MAC_GID" lladdr "$MAC_HWADDR" nud permanent dev "$PEER_IF"
+ethtool "$PEER_IF" | grep -E 'Link detected|Speed' || true
