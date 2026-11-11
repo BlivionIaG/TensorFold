@@ -4,6 +4,7 @@ const std = @import("std");
 const Io = std.Io;
 const disk_mod = @import("disk.zig");
 const Disk = disk_mod.Disk;
+const save_queue = @import("save_queue.zig");
 
 pub const Kind = enum { park, restore };
 pub const State = enum(u8) { queued, running, done, failed };
@@ -33,6 +34,11 @@ pub const Job = struct {
     ids: []i32 = &.{},
     lists: [][]u32 = &.{},
     blobs: []disk_mod.Blob = &.{},
+    /// park: a write-through on the save queue's worker, settled at a point every rank agrees on (store_writes.zig)
+    queued: bool = false,
+    save: save_queue.Job = undefined,
+    disk: *Disk = undefined,
+    io: Io = undefined,
 
     pub fn done(j: *const Job) bool {
         const s = j.state.load(.acquire);
@@ -54,7 +60,7 @@ pub const Job = struct {
         gpa.destroy(j);
     }
 
-    fn run(j: *Job, d: *Disk, io: Io) void {
+    pub fn run(j: *Job, d: *Disk, io: Io) void {
         j.state.store(.running, .release);
         const t0 = Io.Clock.awake.now(io).toNanoseconds();
         j.err = switch (j.kind) {

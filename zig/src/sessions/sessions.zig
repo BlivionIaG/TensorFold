@@ -15,6 +15,7 @@ pub const format = @import("format.zig");
 pub const disk = @import("disk.zig");
 pub const Disk = disk.Disk;
 pub const jobs = @import("jobs.zig");
+pub const save_queue = @import("save_queue.zig");
 pub const rank_narrow = @import("rank_narrow.zig");
 pub const restore = @import("restore.zig");
 pub const store = @import("store.zig");
@@ -38,4 +39,6 @@ test {
     _ = store;
     _ = @import("disk_test.zig");
     _ = @import("store_test.zig");
+    _ = @import("store_writes_test.zig");
+    _ = @import("save_queue_test.zig");
 }

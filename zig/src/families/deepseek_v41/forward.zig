@@ -421,6 +421,8 @@ pub const Forward = struct {
         reset: *const fn (ptr: *anyopaque) anyerror!void,
         /// a request's pool admission (op_sess_admit's message): the leader's spills evicted, its pages reserved
         admit: ?*const fn (ptr: *anyopaque, msg: []const i64) anyerror!void = null,
+        /// the leader's count of finished write-through saves (op_sess_settle): this rank settles its oldest n
+        settle: ?*const fn (ptr: *anyopaque, n: u32) anyerror!void = null,
     };
 
     pub const op_calib_mark = fwd_follow.op_calib_mark;
@@ -433,6 +435,7 @@ pub const Forward = struct {
     pub const sendRestore = fwd_follow.sendRestore;
     pub const sendSess = fwd_follow.sendSess;
     pub const sendSessAdmit = fwd_follow.sendSessAdmit;
+    pub const sendSessSettle = fwd_follow.sendSessSettle;
 
     /// The drafter's operations a follower runs (dspark_gpu.zig): its collectives pair up with the leader's.
     pub const Drafter = struct {

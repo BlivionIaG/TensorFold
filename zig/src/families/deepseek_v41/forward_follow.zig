@@ -36,6 +36,8 @@ pub const op_ced_finish: i64 = 44;
 pub const op_sess_prompt: i64 = 45;
 /// 48: [op, need, n, spilled entry ids...] a request's admission (ops 48-51: sessions over several slots)
 pub const op_sess_admit: i64 = 48;
+/// 49: [op, n] the leader's count of write-through saves finished behind its engine thread: every rank settles n
+pub const op_sess_settle: i64 = 49;
 
 /// 52: [op, segments, (slot, start, rows) a segment, ids...]; 53: [op, n, slots...] (ops 52-55: prefill runs)
 pub const op_pf_multi: i64 = 52;
@@ -211,6 +213,15 @@ pub fn sendSessAdmit(f: *Forward, need: u32, spills: []const u32) !void {
     try f.link.?.send(msg.items);
 }
 
+/// Rank 0: how many write-through saves it settles now, to the followers (before settling them).
+pub fn sendSessSettle(f: *Forward, n: u32) !void {
+    if (f.leads()) try f.link.?.send(&sessSettleOp(n));
+}
+
+pub fn sessSettleOp(n: u32) [2]i64 {
+    return .{ op_sess_settle, n };
+}
+
 pub fn dsResetOp() [1]i64 {
     return .{op_ds_reset};
 }
@@ -264,7 +275,7 @@ pub fn follow(f: *Forward) !void {
 }
 
 /// One of the leader's operations (follow); true: `stop`.
-fn followOp(f: *Forward, msg: []const i64, ids: *std.ArrayList(u32), prompt: *std.ArrayList(u32), picks: *std.ArrayList(u32)) !bool {
+pub fn followOp(f: *Forward, msg: []const i64, ids: *std.ArrayList(u32), prompt: *std.ArrayList(u32), picks: *std.ArrayList(u32)) !bool {
     switch (msg[0]) {
         op_window => {
             const n: usize = @intCast(msg[1]);
@@ -323,6 +334,12 @@ fn followOp(f: *Forward, msg: []const i64, ids: *std.ArrayList(u32), prompt: *st
             const x = f.sess orelse return error.BadPlan;
             const run_ = x.admit orelse return error.BadPlan;
             try run_(x.ptr, msg);
+        },
+        op_sess_settle => {
+            const x = f.sess orelse return error.BadPlan;
+            const run_ = x.settle orelse return error.BadPlan;
+            if (msg.len != 2 or msg[1] < 1 or msg[1] > std.math.maxInt(u32)) return error.BadPlan;
+            try run_(x.ptr, @intCast(msg[1]));
         },
         op_pf_multi => {
             const ns: usize = @intCast(msg[1]);

@@ -10,4 +10,5 @@ test {
     _ = @import("pagestore.zig");
     _ = @import("prefix.zig");
     _ = @import("format.zig");
+    _ = @import("save_queue_test.zig");
 }

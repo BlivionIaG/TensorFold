@@ -13,7 +13,7 @@ const Store = store_mod.Store;
 const Bounded = store_mod.Bounded;
 const narrow_mod = @import("rank_narrow.zig");
 
-const page = 64;
+pub const page = 64;
 const fams = [_]Family{
     .{ .name = "comp.2", .ratio = 2, .row_bytes = 584, .split = true },
     .{ .name = "index_k.2", .ratio = 2, .row_bytes = 132 },
@@ -50,7 +50,7 @@ const HostBounded = struct {
 };
 
 /// One rank: its pool, host pages and store, plus what each chat's slot wrote (the reference rows by logical page).
-const Rank = struct {
+pub const Rank = struct {
     pool: Pool,
     host: HostPool,
     disk: *disk_mod.Disk,
@@ -59,7 +59,7 @@ const Rank = struct {
     /// Set by the replicated-pair test: every rank holds whole pages (a pool of its own), the tier files name a pair.
     var replicated_pair = false;
 
-    fn init(r: *Rank, gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32, policy: store_mod.Policy) !void {
+    pub fn init(r: *Rank, gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32, policy: store_mod.Policy) !void {
         const repl = replicated_pair;
         r.pool = try Pool.init(gpa, .{ .families = &fams, .page = page }, 96 * page, if (repl) 1 else world, if (repl) 0 else rank);
         r.host = try HostPool.init(gpa, &r.pool);
@@ -67,7 +67,7 @@ const Rank = struct {
         r.store = try Store.init(gpa, testing.io, &r.pool, r.host.store(), r.disk, policy);
     }
 
-    fn deinit(r: *Rank) void {
+    pub fn deinit(r: *Rank) void {
         r.store.deinit();
         r.disk.close();
         r.host.deinit();
@@ -95,14 +95,14 @@ const Rank = struct {
     }
 };
 
-fn chatIds(gpa: std.mem.Allocator, chat: u32, n: usize) ![]i32 {
+pub fn chatIds(gpa: std.mem.Allocator, chat: u32, n: usize) ![]i32 {
     const v = try gpa.alloc(i32, n);
     for (v, 0..) |*t, i| t.* = @intCast(chat * 100_000 + i);
     return v;
 }
 
 /// Prefill or resume a chat to len(ids) in slot s, save it, free the slot, enforce residency; returns the resume point.
-fn turn(gpa: std.mem.Allocator, r: *Rank, s: *Slot, chat: u32, ids: []const i32) ![]const u8 {
+pub fn turn(gpa: std.mem.Allocator, r: *Rank, s: *Slot, chat: u32, ids: []const i32) ![]const u8 {
     var tier: []const u8 = "fresh";
     var from: u32 = 0;
     if (try r.store.find(1, ids)) |hit| {
@@ -182,7 +182,7 @@ fn restart(gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32, used
     try testing.expectEqual(@as(u64, 1), r.store.stats.hits_disk);
 }
 
-fn tmpRoot(gpa: std.mem.Allocator, tmp: *std.testing.TmpDir, sub: []const u8) ![:0]u8 {
+pub fn tmpRoot(gpa: std.mem.Allocator, tmp: *std.testing.TmpDir, sub: []const u8) ![:0]u8 {
     try tmp.dir.createDirPath(testing.io, sub);
     return tmp.dir.realPathFileAlloc(testing.io, sub, gpa);
 }
