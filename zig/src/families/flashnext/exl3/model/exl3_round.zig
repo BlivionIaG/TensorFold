@@ -33,7 +33,7 @@ pub const Round = struct {
     lines: []u32,
     copies: []Copy,
     passes: []Pass,
-    routed: []u16, // the round's routed picks as u16 (ordering scratch)
+    max_picks: usize,
     misses: []u16,
     snap: []u16, // line -> id before a pass (empty_id for empty lines)
     keep: []u16, // pass ids plus protected ids (stageUsedAt's keep list)
@@ -65,8 +65,7 @@ pub const Round = struct {
         errdefer gpa.free(r.copies);
         r.passes = try gpa.alloc(Pass, uniq + 1);
         errdefer gpa.free(r.passes);
-        r.routed = try gpa.alloc(u16, max_picks);
-        errdefer gpa.free(r.routed);
+        r.max_picks = max_picks;
         r.misses = try gpa.alloc(u16, uniq);
         errdefer gpa.free(r.misses);
         r.snap = try gpa.alloc(u16, lines);
@@ -81,7 +80,6 @@ pub const Round = struct {
         gpa.free(r.lines);
         gpa.free(r.copies);
         gpa.free(r.passes);
-        gpa.free(r.routed);
         gpa.free(r.misses);
         gpa.free(r.snap);
         gpa.free(r.keep);
@@ -149,18 +147,11 @@ fn contains(xs: []const u16, id: u16) bool {
 
 const Order = struct {
     counts: []const u32,
-    ids: []const u16,
-    fn appearances(ids: []const u16, id: u16) u32 {
-        var n: u32 = 0;
-        for (ids) |x| n += @intFromBool(x == id);
-        return n;
-    }
+    occurrences: []const u32,
     /// Lifetime count descending, then this round's appearances, then lower id (the policy's `usedFirst`).
     fn hotter(o: Order, a: u16, b: u16) bool {
         if (o.counts[a] != o.counts[b]) return o.counts[a] > o.counts[b];
-        const aa = appearances(o.ids, a);
-        const ab = appearances(o.ids, b);
-        if (aa != ab) return aa > ab;
+        if (o.occurrences[a] != o.occurrences[b]) return o.occurrences[a] > o.occurrences[b];
         return a < b;
     }
 };
@@ -190,9 +181,10 @@ pub fn plan(
     r: *Round,
 ) error{ Busy, Length }!void {
     r.reset();
-    if (picks.len > r.routed.len or layer >= shape.layers or v.slots.len != r.snap.len) return error.Length;
-    // the routed picks and the distinct experts, in first-appearance order
-    var n_routed: usize = 0;
+    if (picks.len > r.max_picks or layer >= shape.layers or v.slots.len != r.snap.len) return error.Length;
+    // Counts are initialized on first sight and read only for this round's distinct experts.
+    var occurrences: [shape.experts]u32 = undefined;
+    var seen: [shape.experts / 64]u64 = @splat(0);
     var n_unique: usize = 0;
     for (picks) |p| {
         if (p < 0) continue;
@@ -202,21 +194,24 @@ pub fn plan(
             r.shared_slots += 1;
             continue;
         }
-        r.routed[n_routed] = id;
-        n_routed += 1;
-        if (!contains(r.ids[0..n_unique], id)) {
+        const word = id / 64;
+        const bit = @as(u64, 1) << @as(u6, @truncate(id));
+        if (seen[word] & bit == 0) {
+            seen[word] |= bit;
+            occurrences[id] = 1;
             r.ids[n_unique] = id;
             n_unique += 1;
-        }
+        } else occurrences[id] += 1;
     }
-    const routed = r.routed[0..n_routed];
     const uniq = r.ids[0..n_unique];
     // capacity check before anything is written: pass 0 holds the held experts, so at least one more line.
     var held_n: usize = 0;
     for (uniq) |id| held_n += @intFromBool(offload.lineOf(v.*, layer, id) != null);
     if (n_unique > held_n and blocked(v.*, &.{}) >= v.slots.len) return error.Busy;
 
-    if (opt.observe) offload.observe(&counts[layer], routed) catch return error.Length;
+    if (opt.observe) for (uniq) |id| {
+        counts[layer][id] +|= occurrences[id];
+    };
     const row: []const u32 = &counts[layer];
 
     // held first (pass 0), misses hottest first; ids[] is rewritten in pass order
@@ -225,14 +220,13 @@ pub fn plan(
     for (uniq) |id| {
         if (offload.lineOf(v.*, layer, id)) |line| {
             r.held += 1;
+            r.hit_slots += occurrences[id];
             if (v.line[line] == .inflight) r.pending += 1 else _ = offload.touchAt(v, layer, id, now);
         } else {
+            r.miss_slots += occurrences[id];
             r.misses[n_miss] = id;
             n_miss += 1;
         }
-    }
-    for (routed) |id| {
-        if (offload.lineOf(v.*, layer, id) != null) r.hit_slots += 1 else r.miss_slots += 1;
     }
     r.unique = @intCast(n_unique);
     // pack held ids at the front of ids (stable), then the sorted misses
@@ -243,7 +237,7 @@ pub fn plan(
         }
     }
     const misses = r.misses[0..n_miss];
-    std.mem.sort(u16, misses, Order{ .counts = row, .ids = routed }, Order.hotter);
+    std.mem.sort(u16, misses, Order{ .counts = row, .occurrences = &occurrences }, Order.hotter);
     @memcpy(r.ids[n_held..][0..n_miss], misses);
 
     // passes
@@ -372,6 +366,7 @@ pub fn linesFor(free: u64, reserve: u64, other: u64, line_bytes: u64, layers: us
 test {
     _ = offload;
     _ = @import("../graph/exl3_graph.zig");
+    _ = @import("exl3_round_counts_test.zig");
 }
 
 // ------------------------------------------------------------------------------------------------ tests
