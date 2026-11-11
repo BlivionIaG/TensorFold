@@ -39,6 +39,7 @@ pub const Knobs = struct {
     funnel: bool = true,
     row_invariant: bool = true,
     fma_tiles: u32 = 4,
+    fma_tile_groups: u32 = 400,
     fma_dense_h8: bool = true,
     fma_dense_multi: u32 = 4,
     fma_dense_multi_ceil: bool = true,

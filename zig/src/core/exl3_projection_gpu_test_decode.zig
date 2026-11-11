@@ -334,7 +334,10 @@ test "the exact half-FMA decode bodies keep every bit of the table bodies for an
     const queue = try device.queue();
     defer queue.deinit();
     const saved = ex.knobs.fma_tiles;
+    const saved_groups = ex.knobs.fma_tile_groups;
     defer ex.knobs.fma_tiles = saved;
+    defer ex.knobs.fma_tile_groups = saved_groups;
+    ex.knobs.fma_tile_groups = 0;
     const x = try input(device, 3);
     defer x.deinit();
     const scratch = try device.buffer(try ex.scratchBytes(k, n, 6), mtl.ResourceOptions.shared);

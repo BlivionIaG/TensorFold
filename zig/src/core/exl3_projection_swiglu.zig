@@ -90,7 +90,14 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
         a.rows >= 2 and (multi_ceil or a.rows % 2 == 0) and (multi_rows == 2 or !fma_dense_multi4);
     const fma_dense = fma_dense_ok and fmaDenseOn() and !fma_dense_multi4 and !fma_dense_multi2;
     // The T-tile register-only bodies (exact half-FMA mul1 value, no LUT): the routed call and the one-row dense call.
-    const tile_pick: ?usize = switch (knobs.fma_tiles) {
+    // The widest tile count (up to the knob) that still leaves the GPU `fma_tile_groups` threadgroups: a few wide
+    // threadgroups leave cores idle, which the microbench shows as a loss against one tile.
+    const tiles: u32 = if (knobs.fma_tiles == 0) 0 else blk: {
+        var t: u32 = if (knobs.fma_tiles >= 4) 4 else if (knobs.fma_tiles >= 2) 2 else 1;
+        while (t > 1 and ((@as(usize, a.n) + 16 * t - 1) / (16 * t)) * a.rows < knobs.fma_tile_groups) t /= 2;
+        break :blk t;
+    };
+    const tile_pick: ?usize = switch (tiles) {
         1 => 0,
         2 => 1,
         4 => 2,
@@ -164,7 +171,7 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     const moe_rows: usize = if (decode_nax) (if (compact) 1 else knobs.moe_rows) else 4;
     const group_rows: usize = if (fma or fma_static or fma_static_lut or fma_dense_multi2 or fma_dense_multi4) 1 else if (decode_nax) moe_rows else if (nax) nax_tile else if (shared) 32 else 8;
     // The geometry must follow the pipeline: the static one-row body is 128 columns and 256 threads.
-    const group_cols: usize = if (fma_t or fma_t_dense) 16 * knobs.fma_tiles else if (fma or fma_static or fma_static_lut or fma_dense) 16 else if (matmul_static_lut) 128 else if (nax) nax_cols else if (decode_nax) 32 else 16;
+    const group_cols: usize = if (fma_t or fma_t_dense) 16 * @as(usize, tiles) else if (fma or fma_static or fma_static_lut or fma_dense) 16 else if (matmul_static_lut) 128 else if (nax) nax_cols else if (decode_nax) 32 else 16;
     const height: usize = if (fma_dense_multi4) (a.rows + 3) / 4 else if (fma_dense_multi2) (a.rows + 1) / 2 else if (fma or fma_static or fma_static_lut or fma_dense) a.rows else if (splits > 1 and !decode_nax) splits else if (a.indexed == 1 and !decode_nax) a.rows else (@as(usize, a.rows) + group_rows - 1) / group_rows;
     // The warp32 tile runs four warps (a warp owns two sixteen-row groups).
     const nax_warp32: bool = nax and a.indexed != 0 and tile_id == 2 and warp32On() and nax_skip_pad_pick != null;
