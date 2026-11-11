@@ -42,6 +42,8 @@ pub const rules = [_]Rule{
     .{ .name = "TF_CUDA_DEVICE", .scope = .cuda, .kind = .device, .trim = " ", .forms = "a whole GPU ordinal from 0 to 4294967295, or empty for the default" },
     .{ .name = "TF_CUDA_SEGMENTS", .scope = .cuda, .kind = .segments, .trim = " ", .forms = "a whole number from 1 to 4, or empty for the default" },
     .{ .name = "TF_PRODUCE_HELD_GIB", .scope = .cuda, .kind = .u64, .min = 1, .max = 1024, .forms = "whole GiB from 1 to 1024 of hand-off exports held at once (default 32)" },
+    .{ .name = "TF_PRODUCE_SPILL_DIR", .scope = .cuda, .kind = .path, .forms = "a directory path without control characters, where a DeepSeek-V4.1 producer keeps big export buffers on unlinked files (page cache, not RAM the floor counts)" },
+    .{ .name = "TF_PRODUCE_SPILL_MIB", .scope = .cuda, .kind = .u64, .min = 1, .max = 65536, .forms = "whole MiB from 1 to 65536: the buffer size from which TF_PRODUCE_SPILL_DIR takes over (default 16)" },
     .{ .name = "TF_DSV41_HANDOFF_DUMP", .scope = .cuda, .kind = .path, .forms = "a directory path without control characters, where a DeepSeek-V4.1 producer writes each hand-off export" },
     .{ .name = "TF_DSV41_PRODUCE_LINK", .scope = .cuda, .kind = .path, .forms = "an mcdma-rpcd listen link name (1 to 20 of A-Z a-z 0-9 _ -) on which a follower rank exports its share of a KV_SPLIT hand-off" },
     .{ .name = "TF_LS_DUMP_DIR", .scope = .cuda, .kind = .path, .forms = "a directory path without control characters, where a DeepSeek-V4.1 prefill writes the layer-split gate's boundary rows" },

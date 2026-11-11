@@ -6,6 +6,7 @@ const cx = @import("cuda_export.zig");
 const file = @import("handoff_file.zig");
 const producer = fabric.producer;
 const log = std.log.scoped(.dsv41);
+const spill_mod = @import("cuda_export_spill.zig");
 
 pub const Options = struct {
     /// mcdma-rpcd's link name (null: no link; the exports go to files only)
@@ -22,6 +23,9 @@ pub const Options = struct {
     shards: u32 = 1,
     /// serve held exports over the server's own HTTP port (`--mcdma-produce http`), same cap and expiry as a link
     http: bool = false,
+    /// TF_PRODUCE_SPILL_DIR: buffers of `spill_min_bytes` and more live in unlinked files there (page cache, not RAM)
+    spill_dir: ?[]const u8 = null,
+    spill_min_bytes: usize = @as(usize, spill_mod.default_min_mib) << 20,
 };
 
 /// What `save` hands `exported`: the engine's state, read back.
@@ -45,6 +49,7 @@ pub const Produce = struct {
     streams: std.atomic.Value(u32) = .init(0), // reads under way (HTTP): the producer stops after them
     building: std.atomic.Value(u32) = .init(0), // exports converting on their own threads (`exportedBg`)
     pending: std.AutoHashMapUnmanaged([16]u8, void) = .empty, // their ids, under `lock`: a reader waits for them
+    spill: ?*spill_mod.Spill = null, // `Options.spill_dir`: the allocator of every buffer a held export is made of
 
     /// The most exports converting at once; one more converts on the caller's thread.
     pub const max_building: u32 = 2;
@@ -55,6 +60,18 @@ pub const Produce = struct {
         errdefer gpa.destroy(p);
         p.* = .{ .gpa = gpa, .io = io, .source = source, .opts = opts, .table = .{ .gpa = gpa, .ttl_ns = opts.ttl_ns, .clock = fabric.words.nowNs, .cap_bytes = opts.held_bytes } };
         errdefer p.table.deinit();
+        if (opts.spill_dir) |dir| {
+            std.Io.Dir.cwd().createDirPath(io, dir) catch |err| {
+                problem.* = "TF_PRODUCE_SPILL_DIR: the directory cannot be made";
+                return err;
+            };
+            p.spill = spill_mod.Spill.open(gpa, dir, opts.spill_min_bytes) catch |err| {
+                problem.* = "TF_PRODUCE_SPILL_DIR: no file can be mapped there (a full or read-only file system?)";
+                return err;
+            };
+            log.info("handoff: exports of {d} MiB and more are held on file-backed pages under {s}", .{ opts.spill_min_bytes >> 20, dir });
+        }
+        errdefer if (p.spill) |s| s.close();
         if (opts.dump) |dir| std.Io.Dir.cwd().createDirPath(io, dir) catch |err| {
             problem.* = "TF_DSV41_HANDOFF_DUMP: the directory cannot be made";
             return err;
@@ -102,6 +119,7 @@ pub const Produce = struct {
             p.box.close();
         }
         p.table.deinit();
+        if (p.spill) |s| s.close(); // after every export is released
         p.gpa.destroy(p);
     }
 
@@ -241,10 +259,15 @@ pub const Produce = struct {
         return true;
     }
 
+    /// The allocator of the read-back pages and converted parts: file-backed past the threshold when a spill is open.
+    fn big(p: *Produce) std.mem.Allocator {
+        return if (p.spill) |s| s.allocator() else p.gpa;
+    }
+
     /// The engine's state at `at` tokens, read back (the lane host's `snapshots.save` at the cut).
     pub fn save(p: *Produce, at: u64) !*Saved {
         const t0 = fabric.words.nowNs();
-        const cap = try p.source.take(p.source.ptr, p.gpa, at);
+        const cap = try p.source.take(p.source.ptr, p.big(), at);
         const s = p.gpa.create(Saved) catch |err| {
             p.source.release(cap.ctx);
             return err;
@@ -300,7 +323,7 @@ pub const Produce = struct {
     fn record(p: *Produce, id: [16]u8, tokens: []const u32, st: cx.State, read_ns: u64) !void {
         if (p.opts.http) p.sweep(); // what expired or was released makes room under the cap
         const t0 = fabric.words.nowNs();
-        const built = try cx.build(p.gpa, id, tokens, st);
+        const built = try cx.build(p.big(), id, tokens, st);
         const build_ns = fabric.words.nowNs() - t0;
         var kept = false;
         defer if (!kept) built.deinit(p.gpa);

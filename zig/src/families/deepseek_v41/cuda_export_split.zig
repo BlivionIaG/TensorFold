@@ -7,6 +7,7 @@ const fwd = @import("forward.zig");
 const ff = @import("forward_follow.zig");
 const gpu = @import("cuda_export_gpu.zig");
 const serve = @import("cuda_export_serve.zig");
+const spill = @import("cuda_export_spill.zig");
 const log = std.log.scoped(.dsv41);
 
 /// The follower's link: TF_DSV41_PRODUCE_LINK, the mcdma-rpcd listen link its shard is exported on (null: unset).
@@ -29,6 +30,21 @@ pub fn linkName(problem: *[]const u8) !?[]const u8 {
         return error.InvalidEnvironment;
     };
     return n;
+}
+
+/// TF_PRODUCE_SPILL_DIR and TF_PRODUCE_SPILL_MIB: where big export buffers live (no dir: RAM); malformed: `problem`.
+pub fn spillOf(problem: *[]const u8) !struct { dir: ?[]const u8, min_bytes: usize } {
+    const env = @import("sys").environment;
+    const dir = env.path("TF_PRODUCE_SPILL_DIR", (env.Process{}).get("TF_PRODUCE_SPILL_DIR")) catch {
+        problem.* = "TF_PRODUCE_SPILL_DIR is malformed: it must be a directory path without control characters";
+        return error.InvalidEnvironment;
+    };
+    const mib = env.read(u64, "TF_PRODUCE_SPILL_MIB", spill.default_min_mib) catch {
+        problem.* = "TF_PRODUCE_SPILL_MIB is malformed: whole MiB from 1 to 65536";
+        return error.InvalidEnvironment;
+    };
+    const d: ?[]const u8 = if (dir) |x| (if (x.len > 0) x else null) else null;
+    return .{ .dir = d, .min_bytes = @as(usize, @intCast(mib)) << 20 };
 }
 
 /// Whether `m`'s pool is split over several ranks: its hand-offs are exported by shard.
@@ -54,10 +70,11 @@ pub const Follower = struct {
             problem.* = "TF_PRODUCE_HELD_GIB is malformed; the line above names its forms";
             return error.InvalidEnvironment;
         };
+        const sp = try spillOf(problem);
         const x = try gpa.create(Follower);
         errdefer gpa.destroy(x);
         x.* = .{ .gpa = gpa, .source = .{ .ss = m.sessions.? }, .produce = undefined, .ss = m.sessions.? };
-        const opts: serve.Options = .{ .link = link, .model = checkpoint, .held_bytes = cap << 30, .shard = m.rank(), .shards = x.ss.kx.world };
+        const opts: serve.Options = .{ .link = link, .model = checkpoint, .held_bytes = cap << 30, .shard = m.rank(), .shards = x.ss.kx.world, .spill_dir = sp.dir, .spill_min_bytes = sp.min_bytes };
         x.produce = try serve.Produce.open(gpa, io, x.source.source(), opts, problem);
         log.info("dsv41 handoff export: shard {d} of {d} on link {s}", .{ opts.shard, opts.shards, link });
         return x;

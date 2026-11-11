@@ -109,6 +109,8 @@ const valid = [_]Case{
     .{ .name = "TF_PREFILL_COOLDOWN_S", .raw = "86400", .n = 86400 },
     .{ .name = "TF_PREFILL_API_KEY_FILE", .raw = "/etc/tensorfold/gb10.key", .n = 0 },
     .{ .name = "TF_PRODUCE_HELD_GIB", .raw = "32", .n = 32 },
+    .{ .name = "TF_PRODUCE_SPILL_DIR", .raw = "/var/tmp/export spill", .n = 0 },
+    .{ .name = "TF_PRODUCE_SPILL_MIB", .raw = "16", .n = 16 },
     .{ .name = "TF_DSV41_HANDOFF_DUMP", .raw = "/tmp/handoff exports", .n = 0 },
     .{ .name = "TF_DSV41_PRODUCE_LINK", .raw = "tfkv2", .n = 0 },
     .{ .name = "TF_LS_DUMP_DIR", .raw = "/tmp/ls dump", .n = 0 },
