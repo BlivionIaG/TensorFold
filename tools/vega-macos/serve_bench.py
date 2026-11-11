@@ -14,8 +14,8 @@ all sent (a server that ignores the last two simply stops where it stops: the co
 asked one is flagged `short` in the table and the JSON; a prompt that the server counts off the asked length is flagged `prompt_off`).
 
 Per request: TTFT = first content chunk - request sent; prefill tok/s = prompt_tokens / TTFT; decode tok/s = (out_tokens - 1) / (last chunk - first
-chunk); ITL samples = the gap before each later chunk divided by the tokens that chunk carried (a chunk's tokens are the server's completion_tokens
-split by the chunks' characters, so a server that streams several tokens a chunk gets its gaps spread over them: exact when a chunk is a token).
+chunk); ITL samples = the gap before each later chunk divided by the tokens a chunk carries (one when the server streams token by token, i.e. its
+completion_tokens / chunks is below 1.05, else that ratio: a server that streams several tokens a chunk gets its gaps spread over them).
 Aggregate per cell and rep: output tokens / wall (first request sent to last chunk of any request, which includes every prefill) and the steady
 decode rate (sum of (out - 1) over the span between the earliest first chunk and the latest last chunk). Every figure is mean / p50 / p90 over
 the requests of all reps of the cell; the aggregate columns over the reps. One warm-up round of every c (output cut to 32 tokens) is run first
@@ -154,12 +154,10 @@ def one(prompt, max_tokens, out, i, barrier):
             return
         rec.update(ok=True, t0=t0, t_first=chunks[0][0], t_last=chunks[-1][0], t_end=t_end, chunks=len(chunks),
                    prompt_tokens=usage["prompt_tokens"], out_tokens=usage["completion_tokens"])
-        chars = sum(n for _, n in chunks)
-        itl = []
-        for k in range(1, len(chunks)):
-            toks = max(rec["out_tokens"] * chunks[k][1] / chars, 1e-9)
-            itl.append((chunks[k][0] - chunks[k - 1][0]) * 1000.0 / toks)
-        rec["itl_ms"] = itl
+        per = rec["out_tokens"] / len(chunks)  # tokens a chunk: one a chunk when the server streams token by token (within 5%), else the mean
+        per = 1.0 if per < 1.05 else per
+        rec["itl_ms"] = [(chunks[k][0] - chunks[k - 1][0]) * 1000.0 / per for k in range(1, len(chunks))]
+        rec["chunk_t_ms"] = [round((t - t0) * 1000.0, 2) for t, _ in chunks]
     except Exception as e:  # a failed request is reported, not hidden
         rec["error"] = repr(e)
 
