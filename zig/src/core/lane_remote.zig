@@ -24,8 +24,7 @@ pub const Source = struct {
     ptr: *anyopaque,
     /// Whether a queued prompt gets a remote prefix, or why not (a `later` reason is weighed again).
     wants: *const fn (ptr: *anyopaque, ask: Ask) Verdict,
-    /// Fill a prefix of `prompt` beyond `cached` into new storage, blocking; null leaves the prompt to this engine.
-    /// `directive` is the request's say on the pair; `gone`: the request ended, fail `Aborted`.
+    /// Fill a prefix beyond `cached` into new storage, blocking; null: this engine prefills. `gone`: the request ended.
     fill: *const fn (ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool)) anyerror!?Filled,
     /// Free the storage `fill` returned.
     drop: *const fn (ptr: *anyopaque, saved: pc.Saved) void,

@@ -119,7 +119,7 @@ pub const Pull = struct {
         return .{ .saved = snap, .at = at, .phases = .{ .queue_ns = p.waited_ns, .trigger_ns = p.remote.trigger_ns, .pull_ns = took -| p.remote.trigger_ns, .land_ns = landing.land_ns, .bytes = p.remote.bytes } };
     }
 
-    /// Every link of the pull usable again: a restarted daemon's mailbox mapped, a producer's new generation made afresh.
+    /// Every link of the pull usable again: a restarted daemon's mailbox mapped, a producer's new generation made.
     fn renewLinks(p: *Pull) !fabric.relink.Event {
         const now = fabric.words.nowNs();
         var event = try p.link.renew(now);
@@ -260,7 +260,7 @@ pub fn refusal(f: Flags, drafter: bool) ?[]const u8 {
 /// A served link: the connect daemon's mailbox, its client, the HTTP trigger and the pull, as long as the server runs.
 pub const Link = struct {
     relink: fabric.relink.Relink,
-    /// a KV_SPLIT pair's other producers' links (`--mcdma-link a,b`): shard k's link is `more[k - 1]`, its client `peers[k - 1]`
+    /// a KV_SPLIT pair's other producers' links (`--mcdma-link a,b`): shard k is `more[k - 1]`, client `peers[k - 1]`
     more: []fabric.relink.Relink = &.{},
     peers: []*fabric.mailbox.Client = &.{},
     http: trigger.Http,
