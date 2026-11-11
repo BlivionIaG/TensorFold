@@ -109,6 +109,7 @@ pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         if (m.host_prof) m.host_hash_ns = nowNs() - hash_start;
     }
     const host_enc_start: u64 = nowNs();
+    mtl.dispatch_diag.poll();
     const dispatches_before = mtl.command.dispatch_count.load(.monotonic);
     // TF_DSV41_LAYER_CB: one command buffer a layer, with the GPU's own seconds for each.
     const layer_cb = std.c.getenv("TF_DSV41_LAYER_CB") != null;
