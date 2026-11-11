@@ -1,5 +1,4 @@
-//! The batched decode window: k slots' one-row attention, each stage ONE dispatch instead of k (encodeMulti's slot phase).
-//! The slots' state reaches the kernels through a per-forward table of positions and GPU addresses (RowsScratch).
+//! The batched decode window: k slots' one-row attention, one dispatch a stage, state via a per-forward address table.
 const std = @import("std");
 const mtl = @import("metal");
 const weights = @import("weights.zig");
@@ -67,7 +66,7 @@ fn chunkView(work: *const Workspace) View {
     return .{ .buffer = work.rows.chunk, .offset = 0 };
 }
 
-/// Every slot's query rotated and its window row normed, rotated and packed into the slot's chunk row, in two dispatches.
+/// Every slot's query rotated and its window row normed, rotated and packed, in two dispatches.
 pub fn head(p: *const Pipelines, e: mtl.ComputeEncoder, w: *const weights.Attention, work: *Workspace, q: View, raw: View, c: config.Config, ratio: u32, segs: []const Seg) !void {
     try upload(p, work, segs);
     const n: u32 = @intCast(segs.len);

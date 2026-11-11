@@ -72,7 +72,7 @@ pub const RowsParams = extern struct {
     splits: u32,
     scale: f32 = 0.04419417382415922,
     comptime {
-        @import("metal/index_mirror.zig").check(RowsParams, sources.deepseek_v41_csa2_nax, "Dsv41AttentionRows");
+        @import("metal/index_mirror.zig").check(RowsParams, sources.deepseek_v41_csa2_rows, "Dsv41AttentionRows");
     }
 };
 var merge_split_cache: ?u32 = null;
@@ -111,7 +111,7 @@ pub const Pipelines = struct {
         defer gpa.free(nax_text);
         // TF_DSV41_ATTN_DENSE_VALUES compiles the sparse kernel's dense-table value path instead of its per-element.
         const dense_values: []const u8 = if (std.c.getenv("TF_DSV41_ATTN_DENSE_VALUES") != null) "#undef TF_SIMD_FRAGS\n" else "";
-        const text = try std.mem.concat(gpa, u8, &.{ sources.deepseek_v41_kv, sources.deepseek_v41_csa2, dense_values, nax_text });
+        const text = try std.mem.concat(gpa, u8, &.{ sources.deepseek_v41_kv, sources.deepseek_v41_csa2, dense_values, nax_text, sources.deepseek_v41_csa2_rows });
         defer gpa.free(text);
         const lib = try mtl.Library.fromSource(device, text, options);
         defer lib.deinit();
@@ -281,8 +281,7 @@ pub const Pipelines = struct {
     pub fn rowsReady(p: *const Pipelines, heads: u32, width: u32) bool {
         return p.dense_rows != null and p.nax_rows != null and width == 512 and heads % 16 == 0;
     }
-    /// `args.rows` slots' one-row decode windows: every visible key decoded once into the slot's dense table, the scan
-    /// (in place over `q`) and its split merge, each ONE dispatch. `pos`/`addr`/`mains` are the per-forward slot tables.
+    /// `args.rows` slots' one-row windows: dense keys, scan (in place over `q`) and merge, one dispatch each.
     pub fn encodeRows(p: *const Pipelines, enc: mtl.ComputeEncoder, q: View, sink: View, chunk: View, dense: View, partials: View, pos: View, addr: View, mains: View, args: RowsParams) void {
         var a = args;
         a.splits = @max(@min(args.splits, 32), 1);

@@ -76,7 +76,7 @@ pub fn whole(ptr: *anyopaque, s: *Stream) anyerror!void {
     while (!try step(ptr, s, 0)) {}
 }
 
-/// TF_DSV41_PREFILL_INTERLEAVE: 0 runs each prompt whole (the other streams stop for it); anything else, or unset, by chunks.
+/// TF_DSV41_PREFILL_INTERLEAVE: 0 runs each prompt whole (other streams stop for it); else by chunks.
 pub fn interleaveOn() bool {
     const v = std.c.getenv("TF_DSV41_PREFILL_INTERLEAVE") orelse return true;
     return !std.mem.eql(u8, std.mem.span(v), "0");

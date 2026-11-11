@@ -147,7 +147,7 @@ pub const Backend = struct {
         if (b.pen_row.len > 0) b.gpa.free(b.pen_row);
     }
 
-    /// The lane vtable; `prefill_step` (a prompt a chunk a call, decode rounds between) unless TF_DSV41_PREFILL_INTERLEAVE=0.
+    /// The lane vtable; `prefill_step` (one chunk a call, decode rounds between) unless TF_DSV41_PREFILL_INTERLEAVE=0.
     pub fn backend(b: *Backend) be.Backend {
         return .{ .ptr = b, .penalties = true, .vtable = if (pass.interleaveOn()) &vtable_stepped else &vtable_whole };
     }
