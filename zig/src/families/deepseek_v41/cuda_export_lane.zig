@@ -116,14 +116,31 @@ pub const Export = struct {
         // the slot, empty before and after: pages and reservation back whatever happens (a split keeps no state)
         defer x.f.release() catch |err| log.err("handoff {x}: the split's slot was not released ({t})", .{ &h.id, err });
         try x.source.ss.beginFresh(ids.len, 1);
-        var chunks: split_lib.Chunks = .{ .n = upto, .max = try splitRows(x.f) };
+        const max = try splitRows(x.f);
+        // the boundary rows copy out asynchronously into pinned slots and are published, in order, as copies finish
+        try x.f.splitBegin(.{ .ptr = run, .rows = sinkRows, .publish = sinkPublish }, max);
+        var ended = false;
+        defer if (!ended) x.f.splitEnd(false) catch {};
+        var chunks: split_lib.Chunks = .{ .n = upto, .max = max };
         while (chunks.next()) |c| {
             if (cancel) |cc| if (cc.cancelled()) return error.Cancelled;
             if (run.gone()) return error.Released;
-            try x.f.prefillSplit(ids[c.row0..][0..c.rows], h.split_cut, run.rows(c.row0, c.rows));
-            try run.publish(c.row0 + c.rows);
+            try x.f.prefillSplit(ids[c.row0..][0..c.rows], h.split_cut);
+            try x.f.splitPoll();
         }
+        ended = true;
+        try x.f.splitEnd(true);
         run.land(try x.produce.saveCut(upto, h.split_cut));
+    }
+
+    fn sinkRows(ptr: *anyopaque, row0: u64, n: u64) []u8 {
+        const run: *serve.Produce.Early = @ptrCast(@alignCast(ptr));
+        return run.rows(row0, n);
+    }
+
+    fn sinkPublish(ptr: *anyopaque, end: u64) anyerror!void {
+        const run: *serve.Produce.Early = @ptrCast(@alignCast(ptr));
+        return run.publish(end);
     }
 
     /// `GET /v1/handoff/<id>`: the held export's replies, a message at a time.

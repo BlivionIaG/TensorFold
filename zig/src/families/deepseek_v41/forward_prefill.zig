@@ -70,8 +70,8 @@ pub const State = struct {
     cone_id: u64 = 0,
     /// the last prompt's decoder replay was the exact one (the export keeps every ring row)
     replay_exact: bool = false,
-    /// a layer-split chunk's destination (rank 0): the stage's rows the glue `split_rows` fills (`promptSplit`)
-    split_dst: []u8 = &.{},
+    /// a layer-split pass's boundary copies (rank 0): the pinned ring the glue `split_rows` fills (forward_glue_split)
+    split_copy: ?*@import("split_copy.zig").Copy = null,
 
     pub fn deinit(s: *State, gpa: std.mem.Allocator) void {
         s.long.deinit(gpa);
@@ -137,8 +137,8 @@ fn finishMultiFn(f: *Forward, slots: []const u32, out: []Replayed) anyerror!void
     return finishMulti(f, slots, out);
 }
 
-fn promptSplitFn(f: *Forward, ids: []const u32, cut: u32, dst: []u8) anyerror!void {
-    return promptSplit(f, ids, cut, dst);
+fn promptSplitFn(f: *Forward, ids: []const u32, cut: u32) anyerror!void {
+    return promptSplit(f, ids, cut);
 }
 
 pub const hooks_table: @import("forward_hooks.zig").Prefill = .{ .plan = planFn, .prompt = promptFn, .promptSplit = promptSplitFn, .promptMulti = promptMultiFn, .finish = finishFn, .finishMulti = finishMultiFn, .ahead = aheadFn, .replaying = replayingFn, .deinit = deinitFn };
@@ -513,7 +513,7 @@ fn belowCut(all: []const u32, cut: u32) ![]const u32 {
 }
 
 /// One layer-split chunk: `ids` (rows of the prompt from the slot's position) through the layers below `cut`
-pub fn promptSplit(f: *Forward, ids_in: []const u32, cut: u32, dst: []u8) !void {
+pub fn promptSplit(f: *Forward, ids_in: []const u32, cut: u32) !void {
     const st = state(f);
     if (f.slot.pending != null) return error.BadWindow;
     if (ids_in.len == 0) return;
@@ -525,8 +525,6 @@ pub fn promptSplit(f: *Forward, ids_in: []const u32, cut: u32, dst: []u8) !void 
     st.taps_rows = 0;
     st.replay_exact = false;
     try ready(f);
-    st.split_dst = dst;
-    defer st.split_dst = &.{};
     try segment(f, st.ids.items, false, cut);
 }
 

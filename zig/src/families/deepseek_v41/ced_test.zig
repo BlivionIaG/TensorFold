@@ -179,11 +179,13 @@ test "layer split: a cut's program runs the layers below it as the whole segment
         // the whole segment's calls up to the cut layer's last, then only the post and the boundary glue differ
         var common: usize = 0;
         while (common < cs.len and common < whole.len and same(cs[common], whole[common])) common += 1;
-        try testing.expect(common + 4 >= cs.len and whole.len > cs.len);
+        try testing.expect(common + 5 >= cs.len and whole.len > cs.len);
         // no layer from the cut on is touched: no weight, buffer or state role of it, no head, no final norm, no stash
         var splits: usize = 0;
+        var holds: usize = 0;
         for (cs) |c| {
             if (std.mem.eql(u8, c.name, "glue.split_rows")) splits += 1;
+            if (std.mem.eql(u8, c.name, "glue.split_hold")) holds += 1;
             try testing.expect(!std.mem.startsWith(u8, c.name, "glue.ced_") and !std.mem.startsWith(u8, c.name, "glue.cone_"));
             for (c.args) |x| {
                 if (x.arg != .t) continue;
@@ -193,6 +195,7 @@ test "layer split: a cut's program runs the layers below it as the whole segment
             }
         }
         try testing.expectEqual(@as(usize, 1), splits);
+        try testing.expectEqual(@as(usize, 1), holds); // the previous chunk's copy is awaited before the boundary is rewritten
         // a prefix that is not run whole (a layer past the list) has no cut to end on
         try testing.expectError(error.Unsupported, bp.emitReplay(a, &cfg, &w, o, &.{}, n, start, .split));
     };

@@ -387,6 +387,9 @@ pub const Forward = struct {
     const op_ced_multi = fwd_follow.op_ced_multi;
     pub const replayMulti = fwd_follow.replayMulti;
     pub const prefillSplit = fwd_follow.prefillSplit;
+    pub const splitBegin = @import("forward_glue_split.zig").begin;
+    pub const splitPoll = @import("forward_glue_split.zig").poll;
+    pub const splitEnd = @import("forward_glue_split.zig").end;
 
     /// A slot's views made current on this rank (slots.zig SlotSet.view), for a multi-segment run's segments.
     pub const PfSwitch = struct { ctx: *anyopaque, run: *const fn (ctx: *anyopaque, slot: u32) anyerror!void };

@@ -61,7 +61,7 @@ pub fn idOf(words: []const i64) [16]u8 {
 }
 
 /// One layer-split prefill chunk on every rank: `ids` through the layers below `cut` from the slot's position
-pub fn prefillSplit(f: *Forward, ids: []const u32, cut: u32, dst: []u8) !void {
+pub fn prefillSplit(f: *Forward, ids: []const u32, cut: u32) !void {
     if (f.slot.pending != null) return error.BadWindow;
     if (ids.len == 0) return;
     f.gated = false; // prompt segments read their rows on the old path
@@ -76,7 +76,7 @@ pub fn prefillSplit(f: *Forward, ids: []const u32, cut: u32, dst: []u8) !void {
     }
     f.quiet = true;
     defer f.quiet = false;
-    return (try hooks.prefill()).promptSplit(f, ids, cut, dst);
+    return (try hooks.prefill()).promptSplit(f, ids, cut);
 }
 
 /// Rank 0: the followers' shard exports of a hand-off, at the slot's cut (engine thread; the slot stands at `at`).
@@ -312,7 +312,7 @@ fn followOp(f: *Forward, msg: []const i64, ids: *std.ArrayList(u32), prompt: *st
             if (msg.len != 3 + n) return error.BadPlan;
             prompt.clearRetainingCapacity();
             for (msg[3..]) |t| try prompt.append(f.gpa, @intCast(t));
-            try f.prefillSplit(prompt.items, @intCast(msg[1]), &.{});
+            try f.prefillSplit(prompt.items, @intCast(msg[1]));
         },
         op_ahead => {
             var nx: std.ArrayList(u32) = .empty;

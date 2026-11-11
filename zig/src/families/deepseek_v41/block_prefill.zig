@@ -351,6 +351,7 @@ pub const Seg = struct {
             if (s.part == .split and i + 1 == layers.len) {
                 // layer-split producer: the cut layer's true residual (post applied) and the next site's pre
                 const y = try e.buf("w.trace", .{}, .bf16, &.{ n, 4 * D });
+                try e.glue("split_hold", &.{});
                 try s.postOnly(y);
                 return e.glue("split_rows", &.{ y, (try Seg.coefs(e, e.coef))[0], .{ .i = L } });
             }
