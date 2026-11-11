@@ -1,11 +1,15 @@
 // The register-only decode, T column tiles and R rows a threadgroup, the mul1 value by one exact half FMA (no table).
 
-// The value of a state: the byte sum of state * 0x83DCD12D read as a half, then one half FMA, as the table entry.
+// The value of a state: the byte sum of state * 0x83DCD12D through one half FMA, equal to the table entry.
+// The table entry is fma(half(1024 + sum), 0x1EEE, 0xC931). Two sums a state give the same product in
+// subnormal-and-small halves: the bit pattern 2 * sum is the half sum * 2^-23, the factor 0x1EEE * 2^23 is 0x7AEE and
+// the addend 1024 * 0x1EEE + 0xC931 is exact as 0xC2E8, so the exact result (hence its single rounding) is unchanged
+// and the +1024 bias add is gone. The doubled lanes are free: the even bytes enter the lane add shifted by one.
 inline float tf_exl3_t_value(ushort s) {
   const uint x = uint(s) * 0x83DCD12Du;
-  const ushort2 u = as_type<ushort2>((x & 0x00FF00FFu) + ((x >> 8u) & 0x00FF00FFu));
-  const half sum = as_type<half>(ushort(u.x + u.y + ushort(0x6400u)));
-  return float(fma(sum, as_type<half>(ushort(0x1EEEu)), as_type<half>(ushort(0xC931u))));
+  const ushort2 u = as_type<ushort2>(((x >> 7u) & 0x01FE01FEu) + ((x & 0x00FF00FFu) << 1u));
+  const half sum = as_type<half>(ushort(u.x + u.y));
+  return float(fma(sum, as_type<half>(ushort(0x7AEEu)), as_type<half>(ushort(0xC2E8u))));
 }
 
 // The value of a state of any codebook: mul1 by arithmetic, the others from the resident table.
@@ -58,7 +62,25 @@ inline void tf_exl3_t_block(thread float (*acc)[8], uint c0, uint c1, const devi
   }
 }
 
+// A lane's run in one tile: the stream words it spans, then the two 32-bit windows its eight states are cut from.
+// The windows are 64-bit funnel shifts by 32 - first_bit (the one runtime shift, no select for first_bit = 0).
+template <bool Two>
+inline void tf_exl3_t_read(const device ushort* tile, const TfExl3RowWalk walk, thread uint* p) {
+  p[0] = tf_exl3_word(tile, walk.first_word);
+  p[1] = tf_exl3_word(tile, walk.next1);
+  p[2] = Two ? 0u : tf_exl3_word(tile, walk.next2);
+}
+
+template <bool Two>
+inline uint2 tf_exl3_t_funnel(const thread uint* p, uint first_bit) {
+  const uint down = 32u - first_bit;
+  const uint c0 = uint(((ulong(p[0]) << 32) | p[1]) >> down);
+  return uint2(c0, Two ? (p[1] << first_bit) : uint(((ulong(p[1]) << 32) | p[2]) >> down));
+}
+
 // One threadgroup: T tiles of sixteen columns by up to R rows, k split over warps; widths are multiples of 128.
+// The loop carries the windows, not the words: a block's words are read before its products and cut after them, so
+// the read latency hides behind the products and no register is copied around the back edge.
 template <uint S, uint T, uint R, bool Mul1>
 inline void tf_exl3_t_body(const device half* x, const TfExl3DecodeJob job, device float* sums, constant TfExl3Args& a,
                            const device half* table, uint row0, uint nb, uint rows_here, uint lane, uint sg,
@@ -68,42 +90,44 @@ inline void tf_exl3_t_body(const device half* x, const TfExl3DecodeJob job, devi
   const uint W = TF_FMA_WARPS;
   const uint b0 = blocks * sg / W, b1 = blocks * (sg + 1u) / W;
   const TfExl3RowWalk walk = tf_exl3_row_walk(lane, job.halves);
-  const device uchar* tp = job.trellis + ulong(b0) * job.tile_k_stride + ulong(nb / 16) * job.tile_n_stride;
-  uint pre[T][3];
+  // A block row is a 32-bit step in ushorts (a pack is far below 8 GiB), so the pointers advance by one add.
+  const uint block_step = uint(job.tile_k_stride >> 1);
+  const device ushort* tile[T];
+  uint c0[T], c1[T];
   for (uint t = 0; t < T; ++t) {
-    const device ushort* t0 = reinterpret_cast<const device ushort*>(tp + ulong(t) * job.tile_n_stride);
-    pre[t][0] = tf_exl3_word(t0, walk.first_word);
-    pre[t][1] = tf_exl3_word(t0, walk.next1);
-    pre[t][2] = Two ? 0u : tf_exl3_word(t0, walk.next2);
+    tile[t] = reinterpret_cast<const device ushort*>(job.trellis + ulong(b0) * job.tile_k_stride +
+                                                     ulong(nb / 16 + t) * job.tile_n_stride);
+    uint p[3];
+    tf_exl3_t_read<Two>(tile[t], walk, p);
+    const uint2 c = tf_exl3_t_funnel<Two>(p, walk.first_bit);
+    c0[t] = c.x;
+    c1[t] = c.y;
   }
   float acc[T][R][8];
   for (uint t = 0; t < T; ++t)
     for (uint r = 0; r < R; ++r)
       for (uint j = 0; j < 8u; ++j) acc[t][r][j] = 0.0f;
-  const device half* xp = x + ulong(row0) * a.k + b0 * 16 + 2 * (lane & 3u);
+  const device half* xl = x + ulong(row0) * a.k + 2 * (lane & 3u);
+  uint xi = b0 * 16;
   for (uint bb = b0; bb < b1; ++bb) {
-    uint w0[T], w1[T], w2[T];
-    for (uint t = 0; t < T; ++t) {
-      w0[t] = pre[t][0];
-      w1[t] = pre[t][1];
-      w2[t] = pre[t][2];
-    }
-    if (bb + 1 < b1) {
-      tp += job.tile_k_stride;
+    uint pre[T][3];
+    const bool more = bb + 1 < b1;
+    if (more) {
       for (uint t = 0; t < T; ++t) {
-        const device ushort* tn = reinterpret_cast<const device ushort*>(tp + ulong(t) * job.tile_n_stride);
-        pre[t][0] = tf_exl3_word(tn, walk.first_word);
-        pre[t][1] = tf_exl3_word(tn, walk.next1);
-        pre[t][2] = Two ? 0u : tf_exl3_word(tn, walk.next2);
+        tile[t] += block_step;
+        tf_exl3_t_read<Two>(tile[t], walk, pre[t]);
       }
     }
-    for (uint t = 0; t < T; ++t) {
-      const uint c0 = (w0[t] << walk.first_bit) | ((w1[t] >> walk.shift) & walk.mask);
-      const uint hi = w1[t] << walk.first_bit;
-      const uint c1 = Two ? hi : (hi | ((w2[t] >> walk.shift) & walk.mask));
-      tf_exl3_t_block<S, R, Mul1>(acc[t], c0, c1, xp, a.k, rows_here, table, job.codebook);
+    for (uint t = 0; t < T; ++t)
+      tf_exl3_t_block<S, R, Mul1>(acc[t], c0[t], c1[t], xl + xi, a.k, rows_here, table, job.codebook);
+    if (more) {
+      for (uint t = 0; t < T; ++t) {
+        const uint2 c = tf_exl3_t_funnel<Two>(pre[t], walk.first_bit);
+        c0[t] = c.x;
+        c1[t] = c.y;
+      }
     }
-    xp += 16;
+    xi += 16;
   }
   // Per row and tile, in the one-tile body's order: the accumulator tree, the warps in order, the lanes of a column.
   for (uint r = 0; r < R; ++r) {
