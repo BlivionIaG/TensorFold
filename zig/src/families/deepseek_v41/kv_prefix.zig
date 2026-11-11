@@ -28,6 +28,13 @@ pub const Layout = struct {
         for (l.ratios[0..id]) |r| n += @as(usize, capacity / r) * l.rowBytes();
         return n;
     }
+
+    /// Where sub-array `sub` of owner `id` begins in a pool laid out for `capacity`: its rows are contiguous from there.
+    pub fn subOffset(l: Layout, id: usize, sub: usize, capacity: u32) usize {
+        var n = l.blockOffset(id, capacity);
+        for (l.strides[0..sub]) |s| n += @as(usize, capacity / l.ratios[id]) * s;
+        return n;
+    }
 };
 
 /// The capacity a state kept at `position` is laid out for: the position, even so every owner's rows divide it.
