@@ -48,4 +48,4 @@ pub fn offloadExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
 }
 
 /// `stub` naming gfx1030 (RDNA2: the caps table row with fp16 activations, as the gfx900 target has) with a code object that is eight bytes (a stand-in runtime loads anything): the launcher loads.
-const split_stub = std.fmt.comptimePrint("pub const arch = \"gfx1030\";\nconst blob align(8) = [8]u8{{ 0, 1, 2, 3, 4, 5, 6, 7 }};\npub const images: [{d}][]align(8) const u8 = @splat(&blob);\n", .{hip.groups.len});
+const split_stub = std.fmt.comptimePrint("pub const arch = \"gfx1030\";\npub const g9_mix: u8 = 2;\nconst blob align(8) = [8]u8{{ 0, 1, 2, 3, 4, 5, 6, 7 }};\npub const images: [{d}][]align(8) const u8 = @splat(&blob);\n", .{hip.groups.len});
