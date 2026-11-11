@@ -36,6 +36,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Docs: `docs/deepseek-v41-disaggregated.md` is the operator guide for DeepSeek-V4.1 prefilled on a GB10 pair and decoded on an Apple Silicon Mac over MCDMA or plain HTTP: the hardware, the link's set-up and its traps, the launch flags and environment, the export and decoder profiles, the measured time to first token against the Mac alone, the fallback when the pair or link is down, and what is not measured.
 
+- Remote prefill: a request can name where its prompt is prefilled with `prefill`: `"force"` sends it to the pair without weighing the load or the predicted times and waits for a pull under way, `"never"` keeps it on this machine, `"auto"` (the default) is the load-aware decision of `TF_PREFILL_ROUTE=auto`. A router in front of two servers uses it to choose, per request, between the pair's prefill and the Mac's own
+
 ## 1.2.7
 
 - GLM-5.3-Flash on CUDA: with `TF_GLM_LAYERS=N`, serve's start-up memory check counts the weights by tensor from the shard headers, only those the load reads (the first N layers, the MTP layer when drafts are on, the embedding, norm and head), where it counted every checkpoint file. A 20-layer thin load of the 163.6 GiB checkpoint now counts 66.6 GiB without drafts. Unset, the count is the files' as before (#2788, fixes #2745). Thanks to @wojo.

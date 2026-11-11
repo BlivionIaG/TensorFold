@@ -103,6 +103,7 @@ pub fn toolHostTests(b: *std.Build, parser: *std.Build.Module, server: *std.Buil
     const handoff_routes = b.addRunArtifact(b.addTest(.{ .root_module = server, .filters = &.{"handoff routes:"} }));
     handoff_routes.has_side_effects = true;
     b.step("test-handoff-routes-host", "GET and DELETE /v1/handoff/<id>: a held export streamed over sockets, behind the key gate").dependOn(&handoff_routes.step);
+    b.step("test-prefill-param-host", "The prefill field of a completion request: auto, force, never and the refusal of anything else").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server, .filters = &.{"prefill:"} })).step);
     const profile_line = b.addRunArtifact(b.addTest(.{ .root_module = server, .filters = &.{"profile line:"} }));
     profile_line.has_side_effects = true;
     b.step("test-profile-line-host", "Profile start-up line scoping against the tree's real backend names").dependOn(&profile_line.step);

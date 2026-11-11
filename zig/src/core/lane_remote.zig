@@ -12,6 +12,7 @@ const route = @import("lane_remote_route.zig");
 pub const Route = route.Route;
 pub const Ask = route.Ask;
 pub const Verdict = route.Verdict;
+pub const Directive = route.Directive;
 pub const Measured = route.Measured;
 pub const Outcome = route.Outcome;
 pub const Door = route.Door;
@@ -23,8 +24,8 @@ pub const Source = struct {
     ptr: *anyopaque,
     /// Whether a queued prompt gets a remote prefix, or why not (a `later` reason is weighed again).
     wants: *const fn (ptr: *anyopaque, ask: Ask) Verdict,
-    /// Fill a prefix beyond `cached` into new storage, blocking; `gone`: the request ended, fail `Aborted`.
-    fill: *const fn (ptr: *anyopaque, prompt: []const u32, cached: u64, gone: *const std.atomic.Value(bool)) anyerror!?Filled,
+    /// Fill a prefix beyond `cached` into new storage, blocking; null: this engine prefills. `gone`: the request ended.
+    fill: *const fn (ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool)) anyerror!?Filled,
     /// Free the storage `fill` returned.
     drop: *const fn (ptr: *anyopaque, saved: pc.Saved) void,
     /// Fills under way, the last thing each one's thread touches: the family waits for 0 before it goes.
@@ -90,6 +91,7 @@ pub const Ticket = struct {
     filled: ?Filled = null,
     prompt: []u32, // the thread's own copy: the request may go before the fill does
     cached: u64,
+    directive: Directive,
     host: *LaneHost,
     source: Source,
 
@@ -116,10 +118,10 @@ pub fn queue(h: *LaneHost) void {
         if (job.ticket != null or job.remote_looked) continue;
         job.remote_looked = true;
         const r = job.request;
-        if (!eligible(r)) continue;
+        if (!eligible(r) or r.prefill == .never) continue;
         const kept: u64 = if (h.cache) |store| if (store.find(job.cacheKey(), r.chunks, h.spans(r))) |e| e.at else 0 else 0;
         const cached = @max(kept, if (h.resume_peek) |p| p.at(p.ctx, r.prompt, h.spans(r)) else 0);
-        const verdict = source.wants(source.ptr, .{ .len = r.prompt.len, .cached = cached, .decoding = decoding });
+        const verdict = source.wants(source.ptr, .{ .len = r.prompt.len, .cached = cached, .decoding = decoding, .directive = r.prefill });
         job.verdict = verdict;
         if (verdict != .remote) {
             job.remote_looked = !verdict.later(); // busy, slower or down: weighed again at the next look
@@ -130,7 +132,7 @@ pub fn queue(h: *LaneHost) void {
         t.* = .{ .prompt = h.gpa.dupe(u32, r.prompt) catch {
             h.gpa.destroy(t);
             continue;
-        }, .cached = cached, .host = h, .source = source };
+        }, .cached = cached, .directive = r.prefill, .host = h, .source = source };
         _ = source.running.fetchAdd(1, .acq_rel);
         const thread = std.Thread.spawn(.{}, fill, .{t}) catch {
             _ = source.running.fetchSub(1, .acq_rel);
@@ -192,7 +194,7 @@ fn fill(t: *Ticket) void {
     const source = t.source;
     const h = t.host;
     const left = t.state.load(.acquire) == Ticket.left; // its job ended before this thread began: nothing to ask
-    const got = if (left) null else source.fill(source.ptr, t.prompt, t.cached, &t.gone) catch |err| blk: {
+    const got = if (left) null else source.fill(source.ptr, t.prompt, t.cached, t.directive, &t.gone) catch |err| blk: {
         if (err != error.Aborted) std.log.warn("remote prefill failed ({s}); the prompt is prefilled here", .{@errorName(err)});
         break :blk null;
     };

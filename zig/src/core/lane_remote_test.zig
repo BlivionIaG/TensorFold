@@ -24,7 +24,7 @@ pub const Peer = struct {
         return if (p.at > ask.cached) .remote else .small;
     }
 
-    fn fill(ptr: *anyopaque, prompt: []const u32, _: u64, _: *const std.atomic.Value(bool)) anyerror!?remote.Filled {
+    fn fill(ptr: *anyopaque, prompt: []const u32, _: u64, _: remote.Directive, _: *const std.atomic.Value(bool)) anyerror!?remote.Filled {
         const p: *Peer = @ptrCast(@alignCast(ptr));
         p.fills += 1;
         if (p.fail) return error.LinkDown;

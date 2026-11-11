@@ -14,6 +14,7 @@ const Flags = api.LaneHost.Remote.Flags;
 const Route = api.LaneHost.Remote.Route;
 const Ask = api.LaneHost.Remote.Ask;
 const Verdict = api.LaneHost.Remote.Verdict;
+const Directive = api.LaneHost.Remote.Directive;
 const Measured = api.LaneHost.Remote.Measured;
 const Outcome = api.LaneHost.Remote.Outcome;
 
@@ -44,10 +45,10 @@ pub const Pull = struct {
     }
 
     /// A prefix of `prompt` beyond `cached` on a whole chunk, asked for, fetched and landed whole in a blank Snapshot.
-    pub fn pull(p: *Pull, prompt: []const u32, cached: u64, gone: *const std.atomic.Value(bool)) !?Filled {
+    pub fn pull(p: *Pull, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool)) !?Filled {
         if (p.closing.load(.acquire) or p.off.load(.acquire)) return null;
         const upto = p.policy.upto(prompt.len, cached) orelse return null;
-        p.waited_ns = p.route.admit(p.io, p.route.estimate(upto, prompt.len - cached), &p.closing, gone) orelse return null;
+        p.waited_ns = p.route.admit(p.io, p.route.estimateFor(upto, prompt.len - cached, directive), &p.closing, gone) orelse return null;
         defer p.route.leave();
         if (p.closing.load(.acquire) or p.off.load(.acquire) or gone.load(.acquire)) return null;
         return api.LaneHost.Remote.guarded(p, prompt, cached, upto, gone);
@@ -126,9 +127,9 @@ pub const Pull = struct {
         p.route.observe(m);
     }
 
-    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, gone: *const std.atomic.Value(bool)) anyerror!?Filled {
+    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool)) anyerror!?Filled {
         const p: *Pull = @ptrCast(@alignCast(ptr));
-        return p.pull(prompt, cached, gone);
+        return p.pull(prompt, cached, directive, gone);
     }
 
     fn drop(ptr: *anyopaque, saved: *anyopaque) void {
