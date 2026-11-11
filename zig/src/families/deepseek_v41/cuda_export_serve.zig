@@ -1,9 +1,4 @@
-//! DeepSeek-V4.1 on the GB10: hand-offs exported over MKVH (`serve --mcdma-produce LINK`) and/or written to files
-//! (`TF_DSV41_HANDOFF_DUMP=DIR`), from the states `cuda_export.Source` reads at a handoff request's cut.
-//!
-//! The link side is `native/cuda_produce.zig`'s: a listen mailbox, a serving thread and `producer.Table` holding each export
-//! until the decoder closes it or it expires. The file side needs no link: each export is also written as
-//! `<id>.mkvh2` (handoff_file.zig) with `<id>.tokens.json` (the prompt ids it covers) beside it, or `<id>.error` with the reason.
+//! Hand-offs exported over MKVH (`--mcdma-produce LINK`) and/or written to files (`TF_DSV41_HANDOFF_DUMP=DIR`).
 const std = @import("std");
 const builtin = @import("builtin");
 const fabric = @import("fabric");
@@ -22,16 +17,14 @@ pub const Options = struct {
     /// the most export bytes a link holds at once (TF_PRODUCE_HELD_GIB)
     held_bytes: u64 = 32 << 30,
     ttl_ns: u64 = 120 * std.time.ns_per_s,
-    /// serve the held exports over the server's own HTTP port (`--mcdma-produce http`): no link, no daemon, the exports are held
-    /// as for a link (same cap and expiry) until the decoder deletes them
+    /// serve held exports over the server's own HTTP port (`--mcdma-produce http`), same cap and expiry as a link
     http: bool = false,
 };
 
 /// What `save` hands `exported`: the engine's state, read back.
 pub const Saved = struct { cap: cx.Captured };
 
-/// One export the producer holds: its converted parts, and the table's name for it. A stream reading it pins it: an expiry or
-/// a release meanwhile only marks it `gone`, and the last stream to close frees it.
+/// One export the producer holds; a reading stream pins it, so expiry or release only marks it `gone` until it closes.
 pub const Held = struct { built: *cx.Built, name: [32]u8, pins: u32 = 0, gone: bool = false };
 
 pub const Produce = struct {
@@ -48,8 +41,7 @@ pub const Produce = struct {
     lock: std.atomic.Mutex = .unlocked, // `held`: the engine thread adds, the serving thread releases
     streams: std.atomic.Value(u32) = .init(0), // reads under way (HTTP): the producer stops after them
 
-    /// A producer over `source`: the link attached when `opts.link` is set, the dump directory made when `opts.dump` is.
-    /// On failure `problem` says what to fix.
+    /// A producer over `source`: attaches the link when `opts.link` is set, makes the dump dir when `opts.dump` is.
     pub fn open(gpa: std.mem.Allocator, io: std.Io, source: cx.Source, opts: Options, problem: *[]const u8) !*Produce {
         const p = try gpa.create(Produce);
         errdefer gpa.destroy(p);
@@ -83,8 +75,7 @@ pub const Produce = struct {
         return p;
     }
 
-    /// Stops serving and frees every export still held (after the lane host stopped: no export comes in). A read under way ends
-    /// first: the server's socket timeouts bound it.
+    /// Stops serving and frees every export still held; the server's socket timeouts bound a read under way.
     pub fn stop(p: *Produce) void {
         if (p.thread) |t| {
             p.serving.stop.store(true, .release);
@@ -156,7 +147,7 @@ pub const Produce = struct {
         p.gpa.destroy(h);
     }
 
-    /// Exports past their time and those the decoder released are freed (on a link the serving thread does this every millisecond).
+    /// Frees exports past their time and those the decoder released (a link's serving thread runs this each ms).
     fn sweep(p: *Produce) void {
         var done: std.ArrayList([]const u8) = .empty;
         defer done.deinit(p.gpa);
@@ -165,8 +156,7 @@ pub const Produce = struct {
         for (done.items) |name| reap(p, name);
     }
 
-    /// One decoder's read of a held export (`GET /v1/handoff/<id>`): its replies to OPEN and every PULL, a message at a time,
-    /// with the export pinned until `close`.
+    /// One decoder's read of a held export (`GET /v1/handoff/<id>`): replies to OPEN and PULL; pinned until `close`.
     pub const Reading = struct {
         p: *Produce,
         held: *Held,
@@ -190,7 +180,7 @@ pub const Produce = struct {
         }
     };
 
-    /// The held export under `id` for reading. `NotHeld`: never held, released or expired. `Refused`: it failed (`why` says why).
+    /// The held export under `id`. `NotHeld`: never held, released or expired. `Refused`: it failed (`why` says why).
     pub fn read(p: *Produce, id: [16]u8, why: *[]const u8) error{ NotHeld, Refused, OutOfMemory, Unreadable }!*Reading {
         p.sweep();
         const failed_why: ?[]const u8 = if (p.table.get(id)) |e| (if (e == .failed) e.failed else null) else null;
@@ -280,7 +270,7 @@ pub const Produce = struct {
         kept = true;
     }
 
-    /// `<dir>/<id>.mkvh2`, written whole under a `.part` name and renamed, after `<id>.tokens.json`: a file that is there is complete.
+    /// `<dir>/<id>.mkvh2`, written whole under a `.part` name and renamed after `<id>.tokens.json`: present = complete.
     fn dump(p: *Produce, built: *cx.Built, tokens: []const u32) !void {
         const dir = p.opts.dump.?;
         const cwd = std.Io.Dir.cwd();

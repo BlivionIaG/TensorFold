@@ -1,5 +1,4 @@
-//! The CUDA engine's export glue over synthetic engine snapshots: the parts equal the library's own export of the same state,
-//! the library's importer takes them, and a snapshot that cannot be exported (replay mode, a short pool) is refused by name.
+//! Export glue over synthetic snapshots: parts equal the library's export, import accepts them, bad snapshots refuse.
 const std = @import("std");
 const fabric = @import("fabric");
 const g = @import("handoff/geometry.zig");
@@ -14,7 +13,7 @@ const cx = @import("cuda_export.zig");
 const geo = g.release;
 const gpa = std.testing.allocator;
 
-/// What the engine's snapshot and page reads hold for a synthetic world: the bounded roles under their names, the pages as read.
+/// What the engine's snapshot and page reads hold for a synthetic world: bounded roles by name, pages as read.
 pub const Snap = struct { pieces: []cx.Piece, pages: []cx.Pages };
 
 pub fn snapshotOf(arena: std.mem.Allocator, w: s.World) !Snap {

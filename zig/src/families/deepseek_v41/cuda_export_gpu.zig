@@ -1,9 +1,4 @@
-//! The CUDA engine's side of the hand-off export: a slot's bounded state and pool pages read back to the host, the engine's
-//! refusals (what the export cannot serve), and the `cuda_export.Source` over the session store's own snapshot.
-//!
-//! The bounded state is the session store's snapshot (`Sessions.snapshot`: SWA rings, carries, the drafter's rings, as the
-//! park to NVMe writes them); the pages are read through the same `PageStore` the park uses. Rank 0 alone reads: with a
-//! replicated pool (the default) its pages and rings are every rank's, so no other rank takes part and nothing is sent.
+//! The CUDA engine's side of the hand-off export: slot state and pool pages read back to the host, plus the refusals.
 const std = @import("std");
 const model = @import("cuda_model.zig");
 const sg = @import("sessions_gpu.zig");
@@ -13,7 +8,7 @@ const ex = @import("handoff/export.zig");
 
 pub const Error = error{ BadWindow, SplitKvIsNotExported, UnsupportedKvFormat, ReplayPrefillIsNotExported };
 
-/// Why this engine cannot export hand-offs as configured, or null. Checked once at open: a request never finds out later.
+/// Why this engine cannot export hand-offs as configured, or null; checked once at open.
 pub fn refusal(m: *const model.Model, pieces: bool) ?[]const u8 {
     const ss = m.sessions orelse return "--mcdma-produce needs the session store over the paged pool: set TF_DSV41_POOL_TOKENS (and TF_DSV41_SESSIONS=1; with TF_DSV41_SLOTS above 1 also TF_DSV41_SESSION_SLOTS=1)";
     if (pf.state(&m.f).mode == .replay) return "--mcdma-produce needs full prefill (leave TF_DSV41_PREFILL unset): a replay-mode snapshot holds the SWA rings of the layers below the decoder only";
@@ -43,7 +38,7 @@ pub const Capture = struct {
     }
 };
 
-/// The active slot's state at `at` tokens, on the engine thread with the slot standing there (the export hook's moment).
+/// The active slot's state at `at` tokens, on the engine thread with the slot standing there.
 pub fn capture(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64) !*Capture {
     const f = ss.f;
     const kx = ss.kx;

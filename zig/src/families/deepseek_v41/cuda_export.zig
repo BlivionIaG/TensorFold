@@ -1,9 +1,4 @@
-//! The DeepSeek-V4.1 CUDA engine's hand-off producer, host side: a finished prefill's host copies as a protocol-2 export.
-//!
-//! The engine's snapshot (sessions_gpu.zig: the bounded roles `s.L<i>.swa.v/.s`, `.carry`, the drafter's `.ring.v/.s`) and the
-//! slot's pool pages read back in logical page order come in as a `State`; the hand-off library converts them (CUDA fp8 to
-//! bf16, exact) and `p2` lays them out as recurrent layers. Nothing here touches a device, so the host tests run it over
-//! the library's synthetic CUDA state and check the parts with the library's own importer.
+//! Host-side hand-off producer: a finished prefill's engine snapshot and pool pages become a protocol-2 export.
 const std = @import("std");
 const fabric = @import("fabric");
 const g = @import("handoff/geometry.zig");
@@ -14,16 +9,16 @@ const producer = fabric.producer;
 
 pub const Error = ex.Error || error{ BadSnapshot, NotAHandoffPrompt };
 
-/// One bounded role of the engine's snapshot: its name and this slot's bytes (the export zeroes stale drafter rows in place).
+/// One bounded role of the engine's snapshot: its name and this slot's bytes (stale drafter rows are zeroed in place).
 pub const Piece = struct { role: []const u8, bytes: []u8 };
 
-/// A KV source's comp and index families' pages of the slot, logical page 0 first, back to back (a replicated pool's view).
+/// A KV source's comp and index pages of the slot, logical page 0 first, back to back (a replicated pool's view).
 pub const Pages = struct { layer: u32, comp: []const u8, index: []const u8 };
 
 pub const State = struct {
     /// the position the slot stands at: the prompt's tokens before its last
     pos: u64,
-    /// the drafter's key rows the snapshot holds valid: positions [pos - ds_rows, pos) (sessions_gpu.zig `Snap.ds_rows`)
+    /// the drafter's key rows the snapshot holds valid: positions [pos - ds_rows, pos)
     ds_rows: u64,
     index_format: ex.IndexFormat = .fp8,
     pieces: []const Piece,
@@ -75,7 +70,7 @@ fn ringOf(pieces: []const Piece, layer: u32, kind: []const u8, rows: *u32) Error
     return .{ .values = v, .scales = s };
 }
 
-/// Zero the ring slots of positions [from, to): rows the snapshot never held, which would otherwise carry another prompt's.
+/// Zero the ring slots of positions [from, to): rows the snapshot never held, which would carry another prompt's.
 fn clearRows(r: ex.Ring, rows: u32, from: u64, to: u64) void {
     for (from..to) |pos| {
         const slot = pos % rows;
@@ -84,7 +79,7 @@ fn clearRows(r: ex.Ring, rows: u32, from: u64, to: u64) void {
     }
 }
 
-/// The library's view of `st`: slices over the snapshot's bytes, no copy. `ds_rows` is what rides (0: no drafter rings).
+/// The library's view of `st`: slices over the snapshot's bytes, no copy; `ds_rows` rides (0: no drafter rings).
 pub fn cudaOf(arena: std.mem.Allocator, st: State, ds_rows: *u32) Error!ex.Cuda {
     const geo = g.release;
     var out: ex.Cuda = .{ .index_format = st.index_format, .sources = &.{}, .swa = &.{}, .carries = &.{} };
@@ -149,7 +144,7 @@ pub fn build(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, st: State)
     return b;
 }
 
-/// The bytes of the parts a hand-off at `upto` tokens holds (what `build` allocates), for the table's cap before the copy is read.
+/// The bytes of the parts a hand-off at `upto` tokens holds (what `build` allocates), for the table's cap.
 pub fn estimate(upto: u64) u64 {
     const geo = g.release;
     const window: u64 = @min(upto, geo.window);

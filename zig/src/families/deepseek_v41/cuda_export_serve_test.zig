@@ -1,5 +1,4 @@
-//! The producer over a synthetic engine state: a handoff written to a file replays into the library's importer, a refused one
-//! leaves its reason, a link's table holds an export until it is closed, and every state read is released exactly once.
+//! The producer over a synthetic engine state: file hand-offs replay, refusals leave reasons, each state is freed once.
 const std = @import("std");
 const fabric = @import("fabric");
 const plan = @import("handoff/plan.zig");
@@ -219,7 +218,7 @@ test "an HTTP producer streams a held export to any reader; a release or an expi
     try std.testing.expectEqualSlices(u8, want.written(), got.items);
     first.close();
 
-    // the decoder deletes it while the second reader is mid-stream: new readers find nothing, the second one finishes whole
+    // the decoder deletes it while the second reader is mid-stream: new readers find nothing, the second one finishes
     const manifest_len = (try second.next()).?.len; // the manifest
     try std.testing.expect(p.discard(id));
     try std.testing.expectEqual(@as(usize, 0), p.held.count());
