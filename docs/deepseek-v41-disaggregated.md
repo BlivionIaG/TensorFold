@@ -20,10 +20,10 @@ This page is the operator recipe. The wire format, the library and the exactness
    client ──HTTP──▶  Mac (Metal): `tensorfold-native serve ... --prefill-from http://PRODUCER:PORT --mcdma-link NAME`
                        │  1. trigger the export     POST /v1/completions + kv_transfer_params   (HTTP, LAN)
                        │  2. pull the state         MKVH protocol 2 over the link NAME          (RDMA, CX5 cable)
-                       │  3. land it, prefill the tail, decode
+                       │  3. land it, run the last prompt token, decode
                        ▼
    GB10 pair (CUDA, TP=2): rank 0 `tensorfold-dsv41 serve ... --mcdma-produce NAME`, rank 1 `tf-dsv41 follow`
-                       prefills the prompt to its last-but-one token, exports rank 0's state, holds it until pulled
+                       prefills the prompt to its last-but-one token (all but the Mac's tail), exports rank 0's state, holds it until pulled
 ```
 
 Only the payload (about 3.7 KB per prompt token, 31 MiB for 8,704 tokens) uses the cable. The link's set-up datagrams and
@@ -172,8 +172,13 @@ TF_PREFILL_API_KEY_FILE=$KEYFILE tensorfold-native serve $PACK --engram-stream-d
 ```
 
 `--prefill-from` is the producer's HTTP address (the trigger); `--mcdma-link NAME` is the daemon link (the payload).
-`TF_DSV41_PREFILL_STEP=4096` is the Mac's own tail-prefill step. A prompt shorter than `TF_PREFILL_MIN` is prefilled on the
+`TF_DSV41_PREFILL_STEP=4096` is the Mac's own prefill step. A prompt shorter than `TF_PREFILL_MIN` is prefilled on the
 Mac.
+
+The Mac runs only the prompt's last token after the pull (`TF_PREFILL_TAIL`, default 1: a one-row, decode-class step, so no
+prefill pass runs on the Mac), and the pair prefills all the rest, tail included. `TF_PREFILL_TAIL=0` restores the 512-token
+boundary (`TF_PREFILL_CHUNK`), which leaves the Mac a 96 to 461 token pass of 0.6 to 1.1 s. Not measured on the pair yet; see
+[the hand-off page](deepseek-v41-handoff.md#how-much-of-the-prompt-is-handed-over) for what moves, what is not shipped and the drafter's start.
 
 Leave `--keep-warm` at its default (900 s) and do not pass `--keep-warm 0`: while the pair prefills, the Mac's GPU is idle for
 seconds, macOS un-wires an idle model after one to two seconds, and the first pass after the hand-off then waits 0.9 to 2.3 s
