@@ -119,11 +119,13 @@ The listen daemon logs `peer ready over roce` once the Mac connects. `NAME` is t
 ## 6. The prefill pair
 
 Rank 1 is `tf-dsv41 follow`; rank 0 is `tensorfold-dsv41 serve` with one more flag. The pair needs a profile whose
-prefill state can be exported: a replicated KV pool and a paged pool. Replay prefill (`TF_DSV41_PREFILL=replay`: the cut
-stands after the decoder replay, see below) and prompts in pieces (`TF_DSV41_PREFILL_PIECES=1`) are exported; it must **not**
-run `TF_DSV41_KV_SPLIT=1` (half the pages are on the other rank); the server refuses to start, by name, with it. A pair that
-serves its own lanes with pieces exports in the same process: the decode lanes keep running while a prompt's pieces and its
-export run.
+prefill state can be exported: a paged pool. Replay prefill (`TF_DSV41_PREFILL=replay`: the cut stands after the decoder
+replay, see below) and prompts in pieces (`TF_DSV41_PREFILL_PIECES=1`) are exported: a pair that serves its own lanes with
+pieces exports in the same process, and the decode lanes keep running while a prompt's pieces and its export run. A split pool
+(`TF_DSV41_KV_SPLIT=1`) is exported by shard, which is how a pair holds a prompt of up to a million tokens: rank 0 exports
+shard 0 with `--mcdma-produce NAME`, rank 1 (`tf-dsv41 follow`) exports its own pages on a listen link of its own host named by
+`TF_DSV41_PRODUCE_LINK=NAME2`, and the Mac pulls both at once with `--mcdma-link NAME,NAME2`. `TF_DSV41_POOL_TOKENS` must hold
+the prompt: a split pool needs about 1,060 B a token on each rank (a replicated one 1,790).
 
 ```
 # both machines
