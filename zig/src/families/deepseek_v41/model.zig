@@ -184,6 +184,8 @@ pub const Model = struct {
     observer: ?Observer = null,
     /// The attention's own per-stage observer (the `stagediff` harness).
     attention_observer: ?attention.DiagnosticObserver = null,
+    /// Layer-split gate G3: enter or stop the forward at a layer (layersplit_gate.zig).
+    gate: @import("layersplit_gate.zig").Gate = .{},
     pub const Observer = struct {
         ctx: *anyopaque,
         encode: *const fn (*anyopaque, mtl.ComputeEncoder, u32, gpu_counters.Stage, *const Model) void,
