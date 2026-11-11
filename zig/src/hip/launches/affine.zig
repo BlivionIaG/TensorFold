@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const abi = @import("../abi.zig");
+const kernels = @import("../kernels.zig");
 const runtime = @import("../runtime.zig");
 const hl = @import("../launch.zig");
 const Module = @import("../module.zig").Module;
@@ -26,7 +27,19 @@ pub const Choices = struct { matrix: Matrix = .auto, stream: bool = true, gemm: 
 
 /// quant/mlx.hpp's GroupTable, Routing and Affine as the kernels take them by value.
 pub const GroupTable = extern struct { p: u64, kind: c_int };
-pub const Routing = extern struct { items: u64 = 0, members: u64 = 0, x_div: c_int = 1, first: c_int = 0 };
+/// The expert pointer table of an offloaded stack (kernels/hip/tiles/plan.hpp TF_EXPERT_PTRS): present in the arguments only where the kernels were built
+/// with it (caps `expert_ptrs`), so every other part's kernel arguments and code stay as they were.
+pub const ExpertPtrs = if (kernels.expert_ptrs) extern struct { ptab: u64 = 0, off: i64 = 0 } else extern struct {};
+pub const Routing = extern struct { items: u64 = 0, members: u64 = 0, x_div: c_int = 1, first: c_int = 0, ptrs: ExpertPtrs = .{} };
+
+/// `ptab` (device address of a u64 per expert, 0: the stack's own slices) and the byte offset of this projection in an expert's blob, as the Routing field.
+pub fn expertPtrs(ptab: u64, off: u64) ExpertPtrs {
+    if (comptime !kernels.expert_ptrs) {
+        std.debug.assert(ptab == 0);
+        return .{};
+    }
+    return .{ .ptab = ptab, .off = @intCast(off) };
+}
 pub const Arg = extern struct {
     x: u64,
     words: u64,
@@ -49,7 +62,8 @@ pub const StreamSides = stream_layout.StreamSides;
 pub const Side = struct { words: u64, scale: u64, bias: u64, n: c_int, out: u64 };
 
 comptime {
-    std.debug.assert(@sizeOf(GroupTable) == 16 and @sizeOf(Routing) == 24 and @sizeOf(Arg) == 112 and @sizeOf(StreamSides) == 184);
+    const ptrs: usize = if (kernels.expert_ptrs) 16 else 0;
+    std.debug.assert(@sizeOf(GroupTable) == 16 and @sizeOf(Routing) == 24 + ptrs and @sizeOf(Arg) == 112 + ptrs and @sizeOf(StreamSides) == 184);
 }
 
 /// Everything a launch needs beside the kernels.

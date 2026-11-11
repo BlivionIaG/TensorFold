@@ -150,3 +150,13 @@ pub fn tf_moe_route(l: *const Launcher, picks: CI, pairs: c_int, experts: c_int,
     const seg_bytes = std.mem.alignForward(usize, segs * ex * 2, 4);
     try l.go(l.op.moe_route, dim(1, 1, 1), dim(256, 1, 1), @intCast(3 * ex * 4 + seg_bytes + 2 * 256 * 4), s, &a);
 }
+
+/// A layer's `pairs` picks into the trace at `dst` (host memory mapped into the device); one block.
+pub fn tf_expert_trace(l: *const Launcher, picks: CI, pairs: c_int, dst: I, s: S) Error!void {
+    if (comptime !@import("../kernels.zig").expert_ptrs) return invalid("expert_trace");
+    var a: Args = .{};
+    try a.add(ad(picks));
+    try a.add(pairs);
+    try a.add(ad(dst));
+    try l.go(l.op.expert_trace, dim(1, 1, 1), dim(256, 1, 1), 0, s, &a);
+}

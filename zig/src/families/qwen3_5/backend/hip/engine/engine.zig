@@ -24,6 +24,8 @@ const config = @import("../../../weights/config.zig");
 const table = @import("../../../weights/table.zig");
 const vision = @import("vision.zig");
 
+pub const ExpertMode = enum { auto, off, on };
+
 pub const Options = struct {
     vision: ?@import("engine_api").VisionOpen = null,
     /// Most positions a stream's caches hold (its prompt, its reply and a window's rows).
@@ -55,6 +57,13 @@ pub const Options = struct {
     graphs: bool = true,
     /// What the run may use, resolved once by whoever opens the engine.
     policy: hip.Policy = .{},
+    /// Routed experts of an MLX MoE checkpoint in a host tier the GPU reads in place, with a device cache of the hot ones (caps `expert_ptrs`):
+    /// `auto` does it when the weights do not fit the budget, `on` always, `off` never (the checkpoint then loads whole or is refused).
+    experts: ExpertMode = .auto,
+    /// Experts the cache admits a round at most: the copy budget, bytes the link spares from the misses' own reads.
+    expert_copies: usize = 8,
+    /// Device bytes of the expert cache (null: what the plan leaves).
+    expert_gib: ?f64 = null,
 };
 
 pub const Pick = lane_round.Pick;
@@ -194,14 +203,24 @@ pub const Engine = struct {
         _ = try steps.done(.{ 0, 0 }, .first);
         // a chat checkpoint's drafted and concurrent rounds equal its solo ones: rocBLAS products vary with rows
         const chat = chatCheckpoint(gpa, io, dir);
+        const routed = if (o.experts == .off or chat or o.world > 1) 0 else try table.routedBytes(gpa, io, dir);
+        const total = try checkpointBytes(gpa, io, dir, chat) / o.world;
+        const pool = try e.budget(io);
+        const held = hip.usage(false).device;
+        // a checkpoint whose experts do not fit is served with them in host memory when the kernels can read them there
+        const offload = routed > 0 and (o.experts == .on or total > pool.room(held));
+        if (offload and !hip.kernels.expert_ptrs) {
+            std.log.err("the checkpoint's weights do not fit and this GPU's kernels cannot read experts from host memory (caps expert_ptrs)", .{});
+            return error.WeightsDoNotFit;
+        }
         if (o.preflight) |pf| {
-            // a rank loads its share of the checkpoint, near enough to refuse before reading it
-            pf.* = .{ .pool = try e.budget(io), .held = hip.usage(false).device, .weights = try checkpointBytes(gpa, io, dir, chat) / o.world };
+            // a rank loads its share of the checkpoint, near enough to refuse before reading it; offloaded experts count what stays resident
+            pf.* = .{ .pool = pool, .held = held, .weights = if (offload) total - routed + routed / 256 + (128 << 20) else total };
             if (seen) |limits| pf.weights += try vision.Vision.bytes(try vision.Vision.config(gpa, io, dir), limits);
             if (pf.weights > pf.pool.room(pf.held)) return error.WeightsDoNotFit;
         }
         _ = try steps.done(.{ 0, 0 }, .first);
-        e.weights = try weights.Model.loadRankWith(gpa, io, &e.driver, dir, group, chat);
+        e.weights = try weights.Model.loadRankWith(gpa, io, &e.driver, dir, group, chat, if (offload) .{} else null);
         errdefer e.weights.deinit();
         if (e.plain() or chat) {
             // a bf16 checkpoint's products (rocBLAS, or widened for chat): one rank, not qualified under graphs
@@ -237,6 +256,7 @@ pub const Engine = struct {
     /// Allocate the scratch for streams of `capacity` positions and a pool of `pool_pages` pages (zero: the default).
     pub fn size(e: *Engine, capacity: usize, pool_pages: usize) !void {
         const rows = e.o.batch_rows;
+        if (e.weights.experts) |s| if (rows > s.shape.trace_rows) return error.OffloadRows;
         const prompt_rows = @min(e.o.prompt_rows, capacity);
         const count = if (pool_pages > 0) pool_pages else default_streams * pages.pagesFor(capacity) + pages.pagesFor(rows);
         const arenas = try e.arenaBytes(rows, prompt_rows, capacity);
@@ -436,6 +456,37 @@ pub const Engine = struct {
         e.stream.synchronize() catch {};
     }
 
+    /// Device bytes the plan leaves untouched when the expert cache takes the rest: the driver's, the graphs' and a launch's own.
+    const expert_margin: usize = 192 << 20;
+
+    /// Gives the offloaded experts their device cache, after everything else of the plan is allocated: `expert_gib`, else every byte the budget leaves.
+    pub fn attachExperts(e: *Engine, io: std.Io) !void {
+        const s = e.weights.experts orelse return;
+        const blob = s.shape.blobBytes();
+        const keys = s.shape.layers * s.shape.experts;
+        const room = (try e.budget(io)).room(hip.usage(false).device);
+        const bytes: usize = if (e.o.expert_gib) |g| @intFromFloat(g * (1 << 30)) else room -| expert_margin;
+        const lines = @min(bytes / blob, keys);
+        if (lines == 0) return error.OutOfDeviceMemory;
+        try s.attachPool(lines, e.o.expert_copies);
+        std.log.info("experts: {d} layers x {d} routed in a {d:.2} GiB host tier ({d} B each), {d:.2} GiB resident (shared experts, tables); cache {d} lines = {d:.2} GiB ({d:.1}% of the experts), at most {d} copies a round", .{
+            s.shape.layers,
+            s.shape.experts,
+            gib(hip.expert_store.Store.hostBytes(s.shape)),
+            blob,
+            gib(hip.expert_store.Store.residentBytes(s.shape)),
+            lines,
+            gib(lines * blob),
+            100.0 * @as(f64, @floatFromInt(lines)) / @as(f64, @floatFromInt(keys)),
+            e.o.expert_copies,
+        });
+    }
+
+    /// The expert tables up to the device before a forward reads them (a graph's first node, a prompt span's first launch).
+    fn sendExperts(e: *Engine) !void {
+        if (e.weights.experts) |s| try s.send(e.stream.handle);
+    }
+
     /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order.
     fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
         const y = try o.project(hidden, e.model().head, rows, false);
@@ -504,6 +555,7 @@ pub const Engine = struct {
         @memcpy(ids, prompt[pos0..end]);
         try e.ids_dev.uploadAsync(0, e.ids.view(0, 4 * ids.len), e.stream);
         var p: Poll = undefined;
+        try e.sendExperts();
         const rows = try fwd.span(e.ops(&e.prompts), e.model(), caches, e.ids_dev.base(), end - pos0, pos0, e.poll(cancel, end - pos0, &p));
         try e.stream.synchronize();
         return rows;
@@ -519,6 +571,7 @@ pub const Engine = struct {
         const ids = e.ids.slice(u32)[0..len];
         @memcpy(ids, prompt[pos0..]);
         try e.ids_dev.uploadAsync(0, e.ids.view(0, 4 * ids.len), e.stream);
+        try e.sendExperts();
         const o = e.ops(&e.prompts);
         var p: Poll = undefined;
         const hidden = try fwd.span(o, m, caches, e.ids_dev.base(), len, pos0, e.poll(cancel, len, &p));

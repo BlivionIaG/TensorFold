@@ -8,6 +8,8 @@ pub const Options = struct {
     rank: u32 = 0,
     world: u32 = 1,
     cache_gib: ?f64 = null,
+    /// --ssd-experts GIB on a HIP MoE engine: device bytes of the expert cache, the experts themselves in a host tier (null: what the plan leaves, when the weights do not fit).
+    experts_gib: ?f64 = null,
     cache_over_cap: bool = false,
     vision: ?api.VisionOpen = null,
 };
