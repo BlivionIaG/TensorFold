@@ -4,6 +4,7 @@ const lanes = @import("lanes");
 const host = @import("lane_host.zig");
 const recalls = @import("lane_host_recall.zig");
 const remote = @import("lane_remote.zig");
+const queue = @import("lane_cache_queue.zig");
 const pc = @import("prompt_cache.zig");
 const LaneHost = host.LaneHost;
 const Job = LaneHost.Job;
@@ -16,10 +17,9 @@ pub fn freeProposer(h: *LaneHost, job: *Job) void {
 
 /// The store's lookup for `job`; a remote prefix landed up to `landed` (0: none) starts the pass there.
 fn lookup(h: *LaneHost, store: *pc.Store, job: *Job, landed: u32) !pc.Lookup {
-    const r = job.request;
     store.resume_floor = landed;
     defer store.resume_floor = 0;
-    return store.lookupUserFrame(h.gpa, job.cacheKey(), r.bornLen(), r.history_len, r.rewind_len, r.user_end, r.shared_prefixes, r.chunks, h.spans(r), r.images, job.frame);
+    return queue.lookup(h, job);
 }
 
 /// An admitted job's stream (its kept prefix looked up, its drafter): false when it failed (the job is finished).
