@@ -175,6 +175,11 @@ TF_PREFILL_API_KEY_FILE=$KEYFILE tensorfold-native serve $PACK --engram-stream-d
 `TF_DSV41_PREFILL_STEP=4096` is the Mac's own tail-prefill step. A prompt shorter than `TF_PREFILL_MIN` is prefilled on the
 Mac.
 
+Leave `--keep-warm` at its default (900 s) and do not pass `--keep-warm 0`: while the pair prefills, the Mac's GPU is idle for
+seconds, macOS un-wires an idle model after one to two seconds, and the first pass after the hand-off then waits 0.9 to 2.3 s
+to re-wire it. The keepalive ticks while a hand-off is awaited. A quiet server (a request after more than a few seconds of
+idleness) can still pay that re-wire once.
+
 ## 8. Verify
 
 A reply with a long prompt carries, in its `tensorfold` block, `"exact_mode": "remote_prefix"`, `remote_prefix` and
@@ -226,6 +231,7 @@ The Mac's restore command (`tools/restore-rdma.py`) and the peer's neighbour are
 | `link down (the connect end is silent)` in the listen log | the Mac daemon restarted or slept; it reconnects | none, unless it stays down |
 | reply has no `remote_prefix` | prompt under `TF_PREFILL_MIN`, producer down, checkpoint hash differs | read the Mac's `remote prefill failed (...)` line |
 | `pkill -f PATTERN` ends your ssh command | the pattern matches the command line carrying it | kill by pid |
+| the first pass after a hand-off takes 1 to 2 s longer than the tail's size explains | the idle model was un-wired while the pair prefilled | keep `--keep-warm` at its default; not `0` |
 
 ## 11. Measured
 
@@ -242,27 +248,31 @@ Two GX10 (GB10, TP=2) and an M5 Ultra Mac Studio (256 GB), the 2.9 bpw EXL3 pack
 ### End to end: time to first token, hand-off against the Mac alone
 
 Same hardware, 2.9 bpw pack, the tuned prefill profile, three prompts per size (distinct text), seconds, median of three
-(`max_tokens` 1). The Mac's tail prefill is the part of the prompt past the last 512-token cache boundary of the prefix.
+(`max_tokens` 1), Mac alone on the same binary and prompts. The Mac's tail is the part of the prompt past the last
+512-token cache boundary of the prefix (96 to 461 tokens). Measured twice: before and after two fixes on the Mac
+(the idle model is kept wired while a hand-off is awaited, and the pass is planned from the landed prefix instead of from token 0).
 
-| prompt tokens | prefix handed over | hand-off, median | Mac alone, median | hand-off / Mac alone |
-|---|---|---|---|---|
-| 1k | none (below `TF_PREFILL_MIN`) | 1.62 | 1.62 | 1.00 |
-| 4k | 4,096 | 7.11 | 4.67 | 1.52 |
-| 8k | 7,680 to 8,192 | 11.89 | 8.33 | 1.43 |
-| 16k | 15,872 to 16,384 | 17.90 | 16.04 | 1.12 |
-| 30k | 29,184 to 30,208 | 32.17 | 29.22 | 1.10 |
+| prompt tokens | prefix handed over | hand-off, before fixes | hand-off, after fixes | Mac alone | after / Mac alone |
+|---|---|---|---|---|---|
+| 1k | none (below `TF_PREFILL_MIN`) | 1.62 | | 1.62 | 1.00 |
+| 4k | 4,096 | 7.11 | 4.93 | 4.61 | 1.07 |
+| 8k | 7,680 to 8,192 | 11.89 | 8.88 | 8.34 | 1.06 |
+| 16k | 15,872 to 16,384 | 17.90 | 16.10 | 15.78 | 1.02 |
+| 30k | 29,184 to 30,208 | 32.17 | 29.12 | 28.96 | 1.01 |
 
-**The hand-off does not shorten time to first token on this hardware today.** The pair prefills and exports at about 1.0 to
-1.1k tokens a second, which is what the Mac does alone (0.9 to 1.07k), so the pair's time is not saved; on top of it the
-Mac spends 1.7 to 4.0 s landing the state and prefilling the tail (a Mac prefill of that tail alone is about 0.5 s), and
-the pull over the link adds 0.1 to 0.6 s. The hand-off wins only when the pair prefills substantially faster than the
-Mac: the serving profile reaches 2.2 to 2.5k tokens a second but cannot be exported (see above).
+**The hand-off does not shorten time to first token on this hardware.** After the fixes it is level with the Mac alone (within 1 to 7 %):
+the pair prefills and exports at about 1.0 to 1.1k tokens a second, which is what the Mac does alone (0.9 to 1.07k), and the pair's
+time is 93 to 95 % of the hand-off's. The Mac's landing plus tail is 0.6 to 1.1 s (it follows the tail's length; it was 1.7 to 4.0 s before
+the fixes), and the pull adds 0.1 to 0.55 s. A hand-off wins only when the pair prefills substantially faster than the Mac:
+the serving profile reaches 2.2 to 2.5k tokens a second but cannot be exported (see above).
 
-What is checked and works: the payload crosses the cable (the producer port's `tx_bytes_phy` grew 3.9 KB per exported token
-while the LAN carried about 68 KB), the Mac falls back to its own prefill when the link is down
-(`remote prefill: the link is not usable (LinkDown); prompts are prefilled here`, `exact_mode: exact`), and answers
-on the hand-off path are fluent and on topic. Greedy decoding after a hand-off differs from a Mac-only prefill within
-5 to 10 tokens on three 9 to 10k-token prompts: that is the `remote_prefix` contract, not a defect, and no quality benchmark
-has been run on it. Not measured: a producer HTTP failure mid-transfer, concurrent requests, quality.
+What is checked and works: the payload crosses the cable (the producer port's `tx_bytes_phy` grew 3.7 to 3.9 KB per exported
+token while the LAN carried about 68 KB); the Mac falls back to its own prefill when the link is down
+(`remote prefill: the link is not usable (LinkDown); prompts are prefilled here`, `exact_mode: exact`); a quiet server (12 s and
+30 s idle) shows no wake-up penalty; a second turn of a conversation asks the producer again for the same prefix (the producer
+answers from its pool in 0.1 s) and the Mac answers in 1.0 s of TTFT. Greedy decoding after a hand-off differs from a Mac-only
+prefill within 5 to 10 tokens on three 9 to 10k-token prompts, with fluent, on-topic text on both: that is the `remote_prefix`
+contract, not a defect, and no quality benchmark has been run on it. Not measured: a producer HTTP failure mid-transfer,
+concurrent requests, quality, `--mcdma-link http` on the final build.
 
 The remaining case for it is capacity, not latency: a pair that is otherwise idle can take long prompts off the Mac's GPU (expected, not measured).
