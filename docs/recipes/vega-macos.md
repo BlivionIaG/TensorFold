@@ -562,7 +562,7 @@ admits every miss: a miss's one trip over the link is also its admission, the st
 (an mlx process holding the same model, or several GiB wired, shrinks what `hipHostMalloc` can pin). Decode runs eager (value waits are not capturable); a prompt span copies each expert it uses
 from the window into a one-layer VRAM scratch by SDMA before its GEMMs (a 466-token prompt prefills in 4.5 s instead of 23.8 s by reading the window in place).
 The server log carries `experts interval/total` lines (hit rate, misses/token and MiB/token over the link, window fill, admissions, stage ms/token, round ms) and an `experts span` line a prompt span.
-Checks: `tools/vega-macos/moe_ref.py` (mlx_lm greedy references, 8 prompts incl. a 466- and a ~1100-token one) and `moe_gate.py` (shas of a running server, `--against` for cache on vs `TF_EXPERT_COPIES=0`).
+Checks: `tools/vega-macos/moe_ref.py` (mlx_lm greedy references, 8 prompts incl. a 466- and a ~1100-token one) and `tf-moe-gate` (`zig build tf-moe-gate`; shas of a running server, `--against` for cache on vs `TF_EXPERT_COPIES=0`; the Zig port of `moe_gate.py`, which produced the recorded runs).
 Recovery after a wedge ("GC TLB invalidation did not acknowledge", "not a GPU this engine supports"): `ut4g-boot --force`, then DPM auto (`hipmac-smi`).
 
 ## Reproducing the numbers on this page (command lines as run)
@@ -652,17 +652,17 @@ Runs (the binary of each row is **R**: built from the working tree before the co
 | `b16k.*` (16k/1k, SLRU 75 %) | `PAR=2 CTX=17408` | `/tmp/bench_run.sh b16k 16384:1024 1,2 2 17408` (**V**) | `07b09d3709` |
 | `l16k_c1.{md,err}` (empty: this run failed, nothing was recorded; c=4/8 at 16k were never run) | `PAR=1 CTX=17408` | `serve_bench.py ... --concurrency 1 --loads 16384:...` | |
 
-Gate (`tools/vega-macos/moe_ref.py`, `moe_gate.py`; the mlx environment `tools/vega-macos/setup-mlx-env.sh`): references **V** `~/.cache/tensorfold-vega/mlxenv/bin/python tools/vega-macos/moe_ref.py` (the first run had to wait until no
+Gate (`tools/vega-macos/moe_ref.py`, `tf-moe-gate`; the mlx environment `tools/vega-macos/setup-mlx-env.sh`): references **V** `~/.cache/tensorfold-vega/mlxenv/bin/python tools/vega-macos/moe_ref.py` (the first run had to wait until no
 card server held host memory: "Insufficient Memory"; 8 prompts since the 466- and ~1100-token Merrowick prompts, shas `eb415dcbaf6e 188a33e44468 be83e20c3349 dba6cb89062a ed065dc57de4 554c5b65193a ff333359d187 037a3176d0c5`), then
-`/tmp/gate_pair.sh TAG` (**V**: server with the cache on, `moe_gate.py --log SERVER.LOG --tag TAG_on` against the references; server with `TF_EXPERT_COPIES=0`, `--tag TAG_off`; then a python one-liner compares the two replies: all True).
+`/tmp/gate_pair.sh TAG` (**V**, with `moe_gate.py`, whose output and result file `tf-moe-gate` reproduces: server with the cache on, `tf-moe-gate --log SERVER.LOG --tag TAG_on` against the references; server with `TF_EXPERT_COPIES=0`, `--tag TAG_off`; then a python one-liner compares the two replies: all True).
 Result at every build (`g1`, `g3`): the cache-on and cache-off replies are identical for all 8 prompts, and 3 of 8 equal the mlx references; the five others diverge at a near tie of the mlx logprobs (`/tmp/margin.py`: ' the' -0.876 vs
 ' shorter' -0.876, ' due' -0.596 vs ' in' -0.846, ' meet' -0.973 vs ' marry' -1.348, ...), [INFERENCE: different arithmetic, not diagnosed]: the gate that must hold is cache on = cache off (`--against`).
 
 Story benchmark (**V**, `/tmp/exp.sh TAG [ENV=VAL]`): start the server, three decodes of "Write a long story N about a dragon who learns to code." (N = 1..3, `max_tokens` 200 (300 for the 26-28.7 rows), `temperature 0`, thinking off) through `curl` on
 `/v1/chat/completions`, the number is the server's own `tensorfold.tokens_per_second`: `exp.sh c32 TF_EXPERT_COPIES=32` gave 11.14 / 22.06 / 20.79 tok/s; before read-through admission 20.89 (hipprof run), after it 26.12 / 28.73 / 26.94.
-Per-kernel table of a decode (**V**, `/tmp/prof_run.sh TAG`): `hipprof` shim with `HIPPROF_EVENTS=1`, `TF_POLICY=graphs=off`, `kill -USR1/-USR2` around a profiled 200-token decode, `tools/vega-macos/prof_report.py`.
+Per-kernel table of a decode (**V**, `/tmp/prof_run.sh TAG`): `hipprof` shim with `HIPPROF_EVENTS=1`, `TF_POLICY=graphs=off`, `kill -USR1/-USR2` around a profiled 200-token decode, then `tf-prof-report TABLE` (`zig build tf-prof-report`; it was `prof_report.py` for the recorded runs).
 
-Cache simulator (**V**, cwd `tools/vega-macos`): `<mlx env python> expert_cache_sim.py > /tmp/ecs_out.txt` on the study's traces (default `~/Projects/Infra/tf-study-moe-cache/docs/proposals/metal-tb4-split-moe-probe/traces` and `../traces_long`; 12-17 s on 14 workers);
+Cache simulator (**V**, with `expert_cache_sim.py`; now `zig build tf-expert-cache-sim`, `zig-out/bin/tf-expert-cache-sim [TRACES_DIR] [--long DIR] [--cap N] [--jobs N] [--only STR]`, same options and the same report, compared on the study's traces: 1.4 s on 8 workers against 54 s for the Python): the default is the study's traces (`~/Projects/Infra/tf-study-moe-cache/docs/proposals/metal-tb4-split-moe-probe/traces` and `../traces_long`; the original run took 12-17 s on 14 workers);
 the output of the last run is `ut4g-usbgpu` `artifacts/results/moe-offload-bench/expert_cache_sim_output.txt` (LRU 82.9 %, SLRU 75 % 83.6 %, LFU aged 83.7 %). The traces themselves come from the study (`routing_trace.py`, see its proposal "Reproduce").
 
 Mac-alone 35B (**V**): `uvx --from mlx-lm mlx_lm.server --model ~/models/Qwen3.6-35B-A3B-4bit --port 18201 --decode-concurrency 8 --prompt-concurrency 8 --prompt-cache-size 1 --temp 0 --max-tokens 4096`, then `serve_bench.py --url http://127.0.0.1:18201

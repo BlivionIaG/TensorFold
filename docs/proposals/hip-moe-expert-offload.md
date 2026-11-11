@@ -20,7 +20,7 @@ see "Update 2" for what replaced it. `TF_EXPERT_OFFLOAD=0|1|auto`, `--ssd-expert
 
 ## Results (Vega 56, DPM auto, hipmac 16dde97+f656643)
 
-* Correctness: greedy tokens vs mlx_lm (6 prompts, 8-96 tokens, `tools/vega-macos/moe_ref.py` / `moe_gate.py`): 3 of 6 identical (incl. a 96-token one);
+* Correctness: greedy tokens vs mlx_lm (6 prompts, 8-96 tokens, `tools/vega-macos/moe_ref.py` / `moe_gate.py`, now `tf-moe-gate`): 3 of 6 identical (incl. a 96-token one);
   the other 3 diverge at tokens where mlx_lm's own top-2 are within 0 / 0.25 / 0.37 nats (near ties; bf16 noise). Cache on and `TF_EXPERT_COPIES=0` are token-identical on
   all 6 (so no L2 staleness after SDMA into reused lines).
 * Decode (one stream, 200 tokens, COPIES=8): 4.4-6.6 tok/s, hit rate 36-42 %, 190-240 misses/token (315-400 MiB/token over the link), round 110-150 ms/token;
@@ -55,7 +55,7 @@ Where the time went (hipprof, `HIPPROF_EVENTS=1`, story decode, c=1, per token):
   466-token prompt 23.8 -> 4.3-4.6 s; serve_bench 1k prefill 30 -> 154 tok/s, TTFT 34 -> 6.7 s. The scratch costs 256 of ~2875 lines and keeps the decode working set intact.
 * SLRU (`TF_EXPERT_PROTECT`, default 75 %): a line hit again after its admission is protected; eviction takes the oldest unprotected line. Card A/B (serve_bench filler 1k/256, par 8): c=1 decode
   12.7 -> 14.1 tok/s (ITL 102 -> 91 ms), c=4 tie (16.4 both), c=8 decode-window hit 62.8 -> 80.1 % (128 -> 69 misses/token, round 218 -> 159 ms) though its aggregate figure is within noise.
-* Frequency policies, by simulation first (`tools/vega-macos/expert_cache_sim.py` on the study's real traces, 2876 lines, cold start per prompt): LRU 82.9 %; SLRU 83.6 (+0.8); LFU aged W=10k 83.7 (fragile: W=5k +0.3, 40k -0.3);
+* Frequency policies, by simulation first (`tools/vega-macos/expert_cache_sim.py`, now `tf-expert-cache-sim`, on the study's real traces, 2876 lines, cold start per prompt): LRU 82.9 %; SLRU 83.6 (+0.8); LFU aged W=10k 83.7 (fragile: W=5k +0.3, 40k -0.3);
   ARC +0.4; per-layer split -1.1; TinyLFU -0.02 to -5.4; 2Q worse. Seeding or warm start (cross-category profile, or prefill counts) changes only the first ~30 decode tokens (misses/token at tokens 0-8 / 8-32: cold 158 / 70,
   seeded 99 / 59, prefill-derived 57 / 51; identical afterwards): about 1300 reads (~0.7 s) per prompt, less than the ~1.6 s a 2876-line seed read costs, so it is not implemented. Static profiles transfer poorly across domains.
 * Rejected without building: a second pinned in-place cache tier (a window-resident expert still costs link bytes to read in place; it would only save the host memcpy, which is cheap); speculative all-256 prestage with
