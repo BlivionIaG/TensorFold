@@ -26,8 +26,11 @@ pub const Ops = struct {
     reset: *const fn (ptr: *anyopaque) anyerror!void,
     /// the slot's position
     position: *const fn (ptr: *anyopaque) u32,
-    /// layers from the cut over prompt rows [at, at + n), entered from `rows` (n boundary rows)
+    /// layers from the cut over prompt rows [at, at + n), entered from `rows` (n boundary rows): the rows are copied
+    /// before this returns and the pass may still be running, so passes follow one another without a wait
     enter: *const fn (ptr: *anyopaque, at: u32, n: u32, rows: []const u8) anyerror!void,
+    /// every pass entered so far has completed: asked once, before the restore (`reset` ends them as well)
+    sync: *const fn (ptr: *anyopaque) anyerror!void,
     /// layers below the cut from the landed state (the feed's snapshot)
     restore: *const fn (ptr: *anyopaque, snap: *anyopaque) anyerror!void,
 };
@@ -121,6 +124,7 @@ pub const Run = struct {
             .landed => {
                 const snap = r.feed.snapshot() orelse return error.NoSnapshot;
                 r.stats.state_wait_ns = now - r.state_since_ns;
+                try ops.sync(ops.ptr);
                 try ops.restore(ops.ptr, snap);
                 r.stats.restore_ns = fabric.words.nowNs() - now;
                 if (ops.position(ops.ptr) != r.upto) return error.PositionMismatch;
@@ -175,9 +179,20 @@ const Probe = struct {
     restored: ?*anyopaque = null,
     passes: std.ArrayList(struct { at: u32, n: u32 }) = .empty,
     fail_enter_at: ?u32 = null,
+    /// passes entered and not yet synced
+    in_flight: u32 = 0,
+    syncs: u32 = 0,
+    /// the passes in flight when each sync was asked
+    synced_passes: u32 = 0,
 
     fn ops(p: *Probe) Ops {
-        return .{ .ptr = p, .reset = reset, .position = position, .enter = enter, .restore = restore };
+        return .{ .ptr = p, .reset = reset, .position = position, .enter = enter, .sync = sync, .restore = restore };
+    }
+    fn sync(ptr: *anyopaque) anyerror!void {
+        const p = self(ptr);
+        p.syncs += 1;
+        p.synced_passes += p.in_flight;
+        p.in_flight = 0;
     }
     fn self(ptr: *anyopaque) *Probe {
         return @ptrCast(@alignCast(ptr));
@@ -185,6 +200,7 @@ const Probe = struct {
     fn reset(ptr: *anyopaque) anyerror!void {
         self(ptr).resets += 1;
         self(ptr).pos = 0;
+        self(ptr).in_flight = 0;
     }
     fn position(ptr: *anyopaque) u32 {
         return self(ptr).pos;
@@ -197,8 +213,11 @@ const Probe = struct {
         try std.testing.expectEqualSlices(u8, p.bytes[@as(usize, at) * feed_mod.row_bytes ..][0 .. @as(usize, n) * feed_mod.row_bytes], rows);
         try p.passes.append(std.testing.allocator, .{ .at = at, .n = n });
         p.pos += n;
+        p.in_flight += 1;
     }
     fn restore(ptr: *anyopaque, snap: *anyopaque) anyerror!void {
+        // the restore reads what the passes wrote: every one of them was synced first
+        if (self(ptr).in_flight != 0) return error.PassesRunning;
         self(ptr).restores += 1;
         self(ptr).restored = snap;
     }
@@ -248,12 +267,17 @@ test "rows streamed in odd sizes are run in order, no pass leaves a stub, and th
     try std.testing.expectEqual(@as(u64, upto), run.stats.rows);
     // rows are in, the state is not: waiting, nothing restored, the feed not finished
     for (0..3) |_| try std.testing.expectEqual(Next.more, try run.advance(probe.ops(), 256));
+    // every pass followed the one before without a sync; the state was not there to restore yet
+    try std.testing.expectEqual(@as(u32, 0), probe.syncs);
+    try std.testing.expectEqual(run.stats.passes, probe.in_flight);
     try std.testing.expectEqual(@as(?bool, null), fake.finished);
     try std.testing.expectEqual(@as(u32, 0), probe.restores);
     // a late state
     fake.times = .{ .first_row_ns = 5, .rows_ns = 6, .state_ns = 7, .bytes = 8 };
     fake.landed.store(@backingInt(feed_mod.State.landed), .release);
     try std.testing.expectEqual(Next.restored, try run.advance(probe.ops(), 256));
+    try std.testing.expectEqual(@as(u32, 1), probe.syncs);
+    try std.testing.expectEqual(run.stats.passes, probe.synced_passes);
     try std.testing.expectEqual(@as(u32, 1), probe.restores);
     try std.testing.expectEqual(@as(?*anyopaque, &snap), probe.restored);
     try std.testing.expectEqual(@as(?bool, true), fake.finished);
@@ -321,6 +345,33 @@ test "a failure mid-stream resets the slot, finishes the feed failed once and le
     try std.testing.expectEqual(Next.fell_back, try run2.advance(probe2.ops(), 128));
     try std.testing.expectEqual(@as(?bool, false), fake2.finished);
     try std.testing.expectEqual(@as(u32, 1), probe2.resets);
+}
+
+test "a long stream's passes are entered back to back: the only sync is the one before the restore" {
+    limits = .{ .min_pass = 1, .slice_ns = 0 };
+    defer limits = .{};
+    const upto: u32 = 4000;
+    const bytes = try rowsOf(upto);
+    defer std.testing.allocator.free(bytes);
+    var fake: feed_mod.Feed = undefined;
+    var fk: feed_mod.Fake = .{ .bytes = bytes, .cut = 14, .upto = upto };
+    var snap: u8 = 0;
+    fk.snap = &snap;
+    fake = fk.feed();
+    var probe: Probe = .{ .bytes = bytes };
+    defer probe.passes.deinit(std.testing.allocator);
+    var run: Run = .init(fake);
+    fk.ready_rows.store(upto, .release);
+    while (run.at < upto) try std.testing.expectEqual(Next.more, try run.advance(probe.ops(), 512));
+    try std.testing.expect(probe.passes.items.len >= 7);
+    try std.testing.expectEqual(@as(u32, 0), probe.syncs);
+    try std.testing.expectEqual(@as(u32, @intCast(probe.passes.items.len)), probe.in_flight);
+    // a fall back resets (which ends the passes) without a sync of its own
+    fk.landed.store(@backingInt(feed_mod.State.failed), .release);
+    try std.testing.expectEqual(Next.fell_back, try run.advance(probe.ops(), 512));
+    try std.testing.expectEqual(@as(u32, 0), probe.syncs);
+    try std.testing.expectEqual(@as(u32, 0), probe.in_flight);
+    try std.testing.expectEqual(@as(u32, 1), probe.resets);
 }
 
 test "a stream that stands still too long, rows or state, is given up; a refused feed and a cancel finish once" {

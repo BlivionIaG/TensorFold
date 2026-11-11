@@ -191,6 +191,8 @@ pub const Model = struct {
     gate: @import("layersplit_gate.zig").Gate = .{},
     /// The cone prefill's state (forward_cone.zig).
     cone: forward_cone.Cone = .{},
+    /// The layer-split passes left running on the GPU and their entry buffers (entry_async.zig).
+    pipe: @import("entry_async.zig").State = .{},
     pub const Observer = struct {
         ctx: *anyopaque,
         encode: *const fn (*anyopaque, mtl.ComputeEncoder, u32, gpu_counters.Stage, *const Model) void,
