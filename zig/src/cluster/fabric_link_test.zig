@@ -29,7 +29,7 @@ test "four ranks join over the fabric's pipes, elect the lowest id and agree on 
     var ms: [4]membership.Membership = undefined;
     for (&links, &ms, 0..) |*l, *m, i| {
         l.* = try fabric_link.Link.init(gpa, c.endpoint(@intCast(i)), layout);
-        m.* = membership.Membership.init(gpa, .{}, .{ .id = 500 - 10 * @as(u64, @intCast(i)), .name = .of("r") }, 1);
+        m.* = try membership.Membership.init(gpa, .{}, .{ .id = 500 - 10 * @as(u64, @intCast(i)), .name = .of("r") }, 1);
     }
     defer for (&links, &ms) |*l, *m| {
         m.deinit();
@@ -101,7 +101,7 @@ test "Thunderbolt's two-sided links: four ranks join on the control link and agr
     var ms: [4]membership.Membership = undefined;
     for (&sides, &ms, 0..) |*t, *m, i| {
         t.* = fabric_link.TwoSided.init(data.link(@intCast(i)), sr.link(@intCast(i)));
-        m.* = membership.Membership.init(gpa, .{}, .{ .id = 500 - 10 * @as(u64, @intCast(i)), .name = .of("r") }, 1);
+        m.* = try membership.Membership.init(gpa, .{}, .{ .id = 500 - 10 * @as(u64, @intCast(i)), .name = .of("r") }, 1);
     }
     defer for (&ms) |*m| m.deinit();
     var now: u64 = 0;

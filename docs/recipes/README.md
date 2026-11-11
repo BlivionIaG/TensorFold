@@ -15,6 +15,7 @@ For agent-assisted contributions, read the [TensorFold contributor skill](SKILL.
 | Qwen3.8-27B | [MLX, quantization and CUDA](qwen3.8-27b.md) |
 | Qwen3.5-2B | [Native Metal preview, tied affine 4-bit](qwen3.5-2b-native.md) |
 | Qwen3.5-4B | [HIP on an RX Vega 56 (gfx900) from a Mac](vega-macos.md) |
+| Qwen3.5 / Qwen3.6 (HIP) | [A layer range as one stage of a model split across devices, offline](qwen3.5-hip-layer-range.md) |
 | Qwen3.8 Flash Next | [MLX prefill and CUDA](qwen3.8-flash-next.md), [native CUDA](flash-next-cuda.md), [CUDA images](flash-next-vision.md), [exact SSD residency on Metal](fluid-subgraph-residency.md) |
 | Qwen4 dense | [Native preparation, device qualification pending](qwen4-dense.md) |
 | Ternary Bonsai 2 27B | [MLX](ternary-bonsai-2.md) |

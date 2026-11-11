@@ -1,5 +1,6 @@
 //! HIP, built only with -Dhip=true: admission tests in `test`, GPU steps; options on every target (#1165).
 const std = @import("std");
+const offload = @import("offload_hip.zig");
 const builtin = @import("builtin");
 const caps = @import("../src/hip/caps.zig");
 const exlr8_build = @import("exlr8.zig");
@@ -216,6 +217,7 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const check = engineModules(b, check_target, .Debug, stub_kernels, null);
     b.step("check-native-hip-host", "Compile the real native HIP server with inert kernels, without GPU execution").dependOn(&server(b, check_target, check, build_options).step);
     const gpu = engineModules(b, target, optimize, objects, hip_include);
+    offload.steps(b, target, optimize, gpu, test_step);
     const qwen3_gpu = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("zig/src/families/qwen3/forward_test.zig"),
         .target = target,
@@ -340,6 +342,7 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
     const core = coreModule(b, target);
     const hip = b.createModule(.{ .root_source_file = b.path("zig/src/hip/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
     hip.addImport("core", core);
+    hip.addImport("split", b.createModule(.{ .root_source_file = b.path("zig/src/split/split.zig"), .target = target, .optimize = optimize, .link_libc = true }));
     hip.addImport("hip_kernels", kernels);
     hip.addImport("cuda_memory", b.createModule(.{ .root_source_file = b.path("zig/src/native/cuda_memory.zig"), .target = target, .optimize = optimize }));
     if (hip_include) |dir| {
@@ -374,6 +377,7 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
     });
     const qwen_vision = @import("lighton_hip.zig").vision(b, target, optimize, hip, core, lanes, serve);
     family.addImport("qwen_hip_vision", qwen_vision);
+    family.addImport("split", hip.import_table.get("split").?); // the very instance hip uses: the external stage implements its types
     const lighton = @import("lighton_hip.zig").module(b, target, optimize, hip, core, lanes, api, serve);
     const flashnext = b.createModule(.{
         .root_source_file = b.path("zig/src/families/flashnext/hip.zig"),
@@ -500,7 +504,7 @@ fn exactTool(b: *std.Build, target: std.Build.ResolvedTarget, e: Engine, family_
 /// A group's source and whether it compiles with IEEE arithmetic (`strict`: -O2 -fno-fast-math, IEEE denormals).
 const Source = struct { path: []const u8, strict: bool = false };
 /// The model-free kernels' source groups, in zig/src/hip/kernels.zig's Group order.
-const groups = [_]Source{
+pub const groups = [_]Source{
     .{ .path = "ops/ops.hip" },
     .{ .path = "ops/act.hip" },
     .{ .path = "attention/attention.hip" },
@@ -517,6 +521,7 @@ const groups = [_]Source{
     .{ .path = "lighton_ocr.hip", .strict = true },
     .{ .path = "qwen_vision.hip", .strict = true },
     .{ .path = "draft/draft.hip" },
+    .{ .path = "split/rows.hip" },
 };
 /// What the group sources include, so an edit to one rebuilds them.
 const headers = [_][]const u8{
@@ -535,7 +540,7 @@ const headers = [_][]const u8{
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-ffp-contract=off" };
 /// `-Dhip-cflags`: appended to every kernel compile (set by `options`).
 var extra_flags: []const []const u8 = &.{};
-const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const g9_mix: u8 = 2;\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
+pub const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const g9_mix: u8 = 2;\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, relax_branches: bool, arch: []const u8) *std.Build.Module {
     const files = objectFiles(b, .{ .name = hipcc, .resolved = hipcc_resolved, .device_lib = device_lib, .relax_branches = relax_branches }, arch);

@@ -15,6 +15,8 @@ pub const LinkKind = enum {
     cx5,
     /// CUDA to CUDA through NCCL on the hosts' ConnectX-7.
     nccl,
+    /// A host to its own external GPU through a PCIe tunnel (Thunderbolt): the GPU is not a rank, its host drives it.
+    tb_gpu,
 };
 
 /// What a window may be used for by peers, as an MR's access flags.

@@ -15,6 +15,20 @@ It retains the existing attention/DeltaNet head layouts and layer schedule. The 
 reference, draft, resume, concurrency and performance qualification remains pending. The pinned 2B
 continues to open its separate engine. Host header checks do not qualify another checkpoint.
 
+The same loader reads a tied embedding head (`tie_word_embeddings`; the head is the embedding table, loaded a second
+time in the head's packed layout) and routes a tied checkpoint whose hidden size is not 2048 to this engine. The
+Qwen3.5-4B MLX 4-bit checkpoint (2560 hidden, 9216 intermediate, 32 layers) is the case measured so far: greedy text
+is sensible and unsplit decode ran at 73.8 tok/s (13.5 ms per token) on an M4 Pro (measured, one run, 47 decode rows
+after a short prompt; no independent mlx_lm reference was available, so no logit or token comparison with another
+implementation exists, and no draft, long-context or concurrency qualification was done).
+
+`Model.loadRange` loads one half-open layer range (the embedding with `first == 0`, the final norm and head with
+`last == layers`) and `split_peer.zig` runs it as a stage of the split pipeline in `zig/src/split`; the two halves of
+this model on one Mac, joined through the mock device's window, produced the unsplit run's greedy tokens at every cut
+tried (measured: cuts 1, 8, 16, 31; both orders, both levels; 32 tokens). Decode only: every position, the prompt's
+included, crosses the window as one token. `zig build test-qwen27-split` runs it, on generated weights always and on
+`TF_SPLIT_QWEN_DIR` when that names a dense checkpoint directory.
+
 ```bash
 tensorfold pull TensorFold/Qwen3.8-27B-MLX-4bit
 tensorfold pull z-lab/Qwen3.8-27B-DFlash2
@@ -178,7 +192,8 @@ Decode here is a regression check; the two changes were measured together.
 The packed row readers on Apple Silicon and the CUDA readers cover MLX affine 2/3/4/5/6/8-bit projections
 with groups of 32/64/128, including mixed layers. CUDA also reads [EXL3 packs](#exl3-checkpoints-experimental).
 A fused projection keeps its members separate where their bit width or group size differs. Unsupported formats
-and tied embedding heads are refused from `config.json` before weight downloads and again at load; loaded
+and, outside the Metal dense loader (which reads a tied head, above; the CUDA path was not rechecked), tied
+embedding heads are refused from `config.json` before weight downloads and again at load; loaded
 projections must also be covered by the selected decoder. `--lane-kernels on` requires M5 tensor units and
 formats they read; `auto` falls back to the packed row decoder for the rest.
 Lower weight precision does not guarantee faster decode or a fitting context.

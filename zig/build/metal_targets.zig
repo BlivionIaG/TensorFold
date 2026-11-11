@@ -487,6 +487,8 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     // canon.zig is its own module, so a cluster-rooted test does not run these.
     cluster_tests.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = @import("cuda_engines.zig").canonModule(b, target, optimize) })).step);
 
+    @import("split.zig").steps(b, target, optimize, test_step, metal);
+
     // These module tests include Metal device checks when the macOS host has a GPU.
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = metal })).step);
     const helpers = b.createModule(.{

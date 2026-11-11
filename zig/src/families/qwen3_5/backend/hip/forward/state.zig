@@ -7,6 +7,8 @@ const pages = @import("pages.zig");
 const Allocator = std.mem.Allocator;
 
 pub const LayerCache = union(enum) {
+    /// A layer outside the model's range: the state lives on the stage that runs it.
+    absent,
     /// The keys and values are in the pool's pages.
     full,
     linear: struct { conv: hip.DeviceBuffer, state: hip.DeviceBuffer },
@@ -43,7 +45,7 @@ pub const Caches = struct {
     pub fn deviceBytes(m: *const view.Model, total: usize) usize {
         const s = m.spec;
         var linear: usize = 0;
-        for (0..s.n_layers) |i| linear += @intFromBool(!s.full(i));
+        for (0..s.n_layers) |i| linear += @intFromBool(m.range.owns(i) and !s.full(i));
         const conv = (s.conv - 1) * view.convChannels(s) * 4;
         const state = s.value_heads * s.value_dim * s.key_dim * 4;
         return linear * (conv + state) + 8 * (tableWord(s.n_layers) + std.mem.alignForward(usize, pages.pagesFor(total), 2) / 2);
@@ -60,7 +62,9 @@ pub const Caches = struct {
             gpa.free(layers);
         }
         for (layers, 0..) |*l, i| {
-            if (s.full(i)) {
+            if (!m.range.owns(i)) {
+                l.* = .absent;
+            } else if (s.full(i)) {
                 l.* = .full;
             } else {
                 var conv = try hip.DeviceBuffer.alloc(d, (s.conv - 1) * view.convChannels(s) * 4);
@@ -81,6 +85,7 @@ pub const Caches = struct {
         errdefer desc.free();
         words[0] = total;
         for (layers, 0..) |l, i| switch (l) {
+            .absent => {},
             .full => words[header_words + 2 * i ..][0..2].* = .{ pool.keys[i].base(), pool.values[i].base() },
             .linear => |x| words[header_words + 2 * i ..][0..2].* = .{ x.conv.base(), x.state.base() },
         };
@@ -114,7 +119,7 @@ pub const Caches = struct {
 
     fn free(l: *LayerCache) void {
         switch (l.*) {
-            .full => {},
+            .absent, .full => {},
             .linear => |*x| {
                 x.conv.free();
                 x.state.free();
@@ -144,7 +149,7 @@ pub const Caches = struct {
         var n: usize = c.table.items.len * c.pool.pageBytes();
         if (c.tap) |t| n += t.len;
         for (c.layers) |l| switch (l) {
-            .full => {},
+            .absent, .full => {},
             .linear => |x| n += x.conv.len + x.state.len,
         };
         return n;
@@ -217,7 +222,7 @@ pub const Caches = struct {
     pub fn linearBytes(c: *const Caches) usize {
         var n: usize = 0;
         for (c.layers) |l| switch (l) {
-            .full => {},
+            .absent, .full => {},
             .linear => |x| n += x.conv.len + x.state.len,
         };
         return n;
@@ -227,7 +232,7 @@ pub const Caches = struct {
     pub fn saveLinear(c: *const Caches, buf: hip.DeviceBuffer, stream: hip.abi.Stream) !void {
         var at: usize = 0;
         for (c.layers) |l| switch (l) {
-            .full => {},
+            .absent, .full => {},
             .linear => |x| for ([_]hip.DeviceBuffer{ x.conv, x.state }) |b| {
                 try hip.raw.copy(buf, at, b.base(), b.len, stream);
                 at += b.len;
@@ -239,7 +244,7 @@ pub const Caches = struct {
     pub fn loadLinear(c: *Caches, buf: hip.DeviceBuffer, stream: hip.abi.Stream) !void {
         var at: usize = 0;
         for (c.layers) |l| switch (l) {
-            .full => {},
+            .absent, .full => {},
             .linear => |x| for ([_]hip.DeviceBuffer{ x.conv, x.state }) |b| {
                 try hip.raw.copy(b, 0, buf.base() + at, b.len, stream);
                 at += b.len;

@@ -67,13 +67,16 @@ pub const Bridge = struct {
         errdefer b.q_weight.free();
         @memset(qs, c.k);
         b.k_weight = try hip.DeviceBuffer.fromHost(d, std.mem.sliceAsBytes(qs));
+        // a stage's view holds only what its range runs: no embedding, final norm or head outside it
+        const heads = m.range.heads(s.n_layers);
         b.model = .{
             .spec = s,
             .act = act,
-            .embed = try projection(m.embed),
+            .range = m.range,
+            .embed = if (m.embed) |e| try projection(e) else null,
             .layers = b.layers,
-            .final_norm = m.final_norm.ptr,
-            .head = try projection(m.outputHead()),
+            .final_norm = if (m.final_norm) |n| n.ptr else 0,
+            .head = if (heads) try projection(m.outputHead()) else null,
             .qk = .{ .q_weight = b.q_weight.base(), .k_weight = b.k_weight.base(), .eps = c.eps },
         };
         return b;

@@ -11,7 +11,8 @@ const Tensor = hip.ops.Tensor;
 const pops = hip.plan_ops;
 
 /// A round's launches and kept inputs; `positions3` holds M-RoPE (t, h, w) rows, `rotary` a 1-D position (0: cache's).
-pub const Round = struct { plan: pops.Plan, tokens: u64, span: usize, inputs: []const [2]u64, positions3: u64 = 0, rotary: u64 = 0 };
+/// `hand` is a stage's boundary rows when `m.range` is not the whole model (see `fwd.Handoff`).
+pub const Round = struct { plan: pops.Plan, tokens: u64, span: usize, inputs: []const [2]u64, positions3: u64 = 0, rotary: u64 = 0, hand: fwd.Handoff = .{} };
 
 /// Whether this build and model run lane rounds: the merged decode launches, and shapes the plan kernels take.
 pub fn supported(o: Ops, m: *const view.Model) bool {
@@ -24,13 +25,15 @@ pub fn kept(o: Ops, m: *const view.Model, rows: usize, table: [][2]u64) !void {
     const s = m.spec;
     for (table, 0..) |*t, index| {
         t.* = .{ 0, 0 };
-        if (s.full(index)) continue;
+        if (s.full(index) or !m.range.owns(index)) continue;
         t[0] = try o.arena.of(f32, rows * view.convChannels(s));
         t[1] = try o.arena.of(f32, rows * (s.keyWidth() + s.valueWidth() + 2 * s.value_heads));
     }
 }
 
-/// The final-normed rows of the round, in order (rows, hidden), padding rows included.
+/// The final-normed rows of the round, in order (rows, hidden), padding rows included. Over a range that stops short of
+/// the last layer: the residual rows after its last layer (no final norm), also written to `r.hand.dst` as f32; over one
+/// that starts past layer 0: the rows start from `r.hand.src`, not from token ids.
 pub fn forward(ops: Ops, m: *const view.Model, r: Round, trace: ?fwd.Trace) fwd.Error!Tensor {
     // a round's rows keep their decode kernels however many share it
     var o = ops;
@@ -38,12 +41,13 @@ pub fn forward(ops: Ops, m: *const view.Model, r: Round, trace: ?fwd.Trace) fwd.
     const s = m.spec;
     const total = r.plan.rows;
     const x = try fwd.take(o, m.act, total * s.hidden);
-    try o.embedRows(m.embed, r.tokens, total, x);
+    if (m.range.embeds()) try o.embedRows(m.embed.?, r.tokens, total, x) else try fwd.takeRows(o, r.hand, x, total, s.hidden);
     const normed = try fwd.take(o, m.act, total * s.hidden);
-    const out = try fwd.take(o, m.act, total * s.hidden);
+    // a stage that stops short of the head has no final norm to write
+    const out = if (m.headed()) try fwd.take(o, m.act, total * s.hidden) else x;
     const eps: f32 = @floatCast(s.eps);
     try o.rms(x, inputNorm(m.layers[0]), normed, total, s.hidden, eps);
-    for (m.layers, 0..) |layer, index| {
+    for (m.layers, m.range.first..) |layer, index| {
         const mark = o.arena.mark();
         defer o.arena.release(mark);
         const post_norm, const mlp = switch (layer) {
@@ -60,8 +64,10 @@ pub fn forward(ops: Ops, m: *const view.Model, r: Round, trace: ?fwd.Trace) fwd.
             .dense => true,
         };
         const merge = o.fused() and y.kind == m.act and stacked;
-        const last = index + 1 == m.layers.len;
-        const next_norm = if (last) m.final_norm else inputNorm(m.layers[index + 1]);
+        const last = index + 1 == m.range.first + m.layers.len;
+        // the range's last layer leaves the residual sum for the next stage, before that stage's input norm
+        const ends = last and !m.headed();
+        const next_norm = if (ends) 0 else if (last) m.final_norm else inputNorm(m.layers[index + 1 - m.range.first]);
         const dest = if (last) out else normed;
         if (merge) {
             try o.addRms(x, y, post_norm, normed, total, s.hidden, eps);
@@ -70,27 +76,28 @@ pub fn forward(ops: Ops, m: *const view.Model, r: Round, trace: ?fwd.Trace) fwd.
             try o.rms(x, post_norm, normed, total, s.hidden, eps);
         }
         switch (mlp) {
-            .moe => |rt| if (merge and rt.remap == 0) {
+            .moe => |rt| if (merge and rt.remap == 0 and !ends) {
                 const parts = try moe.parts(o, m.act, rt, normed, total);
                 try o.moeTail(x, parts.y, parts.wts, next_norm, dest, total, parts.slots, s.hidden, eps);
             } else {
                 const z = try fwd.mlpRows(o, m, mlp, normed, total, true);
                 try fwd.residual(o, m, x, z, total * s.hidden);
-                try o.rms(x, next_norm, dest, total, s.hidden, eps);
+                if (!ends) try o.rms(x, next_norm, dest, total, s.hidden, eps);
             },
             .dense => {
                 const z = try fwd.mlpRows(o, m, mlp, normed, total, true);
-                if (merge and z.kind == m.act) {
+                if (merge and z.kind == m.act and !ends) {
                     try o.addRms(x, z, next_norm, dest, total, s.hidden, eps);
                 } else {
                     try fwd.residual(o, m, x, z, total * s.hidden);
-                    try o.rms(x, next_norm, dest, total, s.hidden, eps);
+                    if (!ends) try o.rms(x, next_norm, dest, total, s.hidden, eps);
                 }
             },
         }
         if (m.taps.of(index)) |ti| try pops.tap(o, x, r.plan, s.hidden, ti, m.taps.n, m.taps.rows);
         if (trace) |t| t.layer(t.ctx, index, x, total) catch return error.HipFailed;
     }
+    if (!m.headed()) try fwd.giveRows(o, r.hand, x, total * s.hidden);
     return out;
 }
 

@@ -213,3 +213,23 @@ test "the launch's remote command returns at once, before the node it started ex
     const written = try tmp.dir.readFileAlloc(io, ".config/tensorfold/cluster.json", a, .limited(1 << 10));
     try std.testing.expectEqualStrings("{\"cluster\": \"x\"}", written);
 }
+
+test "a hip node is refused where a node would start or be probed, while the config still parses for planning" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const text =
+        \\{ "schema": "tensorfold-cluster/1", "cluster": "lab", "ssh": { "user": "tf", "key": "/keys/cluster" },
+        \\  "nodes": [ { "name": "n0", "address": "host0", "backend": "metal" },
+        \\             { "name": "n1", "address": "host1", "backend": "hip", "gpu": "external", "memory_gb": 24 } ],
+        \\  "models": { "g": { "path": "/models/g", "nodes": ["n1"] } } }
+    ;
+    var probs: config.Problems = .{ .a = a };
+    const c = try config.parse(a, text, &probs);
+    try std.testing.expect(probs.ok());
+    try std.testing.expectEqual(node.Backend.hip, c.nodes[1].backend);
+    var fake: Fake = .{ .cables = &.{} };
+    try std.testing.expectError(error.UnlaunchableBackend, launch.launch(a, fake.runner(), c, text, c.model("g").?, "n0", true));
+    try std.testing.expectError(error.UnlaunchableBackend, launch.inventory(a, fake.runner(), c, c.nodes[1], false));
+    try std.testing.expectEqual(@as(usize, 0), fake.calls.items.len);
+}

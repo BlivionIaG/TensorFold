@@ -19,6 +19,7 @@ pub const Group = enum {
     lighton_ocr,
     qwen_vision,
     draft,
+    split_rows,
 };
 pub const group_count = @typeInfo(Group).@"enum".field_names.len;
 

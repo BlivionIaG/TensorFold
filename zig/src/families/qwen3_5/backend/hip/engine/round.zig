@@ -106,6 +106,7 @@ pub fn shapeOf(e: *Engine, rows: []const Rows) !plan.Shape {
 
 /// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys).
 pub fn choose(e: *Engine, rows: []const Rows, forced: ?Pick) !Pick {
+    if (e.ranged()) return error.RangedEngine;
     const st = &e.round;
     const shape = try shapeOf(e, rows);
     st.chosen = .{ .pick = .eager, .entry = null, .shape = shape };
@@ -133,6 +134,7 @@ fn nowNs() u64 {
 
 /// Every window in one forward: `out` the token of every row per `reqs`; snapshots live until the next round's `keep`.
 pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: []u32) !Verified {
+    if (e.ranged()) return error.RangedEngine;
     const st = &e.round;
     const m = e.model();
     const began = nowNs();
@@ -156,7 +158,7 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     const done = try run(e, c, r);
     e.graphs.rounds += 1;
     e.graphs.submit_ns += nowNs() - began;
-    try e.drawRows(o, done.y, total, reqs, out, m.tp == null);
+    try e.drawRows(o, done.y.?, total, reqs, out, m.tp == null);
     st.last = .{ .plan = p, .keep_at = 4 * l.keep, .hidden = done.hidden.ptr };
     return .{ .hidden = done.hidden };
 }
@@ -174,8 +176,10 @@ pub fn forwardOn(ops: hip.ops.Ops, m: *const view.Model, r: win.Round, trace: ?f
     // a round's rows keep their decode kernels however many share it
     o.window = true;
     const hidden = try win.forward(o, m, r, trace);
-    const y = try o.project(hidden, m.head, r.plan.rows, false);
-    if (m.tp == null) try o.argmaxRows(y, r.plan.rows, m.head.n, argmax_at);
+    // a range that stops short of the last layer has no logits: its hidden rows went to the next stage
+    const head = m.head orelse return .{ .hidden = hidden, .y = null, .used = o.arena.used };
+    const y = try o.project(hidden, head, r.plan.rows, false);
+    if (m.tp == null) try o.argmaxRows(y, r.plan.rows, head.n, argmax_at);
     return .{ .hidden = hidden, .y = y, .used = o.arena.used };
 }
 

@@ -181,8 +181,8 @@ fn run(gpa: std.mem.Allocator, io: std.Io, driver: *const hip.Runtime, dir: []co
     var c: Check = .{ .gpa = gpa, .driver = driver };
     var scratch: std.heap.ArenaAllocator = .init(gpa);
     defer scratch.deinit();
-    try c.walk(model.embed, (try ck.embed(scratch.allocator())));
-    try c.walk(model.final_norm, try ck.finalNorm(scratch.allocator()));
+    try c.walk(model.embed.?, (try ck.embed(scratch.allocator())));
+    try c.walk(model.final_norm.?, try ck.finalNorm(scratch.allocator()));
     try c.walk(model.head, try ck.head(scratch.allocator()));
     for (model.layers, 0..) |layer, i| {
         var host_layer = try ck.layer(i);
