@@ -28,8 +28,9 @@ pub const Experts = struct {
     count: usize,
 };
 
-/// Routed experts offloaded: the stacks stay in a host tier, `trace_rows` the most rows of a decode round the picks are traced for.
-pub const Offload = struct { trace_rows: usize = 128 };
+/// Routed experts offloaded: the stacks stay in a pageable host tier, `trace_rows` the most rows of a forward whose picks are staged, `window_bytes` the
+/// pinned DMA window the card reads misses from (docs/HIPMAC.md: the TB card maps about 1.96 GiB of host memory in all).
+pub const Offload = struct { trace_rows: usize = 2048, window_bytes: usize = 1536 << 20 };
 
 const host_mlx = quant.mlx.Host;
 
@@ -132,7 +133,7 @@ const Uploader = struct {
         if (slot.* == null) {
             const s = try u.up.gpa.create(hip.expert_store.Store);
             errdefer u.up.gpa.destroy(s);
-            s.* = try hip.expert_store.Store.init(u.up.gpa, u.up.r, shape);
+            s.* = try hip.expert_store.Store.init(u.up.gpa, u.up.r, shape, o.window_bytes);
             slot.* = s;
         }
         const store = slot.*.?;
