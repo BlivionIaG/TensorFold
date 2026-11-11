@@ -1,4 +1,5 @@
 //! Cache invalidation is immediate; storage and peer drops wait for a host boundary and the last restore borrower.
+const std = @import("std");
 const pc = @import("prompt_cache.zig");
 const modes = @import("cache_modes.zig");
 
@@ -32,4 +33,24 @@ pub fn borrow(s: *pc.Store, prompt: []const u32, born: u32, starts: []const u32,
     const e = pc.rows.read.recall(s, prompt, born, starts, spans, @import("prompt_cache_recall.zig").recall(s, prompt, born, starts, spans, ram)) orelse return null;
     e.borrowers += 1;
     return e;
+}
+
+/// A completed restore updates reuse history; a refusal expires the exact borrowed state.
+pub fn resumedWithReason(s: *pc.Store, e: *pc.Entry, prompt: []const u32, failure: ?anyerror) void {
+    if (std.mem.indexOfScalar(*pc.Entry, s.entries.items, e) == null) return;
+    defer s.release(e);
+    if (failure) |err| {
+        @import("prompt_cache_restore.zig").report(s.restore_log, .{ .kept = e.at, .prompt = prompt.len, .expired = e.expired, .err = err });
+        s.counts.failed += 1;
+        e.expired = true;
+        return;
+    }
+    s.clock += 1;
+    e.used = e.seen.hit(s.clock);
+    const branch = @import("prompt_cache_policy.zig").continuedLater(s, e) and !std.mem.eql(u32, prompt, e.last);
+    e.branched = e.branched or branch; // an identical re-send adds no branch
+    s.counts.hits += 1;
+    const last = s.gpa.dupe(u32, prompt) catch return;
+    if (e.own.len == 0 or e.last.ptr != e.own.ptr) s.gpa.free(e.last); // the first `last` is the tokens' copy
+    e.last = last;
 }
