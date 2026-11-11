@@ -122,6 +122,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     }
     const host_enc_start: u64 = nowNs();
     const enc_start_s: f64 = if (m.host_prof) mtl.clock.seconds() else 0;
+    mtl.dispatch_diag.poll();
     const dispatches_before = mtl.command.dispatch_count.load(.monotonic);
     // TF_DSV41_LAYER_CB: one command buffer a layer, with the GPU's own seconds for each.
     const layer_cb = std.c.getenv("TF_DSV41_LAYER_CB") != null;
