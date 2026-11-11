@@ -352,6 +352,8 @@ pub const Sessions = struct {
         s.f.slot.tail = p.tail;
         s.f.slot.tail_len = p.tail_len;
         s.f.slot.ced = p.stash;
+        s.f.slot.cone_id = 0;
+        if (s.f.prefill_state != null) pf.state(s.f).replay_exact = false;
         s.ds_valid[s.cur()] = p.pos - p.ds_rows;
         s.dsRestored();
     }
@@ -377,6 +379,8 @@ pub const Sessions = struct {
         s.f.slot.tail = m.tail;
         s.f.slot.tail_len = m.tail_len;
         s.f.slot.ced = m.stash;
+        s.f.slot.cone_id = 0;
+        if (s.f.prefill_state != null) pf.state(s.f).replay_exact = false;
         s.ds_valid[s.cur()] = m.pos - m.ds;
         s.dsRestored();
     }

@@ -170,6 +170,8 @@ pub const Emitter = struct {
     marks: ?*std.ArrayList(usize) = null,
     /// its first row in the run's narrow per-row roles, a multiple of 4 (16-byte aligned slices); 0 elsewhere
     cnt0: i64 = 0,
+    /// the exact replay's later programs: this program's first row in the candidates "w.cand" (layer 20's, kept)
+    cand0: i64 = 0,
 
     pub fn fmt(e: *Emitter, comptime f: []const u8, args: anytype) ![]const u8 {
         return std.fmt.allocPrint(e.a, f, args);

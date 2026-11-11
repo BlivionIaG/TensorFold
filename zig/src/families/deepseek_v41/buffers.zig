@@ -65,6 +65,16 @@ pub const Plan = struct {
         for (cs) |c| for (c.args) |x| try p.note(x.arg);
     }
 
+    /// `role` at least `bytes` large: a buffer a program reaches at a larger extent than any the plan emits.
+    pub fn need(p: *Plan, role: []const u8, bytes: u64) !void {
+        const g = try p.sizes.getOrPut(p.a, role);
+        if (!g.found_existing) {
+            g.key_ptr.* = try p.a.dupe(u8, role);
+            g.value_ptr.* = 0;
+        }
+        g.value_ptr.* = @max(g.value_ptr.*, bytes);
+    }
+
     pub const Totals = struct { roles: [3]usize = @splat(0), bytes: [3]u64 = @splat(0) };
 
     /// Bytes by scope, each role rounded up to 256 (its place in the arena or its own allocation).

@@ -9,9 +9,9 @@ pub const keep: u32 = replay_rows - 1;
 /// the stash ring's rows (position p at row p % ring): at least `keep`, a power of two
 pub const ring: u32 = 128;
 
-/// A slot's stash bookkeeping over `ring_rows` rows (rows on the device, "s.ced.*" row p % ring_rows).
-pub fn StashOf(comptime ring_rows: u32) type {
-    comptime std.debug.assert(ring_rows >= keep);
+/// A slot's stash bookkeeping over a ring of `ring_rows` device rows (row p % ring_rows), `keep_rows` of them live.
+pub fn StashOf(comptime ring_rows: u32, comptime keep_rows: u32) type {
+    comptime std.debug.assert(ring_rows >= keep_rows);
     return struct {
         from: u64 = 0,
         hi: u64 = 0,
@@ -26,12 +26,12 @@ pub fn StashOf(comptime ring_rows: u32) type {
 
         /// The first position held.
         pub fn lo(s: *const @This()) u64 {
-            return @max(s.from, s.hi -| keep);
+            return @max(s.from, s.hi -| keep_rows);
         }
 
         /// The replay check: the stash ends at `end` and holds [r0, end).
         pub fn covers(s: *const @This(), r0: u64, end: u64) bool {
-            return s.hi == end and s.lo() <= r0 and end - r0 <= keep;
+            return s.hi == end and s.lo() <= r0 and end - r0 <= keep_rows;
         }
 
         /// The ids of positions [r0, end) (`covers` first).
@@ -42,7 +42,11 @@ pub fn StashOf(comptime ring_rows: u32) type {
 }
 
 /// A slot's stash bookkeeping (rows on the device, "s.ced.*" row p % ring): positions [max(from, hi - keep), hi), ids.
-pub const Stash = StashOf(ring);
+pub const Stash = StashOf(ring, keep);
+
+/// The exact replay's stash (the cone ring "s.cone.*"): the last `cone_keep` rows of the encoder pass's segments.
+pub const cone_keep: u32 = 128 + 19 * 127;
+pub const ConeStash = StashOf(cone_keep, cone_keep);
 
 /// One segment of a multi-segment run: a slot's prompt ids from its position `start`.
 pub const MultiSeg = struct { slot: u32, start: u64, ids: []const u32 };

@@ -47,14 +47,16 @@ pub fn planWorkspace(f: *Forward, wp: *buffers.Plan, rows: u32, layers: []const 
     if (pf.state(f).k4) {
         const enc = try encoderLayers(f, layers);
         const o4 = k4Options(image_opts.planOptions(f));
-        const top4 = try lastStartWith(f, o4, enc, K4.rows, .encoder);
+        const part: block_prefill.Part = if (pf.state(f).cone_on) .encoder_cone else .encoder;
+        const top4 = try lastStartWith(f, o4, enc, K4.rows, part);
         for ([_]i64{ 0, top4 }) |start| {
             var ka = std.heap.ArenaAllocator.init(f.gpa);
             defer ka.deinit();
-            const cs = try block_prefill.emitReplay(ka.allocator(), f.cfg, f.widths, o4, enc, K4.rows, start, .encoder);
+            const cs = try block_prefill.emitReplay(ka.allocator(), f.cfg, f.widths, o4, enc, K4.rows, start, part);
             try wp.add(try block_prefill.ownCalls(ka.allocator(), cs, K4.tag));
         }
         try @import("index_scratch.zig").plan(wp, K4.rows, o4, f.cfg, K4.tag);
+        if (pf.state(f).cone_on) try @import("forward_prefill_cone.zig").plan(f, wp, rows, layers, true);
     }
     if (replay and f.opts.pf_tbo and rows >= 2 * block_prefill.tbo_min) {
         const enc = try encoderLayers(f, layers);

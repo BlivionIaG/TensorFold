@@ -89,6 +89,18 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
             std.log.scoped(.dsv41).err("TF_DSV41_PREFILL=replay: the forward's layers do not reach the decoder's first ({d})", .{d});
             return error.BadKnob;
         }
+        // TF_DSV41_REPLAY_EXACT: the exact decoder replay (on unless refused); the pair's segments never fill its ring
+        const exact = try pk.replayExact(&env);
+        const ps = pf.state(f);
+        ps.cone_group = try pk.replayGroup(&env);
+        ps.cone_on = exact orelse !f.opts.pf_tbo;
+        if (ps.cone_on and f.opts.pf_tbo) {
+            std.log.scoped(.dsv41).err("TF_DSV41_REPLAY_EXACT=1 does not run with TF_DSV41_PF_TBO=1 (the pair's segments do not fill the cone ring)", .{});
+            return error.BadKnob;
+        }
+    } else if ((try pk.replayExact(&env)) == true) {
+        std.log.scoped(.dsv41).err("TF_DSV41_REPLAY_EXACT=1 needs TF_DSV41_PREFILL=replay", .{});
+        return error.BadKnob;
     }
     if (rank != 0) return;
     const log = std.log.scoped(.dsv41);
@@ -99,6 +111,7 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
     if (f.opts.stream_rb == 1) log.info("stream top-k: _stream_pf (the next tile's key loads issued ahead)", .{});
     if (f.opts.stream_rb > 1) log.info("stream top-k: {d} rows a program (_stream_rb{d})", .{ f.opts.stream_rb, f.opts.stream_rb });
     if (f.opts.pf_tbo) log.info("prefill tbo: encoder segments two at a time on two streams, x3gm on at most {d} SMs (0: all){s}", .{ dk.exl3.gm_sms_cap, if (f.opts.pf_overlap > 0) "; TF_DSV41_PF_OVERLAP is off under it" else "" });
+    if (pf.state(f).cone_on) log.info("replay: exact decoder replay, programs of {d} layers over the last {d} rows (TF_DSV41_REPLAY_EXACT, _GROUP)", .{ pf.state(f).cone_group, @import("ced.zig").cone_keep });
     if (f.opts.pf_overlap > 0) log.info("prefill overlap: a segment's exchanges in {d} row pieces on the side stream{s}", .{ f.opts.pf_overlap, if (f.opts.pf_overlap_site) ", every piece; the next mixing site in the same pieces, each after its own" else "" });
     log.info("serve knobs: pf_dense {s}, prefill rows {d}{s}, index budget {d} MiB, R1 {s}, prefetch ahead {s}, x3gm v2 {t}, prefill {t}, mhc pfdec {d}", .{ if (f.opts.pfd != null) "fused" else "off", if (big) pf4k_rows else @as(u32, @intCast(f.opts.prefill_rows)), if (big) " (4K: one x3gm block a segment, in the prefill's own workspace)" else "", f.opts.index_budget >> 20, if (f.opts.r1) "on" else "off", if (pf.state(f).ahead) "on" else "off", f.opts.gm_v2, pf.state(f).mode, f.opts.mhc_pf_rows });
 }
