@@ -926,6 +926,42 @@ Conflicts in this series and how they were resolved:
 Cluster tests (`zig test` on the cluster root with stand-in modules, because `test-cluster` needs the Metal compiler):
 115 pass, 6 skip, 0 fail on the rebased tree.
 
+### Retest on upstream `fb8fdf3d85` (2026-11-11)
+
+`feat/tb4-offload-pr1-up` (45 commits) was rebased onto upstream main `fb8fdf3d85` (112 commits after `21ea8dee4`), one conflict: upstream's
+`qwen27/config.zig` now reads the tied head through `rules.tied(root, t, .metal27)` (`core/qwen35_rules.zig`) and refuses it with
+`error.TiedEmbeddingHead`; the commit that makes the dense engine read a tied head (`read a tied embedding head and load a layer range`) now takes
+`const tied = try rules.tied(root, t, .metal27)` and keeps the refusal out. The shared reader reports a non-boolean flag as `BadTiedHead`, where the
+branch's own reader said `BadConfig`; the config test expects the new error. `tb4-offload-card` was rebuilt as the merge of `vega-macos-up` and this
+branch; its conflicts: `docs/recipes/README.md` (both rows kept) and `zig/build/hip.zig` (the gfx900 side's flags and `g9_mix` stub kept, `stub`
+public as this branch's `offload_hip.zig` imports it); the split stub in `offload_hip.zig` also carries `g9_mix: u8 = 2` now, which the kernels module
+of the gfx900 branch requires, and `tf-offload-card: options after unsplit` (a card-branch commit) is carried over.
+
+Offline: `zig build test-split` 54/54 (49 + 5); `zig build -Dhip=true -Dhip-arch=gfx1030 test-qwen35-split-host` 20/20 (the offload branch alone has no gfx900 row);
+`tf-qwen27-split-synthetic` passes; `test-qwen27-split` with `TF_SPLIT_QWEN_DIR` on the real 4B (Metal+Metal): 12 decode and 12 chunked runs and 104
+runs of up to eight sequences in one to four lanes, cuts 1, 16 and 31, all token-identical, 0 of 36 logits rows differ in any bit between a batch row and
+the same row alone (its timings, 23.2 ms/position split against 24.1 unsplit, ran while the Mac was building and are not comparable to the 74 tok/s above).
+The Metal compiler of this Mac needed an `xcrun` script outside the tree (see the vega recipe, "Building on a Mac whose Xcode license is not accepted").
+
+On the card (`tb4-offload-card` at the rebased heads, hipmac `c95d708`, `ut4g-boot --force` then `hipmac-smi --set-dpm auto`, so DPM auto, sclk 1430-1580 MHz
+while the card was busy (`UT4G_METRICS_LOG=file:1`: 179-180 W of the 180 W limit, edge at most 61 C), 9-token prompt, 40 tokens a sequence, the Metal reference
+of `tf-offload-metal ref ref.bin 40`; every sequence of every line token-identical to it). The earlier rows were at the 852 MHz bootup clocks:
+
+| Run | before (852 MHz) | `fb8fdf3d85`, DPM auto |
+| --- | --- | --- |
+| resident, streams 1 (`chunk=8`) | 64.8 | 83.2 |
+| resident, streams 2, lanes 1 | 76.2 | 127.4 |
+| resident, streams 4, lanes 1 | 104.9 | 182.9 |
+| resident, streams 8, lanes 1 | 115.4 | 215.6 |
+| split `metal_first` 16, streams 2 (two lanes of one row), level A / B | 119.9 | 128.6 / 129.0 |
+| split `metal_first` 16, streams 2, lanes 1 (one lane of two rows), level A / B | 84.4 / 87.4 | 112.6 / 113.3 |
+| split `metal_first` 16, streams 1, level A / B | 50.7 | 69.4 / 72.3 |
+
+The resident decode without options (`tf-offload-card MODEL REF unsplit`): 11.95 ms a position, top-1 47/48 against Metal with the same tie at position 2
+(both leading bf16 logits 13.125), logits cosine min 0.99966 / mean 0.99994, free-running 40/40 identical, as in the first card run. The resident one-stream
+rate (83.2) is above the Mac alone through TensorFold Metal (70.1 in the old Mac row, not re-measured here), the split at one stream (69-72) is level with
+it, as the one-stream model said, and the two-stream split (129) is 10% above the Mac's 116.5 at two sequences.
+
 ### Not in this pull request, and why
 
 * **Metal-prefill-then-state-handoff.** Chunked prefill through the split exists (rows > 1 per step, above) but both sides

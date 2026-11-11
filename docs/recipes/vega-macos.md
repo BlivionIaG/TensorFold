@@ -221,6 +221,48 @@ Prefill (server `prefill_seconds` of a chat prompt, one token out; tok/s):
 
 The 64- and 32-row GEMM tiles are worth 15% at 526 tokens and 40% at 100 over the block tile, and match the older base.
 
+### Retest on upstream `fb8fdf3d85` (2026-11-11; Vega 56, hipmac `c95d708`, DPM auto)
+
+`vega-macos-up` was rebased onto upstream main `fb8fdf3d85` (112 commits after the previous base `21ea8dee4b`; its 29 commits applied without
+conflicts). Every row here was measured on the rebased branch (the engine from `native-hip`, `-Dhip-arch=gfx900`, ReleaseFast) with the card at DPM
+auto (`hipmac-smi --set-dpm auto`), which holds the sclk at 1200 to 1540 MHz under these loads: the 180 W socket limit is reached (`UT4G_METRICS_LOG=file:1`
+samples with activity above 30%: median sclk 1309-1375 MHz, mclk 800 MHz, 179-180 W, edge at most 58 C, hotspot at most 70 C).
+
+| Check | Result |
+| --- | --- |
+| sha gate, nothink / think96 (`vega_gate.py`) | `eb415dcbaf6e` / `bf86edaf9c17`, identical to mlx_lm |
+| decode N = 1 (`vega_gate.py`, median of 3 128-token stories) | 81.4 tok/s (81.3-81.5); 80.9 in an earlier gate run with the card at DPM HIGH after a `--force` boot |
+| `hip-kernel-test` | 157 passed, 14 skipped, 2 failed of 173; the two failures are the nemotron relu^2 / fc1 + shared up tests of before |
+| `hip-affine-test` | 30/30 |
+| per-row bit identity (`kernel_tests/affine/stream.zig`, in `hip-kernel-test`) | passes: row r of a several-row launch equals the launch of row r alone, m = 2, 3, 4, 5, 8, 16 |
+| `hip-host-test` (mock) | 78 passed |
+| gfx1030 code objects, `-Dhip-arch=gfx1030`, 16 groups, same wrapper, against upstream `fb8fdf3d85` | `.text` byte for byte identical in all 16 groups |
+
+Round time (ms, `--parallel N`, N concurrent 128-token requests, "backend verify ... us each" of the server's exit log; DPM auto):
+
+| N | 1 | 2 | 4 | 8 |
+| --- | --- | --- | --- | --- |
+| before (older upstream base, DPM clocks, `165e94fe4e`) | 12.3 | 17.1 | 25.2 | 44.6 |
+| `fb8fdf3d85` | 12.2 | 15.9 | 22.2 | 37.8 |
+
+Aggregate tok/s at N = 1, 2, 4, 8: 81.5, 119.7, 163.9, 186.6. N = 2, 4 and 8 are faster than the old rows (7%, 12%, 15%); the cause is not diagnosed
+([INFERENCE]: the old rows were taken in a different thermal and power-limit state, or an upstream change in the engine's scheduling; not checked).
+
+Prefill (server `prefill_seconds` of a chat prompt with a salt in front so no prefix is cached, one token out; tok/s, DPM auto):
+
+| Prompt tokens | 53 | 105 | 225 | 531 | 1024 |
+| --- | --- | --- | --- | --- | --- |
+| before (852 MHz) | 75 | 76 | 120 | 193 | 190 |
+| `fb8fdf3d85`, DPM auto | 141 | 141 | 204 | 301 | 307 |
+
+105 tokens take 748 ms and 53 take 383 ms: about 7.2 ms a token up to 105 tokens, the one-row path the short prompts take. The rows gain 1.9x at 53-105
+tokens and 1.6x at 531-1024 over the 852 MHz rows, from 1.5x of clock.
+
+Logits against mlx_lm (`vega_gate.py --logits`, 87 rows through the decode path): cosine min 0.998616, mean 0.999881, argmax equal 87/87 (the older base
+with `TF_G9_MIX=1`: 0.99857 / 0.99988 / 87/87). The script's own bar is cosine min above 0.999, which this does not reach on either base; the argmax gate passes.
+`tf-qwen35-test`, which the logits gate uses, did not compile with the stacked gate/up on gfx900: `zig/tests/qwen35/main.zig`'s `walk` took `h.?` of a
+device field (`gate_up`) with no host twin; it skips such a field now (one line).
+
 ### The older base (`vega-macos`, before the rebase)
 
 | Step | decode tok/s | Tokens vs mlx_lm |
@@ -339,6 +381,12 @@ here do not need Xcode, only the command line tools' SDK and Zig's C compiler:
     export TF_CC="zig cc"                      # tools/vega-macos/vega_gate.py builds the hipprof shim with it (default clang)
 
 `zig build test` (the Metal tests) and `make -C hipmac` (clang) do not work without it.
+
+The Metal compiler of Xcode 27 is a downloadable component (`xcodebuild -downloadComponent MetalToolchain`, which needs the license too). If it was
+downloaded before, it sits in `/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-*/Metal.xctoolchain/usr/bin` and runs
+without Xcode: a script named `xcrun` first on `PATH` that drops `-sdk macosx`, answers `--show-sdk-path` with the command line tools' SDK and
+execs `metal`, `metallib` and `metal-ar` from that directory makes `zig build test-split`, `tf-offload-metal` and `test-qwen27-split` build with
+`-Dmetal-std=metal4.0`. The script is not part of the tree.
 
 ## Several rows a round (N streams), gfx900
 
