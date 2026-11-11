@@ -1,5 +1,6 @@
 //! How a handoff's page rows split into DATA frames, and how a frame's rows are gathered from a cache tensor.
 const std = @import("std");
+const row_stage = @import("row_stage.zig");
 const Allocator = std.mem.Allocator;
 
 /// One DATA frame: rows [row_start, row_start + rows) of the export's layer at `position`.
@@ -30,6 +31,15 @@ pub fn plan(gpa: Allocator, layers: []const LayerRows, capacity: u64) ![]Frame {
     return out.toOwnedSlice(gpa);
 }
 
+/// What a producer's frame waits on: the rows (or latch) it names, the producer's failure, or its stall.
+fn awaited(st: *const row_stage.Stage, end: u64, wait_ns: u64) !void {
+    switch (st.wait(end, wait_ns, null)) {
+        .ready => {},
+        .failed => return error.ProducerFailed,
+        .timeout, .aborted => return error.ProducerStalled,
+    }
+}
+
 /// A cache tensor in host-visible memory (a unified-memory Metal buffer, or mapped host memory) and its exported rows.
 pub const Source = struct {
     bytes: []const u8,
@@ -38,6 +48,12 @@ pub const Source = struct {
     elem: u64,
     rows: []const u64,
     parts: []const []const u8 = &.{}, // a recurrent layer's state, part by part: gather copies one whole
+    /// rows still being produced (the layer-split boundary stream, row-major in `rows * row_bytes`): gather waits for them
+    stage: ?*row_stage.Stage = null,
+    /// state still being produced: gather waits until this latch (one row) is published
+    latch: ?*row_stage.Stage = null,
+    /// how long gather waits for either before the producer is called stalled
+    wait_ns: u64 = 120 * std.time.ns_per_s,
 
     /// Bytes of one block row: the dimensions after the block one.
     fn inner(s: Source) u64 {
@@ -59,6 +75,14 @@ pub const Source = struct {
 
     /// index_select(block_dim, rows[start..start+count]).contiguous(), as the producer's fill copies it.
     pub fn gather(s: Source, start: u64, count: u64, out: []u8) !u64 {
+        if (s.latch) |l| try awaited(l, 1, s.wait_ns);
+        if (s.stage) |st| {
+            if (count == 0 or start + count > st.rows) return error.RowOutOfRange;
+            if (count * st.row_bytes > out.len) return error.FrameTooLarge;
+            try awaited(st, start + count, s.wait_ns);
+            @memcpy(out[0..@intCast(count * st.row_bytes)], st.slice(start, count));
+            return count * st.row_bytes;
+        }
         if (s.parts.len > 0) {
             if (count != 1 or start >= s.parts.len) return error.RowOutOfRange;
             const p = s.parts[@intCast(start)];
@@ -118,4 +142,33 @@ test "a recurrent layer's parts go a frame each, whole, and one past the reply h
     try std.testing.expectEqual(@as(u64, 2), try s.gather(1, 1, &out));
     try std.testing.expectEqualSlices(u8, &b, out[0..2]);
     try std.testing.expectError(error.RowOutOfRange, s.gather(0, 2, &out));
+}
+
+test "a staged source gathers rows as they are published, and a failed or silent producer fails the frame" {
+    var st = try row_stage.Stage.init(std.testing.allocator, 4, 2);
+    defer st.deinit();
+    const s: Source = .{ .bytes = &.{}, .shape = &.{}, .block_dim = 0, .elem = 1, .rows = &.{}, .stage = &st, .wait_ns = 2_000_000 };
+    var out: [8]u8 = undefined;
+    try std.testing.expectError(error.ProducerStalled, s.gather(0, 1, &out));
+    try st.put(0, &.{ 1, 2, 3, 4 });
+    try std.testing.expectEqual(@as(u64, 4), try s.gather(0, 2, &out));
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2, 3, 4 }, out[0..4]);
+    try std.testing.expectError(error.ProducerStalled, s.gather(2, 1, &out));
+    try std.testing.expectError(error.RowOutOfRange, s.gather(3, 2, &out));
+    try std.testing.expectError(error.FrameTooLarge, s.gather(0, 5, out[0..2]));
+    st.fail();
+    try std.testing.expectError(error.ProducerFailed, s.gather(2, 1, &out));
+}
+
+test "a latched parts source waits for its state and then copies a part whole" {
+    var latch = try row_stage.Stage.init(std.testing.allocator, 1, 0);
+    defer latch.deinit();
+    var a = [_]u8{ 0, 0 };
+    const s: Source = .{ .bytes = &.{}, .shape = &.{}, .block_dim = 0, .elem = 1, .rows = &.{}, .parts = &.{&a}, .latch = &latch, .wait_ns = 2_000_000 };
+    var out: [4]u8 = undefined;
+    try std.testing.expectError(error.ProducerStalled, s.gather(0, 1, &out));
+    a = .{ 7, 9 };
+    try latch.publish(1);
+    try std.testing.expectEqual(@as(u64, 2), try s.gather(0, 1, &out));
+    try std.testing.expectEqualSlices(u8, &.{ 7, 9 }, out[0..2]);
 }

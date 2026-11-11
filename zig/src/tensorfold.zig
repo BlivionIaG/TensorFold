@@ -41,6 +41,7 @@ pub const deepseek_v41_view = @import("families/deepseek_v41/view.zig");
 pub const deepseek_v41 = @import("families/deepseek_v41/model.zig");
 pub const deepseek_v41_profiler = @import("families/deepseek_v41/profiler.zig");
 pub const deepseek_v41_backend = @import("families/deepseek_v41/backend.zig");
+pub const deepseek_v41_split_feed = @import("families/deepseek_v41/split_feed.zig");
 /// The CUDA-to-Metal prefill hand-off (docs/deepseek-v41-handoff.md): the library and its protocol 2 sink.
 pub const deepseek_v41_handoff = @import("families/deepseek_v41/handoff/handoff.zig");
 pub const deepseek_v41_handoff_p2 = @import("families/deepseek_v41/handoff/p2.zig");
