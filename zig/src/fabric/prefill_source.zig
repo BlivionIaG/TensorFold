@@ -75,6 +75,25 @@ pub const PrefillSource = struct {
 pub const Trigger = struct {
     ptr: *anyopaque,
     start_fn: *const fn (ptr: *anyopaque, handoff: [16]u8, tokens: []const u32) anyerror!void,
+
+    /// One trigger exchange, on its own thread or inline: `live` while it runs, `broken` once it failed.
+    pub const Run = struct {
+        r: Trigger,
+        id: [16]u8,
+        tokens: []const u32,
+        live: std.atomic.Value(bool) = .init(true),
+        broken: std.atomic.Value(bool) = .init(false),
+        result: anyerror!void = error.NotRun,
+        ns: u64 = 0,
+
+        pub fn run(t: *Run) void {
+            const began = words.nowNs();
+            t.result = t.r.start_fn(t.r.ptr, t.id, t.tokens);
+            t.ns = words.nowNs() - began;
+            if (t.result) |_| {} else |_| t.broken.store(true, .release);
+            t.live.store(false, .release);
+        }
+    };
 };
 
 /// The fabric's source: one handoff at a time per link, pulled with the decoder into the stream's caches.
@@ -92,6 +111,8 @@ pub const Remote = struct {
     reason: decoder.Reason = .{},
     /// the pull's request is gone (set before each fill, which one gate serialises); the decoder stops between calls
     abort: ?*const std.atomic.Value(bool) = null,
+    /// TF_PREFILL_STREAM: the pull runs while the trigger's prefill does (the producer exports as it prefills)
+    stream: bool = false,
     /// the last fill's trigger exchange (the producer's prefill) in ns, and the payload bytes it pulled
     trigger_ns: u64 = 0,
     bytes: u64 = 0,
@@ -118,20 +139,37 @@ pub const Remote = struct {
         r.next_id += 1;
         if (o.upto >= prompt.len) return error.PrefixTooLong; // a token past the prefix goes too
         const tokens = prompt[0..@intCast(o.upto)];
-        const began = words.nowNs();
-        try r.trigger.start_fn(r.trigger.ptr, id, prompt[0..@intCast(o.upto + 1)]);
-        r.trigger_ns = words.nowNs() - began;
-        if (r.peers.len > 0) {
-            try r.pullShards(id, tokens, sink);
-        } else {
-            var arena: std.heap.ArenaAllocator = .init(r.gpa);
-            defer arena.deinit();
-            const pass: decoder.Sink = .{ .ptr = sink.ptr, .put_fn = sink.put_fn };
-            const got = try decoder.pull(arena.allocator(), r.client, id, .{ .model = r.model, .tokens = tokens, .protocol = r.protocol, .abort = r.abort }, pass, &r.reason);
-            if (got.manifest.first_token != 0) return error.PartialPrefix;
-            r.bytes = got.bytes;
+        var trig: Trigger.Run = .{ .r = r.trigger, .id = id, .tokens = prompt[0..@intCast(o.upto + 1)] };
+        // TF_PREFILL_STREAM: the pull starts with the trigger and takes parts as the producer finishes them
+        const thread: ?std.Thread = if (r.stream) std.Thread.spawn(.{}, Trigger.Run.run, .{&trig}) catch null else null;
+        if (thread == null) {
+            trig.run();
+            r.trigger_ns = trig.ns;
+            try trig.result;
         }
+        const pulled = r.pullAll(id, tokens, sink, &trig);
+        if (thread) |t| {
+            t.join();
+            r.trigger_ns = trig.ns;
+            try trig.result; // the producer's failure is the cause, not the pull's Aborted
+        }
+        try pulled;
         sink.commit_fn(sink.ptr, o.upto, .remote);
+    }
+
+    /// Every shard's export (or the one's) pulled into `sink`; `trig` says whether the producer is still prefilling.
+    fn pullAll(r: *Remote, id: [16]u8, tokens: []const u32, sink: StateSink, trig: *const Trigger.Run) !void {
+        if (r.peers.len > 0) return r.pullShards(id, tokens, sink, trig);
+        var arena: std.heap.ArenaAllocator = .init(r.gpa);
+        defer arena.deinit();
+        const pass: decoder.Sink = .{ .ptr = sink.ptr, .put_fn = sink.put_fn };
+        const got = try decoder.pull(arena.allocator(), r.client, id, r.expect(tokens, 0, 1, trig), pass, &r.reason);
+        if (got.manifest.first_token != 0) return error.PartialPrefix;
+        r.bytes = got.bytes;
+    }
+
+    fn expect(r: *const Remote, tokens: []const u32, rank: u64, size: u64, trig: *const Trigger.Run) decoder.Expect {
+        return .{ .model = r.model, .tokens = tokens, .protocol = r.protocol, .tp_rank = rank, .tp_size = size, .abort = r.abort, .streaming = if (r.stream) &trig.live else null, .broken = if (r.stream) &trig.broken else null };
     }
 
     /// One shard's pull on its own link; the thread's result and the producer's reason stay in the job.
@@ -150,7 +188,7 @@ pub const Remote = struct {
     };
 
     /// Every shard's export pulled at once, each over its own link into its own sink; the first failure is returned.
-    fn pullShards(r: *Remote, id: [16]u8, tokens: []const u32, sink: StateSink) !void {
+    fn pullShards(r: *Remote, id: [16]u8, tokens: []const u32, sink: StateSink, trig: *const Trigger.Run) !void {
         const shard_fn = sink.shard_fn orelse return error.SinkNotSharded;
         const n: u32 = @intCast(1 + r.peers.len);
         const jobs = try r.gpa.alloc(Job, n);
@@ -158,8 +196,7 @@ pub const Remote = struct {
         var made: usize = 0;
         defer for (jobs[0..made]) |*j| j.arena.deinit();
         for (jobs, 0..) |*j, k| {
-            const expect: decoder.Expect = .{ .model = r.model, .tokens = tokens, .protocol = r.protocol, .tp_rank = k, .tp_size = n, .abort = r.abort };
-            j.* = .{ .client = if (k == 0) r.client else r.peers[k - 1], .id = id, .expect = expect, .sink = shard_fn(sink.ptr, @intCast(k)), .arena = .init(r.gpa) };
+            j.* = .{ .client = if (k == 0) r.client else r.peers[k - 1], .id = id, .expect = r.expect(tokens, k, n, trig), .sink = shard_fn(sink.ptr, @intCast(k)), .arena = .init(r.gpa) };
             made += 1;
         }
         const threads = try r.gpa.alloc(?std.Thread, n);

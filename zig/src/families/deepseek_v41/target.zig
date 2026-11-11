@@ -42,6 +42,8 @@ pub const GpuTarget = struct {
     max_new: [16]?u64 = @splat(null),
     /// each slot's armed export point (`arm`): run once at the next prompt's cut, then cleared
     cut: [16]?iface.Target.Cut = @splat(null),
+    /// the slot whose prompt `prefill` is running (the segment hook's)
+    cur_slot: u32 = 0,
     /// the next `begin`'s admission as the round planner decided it (kv/sched.zig); null: priced at `begin`
     admission: ?Planned = null,
     /// releases wait for `settleReleases` (the rounds: after the next round's admissions are decided)
@@ -72,7 +74,19 @@ pub const GpuTarget = struct {
 
     fn arm(p: *anyopaque, slot: u32, cut: ?iface.Target.Cut) void {
         const t = self_(p);
-        if (slot < t.cut.len) t.cut[slot] = cut;
+        if (slot >= t.cut.len) return;
+        t.cut[slot] = cut;
+        if (cut) |c| if (c.progress != null) {
+            pf.state(t.f).on_segment = .{ .ptr = t, .run = segmentDone };
+        };
+    }
+
+    /// A prompt segment is done: the armed cut's `progress` sees the position (the pool pages below it are final).
+    fn segmentDone(p: *anyopaque, pos: u64) void {
+        const t = self_(p);
+        if (t.cur_slot >= t.cut.len) return;
+        const c = t.cut[t.cur_slot] orelse return;
+        if (c.progress) |f| f(c.ptr, @intCast(pos));
     }
 
     /// The slot's armed export point, once: it stands after the prompt's tokens but the last (a hand-off's cut).
@@ -90,6 +104,7 @@ pub const GpuTarget = struct {
     fn prefill(p: *anyopaque, slot: u32, ids: []const u32, sampling: ?lanes.Sampling, draw: u64) anyerror!u32 {
         const t = self_(p);
         if (!available(p, slot)) return error.SlotUnavailable;
+        t.cur_slot = slot;
         if (t.rows) |b| try b.beginPrefill(slot) else if (slot != 0) return error.Slots;
         _ = t.takeReplayed(slot);
         const keyed = try t.keyedOf(sampling);

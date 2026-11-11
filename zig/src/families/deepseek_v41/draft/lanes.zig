@@ -178,6 +178,12 @@ pub const Lanes = struct {
             const k = c.s.reuse.hook orelse return;
             k.at(k.ptr, c.s, c.at);
         }
+
+        fn progress(ptr: *anyopaque, at: u32) void {
+            const c: *Cut = @ptrCast(@alignCast(ptr));
+            const k = c.s.reuse.hook orelse return;
+            if (k.progress) |f| f(k.ptr, c.s, at);
+        }
     };
 
     /// A hand-off stream's export point armed on its slot (the stream's marks hold the cut); false: not a hand-off.
@@ -185,7 +191,7 @@ pub const Lanes = struct {
         const ids = s.prompt();
         if (ids.len < 2 or s.reuse.hook == null or std.mem.indexOfScalar(u32, s.reuse.marks, @intCast(ids.len - 1)) == null) return false;
         x.cuts[slot] = .{ .s = s, .at = @intCast(ids.len - 1) };
-        x.target.arm(slot, .{ .ptr = &x.cuts[slot], .run = Cut.run });
+        x.target.arm(slot, .{ .ptr = &x.cuts[slot], .run = Cut.run, .progress = Cut.progress });
         return true;
     }
 

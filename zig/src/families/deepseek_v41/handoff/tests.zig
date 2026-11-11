@@ -46,3 +46,6 @@ test {
 test {
     _ = @import("stream_gate_test.zig");
 }
+test {
+    _ = @import("stream_remote_test.zig");
+}

@@ -4,6 +4,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- DeepSeek V4.1 CUDA hand-off export streams (`TF_DSV41_EXPORT_STREAM=1` on an `--mcdma-produce` link with one replicated pool): the export is registered at admission, each prompt segment's finished pool pages are read back behind an event on a worker thread and converted at once, and the cut only adds the snapshot parts; with `TF_PREFILL_STREAM=1` the M5 starts its pull with the trigger and takes parts as they become ready. Both default off; the export bytes are unchanged.
 - Hand-off pull: a producer can answer PULL `wait` for a part it is still building (`producer.Export.gate`), and the decoder takes the ready parts of a protocol 2 export first and the rest as they appear instead of in frame order; with `Expect.streaming` set (the producer is still prefilling) OPEN and PULL keep waiting until it ends. Exports without a gate and decoders of protocol 1 layers behave as before.
 
 - CUDA copy sources: a synchronous or async upload chunk that finds quarantined copies (failed completions) no longer synchronizes the whole context: it waits on each quarantined copy's own event, or its own stream when it has none, and only for the same driver and context, so work in flight on the other streams (decode, prefill, export) is not stalled by one failed copy; admission stays closed until those copies are proven complete.

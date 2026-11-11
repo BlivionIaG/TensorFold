@@ -70,6 +70,8 @@ pub const State = struct {
     cone_id: u64 = 0,
     /// the last prompt's decoder replay was the exact one (the export keeps every ring row)
     replay_exact: bool = false,
+    /// called after each prompt segment, the slot standing at its position (a streamed hand-off export's page reads)
+    on_segment: ?struct { ptr: *anyopaque, run: *const fn (ptr: *anyopaque, pos: u64) void } = null,
 
     pub fn deinit(s: *State, gpa: std.mem.Allocator) void {
         s.long.deinit(gpa);
@@ -319,6 +321,7 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
             if (st.ahead) ahead(f, ids, at, n, seg);
             if (try segmentPair(f, ids[at .. at + pr[0]], ids[at + pr[0] .. at + n])) {
                 at += n;
+                if (st.on_segment) |h| h.run(h.ptr, f.slot.pos);
                 continue;
             }
         }
@@ -326,6 +329,7 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
         if (st.ahead) ahead(f, ids, at, n, seg);
         try segment(f, ids[at .. at + n], at + n == ids.len and st.mode == .full);
         at += n;
+        if (st.on_segment) |h| h.run(h.ptr, f.slot.pos);
     }
 }
 

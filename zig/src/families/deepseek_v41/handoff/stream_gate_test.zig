@@ -40,10 +40,12 @@ const Order = struct {
     seen: std.ArrayList(usize) = .empty,
     first: []const usize,
     gpa: std.mem.Allocator,
+    count: *std.atomic.Value(usize),
 
     fn put(ptr: *anyopaque, layer: *const fabric.manifest.Layer, row_start: u64, rows: u64, bytes: []const u8) anyerror!void {
         const o: *Order = @ptrCast(@alignCast(ptr));
         try o.seen.append(o.gpa, o.first[layer.index] + @as(usize, @intCast(row_start)));
+        _ = o.count.fetchAdd(1, .acq_rel);
         try o.inner.sink().put_fn(o.inner, layer, row_start, rows, bytes);
     }
 };
@@ -53,18 +55,23 @@ fn target(arena: std.mem.Allocator, capacity: u32) !metal.Packed {
     return .{ .live = try arena.alloc(u8, probe.liveBytes()), .storage = try arena.alloc(u8, metal.Packed.storageBytes(capacity)), .layers = 43, .capacity = capacity };
 }
 
-/// Flips the parts ready a little apart, the even ones first when `evens_first`; `fail` breaks it half way.
-fn flipper(g: *Gate, live: *std.atomic.Value(bool), evens_first: bool, fail: bool) void {
+/// Flips parts ready a little apart (`evens_first`: the even ones, then the odd ones once all evens are taken).
+fn flipper(g: *Gate, live: *std.atomic.Value(bool), evens_first: bool, fail: bool, taken: *std.atomic.Value(usize)) void {
     const n = g.ready.len;
+    const evens = (n + 1) / 2;
     for (0..n) |k| {
         fabric.words.pause(300 * std.time.ns_per_us);
         if (fail and k == n / 2) {
             g.bad.store(true, .release);
             break;
         }
-        const half_n = (n + 1) / 2;
-        const at = if (!evens_first) k else if (k < half_n) 2 * k else 2 * (k - half_n) + 1;
-        g.ready[at].store(true, .release);
+        if (evens_first and k == evens) { // the decoder skipped every odd part: it holds all the even ones before any odd one is ready
+            for (0..5000) |_| {
+                if (taken.load(.acquire) >= evens) break;
+                fabric.words.pause(std.time.ns_per_ms);
+            }
+        }
+        g.ready[if (!evens_first) k else if (k < evens) 2 * k else 2 * (k - evens) + 1].store(true, .release);
     }
     live.store(false, .release);
 }
@@ -103,7 +110,8 @@ fn pullStreamed(a: std.mem.Allocator, arena: std.mem.Allocator, upto: u64, evens
     const daemons = try std.Thread.spawn(.{}, fabric.link_fake.Link.run, .{ &link, &stop });
     const service = try std.Thread.spawn(.{}, producer.Serving.run, .{&serving});
     var live: std.atomic.Value(bool) = .init(true);
-    const flips = if (never) null else try std.Thread.spawn(.{}, flipper, .{ &g, &live, evens_first, fail });
+    var taken: std.atomic.Value(usize) = .init(0);
+    const flips = if (never) null else try std.Thread.spawn(.{}, flipper, .{ &g, &live, evens_first, fail, &taken });
     defer {
         if (flips) |t| t.join();
         stop.store(true, .release);
@@ -115,7 +123,7 @@ fn pullStreamed(a: std.mem.Allocator, arena: std.mem.Allocator, upto: u64, evens
     const via = try target(arena, 1024);
     var imp = try im.Import.init(arena, shape, .{ .@"packed" = via }, .{});
     var inner: p2.ShardSink = .{ .imp = &imp, .shard = 0 };
-    var rec: Order = .{ .inner = &inner, .first = g.first, .gpa = a };
+    var rec: Order = .{ .inner = &inner, .first = g.first, .gpa = a, .count = &taken };
     defer rec.seen.deinit(a);
     const sink: fabric.decoder.Sink = .{ .ptr = &rec, .put_fn = Order.put };
     const pulled = fabric.decoder.pull(arena, &client, id, .{ .model = model, .tokens = tokens, .protocol = 2, .streaming = if (never) null else &live, .open_timeout_ns = open_ms * std.time.ns_per_ms }, sink, reason);
@@ -143,10 +151,9 @@ test "a streamed export is pulled as its parts become ready, the even ones first
     try std.testing.expectEqualSlices(u8, r.direct.live, r.via.live);
     try std.testing.expectEqualSlices(u8, r.direct.storage, r.via.storage);
     try std.testing.expectEqual(got.frames, order.items.len);
-    // the decoder did not wait for part 1: it took the ready even parts, then the odd ones
-    var sorted = true;
-    for (order.items[1..], 0..) |x, i| sorted = sorted and x > order.items[i];
-    try std.testing.expect(!sorted);
+    // the decoder did not wait for part 1: it took every ready even part, then the odd ones
+    const evens = (order.items.len + 1) / 2;
+    for (order.items, 0..) |x, i| try std.testing.expect((x % 2 == 0) == (i < evens));
 }
 
 test "a streamed export that breaks half way is refused with the producer's reason" {

@@ -22,8 +22,11 @@ pub const Expect = struct {
     abort: ?*const std.atomic.Value(bool) = null,
     /// True while the producer is still prefilling (the pull began with its trigger): OPEN and PULL wait for it.
     streaming: ?*const std.atomic.Value(bool) = null,
+    /// Set when the producer's prefill failed: the pull stops as if its request were gone.
+    broken: ?*const std.atomic.Value(bool) = null,
 
     pub fn aborted(e: Expect) bool {
+        if (e.broken) |b| if (b.load(.acquire)) return true;
         return if (e.abort) |a| a.load(.acquire) else false;
     }
 

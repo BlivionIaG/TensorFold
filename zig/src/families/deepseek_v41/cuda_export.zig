@@ -37,11 +37,29 @@ pub const State = struct {
 /// A state read back from the engine, held until `Source.release`.
 pub const Captured = struct { ctx: *anyopaque, state: State };
 
+/// A prompt's pool pages read back while it prefills: `pages` are full-size buffers `land` fills in logical page order.
+pub const Feed = struct {
+    ptr: *anyopaque,
+    pages: []const Pages,
+    /// Engine thread, slot at `at` tokens: queues the whole pages not queued yet (all if `final`); the job, or null.
+    queue: *const fn (ptr: *anyopaque, at: u64, final: bool) anyerror!?*anyopaque,
+    /// Worker thread: waits for the queued read `job` and returns the pages now valid in `pages` (below that page).
+    land: *const fn (ptr: *anyopaque, job: *anyopaque) anyerror!u64,
+    close: *const fn (ptr: *anyopaque) void,
+};
+
+/// What a streamed export is planned from before its prompt has prefilled.
+pub const Plan = struct { ds_rows: u32, index_format: ex.IndexFormat, shard: u32 = 0, shards: u32 = 1 };
+
 /// Where a state comes from: the engine's active slot at `at` tokens (a device read), or a test's synthetic one.
 pub const Source = struct {
     ptr: *anyopaque,
     take: *const fn (ptr: *anyopaque, gpa: std.mem.Allocator, at: u64) anyerror!Captured,
     release: *const fn (ctx: *anyopaque) void,
+    /// Streaming (null: this source exports at the cut only): the plan and page feed for a prompt cut at `at` tokens.
+    open_feed: ?*const fn (ptr: *anyopaque, gpa: std.mem.Allocator, at: u64, plan: *Plan) anyerror!Feed = null,
+    /// `take` without the pool pages (a feed read them): the snapshot, rings and carries at the cut.
+    take_state: ?*const fn (ptr: *anyopaque, gpa: std.mem.Allocator, at: u64, feed: Feed) anyerror!Captured = null,
 };
 
 /// An export and everything it reads: the converted parts live in `arena` until `deinit`.
@@ -50,6 +68,8 @@ pub const Built = struct {
     exp: producer.Export,
     /// the parts' bytes: what a table counts against its cap
     bytes: u64,
+    /// the parts in plan order, `exp.layers` over them (a streamed export converts them one by one)
+    parts: []ex.Part = &.{},
 
     /// Frees the arena and the frames a responder planned into `exp` with `gpa`; the caller destroys no `Built` itself.
     pub fn deinit(b: *Built, gpa: std.mem.Allocator) void {
@@ -98,7 +118,7 @@ fn clearUnreplayed(st: State, swa: []const ?ex.Ring, rows: u32) Error!void {
 }
 
 /// The sources' pool pages by rank: a split shard knows its own rank's bytes only (the other ranks' stay empty).
-fn sourcesOf(arena: std.mem.Allocator, st: State) Error![]ex.SourceState {
+pub fn sourcesOf(arena: std.mem.Allocator, st: State) Error![]ex.SourceState {
     const geo = g.release;
     const split = st.shards > 1;
     if (st.shards == 0 or st.shard >= st.shards or st.shards > plan.max_world) return error.BadShape;
@@ -170,11 +190,28 @@ pub fn build(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, st: State)
     const cuda = try cudaOf(a, st, &ds);
     const shape: plan.Shape = .{ .upto = st.pos, .ds_rows = ds, .shard = st.shard, .shards = st.shards, .split = st.shards > 1 };
     const parts = try ex.build(a, shape, cuda);
+    try lay(b, id, tokens, parts);
+    return b;
+}
+
+fn lay(b: *Built, id: [16]u8, tokens: []const u32, parts: []ex.Part) Error!void {
+    const a = b.arena.allocator();
     var bytes: u64 = 0;
     for (parts) |p| bytes += p.bytes.len;
     const laid = try p2.layers(a, parts);
     b.exp = .{ .handoff = id, .tokens = try a.dupe(u32, tokens), .first_token = 0, .tokens_per_row = 1, .layers = laid.layers, .sources = laid.sources };
     b.bytes = bytes;
+    b.parts = parts;
+}
+
+/// A streamed export's shell: the parts of `shape` allocated and laid out, none converted yet.
+pub fn shell(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, shape: plan.Shape) Error!*Built {
+    if (tokens.len == 0 or shape.upto != tokens.len) return error.NotAHandoffPrompt;
+    const b = try gpa.create(Built);
+    errdefer gpa.destroy(b);
+    b.arena = .init(gpa);
+    errdefer b.arena.deinit();
+    try lay(b, id, tokens, try ex.alloc(b.arena.allocator(), shape));
     return b;
 }
 

@@ -8,6 +8,8 @@ const ex = @import("handoff/export.zig");
 const ced = @import("ced.zig");
 const kvs = @import("cuda_kv.zig");
 const plan = @import("handoff/plan.zig");
+const g = @import("handoff/geometry.zig");
+const feed_mod = @import("cuda_export_feed.zig");
 
 pub const Error = error{ BadWindow, UnsupportedKvFormat };
 
@@ -26,13 +28,15 @@ pub const Capture = struct {
     gpa: std.mem.Allocator,
     snap: ?*sg.Sessions.Snap,
     pieces: []cx.Piece = &.{},
-    pages: []cx.Pages = &.{},
+    pages: []const cx.Pages = &.{},
     bufs: []const []u8 = &.{},
+    /// the pages are a streamed export's feed's: not freed here
+    fed: bool = false,
     st: cx.State = undefined,
 
     fn deinit(c: *Capture) void {
         for (c.bufs) |b| c.gpa.free(b);
-        c.gpa.free(c.pages);
+        if (!c.fed) c.gpa.free(c.pages);
         c.gpa.free(c.pieces);
         if (c.snap) |sn| sg.Sessions.Snap.release(sn);
         c.gpa.destroy(c);
@@ -80,8 +84,8 @@ fn readPages(gpa: std.mem.Allocator, kx: *kvs.Kv, at: u64, bufs: *std.ArrayList(
     return out;
 }
 
-/// The active slot's state at `at` tokens, on the engine thread with the slot standing there.
-pub fn capture(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64) !*Capture {
+/// The active slot's state at `at` tokens (engine thread); with `feed` its pool pages are the feed's, none read here.
+pub fn capture(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64, feed: ?cx.Feed) !*Capture {
     const f = ss.f;
     const kx = ss.kx;
     if (f.slot.pos != at or f.slot.pending != null or ss.hist[ss.cur()].items.len != at) return error.BadWindow;
@@ -121,7 +125,10 @@ pub fn capture(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64) !*Capture {
             out.* = .{ .role = p.role, .bytes = bytes };
         }
     }
-    c.pages = try readPages(gpa, kx, at, &bufs);
+    if (feed) |fd| {
+        c.pages = fd.pages;
+        c.fed = true;
+    } else c.pages = try readPages(gpa, kx, at, &bufs);
     c.bufs = try bufs.toOwnedSlice(gpa);
     c.st = .{
         .pos = at,
@@ -138,18 +145,51 @@ pub fn capture(gpa: std.mem.Allocator, ss: *sg.Sessions, at: u64) !*Capture {
     return c;
 }
 
+/// The drafter rows the export of a prompt cut at `at` will carry: all of the window's when the state holds the rings.
+fn plannedDsRows(ss: *sg.Sessions, at: u64) u32 {
+    const replay = pf.state(ss.f).mode == .replay;
+    const rings = if (replay) ss.drafter_rings else &[0]sg.Piece{};
+    for (0..g.release.mtp_layers) |i| {
+        inline for (.{ "v", "s" }) |part| {
+            var buf: [48]u8 = undefined;
+            const role = std.fmt.bufPrint(&buf, "s.L{d}.ring.{s}", .{ g.release.layers + i, part }) catch return 0;
+            var found = false;
+            for (ss.pieces) |p| found = found or std.mem.eql(u8, p.role, role);
+            for (rings) |p| found = found or std.mem.eql(u8, p.role, role);
+            if (!found) return 0;
+        }
+    }
+    return @intCast(@min(at, g.release.window));
+}
+
 /// The `cuda_export.Source` over the engine's session store.
 pub const Source = struct {
     ss: *sg.Sessions,
 
     pub fn source(s: *Source) cx.Source {
-        return .{ .ptr = s, .take = take, .release = release };
+        return .{ .ptr = s, .take = take, .release = release, .open_feed = openFeed, .take_state = takeState };
     }
 
     fn take(ptr: *anyopaque, gpa: std.mem.Allocator, at: u64) anyerror!cx.Captured {
         const s: *Source = @ptrCast(@alignCast(ptr));
-        const c = try capture(gpa, s.ss, at);
+        const c = try capture(gpa, s.ss, at, null);
         return .{ .ctx = c, .state = c.st };
+    }
+
+    fn takeState(ptr: *anyopaque, gpa: std.mem.Allocator, at: u64, feed: cx.Feed) anyerror!cx.Captured {
+        const s: *Source = @ptrCast(@alignCast(ptr));
+        const c = try capture(gpa, s.ss, at, feed);
+        return .{ .ctx = c, .state = c.st };
+    }
+
+    /// A streamed export of a prompt cut at `at`: its plan and the page feed of the active slot (one replicated pool).
+    fn openFeed(ptr: *anyopaque, gpa: std.mem.Allocator, at: u64, out: *cx.Plan) anyerror!cx.Feed {
+        const s: *Source = @ptrCast(@alignCast(ptr));
+        const kx = s.ss.kx;
+        if (kx.layout.opts.split and kx.world > 1) return error.NoStream; // the shards' pages stay a cut-time read
+        if (kx.pool.page != g.release.page or kx.layout.opts.kv != .fp8) return error.NoStream;
+        out.* = .{ .ds_rows = plannedDsRows(s.ss, at), .index_format = if (kx.layout.opts.index == .fp8) ex.IndexFormat.fp8 else ex.IndexFormat.bf16 };
+        return (try feed_mod.Feed.open(gpa, kx, at)).feed();
     }
 
     fn release(ctx: *anyopaque) void {

@@ -1,6 +1,7 @@
 //! Hand-off `Exporter` of the DeepSeek-V4.1 CUDA engine: `--mcdma-produce LINK` and TF_DSV41_HANDOFF_DUMP.
 const std = @import("std");
 const api = @import("engine_api");
+const lanes = @import("lanes");
 const model = @import("cuda_model.zig");
 const serve = @import("cuda_export_serve.zig");
 const gpu = @import("cuda_export_gpu.zig");
@@ -52,9 +53,23 @@ pub const Export = struct {
             return null;
         }
         x.* = .{ .gpa = gpa, .source = .{ .ss = m.sessions.? }, .produce = undefined, .f = &m.f, .split = shards > 1 };
-        x.produce = try serve.Produce.open(gpa, io, x.source.source(), .{ .link = if (http) null else link, .http = http, .dump = if (dump.len > 0) dump else null, .model = checkpoint, .held_bytes = cap << 30, .shard = 0, .shards = shards }, problem);
+        x.produce = try serve.Produce.open(gpa, io, x.source.source(), .{ .link = if (http) null else link, .http = http, .dump = if (dump.len > 0) dump else null, .model = checkpoint, .held_bytes = cap << 30, .shard = 0, .shards = shards, .stream = streamOn(link, shards, problem) catch return error.InvalidEnvironment }, problem);
         log.info("dsv41 handoff export: {s}{s}{s}", .{ if (link) |l| l else "no link", if (dump.len > 0) ", files under " else "", dump });
         return x;
+    }
+
+    /// TF_DSV41_EXPORT_STREAM=1 on a link of one replicated pool: exports are built while the prompt prefills.
+    fn streamOn(link: ?[]const u8, shards: u32, problem: *[]const u8) !bool {
+        const on = @import("sys").environment.read(bool, "TF_DSV41_EXPORT_STREAM", false) catch {
+            problem.* = "TF_DSV41_EXPORT_STREAM is malformed: it must be 0 or 1";
+            return error.InvalidEnvironment;
+        };
+        if (!on) return false;
+        if (link == null or std.mem.eql(u8, link.?, api.LaneHost.Remote.http_link) or shards > 1) {
+            log.info("dsv41 handoff export: TF_DSV41_EXPORT_STREAM needs an mcdma-rpcd link on one replicated pool; exports are built at the cut", .{});
+            return false;
+        }
+        return true;
     }
 
     /// Stops serving and frees what is held (after the lane host stopped).
@@ -65,7 +80,7 @@ pub const Export = struct {
 
     pub fn exporter(x: *Export) api.LaneHost.Export.Exporter {
         const over_http = x.produce.opts.http;
-        return .{ .ptr = x, .snapshots = .{ .ptr = x, .vtable = &snapshots }, .exported = exported, .failed = failed, .serve = if (over_http) .{ .ptr = x, .open = readOpen, .release = readRelease } else null };
+        return .{ .ptr = x, .snapshots = .{ .ptr = x, .vtable = &snapshots }, .exported = exported, .failed = failed, .serve = if (over_http) .{ .ptr = x, .open = readOpen, .release = readRelease } else null, .begin = begin, .progress = progress, .save_for = saveFor };
     }
 
     /// `GET /v1/handoff/<id>`: the held export's replies, a message at a time.
@@ -102,6 +117,19 @@ pub const Export = struct {
     /// The active slot read back; the stream is armed on the engine thread at its cut, so only one slot stands there.
     fn save(ptr: *anyopaque, _: ?*anyopaque, at: u32) anyerror!pc.Saved {
         return @ptrCast(try self(ptr).produce.save(at));
+    }
+
+    fn begin(ptr: *anyopaque, h: Handoff, tokens: []const u32) void {
+        self(ptr).produce.begin(h.id, tokens);
+    }
+
+    fn progress(ptr: *anyopaque, h: Handoff, at: u64) void {
+        self(ptr).produce.progress(h.id, at);
+    }
+
+    /// The state at the cut: a streamed export's goes without its pool pages (the stream has read them).
+    fn saveFor(ptr: *anyopaque, h: Handoff, _: *lanes.Stream, at: u32) anyerror!pc.Saved {
+        return @ptrCast(try self(ptr).produce.saveFor(h.id, at));
     }
 
     fn restore(_: *anyopaque, _: ?*anyopaque, _: pc.Saved) anyerror!void {
