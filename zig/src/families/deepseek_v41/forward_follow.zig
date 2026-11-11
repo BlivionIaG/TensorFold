@@ -60,8 +60,7 @@ pub fn idOf(words: []const i64) [16]u8 {
     return id;
 }
 
-/// One layer-split prefill chunk on every rank: `ids` through the layers below `cut` from the slot's position, their
-/// state committed, and rank 0's boundary rows written into `dst` (the chunk's stage rows; followers pass empty).
+/// One layer-split prefill chunk on every rank: `ids` through the layers below `cut` from the slot's position
 pub fn prefillSplit(f: *Forward, ids: []const u32, cut: u32, dst: []u8) !void {
     if (f.slot.pending != null) return error.BadWindow;
     if (ids.len == 0) return;

@@ -456,8 +456,7 @@ fn readAhead(f: *Forward, ids: []const u32, at: usize, n: usize, next: []const u
     h.prefetch(f.gpa, src, next, lb, f.comm.rank(), f.comm.world());
 }
 
-/// One segment at the slot's position, run eagerly, then committed. `cut` != 0: a layer-split chunk, the layers below
-/// `cut` whole and then the boundary rows (no head, no stash; never in the 4K workspace).
+/// One segment at the slot's position, run eagerly, then committed. `cut` != 0: a layer-split chunk
 fn segment(f: *Forward, ids: []const u32, head: bool, cut: u32) !void {
     const st = state(f);
     const n: u32 = @intCast(ids.len);
@@ -513,9 +512,7 @@ fn belowCut(all: []const u32, cut: u32) ![]const u32 {
     return all[0..i];
 }
 
-/// One layer-split chunk: `ids` (rows of the prompt from the slot's position) through the layers below `cut`, their
-/// state committed as a full prefill leaves it, and on rank 0 the boundary rows written into `dst` (`ids.len` stage
-/// rows). Every rank runs it (the leader's op message); a chunk is at most the forward's own segment rows.
+/// One layer-split chunk: `ids` (rows of the prompt from the slot's position) through the layers below `cut`
 pub fn promptSplit(f: *Forward, ids_in: []const u32, cut: u32, dst: []u8) !void {
     const st = state(f);
     if (f.slot.pending != null) return error.BadWindow;

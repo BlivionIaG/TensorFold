@@ -226,8 +226,7 @@ pub const Early = struct {
     }
 };
 
-/// The early export of a split hand-off of `tokens` (the prompt but its last token) cut at `cut`: the manifest, the
-/// stage and latch and the state's buffers allocated, nothing computed. `wait_ns` bounds a frame's wait for the producer.
+/// The early export of a split hand-off of `tokens` (the prompt but its last token) cut at `cut`: the manifest
 pub fn early(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, cut: u32, wait_ns: u64) !*Built {
     const b = try gpa.create(Built);
     errdefer gpa.destroy(b);

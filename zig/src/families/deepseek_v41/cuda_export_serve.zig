@@ -333,8 +333,7 @@ pub const Produce = struct {
     /// How long a reader waits on a layer-split export's producer for a frame's rows or the state before it stalls.
     pub const early_wait_ns: u64 = 120 * std.time.ns_per_s;
 
-    /// A layer-split export's entry added now, before anything is computed, so the decoder's OPEN finds it: its boundary
-    /// stage, state latch and buffers are the entry's, and the run holds a lease on it until `Early.close` or `land`.
+    /// A layer-split export's entry added now, before anything is computed, so the decoder's OPEN finds it
     pub fn openEarly(p: *Produce, id: [16]u8, tokens: []const u32, cut: u32) !Early {
         if (p.opts.link == null and !p.opts.http) return error.SplitNeedsLink;
         if (p.opts.shards != 1) return error.SplitNeedsReplicatedPool;
@@ -365,7 +364,7 @@ pub const Produce = struct {
         return .{ .p = p, .held = held, .early = built.early.?, .id = id, .leased = true };
     }
 
-    /// The engine's state of layers [0, cut) at `at` tokens, read back (the slot stands there, pages above the cut unread).
+    /// The engine's state of layers [0, cut) at `at` tokens, read back (the slot stands there
     pub fn saveCut(p: *Produce, at: u64, cut: u32) !cx.Captured {
         const take = p.source.take_cut orelse return error.SplitNeedsDevice;
         return take(p.source.ptr, p.gpa, at, cut);
@@ -410,8 +409,7 @@ pub const Produce = struct {
             e.p.unlease(e.held);
         }
 
-        /// `cap` (a `saveCut` state, now this export's) lands in the early buffers on its own thread when one is free,
-        /// then the latch is published and the expiry clock starts; the lease and the capture go back after it.
+        /// `cap` (a `saveCut` state, now this export's) lands in the early buffers on its own thread when one is free
         pub fn land(e: *Early, cap: cx.Captured) void {
             e.leased = false;
             const job = e.*;

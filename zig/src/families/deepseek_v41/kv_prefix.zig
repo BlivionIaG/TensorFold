@@ -52,7 +52,7 @@ pub fn copy(l: Layout, dst: []u8, dst_capacity: u32, src: []const u8, src_capaci
     return copyOwners(l, l.ratios.len, dst, dst_capacity, src, src_capacity, position);
 }
 
-/// `copy` for the first `owners` owners only (a layer-split restore: the owners below the cut), the rest left as they are.
+/// `copy` for the first `owners` owners only (a layer-split restore: the owners below the cut)
 pub fn copyOwners(l: Layout, owners: usize, dst: []u8, dst_capacity: u32, src: []const u8, src_capacity: u32, position: u32) Error!void {
     if (position > dst_capacity or position > src_capacity or owners > l.ratios.len) return error.SnapshotLayout;
     if (dst.len != l.storageBytes(dst_capacity) or src.len != l.storageBytes(src_capacity)) return error.SnapshotLayout;

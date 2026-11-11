@@ -62,7 +62,7 @@ pub const Verdict = enum {
 pub const Pass = enum { local, remote, tail, split, split_m5 };
 pub const Measured = struct { pass: Pass, rows: u64, ns: u64 };
 
-/// A prompt's cost on each side in ns (a pull end to end, a split, its own prefill); `pinned` (forced) waits out any pull.
+/// A prompt's cost on each side in ns (a pull end to end, a split, its own prefill); `pinned`
 pub const Estimate = struct {
     remote_ns: u64,
     local_ns: u64,

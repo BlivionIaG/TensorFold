@@ -72,7 +72,7 @@ pub fn build(arena: std.mem.Allocator, shape: plan.Shape, cuda: Cuda) Error![]Pa
     return buildWith(arena, shape, cuda, null);
 }
 
-/// `build` into buffers that exist already (`into[i]` is plan part i, of exactly its bytes): a split export's early ones.
+/// `build` into buffers that exist already (`into[i]` is plan part i, of exactly its bytes)
 pub fn buildInto(arena: std.mem.Allocator, shape: plan.Shape, cuda: Cuda, into: []const []u8) Error![]Part {
     return buildWith(arena, shape, cuda, into);
 }

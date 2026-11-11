@@ -32,8 +32,7 @@ pub const Source = struct {
     running: *std.atomic.Value(u32),
     /// A pass the lane host timed (this engine's own prompt pass, or the last-token pass after a pull), if it learns.
     measured: ?*const fn (ptr: *anyopaque, m: Measured) void = null,
-    /// A layer split (verdict `.split`; null: this family has none and the pair's pull is used). Blocking like `fill`:
-    /// `announce` gives the engine its feed once the stream is open, the call ends after the feed is finished or `gone`.
+    /// A layer split (verdict `.split`; null: this family has none and the pair's pull is used). Blocking like `fill`
     split: ?*const fn (ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool), announce: Announce) anyerror!void = null,
 };
 
@@ -249,7 +248,7 @@ pub fn report(job: *const Job) @FieldType(api.Stats, "remote") {
     return out;
 }
 
-/// The prompt tokens a reply's prefix covers that another machine computed: a pulled or kept state's, or a split's rows.
+/// The prompt tokens a reply's prefix covers that another machine computed: a pulled or kept state's
 pub fn prefix(job: *const Job) u32 {
     const x = job.stream.split_report;
     if (x.cut != 0 and !x.fell_back) return @intCast(x.rows);

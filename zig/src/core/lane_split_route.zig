@@ -1,4 +1,4 @@
-//! Layer-split prefill in the remote route: what a split of a prompt costs, and so when it beats a pull or the Mac alone.
+//! Layer-split prefill in the remote route: what a split of a prompt costs
 const std = @import("std");
 const Rate = @import("lane_remote_rate.zig").Rate;
 
@@ -31,8 +31,7 @@ pub const Model = struct {
         return @as(f64, @floatFromInt(prefix)) / m.tps() + m.fixed_s.v;
     }
 
-    /// A split's end to end time as the pair side measured it (trigger to state landed): the stage rate is what is left
-    /// after the fixed cost.
+    /// A split's end to end time as the pair side measured it (trigger to state landed)
     pub fn observeTotal(m: *Model, rows: u64, ns: u64) void {
         const total = @as(f64, @floatFromInt(ns)) / 1e9;
         const streaming = total - m.fixed_s.v;

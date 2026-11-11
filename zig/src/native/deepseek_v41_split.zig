@@ -1,5 +1,4 @@
-//! DeepSeek V4.1 layer split on the Mac: one export pulled while the pair still computes. Its boundary rows feed the
-//! engine's passes through a `Feed`; its layers-below-the-cut state lands in a blank Snapshot. Opt-in, mixed arithmetic.
+//! DeepSeek V4.1 layer split on the Mac: one export pulled while the pair still computes.
 const std = @import("std");
 const tf = @import("tensorfold");
 const api = @import("engine_api");
@@ -15,7 +14,7 @@ const env = @import("sys").environment;
 pub const Transport = struct {
     ptr: *anyopaque,
     trigger: *const fn (ptr: *anyopaque, id: [16]u8, tokens: []const u32, cut: u32, gone: *const std.atomic.Value(bool), limit_s: u64) anyerror!void,
-    /// the export into `sink`, returning the payload bytes; waits for the pair to open it until `expect.open_timeout_ns`
+    /// the export into `sink`, returning the payload bytes; waits for the pair to open it until
     pull: *const fn (ptr: *anyopaque, arena: std.mem.Allocator, id: [16]u8, expect: fabric.decoder.Expect, sink: fabric.decoder.Sink, reason: *fabric.decoder.Reason) anyerror!u64,
     release: *const fn (ptr: *anyopaque, id: [16]u8) void,
 };
@@ -170,8 +169,7 @@ const Trigger = struct {
     }
 };
 
-/// The whole split, the gate held: trigger and pull at once, the engine fed through `announce`'s feed; returns when the
-/// engine finished the feed (or the request is gone or the time is up). Errors are the pair's, mapped by `outcome`.
+/// The whole split, the gate held: trigger and pull at once, the engine fed through `announce`'s feed
 pub fn run(spec: Spec, prompt: []const u32, upto: u64, gone: *const std.atomic.Value(bool), limit_s: u64, announce: remote.Announce, outcome: *remote.Outcome) !void {
     if (upto >= prompt.len) return error.PrefixTooLong; // a token past the prefix goes too
     var id: [16]u8 = undefined;

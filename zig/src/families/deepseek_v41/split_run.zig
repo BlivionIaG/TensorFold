@@ -1,5 +1,4 @@
-//! The M5's layer-split prompt pass over a `Feed`: when to run which streamed rows, the state's restore at the end, and the
-//! fall back to a local pass. Model calls come in as `Ops`, so the machine is host-testable (backend_prefill.zig wires it).
+//! The M5's layer-split prompt pass over a `Feed`: when to run which streamed rows, the state's restore at the end
 const std = @import("std");
 const fabric = @import("fabric");
 const feed_mod = @import("split_feed.zig");
@@ -14,7 +13,6 @@ pub const Limits = struct {
     /// the engine thread waits at most this for rows or the state in one step
     slice_ns: u64 = 2 * std.time.ns_per_ms,
     /// a pass waits for this many rows (the pull delivers them in frames) unless the stream is complete or stood still
-    /// for a slice
     min_pass: u32 = 256,
     /// no new row, or no state once the rows are in, for this long: the split is given up
     stall_ns: u64 = 120 * std.time.ns_per_s,
@@ -43,8 +41,7 @@ pub const Next = enum {
     fell_back,
 };
 
-/// Whether the engine can run this feed for a prompt of `prompt_len` tokens: the cut is one the M5 enters at, and the
-/// rows end before the prompt does (the tail runs locally).
+/// Whether the engine can run this feed for a prompt of `prompt_len` tokens: the cut is one the M5 enters at
 pub fn admits(feed: Feed, prompt_len: usize) bool {
     return split.cutOk(geometry.release, feed.cut) and feed.upto >= 1 and feed.upto < prompt_len and feed.upto <= std.math.maxInt(u32);
 }
@@ -93,7 +90,6 @@ pub const Run = struct {
     }
 
     /// One slice of work: a pass over the rows that have arrived, a short wait for more, or the restore. Any failure
-    /// (the feed's, a model call's, a stall) resets the slot and answers `.fell_back`.
     pub fn advance(r: *Run, ops: Ops, max_rows: u32) !Next {
         std.debug.assert(!r.finished);
         return r.step(ops, max_rows) catch |err| {

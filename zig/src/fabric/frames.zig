@@ -48,7 +48,7 @@ pub const Source = struct {
     elem: u64,
     rows: []const u64,
     parts: []const []const u8 = &.{}, // a recurrent layer's state, part by part: gather copies one whole
-    /// rows still being produced (the layer-split boundary stream, row-major in `rows * row_bytes`): gather waits for them
+    /// rows still being produced (the layer-split boundary stream, row-major in `rows * row_bytes`)
     stage: ?*row_stage.Stage = null,
     /// state still being produced: gather waits until this latch (one row) is published
     latch: ?*row_stage.Stage = null,

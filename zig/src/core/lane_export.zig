@@ -9,7 +9,6 @@ const Job = @import("lane_job.zig").Job;
 const Request = api.Request;
 
 /// kv_transfer_params.mcdma_handoff on a completion request: its prompt state exported under `id` for another machine.
-/// `split_cut` (kv_transfer_params.mcdma_split_cut, 0: none): a layer-split prefill, only encoder layers [0, cut) run here.
 pub const Handoff = struct { id: [16]u8, export_from: u64 = 0, split_cut: u32 = 0 };
 
 /// Whether the request that runs a layer split has gone away (the client left, the server closes): the split stops.
@@ -26,10 +25,7 @@ pub const Cancel = struct {
 pub const Split = struct {
     /// Whether this exporter takes a split cut at `cut` (the server opted in, the cut is one of its model's).
     ok: *const fn (ptr: *anyopaque, cut: u32) bool,
-    /// Runs the split of `prompt` (all its tokens, `h.split_cut` the cut) on the engine thread with the slot empty: its
-    /// early export is added at once, the layers below the cut prefill chunk by chunk streaming the boundary rows, and
-    /// the state of those layers follows. The slot is empty again on return; the error is already `failed(h, ..)`.
-    /// Returns the one token the trigger's reply carries (the reply of a split is not a sampled token).
+    /// Runs the split of `prompt` (all its tokens, `h.split_cut` the cut) on the engine thread with the slot empty
     run: *const fn (ptr: *anyopaque, h: Handoff, prompt: []const u32, cancel: ?Cancel) anyerror!u32,
 };
 

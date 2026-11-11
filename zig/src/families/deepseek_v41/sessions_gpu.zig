@@ -456,10 +456,7 @@ pub const Sessions = struct {
         s.ds_valid[s.cur()] = 0;
         return (try s.resumeHit(prompt, hit)).at;
     }
-
-    /// A layer-split prompt's admission into the empty slot: no entry is looked up or restored (every row runs), the
-    /// pool reserves `n` tokens and `max_new` more as for any request.
-    pub fn beginFresh(s: *Sessions, n: usize, max_new: u64) !void {
+    pub fn beginFresh(s: *Sessions, n: usize, max_new: u64) !void { // a split prompt enters the empty slot: nothing is restored
         if (s.f.slot.pos != 0 or s.kx.slot.len != 0) return error.SlotNotEmpty;
         s.ds_valid[s.cur()] = 0;
         try s.admit(null, n, max_new);

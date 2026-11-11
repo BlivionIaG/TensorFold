@@ -1,5 +1,4 @@
-//! Layer-split prefill (opt-in, mixed CUDA/Metal arithmetic): the boundary stream's rows, the cut rule, the chunk
-//! schedule both ends share, and the manifest of a split hand-off (boundary stream first, then layers [0, cut)).
+//! Layer-split prefill (opt-in, mixed CUDA/Metal arithmetic): the boundary stream's rows, the cut rule
 const std = @import("std");
 const fabric = @import("fabric");
 const g = @import("geometry.zig");
@@ -30,8 +29,7 @@ pub const ramp = [_]u32{ 512, 1024, 2048 };
 /// A chunk the engines may not leave behind a split chunk: the cone and the short path need more than this.
 pub const min_tail_rows: u64 = 17;
 
-/// A cut must start the M5 on an index source below the decoder: the selection a layer reuses is made at its source,
-/// and only the boundary rows cross (a cut inside a source's group would need its selection too).
+/// A cut must start the M5 on an index source below the decoder: the selection a layer reuses is made at its source
 pub fn cutOk(geo: g.Geometry, cut: u32) bool {
     const src = geo.sourceIndex(cut) orelse return false;
     return geo.sources[src].ratio == 2 and cut > 0 and cut < geo.layers;
@@ -73,7 +71,7 @@ pub fn describe(arena: std.mem.Allocator, upto: u64, cut: u32) ![]manifest.Layer
     return out;
 }
 
-/// Chunk starts and sizes keep to the compressors' 128-row window (the normal path starts every segment on one) but the last.
+/// Chunk starts and sizes keep to the compressors' 128-row window
 pub const grid_rows: u64 = 128;
 
 /// Rows a split prompt's i-th chunk takes: the ramp, then `max` (the grid's multiple at or below it, 128 at least).
@@ -84,8 +82,7 @@ pub fn chunkRows(i: u32, max: u32) u32 {
 
 pub const Chunk = struct { row0: u64, rows: u32 };
 
-/// The producer's chunks of `n` rows (`max` at most a chunk): the ramp then full chunks, every one but the last a
-/// multiple of 16 rows (so each starts on the grid) and the last never under 17 rows.
+/// The producer's chunks of `n` rows (`max` at most a chunk): the ramp then full chunks
 pub const Chunks = struct {
     n: u64,
     max: u32,
@@ -111,8 +108,7 @@ pub const Chunks = struct {
     }
 };
 
-/// The consumer's next pass over the stage: rows [at, at + rows) of the `ready` ones, at most `max` a pass, and never
-/// leaving 1..16 rows of the stream behind (the cone and the short path need 17 or none). Null: wait for rows.
+/// The consumer's next pass over the stage: rows [at, at + rows) of the `ready` ones, at most `max` a pass
 pub fn passRows(at: u64, ready: u64, upto: u64, max: u32) ?u32 {
     if (ready <= at or at >= upto) return null;
     var rows: u64 = @min(@min(ready, upto) - at, max);

@@ -155,8 +155,7 @@ test "the producer's cached tokens come from the reply's usage, and are 0 when i
     try std.testing.expectEqual(@as(u64, 0), cachedIn(gpa, "not json"));
 }
 
-/// The request's JSON: the prefix's ids, one greedy token and the handoff MCDMA reads (no model field: the default);
-/// a nonzero `cut` adds the layer split's `mcdma_split_cut`.
+/// The request's JSON: the prefix's ids, one greedy token and the handoff MCDMA reads (no model field: the default)
 pub fn request(gpa: std.mem.Allocator, model: []const u8, handoff: [16]u8, tokens: []const u32, cut: u32) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();

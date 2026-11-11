@@ -1,5 +1,4 @@
-//! Layer-split prefill, the M5's side of the seam: the boundary rows another engine streams in, as the backend's pass
-//! sees them (no fabric types here; native/ wraps the pull's `row_stage` in a `Feed`). Opt-in, mixed CUDA/Metal.
+//! Layer-split prefill, the M5's side of the seam: the boundary rows another engine streams in
 const std = @import("std");
 
 /// The boundary row: four residual planes of 5120 bf16 (post applied), then the next site's four f32 pre values.

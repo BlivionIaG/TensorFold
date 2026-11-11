@@ -349,8 +349,7 @@ pub const Seg = struct {
                 try e.glue("trace", &.{ y, .{ .i = L } });
             }
             if (s.part == .split and i + 1 == layers.len) {
-                // layer-split producer: the cut layer's true residual (post applied) and the next site's pre, the
-                // boundary rows (what `bdump` writes for the gate); nothing past the layer runs: no head, no more layers
+                // layer-split producer: the cut layer's true residual (post applied) and the next site's pre
                 const y = try e.buf("w.trace", .{}, .bf16, &.{ n, 4 * D });
                 try s.postOnly(y);
                 return e.glue("split_rows", &.{ y, (try Seg.coefs(e, e.coef))[0], .{ .i = L } });

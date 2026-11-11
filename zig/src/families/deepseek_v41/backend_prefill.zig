@@ -156,8 +156,7 @@ const Calls = struct {
     }
 };
 
-/// One slice of a layer-split pass: false while its rows or state are still coming; true once it restored (the tail rows
-/// are the normal path's, from the cursor) or fell back (the slot is reset, the prompt is a local pass from row 0).
+/// One slice of a layer-split pass: false while its rows or state are still coming; true once it restored
 fn splitStep(b: *Backend, s: *Stream, slot: u32, run: *split_run.Run, prompt: []const u32, max_rows: u32) !bool {
     var calls: Calls = .{ .b = b, .slot = slot, .prompt = prompt, .cut = run.feed.cut };
     const plan_rows = b.model.workspace.plan.rows;

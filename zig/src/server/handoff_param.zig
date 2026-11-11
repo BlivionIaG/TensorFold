@@ -4,7 +4,6 @@ const json = @import("json");
 const Handoff = @import("engine_api").LaneHost.Export.Handoff;
 
 /// The request's handoff, or null without one; a malformed one is refused with `why`. A layer-split request
-/// (`mcdma_split_cut`) is accepted only when the server produces them (TF_LS_PRODUCE=1).
 pub fn parse(f: json.Value, why: *[]const u8) error{BadHandoff}!?Handoff {
     const produce = @import("sys").environment.read(bool, "TF_LS_PRODUCE", false) catch false;
     return parseWith(f, why, produce);

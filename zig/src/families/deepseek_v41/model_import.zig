@@ -46,9 +46,7 @@ pub fn seal(m: *const Model, snap: *Snapshot, tokens: []const u32, upto: u32) !v
     snap.taps_rows_valid = 0;
 }
 
-/// A chunk of a layer-split prompt: layers `cut`.. over the rows of ids, entered from the producer's boundary rows (`rows`:
-/// [row][4 x 5120 bf16 stream, 4 f32 pre], as `split_feed` carries them) instead of the embedding and layers below the cut.
-/// The slot's caches, positions and the cone's stash take the rows as a normal chunk's layers from the cut on do.
+/// A chunk of a layer-split prompt: layers `cut`.. over the rows of ids, entered from the producer's boundary rows
 pub fn forwardEntered(m: *Model, slot: u32, ids: []const u32, rows: []const u8, cut: u32) !void {
     if (!m.valid) return error.InvalidModelState;
     if (slot >= m.lanes) return error.InvalidLaneSlot;
@@ -61,8 +59,7 @@ pub fn forwardEntered(m: *Model, slot: u32, ids: []const u32, rows: []const u8, 
     _ = try m.forwardSegs(&.{.{ .slot = slot, .ids = ids, .p0 = m.caches[slot].position }}, .none);
 }
 
-/// Layers [0, cut) of a landed layer-split state (`snap`, sealed after its `upto` rows) into `slot`, which stands at `upto`
-/// after its entered chunks; the layers from the cut on, the cone's pending run and the Engram record stay as they are.
+/// Layers [0, cut) of a landed layer-split state (`snap`, sealed after its `upto` rows) into `slot`
 pub fn restoreLayers(m: *Model, slot: u32, snap: *const Snapshot, cut: u32) !void {
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     if (snap.taps.len != m.taps.length()) return error.SnapshotLayout;

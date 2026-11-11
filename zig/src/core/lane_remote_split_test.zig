@@ -1,13 +1,11 @@
-//! A layer split on the real lane host with a fake backend: the job is admitted when the stream is announced, the
-//! stream takes the feed, a split that never opens leaves the prompt local, and the reply says what the split cost.
+//! A layer split on the real lane host with a fake backend: the job is admitted when the stream is announced
 const std = @import("std");
 const api = @import("engine_api.zig");
 const lanes = @import("lanes");
 const remote = @import("lane_remote.zig");
 const t = std.testing;
 
-/// One fake split source: `wants` says split; `split` announces `feed` after `delay_ms` (or fails before), then waits
-/// for the engine to finish the feed, as the Mac's puller does.
+/// One fake split source: `wants` says split; `split` announces `feed` after `delay_ms` (or fails before)
 const Peer = struct {
     feed: u8 = 0,
     delay_ms: u64 = 0,
