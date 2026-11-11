@@ -16,6 +16,7 @@ pub fn steps(b: *std.Build) void {
     b.step("test-rows-prefetch-host", "Disk states read ahead for queued requests: equality, cancellation, fallbacks").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"prefetch:"} })).step);
     b.step("test-embedding-lane-host", "Prompt-only embedding jobs on the actual lane worker without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"embedding lane:"} })).step);
     b.step("test-prefill-service-host", "The opt-in prompt-row budget beside decoding streams on the lane host with a fake backend").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"prefill service:"} })).step);
+    b.step("test-prefill-directive-host", "A request's own prefill directive on the remote source and the lane host, with a fake pair").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"directive:"} })).step);
     const copies = b.step("test-root-copy-host", "Root copy precedence, drafter absorption and real worker checks without GPU");
     copies.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"root copy:"} })).step);
     copies.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"root copy:"} })).step);

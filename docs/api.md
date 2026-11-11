@@ -331,6 +331,11 @@ the hand-off (HTTP 200, `application/octet-stream`, `Content-Length`; [DeepSeek-
 id with no export, a released or an expired one, and a server that serves no exports answer HTTP 404, and an export that failed
 answers 409 with the reason. The key gate runs first: with keys, a request without a valid key gets 401, and a restricted key needs
 the `inference` scope.
+A server started with `--prefill-from` reads `prefill` on the same two routes: `"auto"` (the default) lets the server weigh the
+prompt against the pair's load and predicted times, `"force"` sends it to the pair without weighing and waits for a pull under way
+(a prompt too short to pull, an off or unreachable pair still leave it to this server), `"never"` prefills it here. Any other
+value gets HTTP 400 naming the field. A server without `--prefill-from` accepts and ignores it; the reply's `remote_prefix` tells
+where the prompt was prefilled.
 `ignore_eos: true` keeps user-supplied `stop` strings active, including when a stop string spans streamed chunks.
 Both backends reject a non-boolean `ignore_eos` or a malformed `stop` with HTTP 400 before a stream opens.
 Both backends reject malformed `temperature`, `top_p`, `top_k` and `seed` values with HTTP 400, whether or not

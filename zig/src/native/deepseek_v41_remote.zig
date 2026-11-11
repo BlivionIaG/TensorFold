@@ -14,6 +14,7 @@ const Flags = api.LaneHost.Remote.Flags;
 const Route = api.LaneHost.Remote.Route;
 const Ask = api.LaneHost.Remote.Ask;
 const Verdict = api.LaneHost.Remote.Verdict;
+const Directive = api.LaneHost.Remote.Directive;
 const Measured = api.LaneHost.Remote.Measured;
 
 /// The Qwen pull's prefix policy with TF_PREFILL_TAIL: the Mac prefills only the last token by default, no 512 tail.
@@ -51,10 +52,10 @@ pub const Pull = struct {
     }
 
     /// A prefix of `prompt` beyond `cached` on a whole chunk, filled remotely and landed whole in a blank Snapshot.
-    pub fn pull(p: *Pull, prompt: []const u32, cached: u64) !?Filled {
+    pub fn pull(p: *Pull, prompt: []const u32, cached: u64, directive: Directive) !?Filled {
         if (p.closing.load(.acquire) or p.off.load(.acquire)) return null;
         const upto = p.remote.policy.upto(prompt.len, cached) orelse return null;
-        _ = p.route.admit(p.io, p.route.estimate(upto, prompt.len - cached), &p.closing) orelse return null;
+        _ = p.route.admit(p.io, p.route.estimateFor(upto, prompt.len - cached, directive), &p.closing) orelse return null;
         defer p.route.leave();
         if (p.closing.load(.acquire) or p.off.load(.acquire)) return null;
         p.remote.client.renew() catch |err| {
@@ -108,9 +109,9 @@ pub const Pull = struct {
         p.route.observe(m);
     }
 
-    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64) anyerror!?Filled {
+    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive) anyerror!?Filled {
         const p: *Pull = @ptrCast(@alignCast(ptr));
-        return p.pull(prompt, cached);
+        return p.pull(prompt, cached, directive);
     }
 
     fn drop(ptr: *anyopaque, saved: *anyopaque) void {
@@ -173,7 +174,7 @@ pub const FileSource = struct {
         return if (ask.len > f.blob.tokens.len and ask.cached < f.blob.tokens.len) .remote else .small;
     }
 
-    fn fileFill(ptr: *anyopaque, prompt: []const u32, _: u64) anyerror!?Filled {
+    fn fileFill(ptr: *anyopaque, prompt: []const u32, _: u64, _: Directive) anyerror!?Filled {
         const f: *FileSource = @ptrCast(@alignCast(ptr));
         const tokens = f.blob.tokens;
         if (prompt.len <= tokens.len or !std.mem.eql(u32, prompt[0..tokens.len], tokens)) return null;

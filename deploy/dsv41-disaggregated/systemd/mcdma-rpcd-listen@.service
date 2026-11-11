@@ -1,0 +1,32 @@
+# The producer's end of one MCDMA link (instance name = link name). Parameters: /etc/tensorfold/mcdma-listen-%i.env.
+# Run as the user that runs rank 0: the mailbox and the daemon's socket are owner-only.
+[Unit]
+Description=mcdma-rpcd listen end of link %i (DeepSeek-V4.1 KV hand-off producer)
+Documentation=https://github.com/ashhart/MCDMA/blob/main/docs/link-daemon.md
+After=network-online.target tf-pd-link-up.service
+Wants=network-online.target
+Requires=tf-pd-link-up.service
+# A permanently wrong parameter stops the unit instead of looping forever.
+StartLimitIntervalSec=900
+StartLimitBurst=20
+
+[Service]
+Type=simple
+User=@TF_USER@
+EnvironmentFile=/etc/tensorfold/mcdma-listen-%i.env
+ExecStart=@RPCD@ listen %i ${PEER_DEV} ${PEER_GID_INDEX} ${PATH_MTU} ${VIA} ${REQ_MIB} ${REP_MIB}
+# A clean exit (SHUTDOWN on its socket) must bring it back too; `systemctl stop` is never restarted. Rank 0 attaches
+# again by itself when the daemon returns, so bounce it with `systemctl kill`, not `systemctl restart` (which
+# restarts rank 0 through Requires=).
+Restart=always
+RestartSec=5
+# Registered mailbox memory.
+LimitMEMLOCK=infinity
+# SIGTERM is an orderly teardown of every queue pair, and every wait in it is bounded. The daemon's guide says
+# never to SIGKILL it, so systemd does not escalate: a stop that outlasts the timeout is reported, not forced.
+KillSignal=SIGTERM
+TimeoutStopSec=60
+SendSIGKILL=no
+# The lock file and the daemon's Unix socket live in /tmp, which rank 0 must see: no PrivateTmp.
+NoNewPrivileges=yes
+SyslogIdentifier=mcdma-rpcd-listen

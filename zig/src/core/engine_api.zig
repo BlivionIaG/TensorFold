@@ -88,6 +88,7 @@ pub const Request = struct {
     /// The prompt as the prompt cache matches it (each image's placeholders by its content); empty: ``prompt``.
     cache_key: []const u32 = &.{},
     handoff: ?@import("lane_export.zig").Handoff = null, // kv_transfer_params.mcdma_handoff (#1594 step 2b)
+    prefill: @import("lane_remote_route.zig").Directive = .auto, // the body's `prefill`: where a remote source prefills it
 
     /// The prompt as the prompt cache matches it: an image request's placeholders stand for their images.
     pub fn cacheKey(r: *const Request) []const u32 {

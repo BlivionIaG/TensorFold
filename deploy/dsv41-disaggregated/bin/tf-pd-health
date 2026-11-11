@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""Health of one side of the DeepSeek-V4.1 prefill/decode setup, for a monitor or an operator.
+
+  tf-pd-health producer [--link NAME] [--url URL]    rank 0's host: listen daemon, rank 0 attached, rank 0 /health
+  tf-pd-health decoder  [--link NAME] [--url URL]    the Mac: connect daemon, link up, decoder /health
+
+Exit 0: healthy. Exit 1: degraded: the link is down or nothing is attached, so the Mac prefills by itself, slower but
+correct. Exit 2: down: a daemon or a server does not answer. Standard library only; reads nothing but the daemon's
+status socket and the server's open /health route.
+"""
+import argparse
+import socket
+import sys
+import urllib.error
+import urllib.request
+
+OK, DEGRADED, DOWN = 0, 1, 2
+WORDS = {OK: 'OK', DEGRADED: 'DEGRADED', DOWN: 'DOWN'}
+
+
+def daemon_peers(path, timeout):
+    """The PEER lines of a daemon's STATUS answer, as dicts; raises OSError when it does not answer."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        s.connect(path)
+        s.sendall(b'STATUS\n')
+        text = b''
+        while not text.endswith(b'END\n'):
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            text += chunk
+    peers = []
+    for line in text.decode(errors='replace').splitlines():
+        words = line.split()
+        if len(words) >= 3 and words[0] == 'PEER':
+            peer = {'name': words[1], 'up': words[2] == 'up'}
+            for i, w in enumerate(words[3:], 3):
+                if '=' in w:
+                    peer.update([w.split('=', 1)])
+                elif w in ('calls', 'failures') and i + 1 < len(words):
+                    peer[w] = words[i + 1]
+            peers.append(peer)
+    return peers
+
+
+def http_ok(url, timeout):
+    """(True, '') when GET url answers 200, else (False, why). /health is open even with API keys configured."""
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return r.status == 200, f'HTTP {r.status}'
+    except urllib.error.HTTPError as e:
+        return False, f'HTTP {e.code}'
+    except (urllib.error.URLError, OSError) as e:
+        return False, str(getattr(e, 'reason', e))
+
+
+def main(argv):
+    p = argparse.ArgumentParser(description=__doc__.split('\n', 1)[0])
+    p.add_argument('role', choices=('producer', 'decoder'))
+    p.add_argument('--link', default='tfkv', help='MCDMA link name (default tfkv)')
+    p.add_argument('--url', help='the server /health URL (default: loopback, port 8000 producer, 8899 decoder)')
+    p.add_argument('--sock', help="the daemon's status socket (default: /tmp/mcdma-rpcd.LINK.sock producer, "
+                                  '/tmp/mcdma-rpcd.sock decoder)')
+    p.add_argument('--timeout', type=float, default=5.0)
+    a = p.parse_args(argv)
+    producer = a.role == 'producer'
+    sock = a.sock or (f'/tmp/mcdma-rpcd.{a.link}.sock' if producer else '/tmp/mcdma-rpcd.sock')
+    url = a.url or f'http://127.0.0.1:{8000 if producer else 8899}/health'
+    worst = OK
+
+    def report(level, text):
+        nonlocal worst
+        worst = max(worst, level)
+        print(f'{WORDS[level]:8} {text}')
+
+    try:
+        peers = [x for x in daemon_peers(sock, a.timeout) if x['name'] == a.link]
+    except OSError as e:
+        report(DOWN, f'{"listen" if producer else "connect"} daemon: no answer on {sock} ({e})')
+    else:
+        if not peers:
+            report(DOWN, f'daemon answers but serves no link {a.link}')
+        elif not peers[0]['up']:
+            report(DEGRADED, f'link {a.link} is down (the other end is not connected; the Mac prefills by itself)')
+        elif producer and peers[0].get('service') != 'attached':
+            report(DEGRADED, f'link {a.link} is up but rank 0 is not attached to the daemon')
+        else:
+            extra = f", {peers[0]['calls']} calls, {peers[0]['failures']} failures" if 'calls' in peers[0] else ''
+            report(OK, f'link {a.link} is up{extra}')
+    ok, why = http_ok(url, a.timeout)
+    report(OK if ok else DOWN, f'{"rank 0" if producer else "decoder"} {url}: {why}')
+    print(f'{WORDS[worst]}')
+    return worst
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

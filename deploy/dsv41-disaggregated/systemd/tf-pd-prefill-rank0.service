@@ -1,0 +1,36 @@
+# Rank 0 of the DeepSeek-V4.1 prefill pair: the HTTP trigger on PORT and the MKVH exporter on the MCDMA link.
+# Starting it stops the production unit (Conflicts=), and starting the production unit stops it.
+[Unit]
+Description=DeepSeek-V4.1 prefill pair, rank 0 (hand-off producer on link @LINK_NAME@)
+After=network-online.target mcdma-rpcd-listen@@LINK_NAME@.service
+Wants=network-online.target
+Requires=mcdma-rpcd-listen@@LINK_NAME@.service
+Conflicts=@PROD_UNIT@
+# Same spacing as production: a slow failure (a rank killed, a load that takes minutes) is retried, a config that fails
+# in seconds stops the unit.
+StartLimitIntervalSec=1800
+StartLimitBurst=20
+
+[Service]
+Type=simple
+User=@TF_USER@
+WorkingDirectory=@TF_STATE@
+EnvironmentFile=/etc/tensorfold/prefill.env
+Environment=TF_TP_RANK=0
+# MANDATORY: exact-match pin to the pair's own RoCE devices. Without it NCCL adds the Mac-facing port to the TP rings and
+# the pair hangs at 100 % CPU (IBV_WC_RETRY_EXC_ERR). Kept out of prefill.env, which overrides Environment=.
+Environment="NCCL_IB_HCA==@PAIR_DEV_A@,@PAIR_DEV_B@"
+ExecStartPre=/usr/bin/mkdir -p @TF_STATE@/sessions
+ExecStart=@TF_PREFIX@/bin/tensorfold-dsv41 serve @MODEL@ --host @BIND_ADDR@ --port @PORT@ --parallel ${TF_DSV41_SLOTS} --context ${TF_DSV41_CONTEXT} --name DeepSeek-V4.1-Flash-TF --max-tokens 32768 --no-thinking --mcdma-produce @LINK_NAME@ --api-key-file @API_KEY_FILE@
+# Any exit brings the rank back; an explicit stop is never restarted. A lone rank waits for its peer, so the peer's
+# unit on the other machine is restarted by its own policy, not by this one.
+Restart=always
+RestartSec=60
+TimeoutStartSec=infinity
+TimeoutStopSec=150
+LimitMEMLOCK=infinity
+LimitNOFILE=1048576
+SyslogIdentifier=tf-pd-prefill-rank0
+
+[Install]
+WantedBy=multi-user.target
