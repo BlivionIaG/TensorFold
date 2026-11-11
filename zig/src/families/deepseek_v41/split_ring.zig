@@ -5,7 +5,7 @@ const split = @import("handoff/split.zig");
 /// Staging slots: chunk N's rows copy out while chunk N + 1 computes and N + 2 may queue behind it.
 pub const slots = 3;
 
-/// Where the rows go: the early export's stage (`rows` is the chunk's region of it, `publish` makes rows [0, end) public).
+/// Where the rows go: the early export's stage (`rows` is the chunk's region of it, `publish` makes rows [0
 pub const Sink = struct {
     ptr: *anyopaque,
     rows: *const fn (ptr: *anyopaque, row0: u64, n: u64) []u8,
@@ -36,8 +36,7 @@ pub const Ring = struct {
 
     pub const Error = error{ OutOfOrder, TooManyRows };
 
-    /// The slot the next chunk's copy fills: the one after the newest in flight. With every slot in flight the oldest
-    /// chunk is awaited and published first, so a slot is never refilled before its rows left it.
+    /// The slot the next chunk's copy fills: the one after the newest in flight
     pub fn acquire(r: *Ring) !usize {
         if (r.live == slots) try r.publishOldest(true);
         return (r.first + r.live) % slots;

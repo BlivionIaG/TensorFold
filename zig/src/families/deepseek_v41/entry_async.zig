@@ -1,5 +1,4 @@
-//! Layer-split passes without a host wait between them: the entry rows staged in one of two device buffers while
-//! the pass before runs, each pass's command buffers committed and left running, the next encoded behind them.
+//! Layer-split passes without a host wait between them: the entry rows staged in one of two device buffers while the
 const std = @import("std");
 const mtl = @import("metal");
 const engram = @import("engram.zig");
@@ -82,8 +81,7 @@ pub fn encodeEntry(m: *Model, enc: mtl.ComputeEncoder, buf: mtl.Buffer, rows: u3
     enc.barrier();
 }
 
-/// Before a layer-split pass: later passes encode behind the running one where their host writes cannot reach what
-/// it reads (the Engram staging swaps), else this waits for it first.
+/// Before a layer-split pass: later passes encode behind the running one where their host writes cannot reach what it
 pub fn prepare(m: *Model) !void {
     const st = &m.pipe;
     if (!enabled() or m.profile != null or m.observer != null or m.host_prof) return;
