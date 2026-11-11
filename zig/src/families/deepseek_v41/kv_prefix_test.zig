@@ -1,4 +1,4 @@
-//! Row-sized pool copies: a state kept at n rows restores into a pool of any capacity from n up, and only n's rows move.
+//! Row-sized pool copies: a state kept at n rows restores into a pool of any capacity from n up, moving n's rows.
 const std = @import("std");
 const prefix = @import("kv_prefix.zig");
 const Packed = @import("handoff/metal.zig").Packed;

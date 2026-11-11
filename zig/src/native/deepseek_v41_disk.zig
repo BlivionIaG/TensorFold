@@ -1,4 +1,4 @@
-//! DeepSeek V4.1's kept states on disk (--learn-conversations): a Snapshot's image, copies out and in, and its identity.
+//! DeepSeek V4.1's kept states on disk (--learn-conversations): a Snapshot's image, copies in and out, its identity.
 const std = @import("std");
 const api = @import("engine_api");
 const tf = @import("tensorfold");
@@ -13,8 +13,7 @@ const kv_image = ds.kv.image;
 /// Prompt tokens a second the store assumes before a pass of this server has measured one (baselines: 0.9k on the M5).
 pub const seed_prefill_rate = 900.0;
 
-/// The store's view of a kept state at `at` tokens: its own words (the Engram history and the taps cursor), the window
-/// rings with the compressor carry, the taps ring, then each owner's pool rows and index rows by position.
+/// The store's view of a kept state: its words, the rings, the taps ring, then each owner's main and index rows.
 pub const image: rows.Image = .{ .parts = parts, .gather = gather, .blank = blank, .scatter = scatter };
 
 /// Four history words and five taps cursor words.
@@ -76,7 +75,7 @@ fn scatter(_: *anyopaque, saved: api.prompt_cache.Saved, ranges: []const rows.im
     move(@ptrCast(@alignCast(saved)), ranges, @constCast(in), true);
 }
 
-/// What kept states read under: this binary, the checkpoint's files, the chunk grid, the OS build and chip, the profile.
+/// What kept states read under: this binary, the checkpoint's files, the chunk grid, OS build, chip and profile.
 pub fn identity(a: Allocator, io: std.Io, dir: []const u8, m: *ds.Model) !u64 {
     var h = std.hash.Wyhash.init(0x6473);
     try @import("sys").file_identity.current(&h, a, io);

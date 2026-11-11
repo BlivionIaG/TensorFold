@@ -215,7 +215,7 @@ pub const Model = struct {
         return model_lifecycle.snapshotBytes(m, at);
     }
     pub const Snapshot = struct {
-        /// The pool's rows, laid out for `capacity` rows of the ratio-1 owner (`kv_prefix.Layout`), whatever the slot's.
+        /// The pool's rows, laid out for `capacity` rows of the ratio-1 owner (`kv_prefix.Layout`), not the slot's.
         storage: []u8,
         capacity: u32,
         live: []u8,
@@ -242,7 +242,7 @@ pub const Model = struct {
     pub fn snapshotRestore(m: *Model, slot: u32, snap: *const Snapshot) !void {
         return model_lifecycle.snapshotRestore(m, slot, snap);
     }
-    /// A zeroed Snapshot an importer fills (model_import.zig) for a prefix of `rows` tokens, sealed restorable after them.
+    /// A zeroed Snapshot an importer fills (model_import.zig) for a prefix of `rows` tokens, sealed after them.
     pub fn snapshotBlank(m: *Model, rows: u32) !*Snapshot {
         return model_import.blank(m, rows);
     }

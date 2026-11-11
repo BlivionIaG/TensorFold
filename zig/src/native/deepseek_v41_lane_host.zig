@@ -182,7 +182,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         .greedy_only = false, // the port samples: temperature, top_k, top_p, min_p (backend.sampleRow)
         .penalties = true, // Presence/frequency, applied in backend.verify over each row s path
     });
-    // THE RETAINED PROMPT CACHE: --prompt-cache-gib, else TF_DSV41_PROMPT_CACHE_GIB, else the automatic budget (0: none).
+    // THE RETAINED PROMPT CACHE: --prompt-cache-gib, else TF_DSV41_PROMPT_CACHE_GIB, else the automatic budget.
     const asked: ?f64 = o.prompt_cache_gib orelse try environment.read(?f64, "TF_DSV41_PROMPT_CACHE_GIB", null);
     if (asked == null or asked.? > 0) {
         var why: []const u8 = "";
@@ -196,7 +196,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
             h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = &h.back, .vtable = &.{ .bytes = B.snapBytes, .save = B.snapSave, .restore = B.snapRestore, .drop = B.snapDrop, .charged = B.snapCharged, .rows = &disk.image } }, .{ .lookahead = 0, .planned = true, .grid = model_ptr.workspace.plan.rows, .tail = true, .tail_align = 128, .end_mark = if (std.c.getenv("TF_DSV41_END_MARK")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true, .resumed_tail = if (std.c.getenv("TF_DSV41_RESUMED_TAIL")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true }, plan.budget_bytes);
             h.host.cache = &h.cache.?;
             h.host.info_.prompt_cache = true;
-            // --learn-conversations: every kept state also goes to disk, and a state RAM evicted is read back where it pays
+            // --learn-conversations: kept states also go to disk, and are read back where that beats prefilling
             if (o.learn) |root| {
                 const r = try api.prompt_cache.rows.attach(gpa, &h.cache.?, .{ .root = root, .identity = try disk.identity(a, io, o.dir, model_ptr), .cap = gibBytes(o.learn_gib), .floor = gibBytes(o.learn_min_free_gib), .daily = gibBytes(o.learn_daily_gib), .lookahead = 0, .planned = true, .spill = o.spill, .slots = spill.slots(o) });
                 r.prefill_rate = disk.seed_prefill_rate;
