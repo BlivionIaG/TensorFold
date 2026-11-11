@@ -622,3 +622,50 @@ Mac-alone rows (**V**; ports 18200 / 18201; `uvx --from mlx-lm` was unpinned: th
 
 The 4B model: `uvx --from huggingface_hub hf download mlx-community/Qwen3.5-4B-MLX-4bit --revision 32f3e8ecf65426fc3306969496342d504bfa13f3 --local-dir ~/models/Qwen3.5-4B-MLX-4bit`; the 35B-A3B:
 `hf download mlx-community/Qwen3.6-35B-A3B-4bit --revision 38740b847e4cb78f352aba30aa41c76e08e6eb46 --local-dir ~/models/Qwen3.6-35B-A3B-4bit` (17 files, 20.40 GB, 2 min 8 s).
+
+## Reproducing the 35B-A3B numbers (command lines as run)
+
+**V** = copied from the shell call that produced the numbers, **R** = reconstructed. The scripts are kept verbatim in `ut4g-usbgpu` `artifacts/results/scripts/moe/` and the raw outputs (`serve_bench` JSON, server logs with the
+`experts interval` lines, gate replies) in `artifacts/results/moe-offload-bench/` and `artifacts/results/tensorfold-vega-bench/` (index `artifacts/results/README.md`).
+
+Preconditions: card booted (`ut4g-boot`, DPM auto: since ut4g-usbgpu `16dde97` the boot leaves it there; `ut4g-boot --force` was run once at the start of the session), ~19 GiB of free unwired Mac memory
+(no `mlx` process holding the 35B while the card server runs: the 17 GiB pinned host tier plus 19 GiB of an mlx process exceeds the Mac's 37.9 GiB wire limit, `hipHostMalloc` then fails at 2-3 GiB), and a fresh
+`TinyGPU server` per `tensorfold-native serve` start (`pkill -f 'tensorfold-native serve'; sleep 3; pkill -f 'TinyGPU server'; sleep 1`: the dext keeps the host-memory mappings until the connection closes).
+Model: `hf download mlx-community/Qwen3.6-35B-A3B-4bit --revision 38740b847e4cb78f352aba30aa41c76e08e6eb46 --local-dir ~/models/Qwen3.6-35B-A3B-4bit` (**V**, 17 files, 20.40 GB, 2 min 8 s).
+
+Build (**V**; `/tmp/moe_env.sh` = Zig 0.17.0 and the Metal shim on `PATH`, `ROCM=$HOME/.cache/tensorfold-vega/rocm-10.1.0a20260822`):
+
+    zig build native-hip -Dhip=true -Dhip-arch=gfx900 -Dmetal-std=metal4.0 -Dhipcc=$ROCM/bin/hipcc -Doptimize=ReleaseFast        # zig-out/native-hip/bin/tensorfold-native
+
+Server (**V**, `/tmp/moe_serve.sh`; `PAR` and `CTX` are the only per-run knobs besides `TF_EXPERT_*`; no `--ssd-experts` was ever passed, the offload turns on by itself because 19.0 GiB do not fit the 6.9 GiB the HIP budget grants,
+and the cache is what the plan leaves: 2876 lines = 4.74 GiB at `--parallel 1 --context 4096`, 2334 lines = 3.85 GiB at `PAR=8 CTX=2048`, 2192 lines = 3.61 GiB at `PAR=2 CTX=17408`; `TF_EXPERT_WINDOW_MIB` was never set, 1536 MiB):
+
+    HIPMAC_BACKEND=ut4g TENSORFOLD_HIP=<ut4g-usbgpu>/hipmac/build/libamdhip64.dylib UT4G_METRICS_LOG=/tmp/moe_metrics.csv:1 \
+      zig-out/native-hip/bin/tensorfold-native serve ~/models/Qwen3.6-35B-A3B-4bit --parallel $PAR --context $CTX --port 18099 --no-drafts --temperature 0 --no-thinking
+
+Runs (the binary of each row is **R**: built from the working tree before the commit; the transcripts never printed the hash next to a run):
+
+| Output (`/tmp/moe_bench/` unless named) | Server | Client | Binary |
+| --- | --- | --- | --- |
+| `l1k.{md,json,err}` (first 1k/512 table, COPIES 32) | `PAR=8 CTX=2048` | `uv run --quiet --with tokenizers python tools/vega-macos/serve_bench.py --url http://127.0.0.1:18099 --model Qwen3.6-35B-A3B-4bit --tokenizer ~/models/Qwen3.6-35B-A3B-4bit --concurrency 1,2,4,8 --loads 1024:512 --reps 1 --timeout 3000 --json l1k.json --label ...` (**V**) | `579a6ffea7` |
+| `b1k_a.*` (current 1k/512 table, plain LRU) | `PAR=8 CTX=2048`, COPIES default 4096, `TF_EXPERT_PROTECT` unset | `/tmp/bench_run.sh b1k_a 1024:512 1,2,4,8 8 2048` (**V**; the script starts the server above and runs `serve_bench.py ... --concurrency 1,2,4,8 --loads 1024:512 --reps 1 --json /tmp/moe_bench/b1k_a.json --label b1k_a`) | `4c671bbcc8` (R) |
+| `ab_lru.*`, `ab_slru.*` (filler 1k/256, SLRU A/B) | `PAR=8 CTX=2048` + `TF_EXPERT_PROTECT=0` / `75` | `/tmp/bench_run.sh ab_lru 1024:256 1,4,8 8 2048 TF_EXPERT_PROTECT=0`, `... ab_slru ... TF_EXPERT_PROTECT=75` (**V**) | `07b09d3709` (R) |
+| `b16k.*` (16k/1k, SLRU 75 %) | `PAR=2 CTX=17408` | `/tmp/bench_run.sh b16k 16384:1024 1,2 2 17408` (**V**) | `07b09d3709` |
+| `l16k_c1.{md,err}` (empty: this run failed, nothing was recorded; c=4/8 at 16k were never run) | `PAR=1 CTX=17408` | `serve_bench.py ... --concurrency 1 --loads 16384:...` | |
+
+Gate (`tools/vega-macos/moe_ref.py`, `moe_gate.py`; the mlx environment `tools/vega-macos/setup-mlx-env.sh`): references **V** `~/.cache/tensorfold-vega/mlxenv/bin/python tools/vega-macos/moe_ref.py` (the first run had to wait until no
+card server held host memory: "Insufficient Memory"; 8 prompts since the 466- and ~1100-token Merrowick prompts, shas `eb415dcbaf6e 188a33e44468 be83e20c3349 dba6cb89062a ed065dc57de4 554c5b65193a ff333359d187 037a3176d0c5`), then
+`/tmp/gate_pair.sh TAG` (**V**: server with the cache on, `moe_gate.py --log SERVER.LOG --tag TAG_on` against the references; server with `TF_EXPERT_COPIES=0`, `--tag TAG_off`; then a python one-liner compares the two replies: all True).
+Result at every build (`g1`, `g3`): the cache-on and cache-off replies are identical for all 8 prompts, and 3 of 8 equal the mlx references; the five others diverge at a near tie of the mlx logprobs (`/tmp/margin.py`: ' the' -0.876 vs
+' shorter' -0.876, ' due' -0.596 vs ' in' -0.846, ' meet' -0.973 vs ' marry' -1.348, ...), [INFERENCE: different arithmetic, not diagnosed]: the gate that must hold is cache on = cache off (`--against`).
+
+Story benchmark (**V**, `/tmp/exp.sh TAG [ENV=VAL]`): start the server, three decodes of "Write a long story N about a dragon who learns to code." (N = 1..3, `max_tokens` 200 (300 for the 26-28.7 rows), `temperature 0`, thinking off) through `curl` on
+`/v1/chat/completions`, the number is the server's own `tensorfold.tokens_per_second`: `exp.sh c32 TF_EXPERT_COPIES=32` gave 11.14 / 22.06 / 20.79 tok/s; before read-through admission 20.89 (hipprof run), after it 26.12 / 28.73 / 26.94.
+Per-kernel table of a decode (**V**, `/tmp/prof_run.sh TAG`): `hipprof` shim with `HIPPROF_EVENTS=1`, `TF_POLICY=graphs=off`, `kill -USR1/-USR2` around a profiled 200-token decode, `tools/vega-macos/prof_report.py`.
+
+Cache simulator (**V**, cwd `tools/vega-macos`): `<mlx env python> expert_cache_sim.py > /tmp/ecs_out.txt` on the study's traces (default `~/Projects/Infra/tf-study-moe-cache/docs/proposals/metal-tb4-split-moe-probe/traces` and `../traces_long`; 12-17 s on 14 workers);
+the output of the last run is `ut4g-usbgpu` `artifacts/results/moe-offload-bench/expert_cache_sim_output.txt` (LRU 82.9 %, SLRU 75 % 83.6 %, LFU aged 83.7 %). The traces themselves come from the study (`routing_trace.py`, see its proposal "Reproduce").
+
+Mac-alone 35B (**V**): `uvx --from mlx-lm mlx_lm.server --model ~/models/Qwen3.6-35B-A3B-4bit --port 18201 --decode-concurrency 8 --prompt-concurrency 8 --prompt-cache-size 1 --temp 0 --max-tokens 4096`, then `serve_bench.py --url http://127.0.0.1:18201
+--model $M --tokenizer $M --reps 1 --json mlx35b.json` with the default loads and concurrency (decode 72.6 / 117.7 / 161.4 / 178.4 tok/s at c = 1/2/4/8 on 1k/512; 16k c = 1 63.2; 16k c = 8 out of memory). The other Mac-alone figure, 88.8 / 135.8 / 162.4 / 176.4 / 206.9 tok/s,
+is `mlx_lm` `batch_generate` through `docs/proposals/metal-tb4-split-moe-probe/mlx_batched_decode.py MODEL 1,2,3,4,8 1 40` (distinct 9-token prompts, 40 tokens, best of 2): a different harness, not reconciled with the server figure.
