@@ -40,10 +40,10 @@ pub const Produce = struct {
     held: std.AutoHashMapUnmanaged([16]u8, *Held) = .empty,
     lock: std.atomic.Mutex = .unlocked, // `held`: the engine thread adds, the serving thread releases
     streams: std.atomic.Value(u32) = .init(0), // reads under way (HTTP): the producer stops after them
-    building: std.atomic.Value(u32) = .init(0), // exports converting on their own threads (`exportedBg`): stop waits for them
+    building: std.atomic.Value(u32) = .init(0), // exports converting on their own threads (`exportedBg`)
     pending: std.AutoHashMapUnmanaged([16]u8, void) = .empty, // their ids, under `lock`: a reader waits for them
 
-    /// The most exports converting at once; one more is converted on the caller's thread (the engine slows down, not memory).
+    /// The most exports converting at once; one more converts on the caller's thread.
     pub const max_building: u32 = 2;
 
     /// A producer over `source`: attaches the link when `opts.link` is set, makes the dump dir when `opts.dump` is.
@@ -258,8 +258,7 @@ pub const Produce = struct {
         p.record(id, tokens, saved.cap.state) catch |err| p.failed(id, @errorName(err));
     }
 
-    /// `exported` with the state's conversion off the caller's thread (the engine's): the lanes keep decoding while the parts are
-    /// built, a reader waits for them, and a file-only producer or one already converting `max_building` exports converts inline.
+    /// `exported` with the conversion on its own thread (a file-only producer or a full set of converters: inline).
     pub fn exportedBg(p: *Produce, id: [16]u8, tokens: []const u32, saved: *Saved) void {
         if ((p.opts.link == null and !p.opts.http) or p.building.load(.acquire) >= max_building) return p.exported(id, tokens, saved);
         const own = p.gpa.dupe(u32, tokens) catch return p.exported(id, tokens, saved);
