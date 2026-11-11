@@ -1,8 +1,4 @@
-//! The decoder's side of the HTTP hand-off transport: after the trigger, `GET <producer>/v1/handoff/<id>` is the producer's
-//! replies to OPEN and every PULL as one body (handoff_file.zig), read straight into `handoff_file.pullFrom` through a
-//! `reply_area` buffer, so the export is checked frame by frame as it arrives and never held whole here. The key is sent as a
-//! Bearer token, as the trigger sends it. A finished or failed fetch releases the producer's copy (`DELETE`, best effort: the
-//! producer expires what it holds either way).
+//! Decoder side of the HTTP hand-off: `GET <producer>/v1/handoff/<id>` streams into `handoff_file.pullFrom`.
 const std = @import("std");
 const fabric = @import("fabric");
 const file = @import("handoff_file.zig");
@@ -20,10 +16,7 @@ pub const Source = struct {
     /// the whole fetch's time
     budget_ns: u64 = 60 * std.time.ns_per_s,
 
-    /// The hand-off `id` pulled into `sink` as the file replay checks it (handoff_file.pullFrom). Besides that reader's errors:
-    /// `NotHttp` (the URL is not plain http), `Unauthorized` (401), `NotHeld` (404), `Refused` (409; `reason` has the producer's
-    /// words), `BadStatus` (any other), `NoLength` (no Content-Length or an encoding), `TimedOut` and `Closed` (the budget ran out,
-    /// or the server is stopping), and the HTTP client's own errors (a producer that is down).
+    /// Pulls hand-off `id` into `sink` as the file replay does; adds NotHttp, Unauthorized, NotHeld, Refused, TimedOut.
     pub fn pull(s: Source, arena: std.mem.Allocator, id: [16]u8, expect: decoder.Expect, sink: decoder.Sink, reason: *decoder.Reason) anyerror!decoder.Pulled {
         var x: Exchange = .{ .s = s, .id = id, .op = .get, .arena = arena, .expect = expect, .sink = sink, .reason = reason };
         try x.bounded(s.budget_ns);

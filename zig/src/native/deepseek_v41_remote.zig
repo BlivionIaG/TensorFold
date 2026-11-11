@@ -1,9 +1,4 @@
-//! #1594 step 2b for DeepSeek V4.1 on the Mac: a prompt prefix the GB10 pair prefilled, pulled over an MKVH protocol 2 link
-//! and landed in a blank Snapshot of the served lane (the state `Backend.prefill` restores a kept prompt state from).
-//!
-//! The export is bf16 and f32 parts, not Metal bytes (docs/deepseek-v41-handoff.md): `Landing` packs them into the Snapshot's
-//! buffers with the engine's own quantisers, the drafter's rings are dropped, and `Model.snapshotSeal` sets the cursor and
-//! Engram record. An imported prefix is outside the exactness contract and is kept only as a remote state.
+//! DeepSeek V4.1 on the Mac: a prefix prefilled elsewhere is pulled over MKVH protocol 2 into a blank Snapshot.
 const std = @import("std");
 const tf = @import("tensorfold");
 const api = @import("engine_api");
@@ -113,8 +108,7 @@ pub fn parseIds(a: std.mem.Allocator, text: []const u8) ![]u32 {
     return out.toOwnedSlice(a);
 }
 
-/// A hand-off file: the library's blob, or a producer's stream (`<id>.mkvh2`, with the exported prefix's ids in `<id>.tokens.json`
-/// beside it) replayed through the decoder's checks for `checkpoint`.
+/// A hand-off file: the library's blob or a producer stream (`<id>.mkvh2`, `<id>.tokens.json`) for `checkpoint`.
 pub fn loadFile(a: std.mem.Allocator, io: std.Io, path: []const u8, checkpoint: []const u8) !ho.blob.Blob {
     const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(8 << 30));
     if (!std.mem.endsWith(u8, path, ho.file.extension)) return ho.blob.Blob.parse(a, bytes);
@@ -127,9 +121,7 @@ pub fn loadFile(a: std.mem.Allocator, io: std.Io, path: []const u8, checkpoint: 
     };
 }
 
-/// TF_DSV41_HANDOFF_FILE: a hand-off file (families/deepseek_v41/handoff/blob.zig) as the remote source, with no network:
-/// a prompt that extends the file's tokens gets that prefix landed from it; any other prompt is prefilled here. It runs the
-/// lane host's own remote path (`wants`, `fill`, the restore in `Backend.prefill`, `drop`, the keep rule) against a file.
+/// TF_DSV41_HANDOFF_FILE: a hand-off file as the remote source with no network; a prompt extending its tokens uses it.
 pub const FileSource = struct {
     gpa: std.mem.Allocator,
     model: *ds.Model,

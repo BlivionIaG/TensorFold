@@ -1,5 +1,4 @@
-//! GET and DELETE /v1/handoff/<id> over real sockets: the stream is the engine's bytes under a Content-Length, the key gate and
-//! its scopes run first, an id is 32 hex digits and never a path, and an engine that holds nothing answers 404.
+//! GET and DELETE /v1/handoff/<id> over real sockets: Content-Length stream, key gate first, hex ids, 404 if empty.
 const std = @import("std");
 const api = @import("engine_api");
 const server = @import("server.zig");

@@ -26,8 +26,7 @@ pub const ResumePeek = struct { ctx: *anyopaque, at: *const fn (ctx: *anyopaque,
 /// The family's state after `at` prompt tokens, computed by another machine: never kept, never the engine's own.
 pub const Filled = struct { saved: pc.Saved, at: u32 };
 
-/// The link name that stands for the server's own HTTP port: `--mcdma-produce http` serves hand-off exports on it, and
-/// `--prefill-from URL --mcdma-link http` fetches them from `URL` (no ConnectX link; DeepSeek V4.1 only).
+/// Link name for the server's own HTTP port, used by `--mcdma-produce http` and `--prefill-from URL --mcdma-link http`.
 pub const http_link = "http";
 
 /// serve --prefill-from URL (the GB10 server) and --mcdma-link NAME (mcdma-rpcd's connect link): both, or neither.

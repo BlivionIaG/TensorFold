@@ -1,8 +1,4 @@
-//! A hand-off's landing zone on the resident model: a blank Snapshot an importer writes into, and the seal that makes it
-//! restorable by `snapshotRestore` (the same path a kept prompt state resumes through).
-//!
-//! Apple silicon buffers are unified memory, but a Snapshot is a host copy (model_lifecycle.snapshotSave), so the importer
-//! writes plain host slices: nothing here touches a slot a stream is using, and a failed import drops the snapshot.
+//! A blank host Snapshot an importer writes into, and the seal that makes it restorable by `snapshotRestore`.
 const std = @import("std");
 const kv = @import("kv.zig");
 const engram = @import("engram.zig");
@@ -28,8 +24,7 @@ pub fn blank(m: *Model) !*Snapshot {
     return snap;
 }
 
-/// The imported state stands after `upto` tokens: position, the Engram record, and taps that carry no rows (the drafter has
-/// no conditioning from a prefix this engine did not compute; every token is still verified).
+/// Stands the imported state after `upto` tokens: position, Engram record, and taps without rows.
 pub fn seal(m: *const Model, snap: *Snapshot, tokens: []const u32, upto: u32) !void {
     if (upto == 0 or upto > tokens.len) return error.InvalidPrefix;
     if (upto > m.caches[0].plan.capacity) return error.SnapshotOutOfRange;

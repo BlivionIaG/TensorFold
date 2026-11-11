@@ -46,8 +46,7 @@ pub const Target = struct {
         replays: ?*const fn (ptr: *anyopaque, list: []const Final) anyerror!void = null,
         /// Engram reads ahead of the next window (TF_DSV41_ENGRAM_WARM); reads only, window bits are unaffected.
         warm: ?*const fn (ptr: *anyopaque, asks: []const Warm) void = null,
-        /// The next `prefill` of the slot calls `cut` once the slot stands at the prompt's last-but-one token (the hand-off's
-        /// export point); null disarms. A prompt that never stands there leaves it uncalled. null fn: no such point.
+        /// The slot's next `prefill` calls `cut` at the prompt's last-but-one token (export point); null disarms.
         arm: ?*const fn (ptr: *anyopaque, slot: u32, cut: ?Cut) void = null,
     };
 

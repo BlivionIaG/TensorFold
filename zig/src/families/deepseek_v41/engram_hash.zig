@@ -130,8 +130,7 @@ pub const History = struct {
     }
 };
 
-/// The GPU history record (`EngramHistory`: three i32 tail slots then the count, as four words) after `tokens[0..upto]`:
-/// the last three COMPRESSED ids, newest first, then how many exist (3 at most). A restored prefix sets it directly.
+/// The GPU history record after `tokens[0..upto]`: last three compressed ids newest first, then the count.
 pub fn resumeRecord(map: TokenMap, tokens: []const u32, upto: u32) ![4]u32 {
     if (upto > tokens.len) return error.InvalidPrefix;
     var record: [4]u32 = .{ 0, 0, 0, @min(upto, 3) };

@@ -166,8 +166,7 @@ pub const Lanes = struct {
         try x.pass.ingest(st.slot, start + span.skip, taps, mapped[0..span.count]);
     }
 
-    /// A hand-off's export point (core/lane_export.zig): the stream's mark hook, called where the target stands after the
-    /// prompt's tokens but the last (this backend cuts no chunks: the target calls it at its own cut).
+    /// A hand-off's export point: the stream's mark hook, called one token before the prompt's end.
     const Cut = struct {
         s: *Stream,
         at: u32,

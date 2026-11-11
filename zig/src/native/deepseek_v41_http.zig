@@ -1,8 +1,4 @@
-//! DeepSeek V4.1 on the Mac with no ConnectX link: `--prefill-from URL --mcdma-link http` asks the GB10 server at URL to prefill
-//! (the same trigger as over MCDMA), then fetches the export from `URL/v1/handoff/<id>` (the producer started with
-//! `--mcdma-produce http`) and lands it in a blank Snapshot through the same sink as `TF_DSV41_HANDOFF_FILE`
-//! (families/deepseek_v41/handoff_file.zig `pullFrom`: manifest, token and checkpoint checks, every frame checksummed, nothing left
-//! over). The export is read frame by frame as it arrives, never held whole. Any failure leaves the prompt to the local prefill.
+//! DeepSeek V4.1 without ConnectX: `--prefill-from URL --mcdma-link http` triggers a remote prefill and streams it in.
 const std = @import("std");
 const tf = @import("tensorfold");
 const api = @import("engine_api");
@@ -113,7 +109,7 @@ pub const Link = struct {
     url: []u8,
     base: []u8,
 
-    /// `f.url` is the GB10 server (its POST /v1/completions triggers, its GET /v1/handoff/<id> serves); `id` names the checkpoint.
+    /// `f.url` is the GB10 server (POST /v1/completions triggers, GET /v1/handoff/<id> serves); `id` is the checkpoint.
     pub fn start(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, f: Flags, id: []const u8) !*Link {
         const l = try gpa.create(Link);
         errdefer gpa.destroy(l);

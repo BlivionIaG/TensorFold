@@ -1,5 +1,4 @@
-//! The hand-off file: written from an export, read back through the decoder's checks into the library's importer, byte for byte
-//! what a direct import gives; and every way a file can be wrong is refused by the error the link's decoder would give.
+//! The hand-off file round-trips an export into the importer byte for byte; bad files are refused as the link would.
 const std = @import("std");
 const fabric = @import("fabric");
 const plan = @import("handoff/plan.zig");

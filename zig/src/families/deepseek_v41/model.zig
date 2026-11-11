@@ -235,7 +235,7 @@ pub const Model = struct {
     pub fn snapshotRestore(m: *Model, slot: u32, snap: *const Snapshot) !void {
         return model_lifecycle.snapshotRestore(m, slot, snap);
     }
-    /// A zeroed Snapshot an importer fills (model_import.zig), and the seal that makes it restorable after `upto` tokens.
+    /// A zeroed Snapshot an importer fills (model_import.zig), sealed restorable after `upto` tokens.
     pub fn snapshotBlank(m: *Model) !*Snapshot {
         return model_import.blank(m);
     }

@@ -1,7 +1,4 @@
-//! The HTTP hand-off transport over loopback: a fake producer serves a real export's stream (the producer's own `Replies`) with
-//! the headers and statuses the server's `/v1/handoff/<id>` route gives, and the real decoder code fetches it and lands it in a
-//! synthetic Snapshot's buffers through `landing.Landing`, the sink the Mac's lane uses. Every way the exchange can go wrong
-//! is refused by name and lands nothing the caller keeps.
+//! The HTTP hand-off over loopback: a fake producer serves a real export stream and every failure is refused by name.
 const std = @import("std");
 const fabric = @import("fabric");
 const metal = @import("handoff/metal.zig");

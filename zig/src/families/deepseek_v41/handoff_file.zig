@@ -1,11 +1,4 @@
-//! A hand-off as a byte stream: a file (opt-in TF_DSV41_HANDOFF_DUMP on the producer) or an HTTP body (`GET /v1/handoff/<id>`),
-//! for moving one between machines with no MCDMA link.
-//!
-//! The stream is the producer's replies, byte for byte, to a decoder's OPEN and then each PULL: one MKVH protocol 2 MANIFEST
-//! message, then every DATA frame in order, each message a 128-byte header followed by `nbytes` of payload (so the stream
-//! delimits itself). `Replies` runs the real `producer.Responder` over an export one message at a time; `pullFrom` is
-//! `fabric.decoder.pull` reading the same messages from any reader: the same checks in the same order, the rows landed in
-//! the same `Sink`, whether they come from memory, a file or a socket.
+//! A hand-off as a byte stream (file or HTTP body): the producer's MKVH protocol 2 replies to OPEN and each PULL.
 const std = @import("std");
 const fabric = @import("fabric");
 const wire = fabric.wire;
@@ -14,7 +7,7 @@ const producer = fabric.producer;
 const decoder = fabric.decoder;
 
 pub const extension = ".mkvh2";
-/// The reply area a link of 4 MiB segments gives the responder: frames are planned and cut for it, so no message is longer.
+/// The reply area of a link of 4 MiB segments; frames are planned and cut for it, so no message is longer.
 pub const reply_area = 4 << 20;
 
 /// `<id as 32 hex digits>.mkvh2`.
@@ -30,8 +23,7 @@ const Capture = struct {
     }
 };
 
-/// One export's stream, a message at a time through one reply area: the export itself is only read (its frames are planned on a
-/// copy of its header), so any number of streams may read one export at once.
+/// One export's stream, a message at a time; the export is only read, so many streams may read one export at once.
 pub const Replies = struct {
     gpa: std.mem.Allocator,
     exp: producer.Export,
@@ -95,7 +87,7 @@ pub const Replies = struct {
     }
 };
 
-/// `exp` as the replies a responder gives its decoder; `exp` itself is left as it was (its frames are planned on a copy).
+/// `exp` as the replies a responder gives its decoder; `exp` itself is left unchanged.
 pub fn write(gpa: std.mem.Allocator, w: *std.Io.Writer, exp: *const producer.Export, model: []const u8, tp_rank: u64, tp_size: u64) !void {
     const replies = try Replies.open(gpa, exp, model, tp_rank, tp_size);
     defer replies.deinit();
@@ -129,9 +121,7 @@ fn next(r: *std.Io.Reader, most: u16) Error!Message {
     return .{ .h = h, .payload = wire.body(msg, h) };
 }
 
-/// The hand-off `r` carries pulled into `sink` as `fabric.decoder.pull` would from a producer: the manifest must be for this
-/// checkpoint, prompt and shard; every frame arrives in order, whole, checksummed; nothing may follow the last. `r` needs a
-/// buffer of `reply_area` bytes (or to hold the whole stream), and its end is the stream's end.
+/// Pulls hand-off `r` into `sink` with `fabric.decoder.pull`'s checks; `r` needs a `reply_area` buffer.
 pub fn pullFrom(arena: std.mem.Allocator, r: *std.Io.Reader, expect: decoder.Expect, sink: decoder.Sink, reason: *decoder.Reason) Error!decoder.Pulled {
     const first = try next(r, expect.protocol);
     switch (first.h.kind) {
