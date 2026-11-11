@@ -117,6 +117,16 @@ built on it are kept (marked remote). The drafter's rings are not in a Snapshot 
 `ring` parts are read and dropped; the drafter has no conditioning rows until local forwards fill the taps, which can lower
 draft acceptance and nothing else.
 
+The source decides per prompt (`core/lane_remote_route.zig`, kept by both Mac pulls, see
+[the setup page](deepseek-v41-disaggregated.md#several-requests-and-when-a-prompt-goes-to-the-pair-at-all)): `wants` returns a
+verdict, and `queue` passes it the number of streams decoding. The pair takes one pull at a time, kept by a try-lock gate and
+no longer by a mutex held across the pull: a prompt that finds it busy is prefilled on the Mac, unless the pull under way ends
+soon enough that waiting still pays (a wait already begun ends when it stops paying); a stream decoding on the Mac sends the
+prompt to the pair even when the pair is no faster; otherwise the pull must be predicted no slower than the Mac's prefill, by
+running averages the pull and the lane host feed (`Source.measured`). A `busy`, `slower` or `down` verdict holds for now and
+the prompt is weighed again; `small` and `off` are final. Nothing changes on the wire. `TF_PREFILL_ROUTE=always` pulls every
+prompt past `TF_PREFILL_MIN`, queued behind any pull under way, as it used to.
+
 ### How much of the prompt is handed over
 
 The prefix is the prompt less its **tail**, `TF_PREFILL_TAIL` tokens (default 1): the Mac asks the producer for the whole prompt

@@ -185,6 +185,31 @@ seconds, macOS un-wires an idle model after one to two seconds, and the first pa
 to re-wire it. The keepalive ticks while a hand-off is awaited. A quiet server (a request after more than a few seconds of
 idleness) can still pay that re-wire once.
 
+### Several requests, and when a prompt goes to the pair at all
+
+The pair prefills one prompt at a time, and the Mac holds one hand-off at a time. `TF_PREFILL_ROUTE=auto` (the default)
+decides each prompt that reaches `TF_PREFILL_MIN` when it is queued, and again while it waits for a lane:
+
+* **The pair is busy with another prompt**: the prompt is prefilled on the Mac at once, as a short prompt is, unless the pull
+  under way ends so soon that waiting for it and then pulling still beats the Mac's own prefill. It is not queued behind the
+  pull with the Mac idle (a mutex held across the whole pull did that).
+* **A stream is decoding on the Mac**: the prompt goes to the pair even if the pair is no faster, because a prompt pass on
+  the Mac would stall that stream for seconds (inter-token latency isolation), unless the pair is busy as above.
+* **Otherwise** it goes to the pair only if the pull is predicted no slower than the Mac's own prefill: the prefix at the
+  pair's measured rate plus the Mac's last-token pass, against the rest of the prompt at the Mac's measured rate. The rates
+  are running averages of the pulls and prompt passes this server timed (a pass under 1024 rows says too little to count;
+  one sample moves a rate by a third to three times at most). Until it has timed its own it assumes 950 tokens a second for
+  the Mac (`TF_PREFILL_LOCAL_TPS`), 1000 for a pull (`TF_PREFILL_REMOTE_TPS`) and 1 s for the last-token pass, the export
+  profile's numbers: with them a lone prompt of under about 19k tokens stays on the Mac, whose prefill is as fast as the
+  pair's there (the pair's gain is the Mac's freedom, not the first token). The pair's rate is learned only from pulls, so
+  a pair that is faster than that (a replay export) is first used when a stream decodes or the prompt is long; set
+  `TF_PREFILL_REMOTE_TPS` to what it does to use it from the start.
+
+The server logs `remote prefill: a prompt of N tokens (M cached) is prefilled here: REASON` once for each reason a prompt
+is kept off the pair for now. `TF_PREFILL_ROUTE=always` restores the old behaviour: every prompt past `TF_PREFILL_MIN` goes
+to the pair, queued behind any pull under way, however long that is. Not yet measured on the machines: two concurrent 8k
+prompts, and the rates the average settles at.
+
 ## 8. Verify
 
 A reply with a long prompt carries, in its `tensorfold` block, `"exact_mode": "remote_prefix"`, `remote_prefix` and
