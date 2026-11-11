@@ -57,6 +57,7 @@ pub fn save(s: *Store, slot: *Slot, bounded: Bounded, ids: []const i32, tag: u32
     }
     try s.trimRam(ins.id);
     _ = try s.enforce();
+    if (s.policy.write_through) s.writeThrough(ins.id);
     return ins.id;
 }
 

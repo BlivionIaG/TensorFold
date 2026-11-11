@@ -30,7 +30,8 @@ pub const Head = extern struct {
     npages: u32,
     nseg: u32,
     ndigest: u32,
-    _pad: u32 = 0,
+    /// several ranks: the entry's logical charge in 4 KiB units, alike on every rank (a restart charges it); else 0
+    charge_kib: u32 = 0,
     pos: u64,
     total: u64 = 0,
 
