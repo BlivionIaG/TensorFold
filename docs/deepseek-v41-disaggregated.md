@@ -185,6 +185,15 @@ seconds, macOS un-wires an idle model after one to two seconds, and the first pa
 to re-wire it. The keepalive ticks while a hand-off is awaited. A quiet server (a request after more than a few seconds of
 idleness) can still pay that re-wire once.
 
+### Several requests at once
+
+The pair prefills one prompt at a time, and the Mac holds one hand-off at a time. A request that arrives while another
+request's hand-off is under way is not queued behind it with the Mac idle: it is prefilled on the Mac at once, as a prompt
+under `TF_PREFILL_MIN` is, unless the hand-off under way is so near its end that waiting for it and then pulling still beats the
+Mac's own prefill (estimated at 1.0k tokens a second on each side and 1 s of pull, landing and last token).
+`TF_PREFILL_ROUTE=always` restores the one-at-a-time queue: every long prompt waits its turn for the pair, however long
+that is. The measurement of two concurrent 8k prompts is on the plan, not in this page yet.
+
 ## 8. Verify
 
 A reply with a long prompt carries, in its `tensorfold` block, `"exact_mode": "remote_prefix"`, `remote_prefix` and
