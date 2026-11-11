@@ -24,7 +24,7 @@ pub const Exporter = struct {
 };
 
 /// The host's held exports, when it serves them over HTTP (the engine's `handoff` hook).
-pub fn serving(ctx: *anyopaque) ?Serve {
+pub fn serveHook(ctx: *anyopaque) ?Serve {
     const h: *LaneHost = @ptrCast(@alignCast(ctx));
     const x = h.exporter orelse return null;
     return x.serve;

@@ -231,16 +231,16 @@ const Left = struct {
 /// Kept states of a fake family whose bytes grow as the 27B's K/V rows (64 KiB a token); `saved` is never read.
 const FakeStates = struct {
     live: usize = 0,
-    fn bytes(_: *anyopaque, at: u32) u64 {
+    pub fn bytes(_: *anyopaque, at: u32) u64 {
         return @as(u64, at) << 16;
     }
-    fn save(ptr: *anyopaque, _: ?*anyopaque, at: u32) anyerror!pc.Saved {
+    pub fn save(ptr: *anyopaque, _: ?*anyopaque, at: u32) anyerror!pc.Saved {
         const f: *FakeStates = @ptrCast(@alignCast(ptr));
         f.live += 1;
         return @ptrFromInt(@as(usize, at) << 4);
     }
-    fn restore(_: *anyopaque, _: ?*anyopaque, _: pc.Saved) anyerror!void {}
-    fn drop(ptr: *anyopaque, _: pc.Saved) void {
+    pub fn restore(_: *anyopaque, _: ?*anyopaque, _: pc.Saved) anyerror!void {}
+    pub fn drop(ptr: *anyopaque, _: pc.Saved) void {
         const f: *FakeStates = @ptrCast(@alignCast(ptr));
         f.live -= 1;
     }
