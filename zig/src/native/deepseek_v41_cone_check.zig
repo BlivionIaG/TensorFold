@@ -83,6 +83,40 @@ fn run(m: *ds.Model, a: std.mem.Allocator, io: std.Io, ids: []const u32, decode_
     return .{ .logits = pre[0], .snap = snap, .picks = picks, .steps = steps, .prefill_s = pre[1] };
 }
 
+/// Five-row verify rounds after the prompt, rolled back to 1-4 rows as the served no-re-feed keep does; digest of all.
+fn rollbackRun(m: *ds.Model, a: std.mem.Allocator, io: std.Io, ids: []const u32, mode: u32, rounds: usize) !struct { [8]u8, usize } {
+    ds.forward_cone.force(m, mode);
+    const pre = try prefill(m, a, io, ids);
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    var pend = argmax(pre[0]);
+    h.update(std.mem.asBytes(&pend));
+    for (0..rounds) |r| {
+        const kept: u32 = 1 + @as(u32, @intCast(r % 4));
+        var feeds: [5]u32 = undefined;
+        feeds[0] = pend;
+        for (feeds[1..], 1..) |*f, k| f.* = @intCast(1000 + (pend * 31 + k * 977 + r * 13) % 100000);
+        m.commitSlot(0) catch {};
+        try m.beginSlot(0);
+        const lg = try m.forwardOn(0, &feeds, .all);
+        h.update(std.mem.sliceAsBytes(lg[0 .. 5 * vocab]));
+        pend = argmax(lg[(kept - 1) * vocab ..][0..vocab]);
+        try m.rollbackSlot(0);
+        try m.restoreRing(0, kept, 5);
+        try m.portKeep(0, kept);
+        m.commitSlot(0) catch {};
+        h.update(std.mem.asBytes(&pend));
+    }
+    for (0..32) |_| {
+        const lg = try m.forward(&[1]u32{pend}, .last);
+        h.update(std.mem.sliceAsBytes(lg));
+        pend = argmax(lg);
+        h.update(std.mem.asBytes(&pend));
+    }
+    var out: [32]u8 = undefined;
+    h.final(&out);
+    return .{ out[0..8].*, m.caches[0].position };
+}
+
 fn diffBytes(want: []const u8, got: []const u8, first: *usize) usize {
     var n: usize = 0;
     for (want, got, 0..) |x, y, i| if (x != y) {
@@ -166,10 +200,15 @@ fn regions(plan: ds.kv.cache.Plan, full: *const Kept, cone: *const Kept) void {
         const bad = diffBytes(full.live[l * ring ..][0..ring], cone.live[l * ring ..][0..ring], &first);
         if (bad != 0) log.info("  live ring layer {d}: {d} bytes differ, first slot {d}", .{ l, bad, first / cache.ring_stride });
     }
-    const tail = @as(usize, plan.layers) * ring;
+    const part = cache.Plan.partialOffset(plan);
     var first: usize = 0;
-    const bad = diffBytes(full.live[tail..], cone.live[tail..], &first);
-    if (bad != 0) log.info("  live scratch past the rings: {d} bytes differ, first at {d}", .{ bad, first });
+    const pbad = diffBytes(full.live[part..][0..cache.Plan.partialBytes(plan)], cone.live[part..][0..cache.Plan.partialBytes(plan)], &first);
+    if (pbad != 0) log.info("  live partial scratch: {d} bytes differ, first at {d}", .{ pbad, first });
+    for (cache.owners, 0..) |owner, o| {
+        const at = plan.captureOffset() + o * cache.captureBytes();
+        const bad = diffBytes(full.live[at..][0..cache.captureBytes()], cone.live[at..][0..cache.captureBytes()], &first);
+        if (bad != 0) log.info("  live capture owner layer {d}: {d} of {d} bytes differ, first slot {d}", .{ owner, bad, cache.captureBytes(), first / (2 * cache.capture_width * 4) });
+    }
 }
 
 fn tokens(a: std.mem.Allocator, io: std.Io, n: usize) ![]u32 {
@@ -211,6 +250,11 @@ pub fn runSizes(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const 
         const ids = try tokens(a, io, n);
         const full = try run(m, a, io, ids, decode_steps, 0);
         for ([_]u32{ 1, 2 }) |mode| compare(m, n, mode, full, try run(m, a, io, ids, decode_steps, mode), decode_steps);
+        const rb_full = try rollbackRun(m, a, io, ids, 0, 24);
+        for ([_]u32{ 1, 2 }) |mode| {
+            const rb = try rollbackRun(m, a, io, ids, mode, 24);
+            log.info("n={d} mode {d}: rollback rounds digest full {x} cone {x} ({s}), position {d}/{d}", .{ n, mode, rb_full[0], rb[0], if (std.mem.eql(u8, &rb_full[0], &rb[0])) "equal" else "DIFFER", rb_full[1], rb[1] });
+        }
         // the second timing of each path, state warm
         const full2 = try run(m, a, io, ids, 1, 0);
         for ([_]u32{ 1, 2 }) |mode| {
