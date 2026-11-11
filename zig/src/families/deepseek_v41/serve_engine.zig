@@ -88,8 +88,7 @@ pub const Served = struct {
         return openExporting(gpa, io, dir, assets, drafts, context, prompt_cache_gib, null, &refused);
     }
 
-    /// `open` that also exports hand-offs: over `produce`'s link (`--mcdma-produce`) and/or into TF_DSV41_HANDOFF_DUMP's folder.
-    /// `error.ExportRefused` with `problem` set when this configuration cannot export.
+    /// `open` that also exports hand-offs (over `produce`'s link or TF_DSV41_HANDOFF_DUMP); else `ExportRefused`.
     pub fn openExporting(gpa: Allocator, io: std.Io, dir: []const u8, assets: []const u8, drafts: bool, context: ?i64, prompt_cache_gib: ?f64, produce: ?[]const u8, problem: *[]const u8) !*Served {
         const m = try model.Model.open(gpa, io, dir, assets, .{ .drafts = drafts, .own_prefill = (try model.ownPrefillEnv()), .layers = try model.layersEnv(gpa), .prompt_cache_gib = prompt_cache_gib });
         errdefer m.close();
@@ -202,10 +201,9 @@ pub const Served = struct {
         return s;
     }
 
-    /// The hand-off exporter when `--mcdma-produce` or TF_DSV41_HANDOFF_DUMP asks for one; `error.ExportRefused` with `problem` set
-    /// when this engine's configuration cannot export.
+    /// The hand-off exporter when `--mcdma-produce` or TF_DSV41_HANDOFF_DUMP asks; `ExportRefused` sets `problem`.
     fn exportOpen(s: *Served, dir: []const u8, link: ?[]const u8, problem: *[]const u8) !?*xl.Export {
-        const dump = std.c.getenv(xl.dump_env) != null;
+        const dump = (try xl.dumpDir(problem)) != null;
         if (link == null and !dump) return null;
         const checkpoint = try api.LaneHost.Remote.checkpointId(s.arena.allocator(), s.io, dir);
         return (try xl.Export.open(s.gpa, s.io, s.m, s.sched != null, link, checkpoint, problem)) orelse error.ExportRefused;

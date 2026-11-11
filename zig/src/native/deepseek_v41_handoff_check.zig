@@ -1,13 +1,4 @@
-//! TF_DSV41_HANDOFF_CHECK: land a hand-off on the loaded model with no network, then measure it against a local prefill.
-//!
-//! `roundtrip` runs the Metal lane's own prefill, exports that slot through the library's Metal-to-neutral direction as a
-//! hand-off file, lands the file in a blank Snapshot exactly as a pull does, and compares the continuation with the original
-//! (the loss is the fp8/fp4 requantisation of a dequantised row, and the carry). Any other value names a hand-off file (the
-//! library's blob: tokens, protocol 2 manifest, parts; a synthetic one or a dump of a producer's export): it lands the same
-//! way and is compared with a local prefill of the same prompt. The full prompt comes from TF_DSV41_HANDOFF_TOKENS (decimal
-//! ids, white space or commas): the file covers its first `upto` tokens and at least one more must follow. A remote prefix
-//! is outside the exactness contract: agreement is reported, not required. TF_DSV41_HANDOFF_DUMP=<path> keeps the round trip's
-//! file, which TF_DSV41_HANDOFF_FILE then serves as the remote source of a later (or this) server.
+//! TF_DSV41_HANDOFF_CHECK: lands a hand-off (`roundtrip` or a file) offline and compares it to a local prefill.
 const std = @import("std");
 const tf = @import("tensorfold");
 const ds = tf.deepseek_v41;
@@ -17,8 +8,8 @@ const remote = @import("deepseek_v41_remote.zig");
 const vocab = 129280;
 const log = std.log.scoped(.handoff_check);
 
-fn envText(name: [*:0]const u8) ?[]const u8 {
-    return if (std.c.getenv(name)) |v| std.mem.span(v) else null;
+fn envText(name: [:0]const u8) ?[]const u8 {
+    return (@import("sys").environment.Process{}).get(name);
 }
 
 fn argmax(row: []const f32) u32 {
@@ -58,8 +49,7 @@ fn feed(m: *ds.Model, a: std.mem.Allocator, ids: []const u32, last: bool) !?[]f3
     return null;
 }
 
-/// `steps` greedy tokens after `first_logits`; `forced` (a reference stream) is fed instead of the run's own picks. Returns the
-/// logits of every step (steps + 1 rows, the first being `first_logits`) and the run's own picks.
+/// `steps` greedy tokens after `first_logits` (`forced` replaces own picks); returns steps + 1 logit rows and picks.
 fn decode(m: *ds.Model, a: std.mem.Allocator, first_logits: []const f32, forced: ?[]const u32, steps: usize, picks: []u32) ![]f32 {
     const rows = try a.alloc(f32, (steps + 1) * vocab);
     @memcpy(rows[0..vocab], first_logits);
@@ -185,8 +175,7 @@ fn exportNative(a: std.mem.Allocator, m: *ds.Model, native: *const ds.Model.Snap
     return ho.export_metal.build(a, .{ .upto = tokens.len }, view);
 }
 
-/// `parts` as a producer's replies to a decoder (`GET /v1/handoff/<id>`'s body; `TF_DSV41_HANDOFF_DUMP=<path>.mkvh2`): the
-/// MANIFEST for `checkpoint` and `tokens`, then every part as a checksummed DATA frame.
+/// `parts` as a producer's replies (`GET /v1/handoff/<id>` body): MANIFEST for `checkpoint`/`tokens`, then DATA frames.
 fn stream(a: std.mem.Allocator, checkpoint: []const u8, tokens: []const u32, parts: []const ho.export_cuda.Part) ![]const u8 {
     const built = try tf.deepseek_v41_handoff_p2.layers(a, parts);
     const exp: tf.fabric.producer.Export = .{ .handoff = @splat(0x5a), .tokens = tokens, .first_token = 0, .tokens_per_row = 1, .layers = built.layers, .sources = built.sources };
@@ -197,7 +186,7 @@ fn stream(a: std.mem.Allocator, checkpoint: []const u8, tokens: []const u32, par
 
 const Part = enum { swa, carry, comp, ixk };
 
-/// `native` with only `part`'s regions replaced by the landed hand-off's: which part of the import carries the difference.
+/// `native` with only `part`'s regions replaced by the landed hand-off's: shows which part carries the difference.
 fn graft(m: *ds.Model, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, part: Part, upto: u32) !*ds.Model.Snapshot {
     const out = try m.snapshotBlank();
     errdefer m.snapshotDrop(out);
@@ -226,8 +215,7 @@ fn graft(m: *ds.Model, native: *const ds.Model.Snapshot, landed: *ds.Model.Snaps
     return out;
 }
 
-/// TF_DSV41_HANDOFF_BISECT: the native state with one part kind (window rings, carries, pool rows, index keys) taken from the
-/// hand-off and the rest the local prefill's own, each compared with the local run: which part moves the logits.
+/// TF_DSV41_HANDOFF_BISECT: one part kind from the hand-off, the rest from the local prefill, compared on logits.
 fn bisect(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, prompt: []const u32, upto: u32, ref_picks: []const u32, ref: []const f32, steps: usize) !void {
     try compareRows(m, a, native, landed, upto);
     inline for (comptime std.meta.tags(Part)) |part| {
@@ -245,9 +233,7 @@ fn bf(h: u16) f64 {
     return @floatCast(@as(f32, @bitCast(@as(u32, h) << 16)));
 }
 
-/// The landed state's rows against the native ones, both read back as the hand-off's bf16 parts: per part kind, the relative
-/// RMS error of each part (`|landed - native|` over `|native|`), its mean and its worst, with the layer that has it. Rows that
-/// are one ring slot or one position out of place would show here as errors of order 1.
+/// Relative RMS error of each landed part vs the native one (bf16 parts), per kind, with mean, worst and its layer.
 fn compareRows(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, upto: u32) !void {
     const want = try ho.export_metal.build(a, .{ .upto = upto }, remote.packedOf(m, @constCast(native)));
     const got = try ho.export_metal.build(a, .{ .upto = upto }, remote.packedOf(m, landed));

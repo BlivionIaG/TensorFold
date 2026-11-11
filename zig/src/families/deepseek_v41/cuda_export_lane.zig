@@ -1,7 +1,4 @@
-//! The lane host's hand-off `Exporter` for the DeepSeek-V4.1 CUDA engine: `--mcdma-produce LINK` and TF_DSV41_HANDOFF_DUMP.
-//!
-//! A handoff request's stream is armed at its prompt's cut (draft/lanes.zig `Cut`, target.zig `arm`); the target calls the
-//! lane host's mark hook there, which reaches `save` and `exported` below on the engine thread, the slot standing at the cut.
+//! Hand-off `Exporter` of the DeepSeek-V4.1 CUDA engine: `--mcdma-produce LINK` and TF_DSV41_HANDOFF_DUMP.
 const std = @import("std");
 const api = @import("engine_api");
 const model = @import("cuda_model.zig");
@@ -13,18 +10,25 @@ const Handoff = api.LaneHost.Export.Handoff;
 const log = std.log.scoped(.dsv41);
 
 /// Where the exports are written when set: a directory (TF_DSV41_HANDOFF_DUMP).
-pub const dump_env = "TF_DSV41_HANDOFF_DUMP";
+pub const dump_env: [:0]const u8 = "TF_DSV41_HANDOFF_DUMP";
+
+/// The dump directory, or null when unset or blank; a malformed value sets `problem` and fails.
+pub fn dumpDir(problem: *[]const u8) !?[]const u8 {
+    const env = @import("sys").environment;
+    return env.path(dump_env, (env.Process{}).get(dump_env)) catch {
+        problem.* = "TF_DSV41_HANDOFF_DUMP is malformed: it must be a directory path without control characters";
+        return error.InvalidEnvironment;
+    };
+}
 
 pub const Export = struct {
     gpa: std.mem.Allocator,
     source: gpu.Source,
     produce: *serve.Produce,
 
-    /// The exporter for `m`, or null with `problem` set (what to change). `link`: `--mcdma-produce`'s name, or `http` to serve
-    /// the exports on the server's own port; the dump directory comes from TF_DSV41_HANDOFF_DUMP. With neither, no exporter
-    /// (null, no problem).
+    /// The exporter for `m`, or null with `problem` set; `link` is a `--mcdma-produce` name or `http`.
     pub fn open(gpa: std.mem.Allocator, io: std.Io, m: *model.Model, pieces: bool, link: ?[]const u8, checkpoint: []const u8, problem: *[]const u8) !?*Export {
-        const dump: []const u8 = if (std.c.getenv(dump_env)) |v| std.mem.span(v) else "";
+        const dump: []const u8 = (try dumpDir(problem)) orelse "";
         if (link == null and dump.len == 0) return null;
         if (gpu.refusal(m, pieces)) |why| {
             problem.* = why;
@@ -85,7 +89,7 @@ pub const Export = struct {
         return cx.estimate(at);
     }
 
-    /// The active slot's state, read back: the stream is armed on the engine thread at its cut, the only slot standing there.
+    /// The active slot read back; the stream is armed on the engine thread at its cut, so only one slot stands there.
     fn save(ptr: *anyopaque, _: ?*anyopaque, at: u32) anyerror!pc.Saved {
         return @ptrCast(try self(ptr).produce.save(at));
     }
