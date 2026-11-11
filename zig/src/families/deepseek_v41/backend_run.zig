@@ -445,6 +445,7 @@ pub fn tree(ptr: *anyopaque, s: *Stream, gpa: std.mem.Allocator) anyerror!?lanes
 
 pub fn release(ptr: *anyopaque, s: *Stream) void {
     const b = self(ptr);
+    pass.dropFeed(s); // a split feed the pass never started on
     if (b.by.get(s)) |i| {
         if (b.held[i].len > 0) b.gpa.free(b.held[i]);
         b.held[i] = &.{};
