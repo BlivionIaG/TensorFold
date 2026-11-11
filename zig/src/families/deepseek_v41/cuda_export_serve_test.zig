@@ -248,6 +248,36 @@ test "an HTTP producer streams a held export to any reader; a release or an expi
     p.stop();
 }
 
+test "a producer with a spill directory holds the export on file-backed pages and serves the same bytes" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const dir = try std.fs.path.join(a, &.{ try tmp.dir.realPathFileAlloc(io, ".", a), "spill", "made" }); // made on open
+    const fake = try Fake.init(2000);
+    defer fake.deinit();
+    var problem: []const u8 = "";
+    const p = try serve.Produce.open(gpa, io, fake.source(), .{ .http = true, .model = model, .ttl_ns = std.time.ns_per_hour, .spill_dir = dir, .spill_min_bytes = 1 }, &problem);
+    defer p.stop();
+    const id: [16]u8 = @splat(0x41);
+    p.exported(id, try tokensOf(a, 2000), try p.save(2000));
+    try std.testing.expectEqual(@as(usize, 1), p.held.count());
+    try std.testing.expect(p.spill.?.live.load(.monotonic) > 0); // the converted parts sit on files
+    var want: std.Io.Writer.Allocating = .init(gpa);
+    defer want.deinit();
+    try file.write(gpa, &want.writer, p.table.get(id).?.ready, model, 0, 1);
+    var why: []const u8 = "";
+    const r = try p.read(id, &why);
+    var got: std.ArrayList(u8) = .empty;
+    defer got.deinit(gpa);
+    try readAll(r, &got);
+    try std.testing.expectEqualSlices(u8, want.written(), got.items);
+    r.close();
+    try std.testing.expect(p.discard(id));
+    try std.testing.expectEqual(@as(u64, 0), p.spill.?.live.load(.monotonic)); // released with the export
+}
+
 test "an HTTP producer's export expires, and one being read outlives its expiry" {
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
