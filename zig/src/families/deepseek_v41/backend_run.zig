@@ -6,6 +6,7 @@ const be = lanes.backend;
 const Stream = lanes.Stream;
 const greedy = @import("greedy.zig");
 const Backend = @import("backend.zig").Backend;
+const pass = @import("backend_prefill.zig");
 const self = Backend.self;
 const slotOf = Backend.slotOf;
 const put = Backend.put;
@@ -444,11 +445,18 @@ pub fn tree(ptr: *anyopaque, s: *Stream, gpa: std.mem.Allocator) anyerror!?lanes
 
 pub fn release(ptr: *anyopaque, s: *Stream) void {
     const b = self(ptr);
+    pass.dropFeed(s); // a split feed the pass never started on
     if (b.by.get(s)) |i| {
         if (b.held[i].len > 0) b.gpa.free(b.held[i]);
         b.held[i] = &.{};
     }
     const entry = b.by.fetchRemove(s) orelse return;
+    // a layer-split feed the pass did not finish is over with the stream; its report stays on the stream
+    if (b.runs[entry.value]) |*run| {
+        run.abort();
+        s.split_report = pass.reportOf(run);
+        b.runs[entry.value] = null;
+    }
     b.model.resetAcceptSlot(entry.value);
     if (entry.value < b.last_depth.len) b.last_depth[entry.value] = 0;
     if (entry.value < b.shallow.len) {

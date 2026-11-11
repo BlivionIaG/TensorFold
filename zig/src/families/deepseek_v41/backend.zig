@@ -6,6 +6,7 @@ const lanes = @import("lanes");
 const be = lanes.backend;
 const Stream = lanes.Stream;
 const greedy = @import("greedy.zig");
+const split_run = @import("split_run.zig");
 
 const RING = 1024;
 
@@ -48,6 +49,8 @@ pub const Backend = struct {
     mtp_cache: [32]?MtpCache = @splat(null),
     /// Each slot's committed tokens after the prompt, for the lookup drafter's matches.
     history: []std.ArrayListUnmanaged(u32),
+    /// Each slot's layer-split prompt pass (backend_prefill.zig) while its stream holds the slot, null otherwise.
+    runs: []?split_run.Run,
     /// What the last verify sampled per row, so a rejected window's re-feed can be compared with it.
     last_sampled: [8]u32 = @splat(0),
     /// The depth each slot's last round RAN -- the adaptive policy's state.
@@ -82,6 +85,8 @@ pub const Backend = struct {
         for (held) |*h| h.* = &.{};
         const history = try gpa.alloc(std.ArrayListUnmanaged(u32), model.lanes);
         for (history) |*h| h.* = .empty;
+        const runs = try gpa.alloc(?split_run.Run, model.lanes);
+        @memset(runs, null);
         const last_depth = try gpa.alloc(u32, model.lanes);
         @memset(last_depth, 0);
         const up_streak = try gpa.alloc(u32, model.lanes);
@@ -122,6 +127,7 @@ pub const Backend = struct {
             .verify_len = try gpa.alloc(u32, model.lanes),
             .held = held,
             .history = history,
+            .runs = runs,
         };
     }
 
@@ -133,6 +139,7 @@ pub const Backend = struct {
         b.gpa.free(b.held);
         for (b.history) |*h| h.deinit(b.gpa);
         b.gpa.free(b.history);
+        b.gpa.free(b.runs);
         b.gpa.free(b.up_streak);
         b.gpa.free(b.keep_pending);
         b.gpa.free(b.keep_ratio);

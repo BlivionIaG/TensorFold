@@ -129,6 +129,8 @@ test {
     _ = @import("families/lfm2_moe/state.zig");
     _ = @import("families/lfm2_moe/dspark_test.zig");
     _ = @import("families/deepseek_v41/metal/glue.zig"); // the launch wrappers' shape refusals, reached by no other test root
+    _ = @import("families/deepseek_v41/model_import.zig"); // the layer-split restore against the engine's own cache offsets
+    _ = @import("families/deepseek_v41/layersplit_gate.zig"); // the layer-split entry from memory rows (Metal buffers)
 }
 
 pub const lane_projection = @import("core/lane_projection.zig");

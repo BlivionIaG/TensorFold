@@ -256,6 +256,14 @@ pub const Model = struct {
     pub fn snapshotSeal(m: *const Model, snap: *Snapshot, tokens: []const u32, upto: u32) !void {
         return model_import.seal(m, snap, tokens, upto);
     }
+    /// Layers [0, cut) of a landed layer-split Snapshot into `slot` (model_import.zig).
+    pub fn snapshotRestoreLayers(m: *Model, slot: u32, snap: *const Snapshot, cut: u32) !void {
+        return model_import.restoreLayers(m, slot, snap, cut);
+    }
+    /// A layer-split chunk: layers `cut`.. over `ids`, entered from the producer's boundary `rows` (model_import.zig).
+    pub fn forwardEntered(m: *Model, slot: u32, ids: []const u32, rows: []const u8, cut: u32) !void {
+        return model_import.forwardEntered(m, slot, ids, rows, cut);
+    }
     pub fn beginSlot(m: *Model, slot: u32) !void {
         return model_lifecycle.beginSlot(m, slot);
     }
