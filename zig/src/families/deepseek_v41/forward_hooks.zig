@@ -12,6 +12,7 @@ const Forward = @import("forward.zig").Forward;
 pub const Prefill = struct {
     plan: *const fn (f: *Forward, p: *buffers.Plan, rows: u32) anyerror!void,
     prompt: *const fn (f: *Forward, ids: []const u32) anyerror!void,
+    promptSplit: *const fn (f: *Forward, ids: []const u32, cut: u32, dst: []u8) anyerror!void, // one layer-split chunk
     promptMulti: *const fn (f: *Forward, segs: []const ft.MultiSeg) anyerror!void,
     finish: *const fn (f: *Forward) anyerror!void,
     finishMulti: *const fn (f: *Forward, slots: []const u32, out: []ft.Replayed) anyerror!void,

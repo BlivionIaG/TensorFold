@@ -13,6 +13,7 @@ test {
     _ = @import("split_stream_test.zig");
     _ = @import("split_run.zig");
     _ = @import("split_feed.zig");
+    _ = @import("cuda_export_early_test.zig");
     _ = @import("kv_prefix_test.zig");
     _ = @import("kv_image_test.zig");
     _ = @import("cuda_export_serve_test.zig");

@@ -457,6 +457,14 @@ pub const Sessions = struct {
         return (try s.resumeHit(prompt, hit)).at;
     }
 
+    /// A layer-split prompt's admission into the empty slot: no entry is looked up or restored (every row runs), the
+    /// pool reserves `n` tokens and `max_new` more as for any request.
+    pub fn beginFresh(s: *Sessions, n: usize, max_new: u64) !void {
+        if (s.f.slot.pos != 0 or s.kx.slot.len != 0) return error.SlotNotEmpty;
+        s.ds_valid[s.cur()] = 0;
+        try s.admit(null, n, max_new);
+    }
+
     /// The longest saved entry strictly prefixing `prompt`; under the exact replay, none short of the cone.
     pub fn find(s: *Sessions, prompt: []const u32) !?sessions.store.Hit {
         const ids = try s.gpa.alloc(i32, prompt.len);

@@ -70,6 +70,8 @@ pub const State = struct {
     cone_id: u64 = 0,
     /// the last prompt's decoder replay was the exact one (the export keeps every ring row)
     replay_exact: bool = false,
+    /// a layer-split chunk's destination (rank 0): the stage's rows the glue `split_rows` fills (`promptSplit`)
+    split_dst: []u8 = &.{},
 
     pub fn deinit(s: *State, gpa: std.mem.Allocator) void {
         s.long.deinit(gpa);
@@ -135,7 +137,11 @@ fn finishMultiFn(f: *Forward, slots: []const u32, out: []Replayed) anyerror!void
     return finishMulti(f, slots, out);
 }
 
-pub const hooks_table: @import("forward_hooks.zig").Prefill = .{ .plan = planFn, .prompt = promptFn, .promptMulti = promptMultiFn, .finish = finishFn, .finishMulti = finishMultiFn, .ahead = aheadFn, .replaying = replayingFn, .deinit = deinitFn };
+fn promptSplitFn(f: *Forward, ids: []const u32, cut: u32, dst: []u8) anyerror!void {
+    return promptSplit(f, ids, cut, dst);
+}
+
+pub const hooks_table: @import("forward_hooks.zig").Prefill = .{ .plan = planFn, .prompt = promptFn, .promptSplit = promptSplitFn, .promptMulti = promptMultiFn, .finish = finishFn, .finishMulti = finishMultiFn, .ahead = aheadFn, .replaying = replayingFn, .deinit = deinitFn };
 
 /// Adds the prefill program's roles at `rows` (the largest segment) to `p`, at every start and segment size it uses.
 pub fn plan(f: *Forward, p: *buffers.Plan, rows: u32) !void {
@@ -172,6 +178,7 @@ pub fn planPrograms(f: *Forward, p: *buffers.Plan, rows: u32, layers: []const u3
         }
     }
     if (state(f).mode == .replay) try planReplay(f, p, rows, layers);
+    if (try splitProduce()) try planSplit(f, p, @min(rows, @as(u32, @intCast(f.opts.prefill_rows))), layers);
     // the multi-segment runs (TF_DSV41_PIECE_RUNS / _REPLAY_RUNS): their own roles and their rows' at `rows`
     var ra = std.heap.ArenaAllocator.init(f.gpa);
     defer ra.deinit();
@@ -179,6 +186,27 @@ pub fn planPrograms(f: *Forward, p: *buffers.Plan, rows: u32, layers: []const u3
     const runs = try block_prefill.planRuns(ra.allocator(), f.cfg, f.widths, image_opts.planOptions(f), if (replay) try encoderLayers(f, layers) else layers, if (replay) try decoderLayers(f, layers) else null, rows, if (replay) .encoder else .whole);
     for (runs.items) |cs| try p.add(cs);
     try @import("index_scratch.zig").plan(p, rows, image_opts.planOptions(f), f.cfg, "");
+}
+
+/// TF_LS_PRODUCE=1: this producer accepts layer-split prefills, so their program's roles are planned.
+pub fn splitProduce() !bool {
+    return @import("sys").environment.read(bool, "TF_LS_PRODUCE", false);
+}
+
+/// The layer-split chunk's program at `rows` for the deepest cut a split takes, at start 0 and the last start.
+fn planSplit(f: *Forward, p: *buffers.Plan, rows: u32, layers: []const u32) !void {
+    const geo = @import("handoff/geometry.zig").release;
+    const deepest = @import("handoff/split.zig").default_cut;
+    if (!@import("handoff/split.zig").cutOk(geo, deepest)) return;
+    const below = try belowCut(layers, deepest);
+    for ([_]u32{ rows, 17 }) |n| {
+        const top = try lastStart(f, below, n, .split);
+        for ([_]i64{ 0, top }) |start| {
+            var ea = std.heap.ArenaAllocator.init(f.gpa);
+            defer ea.deinit();
+            try p.add(try block_prefill.emitReplay(ea.allocator(), f.cfg, f.widths, image_opts.planOptions(f), below, n, start, .split));
+        }
+    }
 }
 
 /// TF_DSV41_PF_WS_SHARE=1 with TF_DSV41_PF_4K alone: a 4K segment reuses forward roles that are already large enough.
@@ -324,7 +352,7 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
         }
         const n = @min(seg, ids.len - at);
         if (st.ahead) ahead(f, ids, at, n, seg);
-        try segment(f, ids[at .. at + n], at + n == ids.len and st.mode == .full);
+        try segment(f, ids[at .. at + n], at + n == ids.len and st.mode == .full, 0);
         at += n;
     }
 }
@@ -428,23 +456,24 @@ fn readAhead(f: *Forward, ids: []const u32, at: usize, n: usize, next: []const u
     h.prefetch(f.gpa, src, next, lb, f.comm.rank(), f.comm.world());
 }
 
-/// One segment at the slot's position, run eagerly, then committed.
-fn segment(f: *Forward, ids: []const u32, head: bool) !void {
+/// One segment at the slot's position, run eagerly, then committed. `cut` != 0: a layer-split chunk, the layers below
+/// `cut` whole and then the boundary rows (no head, no stash; never in the 4K workspace).
+fn segment(f: *Forward, ids: []const u32, head: bool, cut: u32) !void {
     const st = state(f);
     const n: u32 = @intCast(ids.len);
     var sa = std.heap.ArenaAllocator.init(f.gpa);
     defer sa.deinit();
     const a = sa.allocator();
     // CED replay: the encoder pass (layers up to the decoder's first, its site and compressor, the stash; no head)
-    const replay = st.mode == .replay;
-    const layers = if (replay) try encoderLayers(f, try f.backbone(a)) else try f.backbone(a);
+    const replay = st.mode == .replay and cut == 0;
+    const layers = if (cut != 0) try belowCut(try f.backbone(a), cut) else if (replay) try encoderLayers(f, try f.backbone(a)) else try f.backbone(a);
     const start = f.slot.pos;
     if (f.kv) |kx| try kx.reserve(start + n);
     // TF_DSV41_PF_4K: a segment past the forward's rows runs in the workspace (its own roles: block_prefill.ownCalls)
-    const big = st.k4 and st.ws_ok and n > f.opts.prefill_rows;
+    const big = cut == 0 and st.k4 and st.ws_ok and n > f.opts.prefill_rows;
     const o = if (big) k4Options(image_opts.segmentOptions(f, ids)) else image_opts.segmentOptions(f, ids);
-    const part: block_prefill.Part = if (st.cone_on) .encoder_cone else .encoder;
-    const emitted = if (replay) block_prefill.emitReplay(a, f.cfg, f.widths, o, layers, n, @intCast(start), part) else block_prefill.emitPrefill(a, f.cfg, f.widths, o, layers, n, @intCast(start), head);
+    const part: block_prefill.Part = if (cut != 0) .split else if (st.cone_on) .encoder_cone else .encoder;
+    const emitted = if (replay or cut != 0) block_prefill.emitReplay(a, f.cfg, f.widths, o, layers, n, @intCast(start), part) else block_prefill.emitPrefill(a, f.cfg, f.widths, o, layers, n, @intCast(start), head);
     const plain = emitted catch |e| {
         if (e == error.Unsupported) if (!quiet) log.warn("prefill: the {d}-row segment at {d} is not on the prefill path (block_prefill: Unsupported)", .{ n, start });
         return e;
@@ -473,9 +502,35 @@ fn segment(f: *Forward, ids: []const u32, head: bool) !void {
     // replay.encode: the stash's ids follow its rows (a segment that does not continue it starts it over)
     if (replay) f.slot.ced.extend(start, ids);
     if (replay and st.cone_on) pf_cone.stashed(f, start, ids);
-    f.last_rows = if (replay) 0 else n;
+    f.last_rows = if (replay or cut != 0) 0 else n;
     st.taps_at = start;
-    st.taps_rows = if (replay) 0 else n;
+    st.taps_rows = if (replay or cut != 0) 0 else n;
+}
+
+/// The layers of `all` below `cut`, the layer-split producer's program.
+fn belowCut(all: []const u32, cut: u32) ![]const u32 {
+    const i = std.mem.indexOfScalar(u32, all, cut) orelse return error.BadWindow;
+    return all[0..i];
+}
+
+/// One layer-split chunk: `ids` (rows of the prompt from the slot's position) through the layers below `cut`, their
+/// state committed as a full prefill leaves it, and on rank 0 the boundary rows written into `dst` (`ids.len` stage
+/// rows). Every rank runs it (the leader's op message); a chunk is at most the forward's own segment rows.
+pub fn promptSplit(f: *Forward, ids_in: []const u32, cut: u32, dst: []u8) !void {
+    const st = state(f);
+    if (f.slot.pending != null) return error.BadWindow;
+    if (ids_in.len == 0) return;
+    if (ids_in.len > f.opts.prefill_rows or f.slot.pos + ids_in.len > @as(u64, @intCast(f.opts.limit))) return error.BadWindow;
+    if (ids_in.ptr != st.ids.items.ptr) {
+        st.ids.clearRetainingCapacity();
+        try st.ids.appendSlice(f.gpa, ids_in);
+    }
+    st.taps_rows = 0;
+    st.replay_exact = false;
+    try ready(f);
+    st.split_dst = dst;
+    defer st.split_dst = &.{};
+    try segment(f, st.ids.items, false, cut);
 }
 
 pub const MultiSeg = ft.MultiSeg;

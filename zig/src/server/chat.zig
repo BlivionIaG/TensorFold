@@ -255,7 +255,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
         error.Busy => cx.wait(wait.engine_busy, "the engine is busy; retry shortly", .{}),
         error.Closed => cx.wait(wait.engine_unavailable, "the engine is unavailable; retry after it restarts", .{}),
         error.InvalidSpans => cx.fail(.request, "the prompt span layout is invalid", .{}),
-        error.InvalidRequest => if (request.handoff != null) cx.fail(.request, "kv_transfer_params.mcdma_handoff: refused (the server exports states only with --mcdma-produce, for text prompts of 2 tokens or more)", .{}) else cx.fail(.request, "the request does not match the loaded model", .{}),
+        error.InvalidRequest => if (request.handoff) |k| (if (k.split_cut != 0) cx.fail(.request, "kv_transfer_params.mcdma_split_cut: refused (a layer split needs TF_LS_PRODUCE=1, one slot over a replicated KV pool, --mcdma-produce, a cut the model takes and a text prompt of 18 tokens or more)", .{}) else cx.fail(.request, "kv_transfer_params.mcdma_handoff: refused (the server exports states only with --mcdma-produce, for text prompts of 2 tokens or more)", .{})) else cx.fail(.request, "the request does not match the loaded model", .{}),
         error.Stale => cx.fail(.server, "{s}", .{api.stale_message}),
         error.MemoryPressure => cx.wait(wait.memory_pressure, "{s}", .{api.pressure_message}),
     };

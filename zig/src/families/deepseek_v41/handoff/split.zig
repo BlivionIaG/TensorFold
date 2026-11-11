@@ -73,14 +73,19 @@ pub fn describe(arena: std.mem.Allocator, upto: u64, cut: u32) ![]manifest.Layer
     return out;
 }
 
-/// Rows a split prompt's i-th chunk takes: the ramp, then `max`.
+/// Chunk starts and sizes keep to the compressors' 128-row window (the normal path starts every segment on one) but the last.
+pub const grid_rows: u64 = 128;
+
+/// Rows a split prompt's i-th chunk takes: the ramp, then `max` (the grid's multiple at or below it, 128 at least).
 pub fn chunkRows(i: u32, max: u32) u32 {
-    return @min(max, if (i < ramp.len) ramp[i] else max);
+    const full = @max(@as(u32, grid_rows), max / @as(u32, grid_rows) * @as(u32, grid_rows));
+    return @min(full, if (i < ramp.len) ramp[i] else full);
 }
 
 pub const Chunk = struct { row0: u64, rows: u32 };
 
-/// The producer's chunks of `n` rows (`max` at most a chunk): the ramp then full chunks, the last never under 17 rows.
+/// The producer's chunks of `n` rows (`max` at most a chunk): the ramp then full chunks, every one but the last a
+/// multiple of 16 rows (so each starts on the grid) and the last never under 17 rows.
 pub const Chunks = struct {
     n: u64,
     max: u32,
@@ -91,7 +96,14 @@ pub const Chunks = struct {
         if (c.at >= c.n) return null;
         const left = c.n - c.at;
         var rows: u64 = chunkRows(c.i, c.max);
-        if (rows >= left) rows = left else if (left - rows < min_tail_rows) rows = if (left > 2 * min_tail_rows) left - min_tail_rows else left;
+        if (rows >= left) {
+            rows = left;
+        } else if (left - rows < min_tail_rows) {
+            // leave a short tail, the chunk before it on the grid
+            const take = if (left > 2 * min_tail_rows) left - min_tail_rows else left;
+            const aligned = take / grid_rows * grid_rows;
+            rows = if (aligned >= min_tail_rows) aligned else take;
+        }
         const out: Chunk = .{ .row0 = c.at, .rows = @intCast(rows) };
         c.at += rows;
         c.i += 1;
@@ -155,6 +167,15 @@ test "chunks ramp, then run full, and a stream never ends on a stub" {
         try std.testing.expectEqual(n, sum);
         try std.testing.expect(count == 1 or last >= min_tail_rows);
     }
+    // every chunk but the last starts on the grid and is a multiple of 16 rows, whatever the maximum
+    for ([_]u32{ 512, 1000, 2048, 4099 }) |max| for ([_]u64{ 5000, 5009, 5024, 20003, 131071 }) |n| {
+        var c: Chunks = .{ .n = n, .max = max };
+        while (c.next()) |x| {
+            try std.testing.expectEqual(@as(u64, 0), x.row0 % grid_rows);
+            if (x.row0 + x.rows < n) try std.testing.expectEqual(@as(u32, 0), x.rows % @as(u32, grid_rows));
+            try std.testing.expect(x.rows <= max);
+        }
+    };
     var small: Chunks = .{ .n = 100000, .max = 1024 };
     try std.testing.expectEqual(@as(u32, 512), small.next().?.rows);
     try std.testing.expectEqual(@as(u32, 1024), small.next().?.rows);
