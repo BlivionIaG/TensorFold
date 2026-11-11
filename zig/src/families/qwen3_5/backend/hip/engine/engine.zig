@@ -473,15 +473,17 @@ pub const Engine = struct {
         if (lines == 0) return error.OutOfDeviceMemory;
         try s.attachPool(lines, e.o.expert_copies);
         try s.start();
-        std.log.info("experts: {d} layers x {d} routed in a {d:.2} GiB host tier ({d} B each), {d:.2} GiB resident (shared experts, tables); cache {d} lines = {d:.2} GiB ({d:.1}% of the experts), at most {d} copies a round", .{
+        const cached = s.lineCount();
+        std.log.info("experts: {d} layers x {d} routed in a {d:.2} GiB host tier ({d} B each), {d:.2} GiB resident (shared experts, tables); cache {d} lines = {d:.2} GiB ({d:.1}% of the experts) and a {d}-expert prompt scratch, at most {d} admissions a round", .{
             s.shape.layers,
             s.shape.experts,
             gib(hip.expert_store.Store.hostBytes(s.shape)),
             blob,
             gib(hip.expert_store.Store.residentBytes(s.shape)),
-            lines,
-            gib(lines * blob),
-            100.0 * @as(f64, @floatFromInt(lines)) / @as(f64, @floatFromInt(keys)),
+            cached,
+            gib(cached * blob),
+            100.0 * @as(f64, @floatFromInt(cached)) / @as(f64, @floatFromInt(keys)),
+            s.shape.experts,
             e.o.expert_copies,
         });
     }

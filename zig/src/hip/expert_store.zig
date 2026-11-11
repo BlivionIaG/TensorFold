@@ -86,6 +86,8 @@ pub const Stats = struct {
     hits: u64 = 0,
     /// Misses given a cache line (their GEMVs write what they read there).
     admissions: u64 = 0,
+    /// Bytes of prompt-span experts the copy engine moved window -> scratch.
+    scratch_bytes: u64 = 0,
     /// Rows decoded, and the wall nanoseconds of the rounds (forward, readback and draw included).
     tokens: u64 = 0,
     round_ns: u64 = 0,
@@ -128,6 +130,9 @@ const Pool = struct {
     tally: []u16,
     decisions: []policy.Decision,
     copies: []policy.Copy,
+    /// A prompt span's staging: one layer's every routed expert in device memory (SDMA copies from the window, which a stage waits for before it answers).
+    scratch: DeviceBuffer,
+    copy: Stream,
     /// Admissions the round's remaining stages may still make.
     budget: usize,
     copy_experts: usize,
@@ -155,6 +160,7 @@ pub const Store = struct {
     write32: WriteValue32,
     pool: ?Pool = null,
     now: u32 = 0,
+    span: Span = .{},
     stats: Stats = .{},
     since: Stats = .{},
     layers_added: usize = 0,
@@ -259,6 +265,8 @@ pub const Store = struct {
         s.report("total");
         s.stopWorker();
         if (s.pool) |*p| {
+            p.copy.deinit();
+            p.scratch.free();
             for (p.chunks) |*c| c.free();
             s.gpa.free(p.chunks);
             s.gpa.free(p.slots);
@@ -366,11 +374,13 @@ pub const Store = struct {
         return p.chunks[slot / p.per_chunk].base() + (slot % p.per_chunk) * s.shape.blobBytes();
     }
 
-    /// Cache lines `lines` of device memory, admitting at most `copy_experts` experts a round.
-    pub fn attachPool(s: *Store, lines: usize, copy_experts: usize) Error!void {
+    /// `total` cache lines of device memory, a prompt span's scratch (one layer's every expert) among them; decode admits at most `copy_experts` misses a round.
+    pub fn attachPool(s: *Store, total: usize, copy_experts: usize) Error!void {
         std.debug.assert(s.pool == null);
         const blob = s.shape.blobBytes();
         const keys = s.shape.layers * s.shape.experts;
+        if (total <= 2 * s.shape.experts) return error.NotSized;
+        const lines = total - s.shape.experts;
         const per_chunk = @max(1, chunk_bytes / blob);
         const n_chunks = (lines + per_chunk - 1) / per_chunk;
         const chunks = try s.gpa.alloc(DeviceBuffer, n_chunks);
@@ -401,6 +411,10 @@ pub const Store = struct {
         errdefer s.gpa.free(ids);
         const copies = try s.gpa.alloc(policy.Copy, @min(@max(copy_experts, 1), picks_max));
         errdefer s.gpa.free(copies);
+        var scratch = try DeviceBuffer.alloc(s.r, s.shape.experts * blob);
+        errdefer scratch.free();
+        var copy = try Stream.init(s.r);
+        errdefer copy.deinit();
         s.pool = .{
             .chunks = chunks,
             .per_chunk = per_chunk,
@@ -414,6 +428,8 @@ pub const Store = struct {
             .tally = tally,
             .decisions = decisions,
             .copies = copies,
+            .scratch = scratch,
+            .copy = copy,
             .budget = copy_experts,
             .copy_experts = copy_experts,
         };
@@ -473,10 +489,16 @@ pub const Store = struct {
             }
             const began = nowNs();
             s.stats.idle_ns += began - waited;
-            s.serve(s.jobs[n % ring]);
+            const job = s.jobs[n % ring];
+            if (job.prefill and job.layer == 0) s.span = .{ .began = began, .bytes = s.stats.scratch_bytes };
+            s.serve(job);
             const ended = nowNs();
             s.stats.stage_ns += ended - began;
             s.stats.stages += 1;
+            if (job.prefill) {
+                s.span.stage_ns += ended - began;
+                if (job.layer + 1 == s.shape.layers) s.reportSpan(job.rows, ended);
+            }
             s.done.store(n, .release);
             waited = nowNs();
         }
@@ -487,6 +509,17 @@ pub const Store = struct {
         s.stage(job) catch s.failed.store(true, .release);
         @atomicStore(u32, s.word(ack_at), s.done.load(.monotonic) +% 1, .release);
     }
+
+    /// One log line for a prompt span: its wall time from the first stage to the last answer, the time in stages, the experts copied to the scratch.
+    fn reportSpan(s: *Store, rows: u32, ended: u64) void {
+        const wall: f64 = @floatFromInt(ended - s.span.began);
+        const staged_ns: f64 = @floatFromInt(s.span.stage_ns);
+        const mib: f64 = @as(f64, @floatFromInt(s.stats.scratch_bytes - s.span.bytes)) / (1 << 20);
+        std.log.info("experts span: {d} rows, {d:.2} s first stage to last answer, {d:.2} s in stages, {d:.0} MiB copied to the scratch ({d:.2} GB/s of the stages' time)", .{ rows, wall / 1e9, staged_ns / 1e9, mib, mib * 1.048576e6 / staged_ns });
+    }
+
+    /// A prompt span's counters.
+    const Span = struct { began: u64 = 0, stage_ns: u64 = 0, bytes: u64 = 0 };
 
     fn stage(s: *Store, job: Job) error{StageFailed}!void {
         const e = s.shape.experts;
@@ -541,6 +574,10 @@ pub const Store = struct {
         }
         const table = s.tableWords()[layer * (e + 1) * 2 ..][0 .. e * 2];
         const host = s.host[layer] orelse return error.StageFailed;
+        // a prompt span's experts are copied (SDMA, from their window slots) into the scratch and read there by the span's GEMMs: the tiles read a
+        // window slot in place far below the link's speed, a copy runs at it
+        const prefill_pool: ?*Pool = if (job.prefill and have_pool) &s.pool.? else null;
+        var staged: usize = 0;
         for (uniq[0..nu]) |x| {
             const key: policy.Id = base + x;
             if (have_pool and policy.onDevice(s.pool.?.vram, key)) {
@@ -552,8 +589,19 @@ pub const Store = struct {
             const w = s.takeSlot(half, per_half) orelse return error.StageFailed;
             @memcpy(s.slotBytes(w), host[x * blob ..][0..blob]);
             s.stats.window_bytes += blob;
-            table[2 * x] = s.slotAddr(w);
             table[2 * x + 1] = 0;
+            if (prefill_pool) |p| {
+                const at = staged * blob;
+                p.scratch.uploadAsync(at, s.win.view(s.slots_off + w * blob, s.slots_off + (w + 1) * blob), p.copy) catch return error.StageFailed;
+                table[2 * x] = p.scratch.base() + at;
+                staged += 1;
+                continue;
+            }
+            table[2 * x] = s.slotAddr(w);
+        }
+        if (staged > 0) {
+            prefill_pool.?.copy.synchronize() catch return error.StageFailed;
+            s.stats.scratch_bytes += staged * blob;
         }
         // read-through admission: the GEMVs of this layer that read an admitted miss in its window slot store what they read into the line the
         // policy gave it (table entry word 1); the line is resident for the next stage, which the stream orders after those GEMVs
@@ -690,7 +738,9 @@ test "stages fill window slots, admitted misses name their lines (the GEMVs writ
     try std.testing.expectEqual(@as(u64, 0), s.tableWords()[(1 * 5 + 4) * 2 + 1]);
     try std.testing.expectError(error.BadShape, s.addLayer(2, t0));
 
-    try s.attachPool(3, 2);
+    // 12 lines of device memory: 4 of them (one layer's every expert) the prompt scratch
+    try s.attachPool(12, 2);
+    try std.testing.expectEqual(@as(usize, 8), s.lineCount());
     // stage 1 (layer 0, decode): rows name 1 twice, 2 and 3. Two admissions fit the budget: the hottest (key 1) and the lowest id of the rest
     setPicks(&s, 0, &.{ 1, 2, 4 });
     setPicks(&s, 1, &.{ 1, 3, 4 });
@@ -730,16 +780,17 @@ test "stages fill window slots, admitted misses name their lines (the GEMVs writ
     var dev: [160]u8 = undefined;
     try s.pool.?.chunks[0].download(line - s.pool.?.chunks[0].base(), &dev);
     try std.testing.expectEqualSlices(u8, &want, &dev);
-    // a prompt span stages every named expert, in its layer's half, and admits nothing
+    // a prompt span copies every named expert (the ones not resident) into the scratch, by the copy engine, before it answers, and admits nothing
     const before = s.stats.admissions;
     setPicks(&s, 0, &.{ 0, 3, 4 });
     setPicks(&s, 1, &.{ 2, 3, 4 });
     try s.stage(.{ .layer = 1, .rows = 2, .prefill = true });
     try std.testing.expectEqual(before, s.stats.admissions);
-    const half = s.nslots / 2;
     const e0 = s.tableWords()[(1 * 5 + 0) * 2];
-    const w0 = (e0 - s.win_dev - s.slots_off) / blob;
-    try std.testing.expect(w0 >= half);
+    const scratch = &s.pool.?.scratch;
+    try std.testing.expect(e0 >= scratch.base() and e0 < scratch.base() + scratch.len);
     blobOf(shape, t1, 0, &want);
-    try std.testing.expectEqualSlices(u8, &want, s.slotBytes(w0));
+    try scratch.download(e0 - scratch.base(), &dev);
+    try std.testing.expectEqualSlices(u8, &want, &dev);
+    try std.testing.expectEqual(@as(u64, 3 * blob), s.stats.scratch_bytes);
 }
