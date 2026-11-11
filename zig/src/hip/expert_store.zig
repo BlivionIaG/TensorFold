@@ -84,9 +84,8 @@ pub const Stats = struct {
     rounds: u64 = 0,
     accesses: u64 = 0,
     hits: u64 = 0,
-    copies_started: u64 = 0,
-    copies_landed: u64 = 0,
-    bytes_copied: u64 = 0,
+    /// Misses given a cache line (their GEMVs write what they read there).
+    admissions: u64 = 0,
     /// Rows decoded, and the wall nanoseconds of the rounds (forward, readback and draw included).
     tokens: u64 = 0,
     round_ns: u64 = 0,
@@ -115,12 +114,7 @@ const WriteValue32 = *const fn (abi.Stream, ?*anyopaque, u32, c_uint) callconv(.
 
 const Job = struct { layer: u32, rows: u32, prefill: bool };
 
-/// An admission: expert `key` is copied from window slot `win` to cache line `line`.
-const Landing = struct { key: policy.Id, line: u32, win: u32 };
-
-const Flight = struct { event: Event, items: []Landing };
-
-/// The cache lines: device memory in chunks, the policy's bookkeeping and the copies in flight.
+/// The cache lines: device memory in chunks and the policy's bookkeeping.
 const Pool = struct {
     chunks: []DeviceBuffer,
     per_chunk: usize,
@@ -134,13 +128,7 @@ const Pool = struct {
     tally: []u16,
     decisions: []policy.Decision,
     copies: []policy.Copy,
-    stream: Stream,
-    /// Admissions the worker decided in this round's stages; `endRound` queues them.
-    pending: []Landing,
-    pending_n: usize = 0,
-    flights: std.ArrayList(Flight),
-    spare: std.ArrayList(Event),
-    /// Copies the round's remaining stages may still start.
+    /// Admissions the round's remaining stages may still make.
     budget: usize,
     copy_experts: usize,
 };
@@ -189,7 +177,7 @@ pub const Store = struct {
 
     /// Bytes of the window's head (control, table, trace) for `shape`.
     fn headBytes(shape: Shape) usize {
-        const ptab = std.mem.alignForward(usize, shape.layers * (shape.experts + 1) * 8, 4096);
+        const ptab = std.mem.alignForward(usize, shape.layers * (shape.experts + 1) * 16, 4096);
         const trace = std.mem.alignForward(usize, shape.trace_rows * shape.picks * 4, 4096);
         return ctl_bytes + ptab + trace;
     }
@@ -248,7 +236,7 @@ pub const Store = struct {
             .win = win,
             .win_dev = win_dev,
             .ptab_off = ctl_bytes,
-            .trace_off = ctl_bytes + std.mem.alignForward(usize, shape.layers * (shape.experts + 1) * 8, 4096),
+            .trace_off = ctl_bytes + std.mem.alignForward(usize, shape.layers * (shape.experts + 1) * 16, 4096),
             .slots_off = head,
             .nslots = nslots,
             .used = used,
@@ -260,9 +248,9 @@ pub const Store = struct {
         };
         const words = s.tableWords();
         for (0..shape.layers) |l| {
-            const row = words[l * (shape.experts + 1) ..][0 .. shape.experts + 1];
-            @memset(row[0..shape.experts], win_dev + head);
-            row[shape.experts] = shared.base() + l * blob;
+            const row = words[l * (shape.experts + 1) * 2 ..][0 .. (shape.experts + 1) * 2];
+            for (0..shape.experts) |x| row[2 * x ..][0..2].* = .{ win_dev + head, 0 };
+            row[2 * shape.experts ..][0..2].* = .{ shared.base() + l * blob, 0 };
         }
         return s;
     }
@@ -270,16 +258,7 @@ pub const Store = struct {
     pub fn deinit(s: *Store) void {
         s.report("total");
         s.stopWorker();
-        s.drain();
         if (s.pool) |*p| {
-            for (p.flights.items) |*f| {
-                f.event.deinit();
-                s.gpa.free(f.items);
-            }
-            for (p.spare.items) |*e| e.deinit();
-            p.flights.deinit(s.gpa);
-            p.spare.deinit(s.gpa);
-            p.stream.deinit();
             for (p.chunks) |*c| c.free();
             s.gpa.free(p.chunks);
             s.gpa.free(p.slots);
@@ -291,7 +270,6 @@ pub const Store = struct {
             s.gpa.free(p.tally);
             s.gpa.free(p.decisions);
             s.gpa.free(p.copies);
-            s.gpa.free(p.pending);
         }
         s.gpa.free(s.jobs);
         s.gpa.free(s.slot_of);
@@ -302,11 +280,6 @@ pub const Store = struct {
         for (s.host) |h| if (h) |bytes| std.heap.page_allocator.free(bytes);
         s.gpa.free(s.host);
         s.* = undefined;
-    }
-
-    /// Waits for the copies in flight (before their sources or lines are freed).
-    pub fn drain(s: *Store) void {
-        if (s.pool) |*p| p.stream.synchronize() catch {};
     }
 
     pub fn blobBytes(s: *const Store) usize {
@@ -358,7 +331,7 @@ pub const Store = struct {
     pub fn ref(s: *Store, layer: usize) Ref {
         const entries = s.shape.experts + 1;
         return .{
-            .ptab = s.win_dev + s.ptab_off + layer * entries * 8,
+            .ptab = s.win_dev + s.ptab_off + layer * entries * 16,
             .fused_off = 0,
             .down_off = s.shape.downOffset(),
             .anchor = s.win_dev,
@@ -426,12 +399,8 @@ pub const Store = struct {
         errdefer s.gpa.free(decisions);
         const ids = try s.gpa.alloc(policy.Id, picks_max);
         errdefer s.gpa.free(ids);
-        const copies = try s.gpa.alloc(policy.Copy, @max(copy_experts, 1));
+        const copies = try s.gpa.alloc(policy.Copy, @min(@max(copy_experts, 1), picks_max));
         errdefer s.gpa.free(copies);
-        const pending = try s.gpa.alloc(Landing, @max(copy_experts, 1));
-        errdefer s.gpa.free(pending);
-        var stream = try Stream.init(s.r);
-        errdefer stream.deinit();
         s.pool = .{
             .chunks = chunks,
             .per_chunk = per_chunk,
@@ -445,10 +414,6 @@ pub const Store = struct {
             .tally = tally,
             .decisions = decisions,
             .copies = copies,
-            .stream = stream,
-            .pending = pending,
-            .flights = .empty,
-            .spare = .empty,
             .budget = copy_experts,
             .copy_experts = copy_experts,
         };
@@ -574,32 +539,31 @@ pub const Store = struct {
         for (s.used[half * per_half ..][0..per_half]) |*u| {
             if (u.* == 1) u.* = 0;
         }
-        const table = s.tableWords()[layer * (e + 1) ..][0..e];
+        const table = s.tableWords()[layer * (e + 1) * 2 ..][0 .. e * 2];
         const host = s.host[layer] orelse return error.StageFailed;
         for (uniq[0..nu]) |x| {
             const key: policy.Id = base + x;
             if (have_pool and policy.onDevice(s.pool.?.vram, key)) {
                 const p = &s.pool.?;
-                table[x] = s.lineAddr(p, @intCast(p.vram.where[key]));
-                s.slot_of[x] = -1;
+                table[2 * x] = s.lineAddr(p, @intCast(p.vram.where[key]));
+                table[2 * x + 1] = 0;
                 continue;
             }
             const w = s.takeSlot(half, per_half) orelse return error.StageFailed;
             @memcpy(s.slotBytes(w), host[x * blob ..][0..blob]);
             s.stats.window_bytes += blob;
-            table[x] = s.slotAddr(w);
-            s.slot_of[x] = @intCast(w);
+            table[2 * x] = s.slotAddr(w);
+            table[2 * x + 1] = 0;
         }
+        // read-through admission: the GEMVs of this layer that read an admitted miss in its window slot store what they read into the line the
+        // policy gave it (table entry word 1); the line is resident for the next stage, which the stream orders after those GEMVs
         if (started > 0) {
             const p = &s.pool.?;
             for (p.copies[0..started]) |c| {
-                const x = c.id - base;
-                const w = s.slot_of[x];
-                if (w < 0 or p.pending_n >= p.pending.len) return error.StageFailed;
-                s.used[@intCast(w)] = 2;
-                p.pending[p.pending_n] = .{ .key = c.id, .line = c.slot, .win = @intCast(w) };
-                p.pending_n += 1;
+                table[2 * (c.id - base) + 1] = s.lineAddr(p, c.slot);
+                policy.reap(&p.vram, c.id, s.now) catch return error.StageFailed;
             }
+            s.stats.admissions += started;
         }
     }
 
@@ -618,26 +582,12 @@ pub const Store = struct {
         return null;
     }
 
-    /// Experts that have landed become resident: the next stage's table names their lines.
+    /// A round's first stage may be served: the worker has answered every stage posted so far.
     pub fn beginRound(s: *Store) Error!void {
         s.quiesce();
-        const p = if (s.pool) |*p| p else return;
-        while (p.flights.items.len > 0) {
-            const f = p.flights.items[0];
-            if (!try f.event.done()) break;
-            for (f.items) |c| {
-                // a line whose expert was staged again before it landed is not this copy's
-                policy.reap(&p.vram, c.key, s.now) catch {};
-                s.used[c.win] = 0;
-                s.stats.copies_landed += 1;
-            }
-            s.gpa.free(f.items);
-            try p.spare.append(s.gpa, f.event);
-            _ = p.flights.orderedRemove(0);
-        }
     }
 
-    /// The round over its first `rows` rows is finished: the admissions its stages decided are queued on the copy stream.
+    /// The round over its first `rows` rows is finished: its time joins the counters and the admission budget is renewed.
     pub fn endRound(s: *Store, rows: usize, ns: u64) Error!void {
         s.quiesce();
         if (s.failed.load(.acquire)) return error.StageFailed;
@@ -645,26 +595,7 @@ pub const Store = struct {
         s.stats.tokens += rows;
         s.stats.round_ns += ns;
         if (s.stats.rounds % report_every == 0) s.report("interval");
-        const p = if (s.pool) |*p| p else return;
-        defer {
-            p.pending_n = 0;
-            p.budget = p.copy_experts;
-        }
-        const n = p.pending_n;
-        if (n == 0) return;
-        const blob = s.shape.blobBytes();
-        const items = try s.gpa.dupe(Landing, p.pending[0..n]);
-        errdefer s.gpa.free(items);
-        for (items) |c| {
-            const from = s.win.view(s.slots_off + c.win * blob, s.slots_off + (c.win + 1) * blob);
-            try p.chunks[c.line / p.per_chunk].uploadAsync((c.line % p.per_chunk) * blob, from, p.stream);
-        }
-        var event = if (p.spare.pop()) |ev| ev else try Event.init(s.r, false);
-        errdefer event.deinit();
-        try event.record(p.stream);
-        try p.flights.append(s.gpa, .{ .event = event, .items = items });
-        s.stats.copies_started += n;
-        s.stats.bytes_copied += n * blob;
+        if (s.pool) |*p| p.budget = p.copy_experts;
     }
 
     /// One log line for the rounds since the last (or since the start): hit rate, misses and window traffic a token, the stage time.
@@ -674,9 +605,7 @@ pub const Store = struct {
             .rounds = s.stats.rounds - s.since.rounds,
             .accesses = s.stats.accesses - s.since.accesses,
             .hits = s.stats.hits - s.since.hits,
-            .copies_started = s.stats.copies_started - s.since.copies_started,
-            .copies_landed = s.stats.copies_landed - s.since.copies_landed,
-            .bytes_copied = s.stats.bytes_copied - s.since.bytes_copied,
+            .admissions = s.stats.admissions - s.since.admissions,
             .tokens = s.stats.tokens - s.since.tokens,
             .round_ns = s.stats.round_ns - s.since.round_ns,
             .stages = s.stats.stages - s.since.stages,
@@ -693,8 +622,8 @@ pub const Store = struct {
         const mib: f64 = 1024.0 * 1024.0;
         const blob: f64 = @floatFromInt(s.shape.blobBytes());
         std.log.info(
-            "experts {s}: {d} rounds {d} tokens, hit {d:.1}% miss {d:.1}/token ({d:.1} MiB/token over the link), window fill {d:.1} MiB/token, copies {d:.1}/round ({d:.1} MiB/round, {d} landed), stage {d:.2} ms/token (card compute+wait {d:.2}), round {d:.2} ms ({d:.2} ms/token), {d} lines",
-            .{ label, d.rounds, d.tokens, 100.0 * @as(f64, @floatFromInt(d.hits)) / a, miss / t, miss / t * blob / mib, @as(f64, @floatFromInt(d.window_bytes)) / t / mib, @as(f64, @floatFromInt(d.copies_started)) / r, @as(f64, @floatFromInt(d.bytes_copied)) / r / mib, d.copies_landed, @as(f64, @floatFromInt(d.stage_ns)) / t / 1e6, @as(f64, @floatFromInt(d.idle_ns)) / t / 1e6, @as(f64, @floatFromInt(d.round_ns)) / r / 1e6, @as(f64, @floatFromInt(d.round_ns)) / t / 1e6, s.lineCount() },
+            "experts {s}: {d} rounds {d} tokens, hit {d:.1}% miss {d:.1}/token ({d:.1} MiB/token over the link), window fill {d:.1} MiB/token, admissions {d:.1}/round, stage {d:.2} ms/token (card compute+wait {d:.2}), round {d:.2} ms ({d:.2} ms/token), {d} lines",
+            .{ label, d.rounds, d.tokens, 100.0 * @as(f64, @floatFromInt(d.hits)) / a, miss / t, miss / t * blob / mib, @as(f64, @floatFromInt(d.window_bytes)) / t / mib, @as(f64, @floatFromInt(d.admissions)) / r, @as(f64, @floatFromInt(d.stage_ns)) / t / 1e6, @as(f64, @floatFromInt(d.idle_ns)) / t / 1e6, @as(f64, @floatFromInt(d.round_ns)) / r / 1e6, @as(f64, @floatFromInt(d.round_ns)) / t / 1e6, s.lineCount() },
         );
     }
 };
@@ -731,7 +660,7 @@ fn setPicks(s: *Store, row: usize, ids: []const i32) void {
     @memcpy(s.traceWords()[row * s.shape.picks ..][0..ids.len], ids);
 }
 
-test "stages fill window slots, admissions land in lines, and the table names where each expert sits" {
+test "stages fill window slots, admitted misses name their lines (the GEMVs write them), and the table names where each expert sits" {
     const gpa = std.testing.allocator;
     var r = try Runtime.open();
     defer r.close();
@@ -757,7 +686,8 @@ test "stages fill window slots, admissions land in lines, and the table names wh
     var got: [160]u8 = undefined;
     try s.shared.download(1 * blob, &got);
     try std.testing.expectEqualSlices(u8, &want, &got);
-    try std.testing.expectEqual(s.shared.base() + blob, s.tableWords()[1 * 5 + 4]);
+    try std.testing.expectEqual(s.shared.base() + blob, s.tableWords()[(1 * 5 + 4) * 2]);
+    try std.testing.expectEqual(@as(u64, 0), s.tableWords()[(1 * 5 + 4) * 2 + 1]);
     try std.testing.expectError(error.BadShape, s.addLayer(2, t0));
 
     try s.attachPool(3, 2);
@@ -766,43 +696,48 @@ test "stages fill window slots, admissions land in lines, and the table names wh
     setPicks(&s, 1, &.{ 1, 3, 4 });
     try s.stage(.{ .layer = 0, .rows = 2, .prefill = false });
     try std.testing.expectEqual(@as(u64, 0), s.stats.hits);
-    try std.testing.expectEqual(@as(usize, 2), s.pool.?.pending_n);
-    const slot1 = s.tableWords()[1];
+    try std.testing.expectEqual(@as(u64, 2), s.stats.admissions);
+    // the card reads every miss where it sits: all three experts have window slots with their bytes
+    const slot1 = s.tableWords()[2];
     try std.testing.expect(slot1 >= s.win_dev + s.slots_off and slot1 < s.win_dev + s.win.bytes.len);
     blobOf(shape, t0, 1, &want);
     try std.testing.expectEqualSlices(u8, &want, s.slotBytes((slot1 - s.win_dev - s.slots_off) / blob));
-    // the card reads misses where they sit: all three experts have window slots; the two admitted ones are pinned as copy sources
-    var pinned: usize = 0;
-    for (s.used) |u| pinned += @intFromBool(u == 2);
-    try std.testing.expectEqual(@as(usize, 2), pinned);
-    // the round ends: the admissions are queued, land, and become resident
-    s.posted = s.done.load(.acquire);
+    // the two admitted ones also name a line (their GEMVs store what they read there); the third does not
+    var named: usize = 0;
+    for (1..4) |x| named += @intFromBool(s.tableWords()[2 * x + 1] != 0);
+    try std.testing.expectEqual(@as(usize, 2), named);
+    const line_of_1 = s.tableWords()[3];
+    try std.testing.expect(line_of_1 != 0 and (line_of_1 < s.win_dev + s.slots_off or line_of_1 >= s.win_dev + s.win.bytes.len));
+    // the stores, as the stream tile makes them
+    for (1..4) |x| {
+        const dst = s.tableWords()[2 * x + 1];
+        if (dst == 0) continue;
+        const src = s.tableWords()[2 * x];
+        const chunk = &s.pool.?.chunks[0];
+        try chunk.upload(dst - chunk.base(), s.slotBytes((src - s.win_dev - s.slots_off) / blob));
+    }
     try s.endRound(2, 1000);
-    try std.testing.expectEqual(@as(u64, 2), s.stats.copies_started);
-    s.drain();
-    try s.beginRound();
-    try std.testing.expectEqual(@as(u64, 2), s.stats.copies_landed);
-    for (s.used) |u| try std.testing.expect(u != 2);
     try std.testing.expect(policy.onDevice(s.pool.?.vram, 1));
-    // stage 2 (layer 0 again): the resident expert is a hit and its entry names its line, with the bytes the copy moved
+    // stage 2 (layer 0 again): the resident expert is a hit and its entry names its line, with the bytes the GEMVs stored
     setPicks(&s, 0, &.{ 1, 2, 4 });
     setPicks(&s, 1, &.{ 1, 2, 4 });
     try s.stage(.{ .layer = 0, .rows = 2, .prefill = false });
     try std.testing.expect(s.stats.hits >= 2);
-    const line = s.tableWords()[1];
+    const line = s.tableWords()[2];
     try std.testing.expect(line < s.win_dev + s.slots_off or line >= s.win_dev + s.win.bytes.len);
+    try std.testing.expectEqual(@as(u64, 0), s.tableWords()[3]);
     blobOf(shape, t0, 1, &want);
     var dev: [160]u8 = undefined;
     try s.pool.?.chunks[0].download(line - s.pool.?.chunks[0].base(), &dev);
     try std.testing.expectEqualSlices(u8, &want, &dev);
     // a prompt span stages every named expert, in its layer's half, and admits nothing
-    const before = s.pool.?.pending_n;
+    const before = s.stats.admissions;
     setPicks(&s, 0, &.{ 0, 3, 4 });
     setPicks(&s, 1, &.{ 2, 3, 4 });
     try s.stage(.{ .layer = 1, .rows = 2, .prefill = true });
-    try std.testing.expectEqual(before, s.pool.?.pending_n);
+    try std.testing.expectEqual(before, s.stats.admissions);
     const half = s.nslots / 2;
-    const e0 = s.tableWords()[1 * 5 + 0];
+    const e0 = s.tableWords()[(1 * 5 + 0) * 2];
     const w0 = (e0 - s.win_dev - s.slots_off) / blob;
     try std.testing.expect(w0 >= half);
     blobOf(shape, t1, 0, &want);
