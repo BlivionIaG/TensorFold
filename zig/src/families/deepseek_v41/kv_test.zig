@@ -2,6 +2,7 @@ const std = @import("std");
 const mtl = @import("metal");
 const kv = @import("kv.zig");
 const cache = @import("metal_kv_state.zig");
+const prefix = @import("kv_prefix.zig");
 const View = @import("view.zig").View;
 fn bf(x: f32) u16 {
     const bits: u32 = @bitCast(x);
@@ -368,7 +369,8 @@ test "a prefix restored from a heap image continues like the state it was copied
     const plan = cache.Plan{ .capacity = 1024, .layers = 40 };
     var from = try cache.State.init(device, plan);
     defer from.deinit();
-    var into = try cache.State.init(device, plan);
+    // The slot that takes the image is larger than the one the prefix grew in: a kept state does not know its capacity.
+    var into = try cache.State.init(device, .{ .capacity = 4096, .layers = 40 });
     defer into.deinit();
     const at: u32 = 201; // an odd prefix: one raw row rides in the ratio-2 carry
     const rows: u32 = at / 2;
@@ -405,12 +407,15 @@ test "a prefix restored from a heap image continues like the state it was copied
         try from.append(at);
     }
 
-    // The heap image (what a Snapshot holds) goes into a blank state, as snapshotRestore does it.
-    const storage = try std.testing.allocator.dupe(u8, from.storage.contents()[0..plan.packedBytes()]);
+    // The heap image (what a Snapshot holds) is laid out for the prefix's own rows and goes into the larger state, as snapshotRestore does it.
+    const kept = prefix.capacityFor(at, plan.capacity);
+    const storage = try std.testing.allocator.alloc(u8, cache.pool_layout.storageBytes(kept));
     defer std.testing.allocator.free(storage);
+    try prefix.copy(cache.pool_layout, storage, kept, from.storage.contents()[0..plan.packedBytes()], plan.capacity, at);
+    try std.testing.expect(storage.len < plan.packedBytes() / 4);
     const live = try std.testing.allocator.dupe(u8, from.live.contents()[0..plan.mutableBytes()]);
     defer std.testing.allocator.free(live);
-    @memcpy(into.storage.contents()[0..storage.len], storage);
+    try prefix.copy(cache.pool_layout, into.storage.contents()[0..into.plan.packedBytes()], into.plan.capacity, storage, kept, at);
     @memcpy(into.live.contents()[0..live.len], live);
     into.position = at;
 
@@ -426,5 +431,9 @@ test "a prefix restored from a heap image continues like the state it was copied
     }
     try std.testing.expectEqualSlices(u16, &out[0], &out[1]);
     try std.testing.expectEqualSlices(u8, from.live.contents()[0..plan.mutableBytes()], into.live.contents()[0..plan.mutableBytes()]);
-    try std.testing.expectEqualSlices(u8, from.storage.contents()[0..plan.packedBytes()], into.storage.contents()[0..plan.packedBytes()]);
+    // the pool rows the prefix wrote, from the slot each lives in
+    const was = try from.source(2, 2);
+    const now = try into.source(2, 2);
+    try std.testing.expectEqualSlices(u8, was.main.buffer.contents()[was.main.offset..][0 .. rows * cache.main_stride], now.main.buffer.contents()[now.main.offset..][0 .. rows * cache.main_stride]);
+    try std.testing.expectEqualSlices(u8, was.index.buffer.contents()[was.index.offset..][0 .. rows * cache.index_stride], now.index.buffer.contents()[now.index.offset..][0 .. rows * cache.index_stride]);
 }

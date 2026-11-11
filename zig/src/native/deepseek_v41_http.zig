@@ -52,7 +52,7 @@ pub const Pull = struct {
         p.next_id += 1;
         try p.trigger.trigger().start_fn(p.trigger.trigger().ptr, id, prompt[0 .. upto + 1]);
 
-        const snap = try p.model.snapshotBlank();
+        const snap = try p.model.snapshotBlank(at);
         errdefer p.model.snapshotDrop(snap);
         var landing: ho.landing.Landing = undefined;
         try landing.init(p.gpa, at, .{ .@"packed" = remote.packedOf(p.model, snap) });
