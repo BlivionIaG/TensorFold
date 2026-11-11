@@ -48,7 +48,7 @@ pub fn seal(m: *const Model, snap: *Snapshot, tokens: []const u32, upto: u32) !v
 }
 
 /// A chunk of a layer-split prompt: layers `cut`.. over the rows of ids, entered from the producer's boundary rows.
-/// The rows are copied into a device buffer before this returns; the pass itself may still be running (entry_async.zig).
+/// The rows are copied before this returns; the pass may still run (entry_async.zig).
 pub fn forwardEntered(m: *Model, slot: u32, ids: []const u32, rows: []const u8, cut: u32) !void {
     if (!m.valid) return error.InvalidModelState;
     if (slot >= m.lanes) return error.InvalidLaneSlot;
