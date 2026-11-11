@@ -239,6 +239,7 @@ pub fn proposeTokens(m: *Model, slot: u32, pending: u32, count: u32) ![4]u32 {
     }
     // The drafter's own forward's GPU time and wall.
     if (host_prof) {
+        m.prof_gpu_end = cb.gpuEnd();
         const encode_ms = (t_encoded - t_start) * 1e3;
         const wait_ms = (t_done - t_encoded) * 1e3;
         if (cond_prof.on or cond_prof.blk_on) {
