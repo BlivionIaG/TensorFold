@@ -1,0 +1,43 @@
+# The mlx environment of the Mac-alone baselines and mlx_lm references (Python 3.12.13, uv 0.12.5, macOS arm64): exactly the set installed in /tmp/mlxenv
+# on 2026-11-11 (pip list of that venv). Create: tools/macos/setup_mlx_env.sh
+# The 4B/35B baseline runs recorded no versions of their own; mlx-lm 0.32.2 / mlx 0.32.4 are the versions named in the scripts' docstrings
+# (moe_ref.py, routing_trace.py) and in the lfm3 receipts of the TensorFold fork.
+mlx==0.32.4
+mlx-metal==0.32.4
+mlx-lm==0.32.2
+numpy==2.5.4
+transformers==5.22.2
+tokenizers==0.23.3
+safetensors==0.8.0
+sentencepiece==0.2.3
+huggingface_hub==2.4.0
+hf_transfer==0.1.9
+hf_xet==1.8.0
+protobuf==7.36.2
+pydantic==2.14.3
+pydantic_core==2.50.4
+pyyaml==6.0.3
+regex==2026.11.9
+jinja2==3.1.6
+markupsafe==3.0.4
+rich==15.0.0
+typer==0.29.0
+click==8.5.1
+shellingham==1.5.4
+tqdm==4.70.1
+filelock==4.2.10
+fsspec==2026.9.0
+packaging==26.3
+pygments==2.21.0
+markdown-it-py==4.2.0
+mdurl==0.1.2
+anyio==4.16.0
+h11==0.16.0
+httpcore2==2.16.0
+httpx2==2.16.0
+idna==3.20
+truststore==0.10.5
+annotated-doc==0.0.5
+annotated-types==0.8.0
+typing_extensions==4.16.0
+typing_inspection==0.4.5
