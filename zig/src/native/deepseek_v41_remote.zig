@@ -123,7 +123,9 @@ pub const Pull = struct {
     fn renewLinks(p: *Pull) !fabric.relink.Event {
         const now = fabric.words.nowNs();
         var event = try p.link.renew(now);
-        for (p.more) |*r| if (try r.renew(now) == .reopened) event = .reopened;
+        for (p.more) |*r| if ((try r.renew(now)) == .reopened) {
+            event = .reopened;
+        };
         return event;
     }
 
