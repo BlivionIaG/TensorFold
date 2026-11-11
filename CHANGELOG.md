@@ -36,6 +36,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Docs: `docs/deepseek-v41-disaggregated.md` is the operator guide for DeepSeek-V4.1 prefilled on a GB10 pair and decoded on an Apple Silicon Mac over MCDMA or plain HTTP: the hardware, the link's set-up and its traps, the launch flags and environment, the export and decoder profiles, the measured time to first token against the Mac alone, the fallback when the pair or link is down, and what is not measured.
 
+- Docs: `docs/deepseek-v41-disaggregated.md` section 9 replaces its untested service sketch with `deploy/dsv41-disaggregated/`: systemd units for the prefill pair (listen daemon, Mac-facing port, both ranks with the NCCL pin and a `Conflicts=` on the production unit), launchd daemons for the Mac (link restore, connect daemon, decoder with a supervisor that follows the daemon), a health check, and a `render.sh` that fills the placeholders. The Mac's jobs are LaunchDaemons, not LaunchAgents: Apple's TN3179 exempts launchd daemons from local network privacy and gates agents. Static checks only: `systemd-analyze verify` and `plutil -lint`.
+
 ## 1.2.7
 
 - GLM-5.3-Flash on CUDA: with `TF_GLM_LAYERS=N`, serve's start-up memory check counts the weights by tensor from the shard headers, only those the load reads (the first N layers, the MTP layer when drafts are on, the embedding, norm and head), where it counted every checkpoint file. A 20-layer thin load of the 163.6 GiB checkpoint now counts 66.6 GiB without drafts. Unset, the count is the files' as before (#2788, fixes #2745). Thanks to @wojo.
