@@ -23,7 +23,7 @@ pub const State = struct {
     index_format: ex.IndexFormat = .fp8,
     pieces: []const Piece,
     pages: []const Pages,
-    /// CED replay: layers from here replayed `replay_rows` rows at the cut; their older ring rows are another prompt's
+    /// CED replay: layers from here hold `replay_rows` replayed rows; the window's older ones are another prompt's
     decoder_from: u32 = none,
     replay_rows: u32 = 0,
 
