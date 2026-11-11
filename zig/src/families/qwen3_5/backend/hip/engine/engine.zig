@@ -62,6 +62,8 @@ pub const Options = struct {
     experts: ExpertMode = .auto,
     /// Experts the cache admits a round at most: the copy budget, bytes the link spares from the misses' own reads.
     expert_copies: usize = 4096,
+    /// Percent of the cache lines an SLRU protects (a line hit again after its admission); 0 is plain LRU.
+    expert_protect: u8 = 75,
     /// Device bytes of the expert cache (null: what the plan leaves).
     expert_gib: ?f64 = null,
 };
@@ -471,7 +473,7 @@ pub const Engine = struct {
         const bytes: usize = if (e.o.expert_gib) |g| @intFromFloat(g * (1 << 30)) else room -| expert_margin;
         const lines = @min(bytes / blob, keys);
         if (lines == 0) return error.OutOfDeviceMemory;
-        try s.attachPool(lines, e.o.expert_copies);
+        try s.attachPool(lines, e.o.expert_copies, e.o.expert_protect);
         try s.start();
         const cached = s.lineCount();
         std.log.info("experts: {d} layers x {d} routed in a {d:.2} GiB host tier ({d} B each), {d:.2} GiB resident (shared experts, tables); cache {d} lines = {d:.2} GiB ({d:.1}% of the experts) and a {d}-expert prompt scratch, at most {d} admissions a round", .{

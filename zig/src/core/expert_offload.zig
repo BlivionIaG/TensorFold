@@ -31,6 +31,10 @@ pub const Policy = struct {
 pub const Line = enum { empty, inflight, resident };
 
 /// The pool's lines. Host RAM still holds every routed expert. `stamp` is the last reap or touch time; a higher stamp is newer.
+///
+/// With `segments` (a bool a line and a cap, `enableSegments`) the pool is an SLRU: a line admitted is on probation; a resident hit on a probation
+/// line promotes it to the protected segment, which holds at most `protected_cap` lines (past that the protected line with the oldest stamp goes back
+/// to probation, stamp unchanged); eviction takes the oldest probation line, a protected one only when no probation line can go.
 pub const Vram = struct {
     slots: []Id,
     line: []Line,
@@ -39,6 +43,10 @@ pub const Vram = struct {
     where: []i32,
     /// Lines used so far: eviction never empties one, so the empty lines are the tail.
     used: usize = 0,
+    /// SLRU: per line, whether it is protected (null: plain LRU), the segment's cap and its size.
+    protected: ?[]bool = null,
+    protected_cap: usize = 0,
+    protected_count: usize = 0,
 
     pub fn init(slots: []Id, line: []Line, stamp: []u32, where: []i32) Vram {
         std.debug.assert(slots.len == line.len and slots.len == stamp.len);
@@ -47,6 +55,15 @@ pub const Vram = struct {
         @memset(stamp, 0);
         @memset(where, -1);
         return .{ .slots = slots, .line = line, .stamp = stamp, .where = where };
+    }
+
+    /// SLRU with a protected segment of at most `cap` lines (`flags` has a cell a line).
+    pub fn enableSegments(v: *Vram, flags: []bool, cap: usize) void {
+        std.debug.assert(flags.len == v.slots.len);
+        @memset(flags, false);
+        v.protected = flags;
+        v.protected_cap = cap;
+        v.protected_count = 0;
     }
 
     pub fn full(v: Vram) bool {
@@ -75,10 +92,25 @@ pub fn onDevice(v: Vram, id: Id) bool {
     return v.line[i] == .resident;
 }
 
-/// A resident hit. Moves that line to `now` so LRU keeps it.
+/// A resident hit. Moves that line to `now` so LRU keeps it; an SLRU promotes a probation line.
 pub fn touch(v: *Vram, id: Id, now: u32) bool {
     const i = lineOf(v.*, id) orelse return false;
     if (v.line[i] != .resident) return false;
+    if (v.protected) |p| if (!p[i] and v.protected_cap > 0) {
+        if (v.protected_count >= v.protected_cap) {
+            var oldest: ?usize = null;
+            for (p, 0..) |flag, j| {
+                if (!flag) continue;
+                if (oldest == null or v.stamp[j] < v.stamp[oldest.?]) oldest = j;
+            }
+            if (oldest) |j| {
+                p[j] = false;
+                v.protected_count -= 1;
+            }
+        }
+        p[i] = true;
+        v.protected_count += 1;
+    };
     v.stamp[i] = now;
     return true;
 }
@@ -106,6 +138,10 @@ pub fn stageAt(v: *Vram, id: Id, now: u32) error{Busy}!Copy {
         return .{ .id = id, .slot = @intCast(slot), .evicted = null };
     }
     const slot = lru(v.*, now) orelse return error.Busy;
+    if (v.protected) |p| if (p[slot]) {
+        p[slot] = false;
+        v.protected_count -= 1;
+    };
     const out = v.slots[slot];
     v.where[out] = -1;
     v.slots[slot] = id;
@@ -120,16 +156,18 @@ pub fn stage(v: *Vram, id: Id) error{Busy}!Copy {
     return stageAt(v, id, std.math.maxInt(u32));
 }
 
-/// Oldest resident stamp below `now`. Equal stamps take the higher line.
+/// Oldest resident stamp below `now`, on probation first when the pool is an SLRU. Equal stamps take the higher line.
 fn lru(v: Vram, now: u32) ?usize {
     var best: ?usize = null;
+    var best_protected: ?usize = null;
     for (v.line, 0..) |state, i| {
         if (state != .resident or v.stamp[i] >= now) continue;
-        if (best) |b| {
-            if (v.stamp[i] < v.stamp[b] or (v.stamp[i] == v.stamp[b] and i > b)) best = i;
-        } else best = i;
+        const slot = if (v.protected) |p| (if (p[i]) &best_protected else &best) else &best;
+        if (slot.*) |b| {
+            if (v.stamp[i] < v.stamp[b] or (v.stamp[i] == v.stamp[b] and i > b)) slot.* = i;
+        } else slot.* = i;
     }
-    return best;
+    return best orelse best_protected;
 }
 
 /// The copy of `id` has landed. The line becomes resident at `now`.
@@ -270,6 +308,28 @@ test "a staged copy is not on device until reap, and LRU drops the older residen
     try std.testing.expectEqual(@as(?Id, 4), c.evicted);
     try std.testing.expect(!onDevice(vram, 4) and !onDevice(vram, 9) and onDevice(vram, 7));
     try std.testing.expectEqual(@as(i32, -1), vram.where[4]);
+}
+
+test "an SLRU keeps a line that was hit again over a newer line that was not, and demotes the oldest protected past its cap" {
+    var t = testVram(3, 16);
+    var flags: [3]bool = undefined;
+    var vram = Vram.init(&t.slots, &t.line, &t.stamp, &t.where);
+    vram.enableSegments(&flags, 1);
+    for ([_]Id{ 1, 2, 3 }, 1..) |id, now| {
+        _ = try stage(&vram, id);
+        try reap(&vram, id, @intCast(now));
+    }
+    // 1 is hit again: protected (stamp 4). 2 is now the oldest probation line though 1 was the oldest stamp
+    try std.testing.expect(touch(&vram, 1, 4));
+    try std.testing.expectEqual(@as(usize, 1), vram.protected_count);
+    const c = try stage(&vram, 9);
+    try std.testing.expectEqual(@as(?Id, 2), c.evicted);
+    try reap(&vram, 9, 5);
+    // a second promotion past the cap of one sends the oldest protected line (1) back to probation
+    try std.testing.expect(touch(&vram, 3, 6));
+    try std.testing.expectEqual(@as(usize, 1), vram.protected_count);
+    const d = try stage(&vram, 10);
+    try std.testing.expectEqual(@as(?Id, 1), d.evicted);
 }
 
 test "an in-flight line is not reused, and a full in-flight set is busy" {

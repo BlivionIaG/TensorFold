@@ -142,6 +142,13 @@ fn expertCopies() usize {
     return std.fmt.parseInt(usize, v, 10) catch 4096;
 }
 
+/// Percent of the cache lines held back from eviction once hit again (TF_EXPERT_PROTECT, an SLRU's protected segment; default 75, 0 is plain LRU).
+fn expertProtect() u8 {
+    const v = @import("sys").getenv("TF_EXPERT_PROTECT") orelse return 75;
+    const p = std.fmt.parseInt(u8, v, 10) catch return 75;
+    return @min(p, 95);
+}
+
 fn prepare(
     a: std.mem.Allocator,
     gpa: std.mem.Allocator,
@@ -168,6 +175,7 @@ fn prepare(
         .experts = expertMode(o),
         .expert_gib = o.experts_gib,
         .expert_copies = expertCopies(),
+        .expert_protect = expertProtect(),
     }) catch |err| return switch (err) {
         error.PeerRefused, error.LinkFailed => steps.stoppedBy(a, problem),
         error.WeightsDoNotFit => steps.refuseAll(

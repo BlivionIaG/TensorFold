@@ -475,9 +475,11 @@ block (weights read once) and lm_head (m4 2071 vs m1 1037 us), which depend on t
 
 The 19.0 GiB checkpoint (16.9 GiB of routed experts) does not fit the card's 7.9 GiB; `tensorfold-native serve ~/models/Qwen3.6-35B-A3B-4bit` offloads the routed
 experts automatically (`TF_EXPERT_OFFLOAD=0|1|auto`, `--ssd-experts GIB` sets the cache). Design, the 1.96 GiB DMA-window finding and results:
-`docs/proposals/hip-moe-expert-offload.md`. Environment: `HIPMAC_BACKEND=ut4g TENSORFOLD_HIP=<hipmac>/build/libamdhip64.dylib`; `TF_EXPERT_COPIES` (admissions
-a round, default 32), `TF_EXPERT_WINDOW_MIB` (pinned window, default 1536; the card maps ~1.96 GiB of host memory in all). The Mac must have ~19 GiB of free, unwired memory
-(an mlx process holding the same model, or several GiB wired, shrinks what `hipHostMalloc` can pin). Decode and prompt spans run eager (value waits are not capturable);
-the server log carries `experts interval/total` lines: hit rate, misses/token and MiB/token over the link, window fill, admissions, stage ms/token, round ms.
-Checks: `tools/vega-macos/moe_ref.py` (mlx_lm greedy references) and `moe_gate.py` (shas of a running server, `--against` for cache on vs `TF_EXPERT_COPIES=0`).
+`docs/proposals/hip-moe-expert-offload.md`. Environment: `HIPMAC_BACKEND=ut4g TENSORFOLD_HIP=<hipmac>/build/libamdhip64.dylib`; `TF_EXPERT_COPIES` (misses the cache admits a round; the default 4096
+admits every miss: a miss's one trip over the link is also its admission, the stream tile stores what it reads into the cache line), `TF_EXPERT_PROTECT` (percent of lines an SLRU protects; 0 = LRU),
+`TF_EXPERT_WINDOW_MIB` (pinned window, default 1536; the card maps ~2047 MiB of host memory in all, the Thunderbolt PCIe DART aperture, see `ut4g-usbgpu/docs/DMA_LIMIT.md`). The Mac must have ~19 GiB of free, unwired memory
+(an mlx process holding the same model, or several GiB wired, shrinks what `hipHostMalloc` can pin). Decode runs eager (value waits are not capturable); a prompt span copies each expert it uses
+from the window into a one-layer VRAM scratch by SDMA before its GEMMs (a 466-token prompt prefills in 4.5 s instead of 23.8 s by reading the window in place).
+The server log carries `experts interval/total` lines (hit rate, misses/token and MiB/token over the link, window fill, admissions, stage ms/token, round ms) and an `experts span` line a prompt span.
+Checks: `tools/vega-macos/moe_ref.py` (mlx_lm greedy references, 8 prompts incl. a 466- and a ~1100-token one) and `moe_gate.py` (shas of a running server, `--against` for cache on vs `TF_EXPERT_COPIES=0`).
 Recovery after a wedge ("GC TLB invalidation did not acknowledge", "not a GPU this engine supports"): `ut4g-boot --force`, then DPM auto (`hipmac-smi`).

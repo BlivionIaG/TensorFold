@@ -20,6 +20,9 @@ PROMPTS = [
     "Translate to German: 'The harbour town kept its ledgers in a stone tower.' Then list five German nouns from the sentence.",
     "List the planets of the solar system in order from the sun, one per line, with one fact each.",
     "Summarize the plot of Romeo and Juliet in about 80 words.",
+    # two long prompts: one prompt span of ~460 rows, and one of ~1100 rows (a second span past the 1024-row chunk), 40 tokens each
+    "The harbour town of Merrowick kept its ledgers in a stone tower. " * 28 + "Summarize this in two sentences.",
+    "The harbour town of Merrowick kept its ledgers in a stone tower. " * 66 + "Summarize this in two sentences.",
 ]
 m, t = load(model_dir)
 out = []
@@ -27,7 +30,8 @@ for q in PROMPTS:
     p = t.apply_chat_template([{"role": "user", "content": q}], add_generation_prompt=True, enable_thinking=False, tokenize=False)
     ids = t.encode(p)
     toks = []
-    for r in stream_generate(m, t, ids, max_tokens=n, sampler=make_sampler(temp=0.0)):
+    limit = 40 if len(q) > 400 else n
+    for r in stream_generate(m, t, ids, max_tokens=limit, sampler=make_sampler(temp=0.0)):
         toks.append(int(r.token))
         if r.token in (248046, 248044):
             break
