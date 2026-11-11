@@ -226,6 +226,26 @@ sends it to the pair whatever the load or the predicted times say and waits for 
 prompt too short to pull, a pair that is off or not answering, and a prefix the cache already covers are still prefilled here.
 The reply's `remote_prefix` says whether the pair prefilled it. A router in front of the Mac and the Sparks uses the field to
 send a prompt through the Mac to the pair (`force`) or keep it local (`never`) from its own view of both machines.
+### Layer split: the pair and the Mac prefill one long prompt together (opt-in, mixed arithmetic)
+
+A pull moves a state the pair computed whole; a layer split makes the two machines compute one prompt in a pipeline. The
+pair runs the encoder layers 0 to `TF_LS_CUT` - 1 chunk by chunk and streams each chunk's boundary rows (the residual after
+that layer, 41 KB a row) to the Mac while it computes the next chunk. The Mac runs layers `TF_LS_CUT` to 19 and layer 20's
+compressor on the rows as they arrive, then its own cone replay of layers 20 to 39 (`TF_DSV41_CONE`), and lands the pair's
+state of layers 0 to `TF_LS_CUT` - 1 into the same slot. Layers 20 to 39 never run on the pair. The state it builds is
+**mixed CUDA/Metal arithmetic**: no exact cache keeps it, the reply says `exact_mode: "remote_prefix"`, `remote_route:
+"split"` and `remote_arithmetic`. Switch it on with `TF_LS_SPLIT=1` on the Mac (the route then picks a split for a prompt of
+`TF_LS_MIN_TOKENS` (16384) or more when its predicted time beats the pull and the Mac's own prefill) and `TF_LS_PRODUCE=1` on
+the pair. The cut is 2, 8 or 14 (default 14): a layer that reuses an index source's selection must sit on the same side
+as it, and the index sources are layers 2, 8, 14 and 20, so the boundary rows alone cannot carry a cut in between. At 14 the
+Sparks stage is the slower one (0.28 ms a row against the Mac's 0.22), at 8 the Mac's is; both come to about 9.5 s for a 32k
+prompt plus a fixed 1.4 s, against 15.9 s on the pair alone (arithmetic from measured stage costs; the pipeline itself is
+not yet measured on the machines). The route learns the rates from its own splits (`TF_LS_SPARKS_TPS` and `TF_LS_FIXED_S`
+seed them). A split that fails at any point is prefilled again on the Mac from the first row. The reply's `tensorfold` block
+adds `split_cut_layer`, `split_rows`, `split_passes`, `split_first_row_seconds`, `split_rows_seconds`, `split_state_seconds`,
+`split_wait_seconds`, `split_compute_seconds`, `split_state_wait_seconds`, `split_restore_seconds`, `split_boundary_bytes` and
+`split_fell_back` (see `docs/api.md`). A pair with `TF_DSV41_KV_SPLIT` is never split.
+
 ### A pair that goes away
 
 * **Deadline.** A pull is bound by `TF_PREFILL_TIMEOUT_S` if set, else by 15 s plus three times the pull the Mac's own

@@ -8,6 +8,7 @@ const fabric = tf.fabric;
 const ps = fabric.prefill_source;
 const trigger = @import("remote_trigger.zig");
 const remote = @import("deepseek_v41_remote.zig");
+const lsplit = @import("deepseek_v41_split.zig");
 const q27 = @import("qwen27_remote.zig");
 const Filled = api.LaneHost.Remote.Filled;
 const Flags = api.LaneHost.Remote.Flags;
@@ -41,7 +42,7 @@ pub const Pull = struct {
     waited_ns: u64 = 0,
 
     pub fn source(p: *Pull) api.LaneHost.Remote.Source {
-        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running, .measured = measured };
+        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running, .measured = measured, .split = splitFill };
     }
 
     /// A prefix of `prompt` beyond `cached` on a whole chunk, asked for, fetched and landed whole in a blank Snapshot.
@@ -105,6 +106,59 @@ pub const Pull = struct {
         p.route.observePull(at, p.trigger.cached, took);
         outcome.* = .ok;
         return .{ .saved = snap, .at = at, .phases = .{ .queue_ns = p.waited_ns, .trigger_ns = triggered - t0, .pull_ns = took -| (triggered - t0), .land_ns = landing.land_ns, .bytes = got.bytes } };
+    }
+
+    /// A layer split of `prompt`'s first `upto` tokens, the gate held: see deepseek_v41_split.zig.
+    pub fn runSplit(p: *Pull, prompt: []const u32, upto: u64, gone: *const std.atomic.Value(bool), announce: api.LaneHost.Remote.Announce, outcome: *Outcome) !void {
+        const spec: lsplit.Spec = .{ .gpa = p.gpa, .io = p.io, .model = p.model, .route = &p.route, .checkpoint = p.checkpoint, .transport = .{ .ptr = p, .trigger = splitTrigger, .pull = splitPull, .release = splitRelease }, .cut = try lsplit.cutFromEnv(), .closing = &p.closing };
+        return lsplit.run(spec, prompt, upto, gone, p.route.splitDeadlineS(upto), announce, outcome);
+    }
+
+    fn splitTrigger(ptr: *anyopaque, id: [16]u8, tokens: []const u32, cut: u32, gone: *const std.atomic.Value(bool), limit_s: u64) anyerror!void {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        p.trigger.limit_s = limit_s;
+        p.trigger.gone = gone;
+        p.trigger.split_cut = cut;
+        defer {
+            p.trigger.gone = null;
+            p.trigger.split_cut = 0;
+        }
+        return p.trigger.trigger().start_fn(p.trigger.trigger().ptr, id, tokens);
+    }
+
+    /// The GET until the pair holds the export (it answers 404 before its prefill has been taken up), then its stream.
+    fn splitPull(ptr: *anyopaque, arena: std.mem.Allocator, id: [16]u8, expect: fabric.decoder.Expect, sink: fabric.decoder.Sink, reason: *fabric.decoder.Reason) anyerror!u64 {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        const deadline = fabric.words.nowNs() + expect.open_timeout_ns;
+        p.from.budget_ns = expect.open_timeout_ns;
+        while (true) {
+            const got = p.from.pull(arena, id, expect, sink, reason) catch |err| {
+                if (err != error.NotHeld or expect.aborted() or fabric.words.nowNs() >= deadline) {
+                    if (err == error.Unauthorized) std.log.warn("remote prefill: the GB10 answered HTTP 401 on the export", .{});
+                    return err;
+                }
+                fabric.words.pause(20 * std.time.ns_per_ms);
+                continue;
+            };
+            if (got.manifest.first_token != 0) return error.PartialPrefix;
+            return got.bytes;
+        }
+    }
+
+    fn splitRelease(ptr: *anyopaque, id: [16]u8) void {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        p.from.release(id);
+    }
+
+    /// A split of `prompt`: the same gate and breaker as a pull, the engine fed through `announce` meanwhile.
+    fn splitFill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool), announce: api.LaneHost.Remote.Announce) anyerror!void {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        if (p.closing.load(.acquire) or p.off.load(.acquire)) return;
+        const upto = p.policy.upto(prompt.len, cached) orelse return;
+        p.waited_ns = p.route.admit(p.io, p.route.estimateFor(upto, prompt.len - cached, directive), &p.closing, gone) orelse return;
+        defer p.route.leave();
+        if (p.closing.load(.acquire) or p.off.load(.acquire) or gone.load(.acquire)) return;
+        return api.LaneHost.Remote.guardedSplit(p, prompt, upto, gone, announce);
     }
 
     /// A mismatch no retry mends (the checkpoint, the prompt's tokens, the protocol) turns remote prefill off for good.

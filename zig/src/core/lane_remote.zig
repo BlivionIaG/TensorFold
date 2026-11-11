@@ -49,8 +49,37 @@ pub const Announce = struct {
 
 /// A pull at its gate: ask the breaker, check a half-open pair is alive, run `p.run`, tell the breaker how it went.
 pub fn guarded(p: anytype, prompt: []const u32, cached: u64, upto: u64, gone: *const std.atomic.Value(bool)) !?Filled {
+    const Run = struct {
+        prompt: []const u32,
+        cached: u64,
+        upto: u64,
+        gone: *const std.atomic.Value(bool),
+
+        fn call(r: @This(), q: @TypeOf(p), outcome: *route.Outcome) !?Filled {
+            return q.run(r.prompt, r.cached, r.upto, r.gone, outcome);
+        }
+    };
+    return (try gated(p, ?Filled, null, Run{ .prompt = prompt, .cached = cached, .upto = upto, .gone = gone }, Run.call));
+}
+
+/// A layer split at the same gate (`p.runSplit`): the breaker's door and verdict as for a pull; returns when it ends.
+pub fn guardedSplit(p: anytype, prompt: []const u32, upto: u64, gone: *const std.atomic.Value(bool), announce: Announce) !void {
+    const Run = struct {
+        prompt: []const u32,
+        upto: u64,
+        gone: *const std.atomic.Value(bool),
+        announce: Announce,
+
+        fn call(r: @This(), q: @TypeOf(p), outcome: *route.Outcome) !void {
+            return q.runSplit(r.prompt, r.upto, r.gone, r.announce, outcome);
+        }
+    };
+    return gated(p, void, {}, Run{ .prompt = prompt, .upto = upto, .gone = gone, .announce = announce }, Run.call);
+}
+
+fn gated(p: anytype, comptime T: type, none: T, ctx: anytype, comptime call: anytype) !T {
     const door = p.route.door(Route.nowNs(p.io));
-    if (door == .local) return null;
+    if (door == .local) return none;
     var outcome: route.Outcome = .other;
     defer switch (p.route.finish(Route.nowNs(p.io), outcome)) {
         .none => {},
@@ -59,9 +88,9 @@ pub fn guarded(p: anytype, prompt: []const u32, cached: u64, upto: u64, gone: *c
     };
     if (door == .probe and !p.alive()) {
         outcome = .down;
-        return null;
+        return none;
     }
-    return p.run(prompt, cached, upto, gone, &outcome) catch |err| {
+    return call(ctx, p, &outcome) catch |err| {
         outcome = if (route.pairDown(err)) .down else .other;
         return err;
     };
@@ -255,7 +284,7 @@ fn fillSplit(t: *Ticket) void {
     const source = t.source;
     const h = t.host;
     const left = t.state.load(.acquire) == Ticket.left;
-    if (!left) source.split.?(source.ptr, t.prompt, t.cached, t.directive, &t.gone, .{ .ctx = t, .call = announce }) catch |err| {
+    if (!left) source.split.?(source.ptr, t.prompt, t.cached, t.directive, &t.gone, .{ .ctx = t, .call = opened }) catch |err| {
         if (err != error.Aborted) std.log.warn("layer split failed ({s}); the prompt is prefilled here", .{@errorName(err)});
     };
     if (t.state.cmpxchgStrong(Ticket.running, Ticket.landed, .acq_rel, .acquire) != null) free(t); // its job took the feed or ended
@@ -264,7 +293,7 @@ fn fillSplit(t: *Ticket) void {
 }
 
 /// The family's stream is open: the job is admitted from now on, and its passes run on the rows as they arrive.
-fn announce(ctx: *anyopaque, feed: *anyopaque) void {
+fn opened(ctx: *anyopaque, feed: *anyopaque) void {
     const t: *Ticket = @ptrCast(@alignCast(ctx));
     t.feed.store(feed, .release);
     wake(t.host);
