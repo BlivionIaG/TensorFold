@@ -34,8 +34,7 @@ pub const State = struct {
 
 /// TF_DSV41_SPLIT_ASYNC=0 waits for every entered pass as the normal forward does.
 pub fn enabled() bool {
-    const v = std.c.getenv("TF_DSV41_SPLIT_ASYNC") orelse return true;
-    return !std.mem.eql(u8, std.mem.span(v), "0");
+    return @import("sys").environment.read(bool, "TF_DSV41_SPLIT_ASYNC", true) catch true;
 }
 
 fn add(m: *Model, buf: mtl.Buffer) void {

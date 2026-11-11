@@ -48,6 +48,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_LS_DUMP_LAYERS", .scope = .cuda, .kind = .path, .forms = "comma-separated whole layer numbers, text without control characters, whose output boundary the prefill dumps" },
     .{ .name = "TF_LS_CHECK", .scope = .metal, .kind = .path, .forms = "dir:k,k:ids file, text without control characters (layer-split gate: enter or stop the Metal forward at layers k)" },
     .{ .name = "TF_LS_SPLIT", .scope = .dsv41, .kind = .flag, .forms = "0 or 1 (default 0): the Mac may split a long prompt's prefill with the pair, layers below the cut there and the rest here; mixed CUDA/Metal arithmetic" },
+    .{ .name = "TF_DSV41_SPLIT_ASYNC", .scope = .dsv41, .kind = .flag, .forms = "0 or 1 (default 1): the Mac commits a layer split's entered passes without waiting for each; 0 waits for every pass" },
     .{ .name = "TF_LS_PRODUCE", .scope = .dsv41, .kind = .flag, .forms = "0 or 1 (default 0): a DeepSeek-V4.1 CUDA producer accepts layer-split prefills (the cut layers' boundary rows and state)" },
     .{ .name = "TF_LS_CUT", .scope = .dsv41, .kind = .u32, .only = &.{ 2, 8, 14 }, .forms = "2, 8 or 14 (default 14): the first layer the Mac runs; an index source, so the selection a layer reuses is made on its own side" },
     .{ .name = "TF_LS_MIN_TOKENS", .scope = .dsv41, .kind = .u64, .min = 1024, .max = 1 << 24, .forms = "a whole prompt-token count from 1024 (default 16384): the shortest prompt the route may split" },
