@@ -509,24 +509,51 @@ pub const Store = struct {
         return avail >= need;
     }
 
-    /// Rebuilds NVMe entries on restart (ranks then intersect them), deltas on their bases' paths; returns how many.
+    /// Drops the collected files the other ranks lack (deleting them) before anything is indexed.
+    pub const Narrow = struct {
+        ctx: *anyopaque,
+        run: *const fn (ctx: *anyopaque, d: *Disk, found: *std.ArrayList(Disk.Found)) anyerror!void,
+    };
+
+    /// Rebuilds NVMe entries on restart, deltas on their bases' paths; returns how many.
     pub fn reconcile(s: *Store) !u32 {
+        return s.reconcileWith(null);
+    }
+
+    /// `narrow` runs on every rank with its collected files, so ranks index the same set in the same order.
+    pub fn reconcileWith(s: *Store, narrow: ?Narrow) !u32 {
         const d = s.disk orelse return 0;
         var found: std.ArrayList(Disk.Found) = .empty;
         defer {
             for (found.items) |f| s.gpa.free(f.ids);
             found.deinit(s.gpa);
         }
-        try d.scan(&found);
-        for (found.items) |f| {
+        try d.collect(&found);
+        if (narrow) |n| try n.run(n.ctx, d, &found);
+        try d.adopt(&found);
+        const ids = try s.gpa.alloc(u32, found.items.len);
+        defer s.gpa.free(ids);
+        for (found.items, ids) |f, *id| {
             var anchor: u32 = none;
             if (f.head.hasBase()) {
                 const b = s.index.lookup(f.head.base) orelse return error.NoBase;
                 anchor = s.index.nodeAt(b, f.head.first_page) orelse return error.BadChain;
             }
-            const r = try s.index.insertFrom(f.head.tag, anchor, f.ids, .{ .file = true, .kind = f.head.kind });
+            id.* = (try s.index.insertFrom(f.head.tag, anchor, f.ids, .{ .file = true, .kind = f.head.kind })).id;
+        }
+        // the least recently written file gets the oldest use stamp
+        const Age = struct { mtime: i64, id: u32 };
+        const ages = try s.gpa.alloc(Age, ids.len);
+        defer s.gpa.free(ages);
+        for (found.items, ids, ages) |f, id, *a| a.* = .{ .mtime = f.mtime, .id = id };
+        std.mem.sort(Age, ages, {}, struct {
+            fn lt(_: void, x: Age, y: Age) bool {
+                return x.mtime < y.mtime;
+            }
+        }.lt);
+        for (ages) |a| {
             s.clock += 1;
-            s.index.get(r.id).extra.used = s.clock;
+            s.index.get(a.id).extra.used = s.clock;
         }
         return @intCast(found.items.len);
     }

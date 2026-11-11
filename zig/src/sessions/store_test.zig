@@ -11,6 +11,7 @@ const disk_mod = @import("disk.zig");
 const store_mod = @import("store.zig");
 const Store = store_mod.Store;
 const Bounded = store_mod.Bounded;
+const narrow_mod = @import("rank_narrow.zig");
 
 const page = 64;
 const fams = [_]Family{
@@ -55,10 +56,14 @@ const Rank = struct {
     disk: *disk_mod.Disk,
     store: Store,
 
+    /// Set by the replicated-pair test: every rank holds whole pages (a pool of its own), the tier files name a pair.
+    var replicated_pair = false;
+
     fn init(r: *Rank, gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32, policy: store_mod.Policy) !void {
-        r.pool = try Pool.init(gpa, .{ .families = &fams, .page = page }, 96 * page, world, rank);
+        const repl = replicated_pair;
+        r.pool = try Pool.init(gpa, .{ .families = &fams, .page = page }, 96 * page, if (repl) 1 else world, if (repl) 0 else rank);
         r.host = try HostPool.init(gpa, &r.pool);
-        r.disk = try disk_mod.Disk.open(gpa, testing.io, .{ .root = root, .compat = @splat(7), .rank = rank, .world = world, .chunk = 64 << 10, .staging = 4, .lanes = 2, .min_tokens = 1 });
+        r.disk = try disk_mod.Disk.open(gpa, testing.io, .{ .root = root, .compat = @splat(7), .rank = rank, .world = world, .replicated = repl, .chunk = 64 << 10, .staging = 4, .lanes = 2, .min_tokens = 1 });
         r.store = try Store.init(gpa, testing.io, &r.pool, r.host.store(), r.disk, policy);
     }
 
@@ -409,4 +414,99 @@ test "split parking refuses a physical-only bounded measure before submitting wo
     const job = (try r.store.beginPark(hit.id)).?;
     _ = try r.store.settle(job);
     try testing.expect(!r.store.entry(hit.id).ram);
+}
+
+/// What a peer rank offers a restart: its files' keys, packed as the ranks exchange them.
+const Peer = struct {
+    me: u32,
+    keys: []const i32,
+
+    fn all(ctx: *anyopaque, mine: []const i32, out: []i32) anyerror!void {
+        const p: *Peer = @ptrCast(@alignCast(ctx));
+        const count: i32 = @intCast(p.keys.len / 4);
+        if (mine.len == 1) {
+            out[p.me] = mine[0];
+            out[1 - p.me] = count;
+            return;
+        }
+        @memset(out, 0);
+        @memcpy(out[p.me * mine.len ..][0..mine.len], mine);
+        @memcpy(out[(1 - p.me) * mine.len ..][0..p.keys.len], p.keys);
+    }
+
+    fn run(ctx: *anyopaque, d: *disk_mod.Disk, found: *std.ArrayList(disk_mod.Disk.Found)) anyerror!void {
+        const p: *Peer = @ptrCast(@alignCast(ctx));
+        try narrow_mod.narrow(testing.allocator, d, found, 2, .{ .ctx = p, .all = all });
+    }
+};
+
+fn keysOf(gpa: std.mem.Allocator, root: []const u8, rank: u32) ![]i32 {
+    const d = try disk_mod.Disk.open(gpa, testing.io, .{ .root = root, .compat = @splat(7), .rank = rank, .world = 2, .replicated = true, .chunk = 64 << 10, .staging = 4, .lanes = 2 });
+    defer d.close();
+    var found: std.ArrayList(disk_mod.Disk.Found) = .empty;
+    defer {
+        for (found.items) |f| gpa.free(f.ids);
+        found.deinit(gpa);
+    }
+    try d.collect(&found);
+    const out = try gpa.alloc(i32, found.items.len * 4);
+    for (found.items, 0..) |f, i| @memcpy(std.mem.sliceAsBytes(out[i * 4 ..][0..4]), &f.head.key);
+    return out;
+}
+
+/// A restart of one rank of a replicated pair; the keys of its tier index, in the order they were registered.
+fn restartPair(gpa: std.mem.Allocator, root: []const u8, rank: u32, peer: []const i32, keys: *std.ArrayList([16]u8)) !void {
+    var r: Rank = undefined;
+    try r.init(gpa, root, 2, rank, .{ .chats = 1 });
+    defer r.deinit();
+    var p: Peer = .{ .me = rank, .keys = peer };
+    _ = try r.store.reconcileWith(.{ .ctx = &p, .run = Peer.run });
+    for (r.disk.recs.items) |rec| try keys.append(gpa, rec.key);
+}
+
+test "replicated ranks restart on the files both found, indexed in the same order" {
+    const gpa = testing.allocator;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const root = try tmpRoot(gpa, &tmp, "pair");
+    defer gpa.free(root);
+    Rank.replicated_pair = true;
+    defer Rank.replicated_pair = false;
+    var t: [2]std.ArrayList(u64) = .{ .empty, .empty };
+    defer for (&t) |*l| l.deinit(gpa);
+    try scenario(gpa, root, 2, 0, false, &t[0]);
+    try scenario(gpa, root, 2, 1, true, &t[1]);
+    const k0 = try keysOf(gpa, root, 0);
+    defer gpa.free(k0);
+    const k1 = try keysOf(gpa, root, 1);
+    defer gpa.free(k1);
+    try testing.expectEqual(@as(usize, 4), k0.len / 4);
+    var a: std.ArrayList([16]u8) = .empty;
+    defer a.deinit(gpa);
+    var b: std.ArrayList([16]u8) = .empty;
+    defer b.deinit(gpa);
+    try restartPair(gpa, root, 0, k1, &a);
+    try restartPair(gpa, root, 1, k0, &b);
+    try testing.expectEqual(@as(usize, 4), a.items.len);
+    try testing.expectEqualSlices([16]u8, a.items, b.items);
+    // rank 1 loses a file: rank 0 forgets it too (and any delta stacked on it), and both keep one order
+    var rank1 = try std.Io.Dir.cwd().openDir(testing.io, root, .{ .iterate = true });
+    defer rank1.close(testing.io);
+    var d1 = try rank1.openDir(testing.io, "0707070707070707/rank1", .{ .iterate = true });
+    defer d1.close(testing.io);
+    var gone: [16]u8 = undefined;
+    @memcpy(&gone, std.mem.sliceAsBytes(k1[0..4]));
+    var nb: [48]u8 = undefined;
+    try d1.deleteFile(testing.io, try std.fmt.bufPrint(&nb, "{x}.tfs", .{&gone}));
+    const k1b = try keysOf(gpa, root, 1);
+    defer gpa.free(k1b);
+    var a2: std.ArrayList([16]u8) = .empty;
+    defer a2.deinit(gpa);
+    var b2: std.ArrayList([16]u8) = .empty;
+    defer b2.deinit(gpa);
+    try restartPair(gpa, root, 0, k1b, &a2);
+    try restartPair(gpa, root, 1, k0, &b2);
+    try testing.expect(a2.items.len < 4);
+    try testing.expectEqualSlices([16]u8, a2.items, b2.items);
+    for (a2.items) |k| try testing.expect(!std.mem.eql(u8, &k, &gone));
 }

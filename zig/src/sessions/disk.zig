@@ -38,6 +38,8 @@ pub const Options = struct {
     max_chain: u32 = 8,
     /// Disposable serving namespace; persistent callers keep this false.
     fresh_start: bool = false,
+    /// Every rank's files hold whole entries (no split family): a restart may index them where world > 1.
+    replicated: bool = false,
 };
 
 /// A piece of bounded state (rings, carries, taps): small, host bytes.
@@ -183,13 +185,13 @@ pub const Disk = struct {
         return &d.recs.items[i];
     }
 
-    fn fileName(key: Digest, ext: []const u8, buf: *[48]u8) [:0]const u8 {
+    pub fn fileName(key: Digest, ext: []const u8, buf: *[48]u8) [:0]const u8 {
         const n = (std.fmt.bufPrint(buf[0..47], "{x}.{s}", .{ &key, ext }) catch unreachable).len;
         buf[n] = 0;
         return buf[0..n :0];
     }
 
-    fn openFile(d: *Disk, name: [:0]const u8, write: bool) !struct { fd: linux.fd_t, direct: bool } {
+    pub fn openFile(d: *Disk, name: [:0]const u8, write: bool) !struct { fd: linux.fd_t, direct: bool } {
         var flags: linux.O = .{ .ACCMODE = if (write) .WRONLY else .RDONLY, .CLOEXEC = true };
         if (write) {
             flags.CREAT = true;
@@ -410,7 +412,7 @@ pub const Disk = struct {
         return id;
     }
 
-    fn add(d: *Disk, key: Digest, base: ?Digest, tag: u32, kind: u32, pos: u64, first_page: u32, npages: u32, size: u64, charge: u64) !u32 {
+    pub fn add(d: *Disk, key: Digest, base: ?Digest, tag: u32, kind: u32, pos: u64, first_page: u32, npages: u32, size: u64, charge: u64) !u32 {
         var r: Rec = .{ .key = key, .tag = tag, .kind = kind, .pos = pos, .first_page = first_page, .npages = npages, .size = size, .charge = charge };
         if (base) |b| {
             const bi = d.by_key.get(b) orelse return error.NoBase;
@@ -429,87 +431,12 @@ pub const Disk = struct {
         return id;
     }
 
-    /// A valid file found on restart: its header, size and verified ids (tokens [first_page x page, pos), owned).
-    pub const Found = struct {
-        head: Head,
-        size: u64,
-        mtime: i64,
-        ids: []i32,
-
-        fn older(_: void, a: Found, b: Found) bool {
-            return a.mtime < b.mtime or (a.mtime == b.mtime and a.head.first_page < b.head.first_page);
-        }
-    };
-
-    /// Indexes the directory on restart: drops .tmp and bad files, checks ids, registers bases before their deltas.
-    pub fn scan(d: *Disk, out: *std.ArrayList(Found)) !void {
-        if (@import("builtin").os.tag != .linux) return error.UnsupportedPlatform;
-        if (d.opts.world > 1) return error.SplitReconcileUnsupported;
-        var it = d.dir.iterate();
-        var nb: [48]u8 = undefined;
-        while (try it.next(d.io)) |ent| {
-            if (ent.name.len >= nb.len) continue;
-            @memcpy(nb[0..ent.name.len], ent.name);
-            nb[ent.name.len] = 0;
-            const name = nb[0..ent.name.len :0];
-            if (std.mem.endsWith(u8, name, ".tmp")) {
-                _ = linux.unlinkat(d.dir.handle, name, 0);
-                continue;
-            }
-            if (!std.mem.endsWith(u8, name, ".tfs")) continue;
-            const f = d.found(name) catch {
-                d.stats.bad += 1;
-                _ = linux.unlinkat(d.dir.handle, name, 0);
-                continue;
-            };
-            try out.append(d.gpa, f);
-        }
-        std.mem.sort(Found, out.items, {}, Found.older);
-        var i: usize = 0;
-        while (i < out.items.len) {
-            const f = out.items[i];
-            const base: ?Digest = if (f.head.hasBase()) f.head.base else null;
-            if (base != null and d.by_key.get(base.?) == null) {
-                d.stats.bad += 1;
-                var kb: [48]u8 = undefined;
-                _ = linux.unlinkat(d.dir.handle, fileName(f.head.key, "tfs", &kb), 0);
-                d.gpa.free(f.ids);
-                _ = out.orderedRemove(i);
-                continue;
-            }
-            _ = try d.add(f.head.key, base, f.head.tag, f.head.kind, f.head.pos, f.head.first_page, f.head.npages, f.size, f.size);
-            i += 1;
-        }
-    }
-
-    fn found(d: *Disk, name: [:0]const u8) !Found {
-        const f = try d.openFile(name, false);
-        defer _ = linux.close(f.fd);
-        var lay = try d.readHead(f.fd);
-        defer lay.deinit(d.gpa);
-        const h = lay.head;
-        var kb: [48]u8 = undefined;
-        if (!std.mem.eql(u8, fileName(h.key, "tfs", &kb), name)) return error.BadHeader;
-        if (!std.mem.eql(u8, &h.compat, &d.opts.compat) or h.rank != d.opts.rank or h.world != d.opts.world) return error.Foreign;
-        var st: linux.Statx = undefined;
-        if (linux.errno(linux.statx(f.fd, "", linux.AT.EMPTY_PATH, .{ .SIZE = true, .MTIME = true }, &st)) != .SUCCESS or st.size < h.total) return error.Truncated;
-        const seg = lay.find(.ids, "ids") orelse return error.BadHeader;
-        if (seg.nbytes % 4 != 0 or h.pos < @as(u64, h.first_page) * h.page or seg.nbytes / 4 != h.pos - @as(u64, h.first_page) * h.page) return error.BadHeader;
-        const ids = try d.gpa.alloc(i32, seg.nbytes / 4);
-        errdefer d.gpa.free(ids);
-        const sb = try d.staging.get();
-        defer d.staging.put(sb);
-        for (0..seg.nchunks) |ci| {
-            const c = seg.chunkAt(@intCast(ci));
-            const buf = d.staging.buf(sb);
-            try lanes_mod.preadAll(f.fd, buf[0..c.span], c.off);
-            var dg: [32]u8 = undefined;
-            std.crypto.hash.sha2.Sha256.hash(buf[0..c.data], &dg, .{});
-            if (!std.mem.eql(u8, &dg, &lay.digests[seg.first_digest + ci])) return error.ChecksumMismatch;
-            @memcpy(std.mem.sliceAsBytes(ids)[@as(usize, ci) * seg.chunk ..][0..c.data], buf[0..c.data]);
-        }
-        return .{ .head = h, .size = st.size, .mtime = st.mtime.sec * std.time.ns_per_s + st.mtime.nsec, .ids = ids };
-    }
+    const scan_mod = @import("disk_scan.zig");
+    pub const Found = scan_mod.Found;
+    pub const scan = scan_mod.scan;
+    pub const collect = scan_mod.collect;
+    pub const adopt = scan_mod.adopt;
+    pub const discard = scan_mod.discard;
 
     fn link(d: *Disk, id: u32) void {
         const r = &d.recs.items[id];

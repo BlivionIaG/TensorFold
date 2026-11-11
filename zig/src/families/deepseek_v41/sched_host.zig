@@ -60,7 +60,9 @@ pub const SchedHost = struct {
 
     pub fn describe(h: *const SchedHost, buf: []u8) []const u8 {
         const s = h.p.s;
-        return std.fmt.bufPrint(buf, "prompts in pieces of {d} rows between decode rounds (short {d}, share {d}, long > {d} tokens {d} at a time{s})", .{ s.rows, s.short, s.share, s.long_prompt, s.concurrent, if (s.floor != null) ", memory floor and adaptive rows" else "" }) catch "prompts in pieces";
+        var slice: [32]u8 = undefined;
+        const decode = if (s.interleave_ms > 0) std.fmt.bufPrint(&slice, "{d} ms a piece", .{s.interleave_ms}) catch "" else std.fmt.bufPrint(&slice, "share {d}", .{s.share}) catch "";
+        return std.fmt.bufPrint(buf, "prompts in pieces of {d} rows between decode rounds (short {d}, {s}, long > {d} tokens {d} at a time{s})", .{ s.rows, s.short, decode, s.long_prompt, s.concurrent, if (s.floor != null) ", memory floor and adaptive rows" else "" }) catch "prompts in pieces";
     }
 
     fn self(ctx: *anyopaque) *SchedHost {
