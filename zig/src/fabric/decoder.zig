@@ -20,9 +20,15 @@ pub const Expect = struct {
     protocol: u16 = wire.version,
     /// Set by the caller when the request is gone: the pull stops between calls, after a CLOSE if it had opened.
     abort: ?*const std.atomic.Value(bool) = null,
+    /// True while the producer is still prefilling (the pull began with its trigger): OPEN and PULL wait for it.
+    streaming: ?*const std.atomic.Value(bool) = null,
 
     pub fn aborted(e: Expect) bool {
         return if (e.abort) |a| a.load(.acquire) else false;
+    }
+
+    fn live(e: Expect) bool {
+        return if (e.streaming) |s| s.load(.acquire) else false;
     }
 };
 
@@ -52,7 +58,7 @@ pub const Pulled = struct { manifest: manifest.Manifest, frames: u64, bytes: u64
 /// Pull one handoff over `client`; any failure after OPEN still asks the producer to CLOSE it.
 pub fn pull(arena: Allocator, client: *mailbox.Client, handoff: [16]u8, expect: Expect, sink: Sink, reason: *Reason) Error!Pulled {
     const m = try open(arena, client, handoff, expect, reason);
-    const got = frames(client, handoff, m, expect, sink, reason) catch |err| {
+    const got = frames(arena, client, handoff, m, expect, sink, reason) catch |err| {
         if (!client.poisoned) close(client, handoff) catch {};
         return err;
     };
@@ -75,7 +81,7 @@ fn request(client: *mailbox.Client, kind: wire.Kind, handoff: [16]u8, frame: u32
 
 fn open(arena: Allocator, client: *mailbox.Client, handoff: [16]u8, expect: Expect, reason: *Reason) Error!manifest.Manifest {
     const options = if (expect.checksum) "{\"checksum\": true}" else "{\"checksum\": false}";
-    const deadline = words.nowNs() + expect.open_timeout_ns;
+    var deadline = words.nowNs() + expect.open_timeout_ns;
     var nap: u64 = std.time.ns_per_ms;
     while (true) {
         const h = try request(client, .open, handoff, 0, options, expect.protocol);
@@ -83,6 +89,7 @@ fn open(arena: Allocator, client: *mailbox.Client, handoff: [16]u8, expect: Expe
         switch (h.kind) {
             .wait => {
                 if (expect.aborted()) return error.Aborted;
+                if (expect.live()) deadline = words.nowNs() + expect.open_timeout_ns;
                 if (words.nowNs() >= deadline) return error.Expired;
                 words.pause(nap);
                 nap = @min(nap * 2, 20 * std.time.ns_per_ms);
@@ -113,33 +120,85 @@ fn check(m: manifest.Manifest, h: wire.Header, handoff: [16]u8, expect: Expect) 
     }
 }
 
-fn frames(client: *mailbox.Client, handoff: [16]u8, m: manifest.Manifest, expect: Expect, sink: Sink, reason: *Reason) Error!Pulled {
-    var next: [512]u64 = @splat(0);
-    if (m.layers.len > next.len) return error.Protocol;
-    var bytes: u64 = 0;
-    for (0..m.frames) |i| {
-        const frame: u32 = @intCast(i);
-        if (expect.aborted()) return error.Aborted;
-        const h = try request(client, .pull, handoff, frame, "", m.protocol);
-        const reply = client.box.replyPayload();
-        if (h.kind == .@"error") {
-            reason.set(wire.body(reply, h));
-            return error.Refused;
-        }
-        if (h.kind != .data or h.frame != frame or h.frames != m.frames or (h.kind == .data and h.version != m.protocol)) return error.Protocol;
-        const at = for (m.layers, 0..) |l, j| {
-            if (l.index == h.layer) break j;
-        } else return error.Protocol;
-        const layer = &m.layers[at];
-        if (!rowsFit(h.row_start, h.rows, layer.rows()) or h.row_start != next[at]) return error.Protocol;
-        if (h.nbytes != layer.frameBytes(h.row_start, h.rows) orelse return error.Protocol) return error.Protocol;
-        const payload = wire.body(reply, h);
-        if (expect.checksum and (h.flags & wire.checked == 0 or wire.crc32(payload) != h.crc)) return error.Corrupt;
-        sink.put_fn(sink.ptr, layer, h.row_start, h.rows, payload) catch return error.Protocol;
-        next[at] += h.rows;
-        bytes += h.nbytes;
+/// The most frames a manifest may announce: a peer's count sizes the pull's bookkeeping.
+const max_frames: u64 = 1 << 22;
+
+/// The most PULLs a sweep answered `wait` before it rests: later frames of a streamed export are ready later.
+const max_waits: u32 = 16;
+
+/// Every frame into `sink`; recurrent parts are independent, so a frame still being built (`wait`) is skipped for now.
+fn frames(arena: Allocator, client: *mailbox.Client, handoff: [16]u8, m: manifest.Manifest, expect: Expect, sink: Sink, reason: *Reason) Error!Pulled {
+    if (m.layers.len > 512 or m.frames > max_frames) return error.Protocol;
+    var got: [512]u64 = @splat(0);
+    var base: [512]u64 = undefined; // the first frame of each layer when every layer is one frame a part
+    var any_order = m.layers.len > 0;
+    var at_frame: u64 = 0;
+    for (m.layers, 0..) |l, j| {
+        base[j] = at_frame;
+        at_frame += l.parts.len;
+        any_order = any_order and l.kind == .recurrent and l.parts.len > 0;
     }
-    for (m.layers, 0..) |l, j| if (next[j] != l.rows()) return error.Protocol;
+    any_order = any_order and at_frame == m.frames;
+    const n: usize = @intCast(m.frames);
+    const done = try arena.alloc(bool, n);
+    @memset(done, false);
+    var left = n;
+    var first: usize = 0;
+    var bytes: u64 = 0;
+    var nap: u64 = std.time.ns_per_ms;
+    var moved = words.nowNs(); // the last time a frame landed
+    while (left > 0) {
+        var progressed = false;
+        var waits: u32 = 0;
+        var i = first;
+        while (i < n) : (i += 1) {
+            if (done[i]) continue;
+            if (expect.aborted()) return error.Aborted;
+            const frame: u32 = @intCast(i);
+            const h = try request(client, .pull, handoff, frame, "", m.protocol);
+            const reply = client.box.replyPayload();
+            if (h.kind == .wait) {
+                waits += 1;
+                if (!any_order or waits >= max_waits) break;
+                continue;
+            }
+            if (h.kind == .@"error") {
+                reason.set(wire.body(reply, h));
+                return error.Refused;
+            }
+            if (h.kind != .data or h.frame != frame or h.frames != m.frames or h.version != m.protocol) return error.Protocol;
+            const at = for (m.layers, 0..) |l, j| {
+                if (l.index == h.layer) break j;
+            } else return error.Protocol;
+            const layer = &m.layers[at];
+            if (!rowsFit(h.row_start, h.rows, layer.rows())) return error.Protocol;
+            if (any_order) {
+                if (base[at] + h.row_start != i) return error.Protocol;
+            } else if (h.row_start != got[at]) return error.Protocol;
+            if (h.nbytes != layer.frameBytes(h.row_start, h.rows) orelse return error.Protocol) return error.Protocol;
+            const payload = wire.body(reply, h);
+            if (expect.checksum and (h.flags & wire.checked == 0 or wire.crc32(payload) != h.crc)) return error.Corrupt;
+            sink.put_fn(sink.ptr, layer, h.row_start, h.rows, payload) catch return error.Protocol;
+            got[at] += h.rows;
+            bytes += h.nbytes;
+            done[i] = true;
+            left -= 1;
+            progressed = true;
+            waits = 0;
+        }
+        while (first < n and done[first]) first += 1;
+        if (left == 0) break;
+        if (progressed) {
+            nap = std.time.ns_per_ms;
+            moved = words.nowNs();
+            continue;
+        }
+        if (expect.aborted()) return error.Aborted;
+        if (expect.live()) moved = words.nowNs() else if (words.nowNs() - moved >= expect.open_timeout_ns) return error.Expired;
+        words.pause(nap);
+        nap = @min(nap * 2, 20 * std.time.ns_per_ms);
+    }
+    for (m.layers, 0..) |l, j| if (got[j] != l.rows()) return error.Protocol;
     return .{ .manifest = m, .frames = m.frames, .bytes = bytes };
 }
 

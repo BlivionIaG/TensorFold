@@ -43,3 +43,6 @@ test {
 test {
     _ = @import("shards_test.zig");
 }
+test {
+    _ = @import("stream_gate_test.zig");
+}

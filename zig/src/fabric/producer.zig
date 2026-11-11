@@ -7,6 +7,17 @@ const mailbox = @import("mailbox.zig");
 const words = @import("words.zig");
 const Allocator = std.mem.Allocator;
 
+/// Whether one part of a streamed export may be served yet.
+pub const PartState = enum { ready, pending, failed };
+
+/// A streamed export's readiness by (position in `layers`, part): a PULL for a `pending` part is answered `wait`.
+pub const Gate = struct {
+    ptr: *anyopaque,
+    state_fn: *const fn (ptr: *anyopaque, position: u32, part: u64) PartState,
+    /// Why a part is `failed`, for the decoder's ERROR.
+    why_fn: *const fn (ptr: *anyopaque) []const u8,
+};
+
 /// One request's exported pages; `sources[i]` holds `layers[i]`'s rows.
 pub const Export = struct {
     handoff: [16]u8,
@@ -16,6 +27,8 @@ pub const Export = struct {
     layers: []const manifest.Layer,
     sources: []const frames.Source,
     frames: []frames.Frame = &.{},
+    /// null: every part is ready when the export is added
+    gate: ?Gate = null,
 
     /// Protocol 2 when a layer is recurrent, so a protocol 1 decoder refuses it; else protocol 1, byte for byte.
     pub fn protocol(e: *const Export) u16 {
@@ -73,6 +86,13 @@ pub const Table = struct {
         t.hold();
         defer t.lock.unlock();
         return if (t.held.get(handoff)) |h| h.entry else null;
+    }
+
+    /// A held export's age starts over: a streamed export is as old as its last progress, not its first part.
+    pub fn touch(t: *Table, handoff: [16]u8) void {
+        t.hold();
+        defer t.lock.unlock();
+        if (t.held.getPtr(handoff)) |h| h.added = t.clock();
     }
 
     /// Release a handoff; its request is reported finished so its pages can be freed.
@@ -209,6 +229,11 @@ pub const Responder = struct {
         const e = exp orelse return r.noFrame(seq, h);
         if (h.frame >= e.frames.len) return r.noFrame(seq, h);
         const f = e.frames[h.frame];
+        if (e.gate) |g| switch (g.state_fn(g.ptr, f.position, f.row_start)) {
+            .ready => {},
+            .pending => return r.reply(seq, .wait, h.handoff, "", 0),
+            .failed => return r.reply(seq, .@"error", h.handoff, g.why_fn(g.ptr), 0),
+        };
         const area = r.out.area[wire.header_bytes..];
         const nbytes = try e.sources[f.position].gather(f.row_start, f.rows, area);
         const checked = r.checksums.get(h.handoff) orelse true;
