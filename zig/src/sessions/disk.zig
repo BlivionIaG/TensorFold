@@ -38,8 +38,6 @@ pub const Options = struct {
     max_chain: u32 = 8,
     /// Disposable serving namespace; persistent callers keep this false.
     fresh_start: bool = false,
-    /// Every rank's files hold whole entries (no split family): a restart may index them where world > 1.
-    replicated: bool = false,
 };
 
 /// A piece of bounded state (rings, carries, taps): small, host bytes.
@@ -221,7 +219,7 @@ pub const Disk = struct {
             try segs.append(d.gpa, .{ .name = format.segName(f.name), .kind = .pool, .family = @intCast(i), .nbytes = @as(u64, src.pages[i].len) * pb, .chunk = k * pb });
         }
         for (src.blobs) |b| try segs.append(d.gpa, .{ .name = format.segName(b.name), .kind = .blob, .family = 0, .nbytes = b.bytes.len, .chunk = cap });
-        const head: Head = .{ .key = src.key, .base = src.base orelse @splat(0), .compat = d.opts.compat, .tag = src.tag, .kind = src.kind, .page = src.page, .world = d.opts.world, .rank = d.opts.rank, .first_page = src.first_page, .npages = src.npages, .nseg = 0, .ndigest = 0, .pos = src.pos };
+        const head: Head = .{ .key = src.key, .base = src.base orelse @splat(0), .compat = d.opts.compat, .tag = src.tag, .kind = src.kind, .page = src.page, .world = d.opts.world, .rank = d.opts.rank, .first_page = src.first_page, .npages = src.npages, .nseg = 0, .ndigest = 0, .charge_kib = @import("disk_charge.zig").kib(src, d.opts.world), .pos = src.pos };
         return Layout.build(d.gpa, head, segs.items);
     }
 

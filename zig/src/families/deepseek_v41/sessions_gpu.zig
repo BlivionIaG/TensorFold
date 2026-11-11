@@ -193,10 +193,7 @@ pub const Sessions = struct {
             if (f.cfg.isKvSource(L) and f.cfg.compressRatio(L) == 2) carries += 1;
         }
         s.measure = .{ .rings = rings, .window = f.cfg.window, .carries = carries, .head_dim = f.cfg.head_dim, .hidden = f.cfg.hidden, .hc = f.cfg.hc_mult, .ds_blocks = shape.ds_blocks, .replay = replay };
-        // a split world's files hold a rank's share: that tier is purged at boot, the others survive a restart
-        var split = false;
-        for (kx.layout.families()) |fam| split = split or fam.split;
-        const fresh = o.fresh or (kx.world > 1 and split);
+        const fresh = o.fresh;
         if (o.disk) |root| {
             // the tier's compat ident: the families' layout, the split and this rank (a file is one rank's rows)
             var h = std.crypto.hash.sha2.Sha256.init(.{});
@@ -209,7 +206,7 @@ pub const Sessions = struct {
             var full: [32]u8 = undefined;
             h.final(&full);
             // the staging set (TF_DSV41_SESSION_STAGING_MIB) in 8 MiB chunks: a park's or restore's host transient
-            s.disk = try sessions.Disk.open(gpa, io, .{ .root = root, .compat = full[0..16].*, .rank = kx.rank, .world = kx.world, .budget = o.disk_budget, .fresh_start = fresh, .replicated = !split, .min_tokens = o.disk_min_tokens, .staging = @max(2, o.staging_mib / 8), .chunk = 8 << 20 });
+            s.disk = try sessions.Disk.open(gpa, io, .{ .root = root, .compat = full[0..16].*, .rank = kx.rank, .world = kx.world, .budget = o.disk_budget, .fresh_start = fresh, .min_tokens = o.disk_min_tokens, .staging = @max(2, o.staging_mib / 8), .chunk = 8 << 20 });
         }
         errdefer if (s.disk) |dd| dd.close();
         s.store = try Store.init(gpa, io, &kx.pool, kx.dev.store(), s.disk, policy(o));

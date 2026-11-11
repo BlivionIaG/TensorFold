@@ -63,7 +63,7 @@ const Rank = struct {
         const repl = replicated_pair;
         r.pool = try Pool.init(gpa, .{ .families = &fams, .page = page }, 96 * page, if (repl) 1 else world, if (repl) 0 else rank);
         r.host = try HostPool.init(gpa, &r.pool);
-        r.disk = try disk_mod.Disk.open(gpa, testing.io, .{ .root = root, .compat = @splat(7), .rank = rank, .world = world, .replicated = repl, .chunk = 64 << 10, .staging = 4, .lanes = 2, .min_tokens = 1 });
+        r.disk = try disk_mod.Disk.open(gpa, testing.io, .{ .root = root, .compat = @splat(7), .rank = rank, .world = world, .chunk = 64 << 10, .staging = 4, .lanes = 2, .min_tokens = 1 });
         r.store = try Store.init(gpa, testing.io, &r.pool, r.host.store(), r.disk, policy);
     }
 
@@ -129,8 +129,8 @@ fn turn(gpa: std.mem.Allocator, r: *Rank, s: *Slot, chat: u32, ids: []const i32)
     return tier;
 }
 
-/// The scenario on one rank; returns a trace of its decisions (stats and page ids) to compare ranks.
-fn scenario(gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32, async_io: bool, trace: *std.ArrayList(u64)) !void {
+/// The scenario on one rank: appends its decisions (stats, page ids) to `trace`, returns the tier's charged bytes.
+fn scenario(gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32, async_io: bool, trace: *std.ArrayList(u64)) !u64 {
     var r: Rank = undefined;
     try r.init(gpa, root, world, rank, .{ .chats = 1, .async_io = async_io });
     defer r.deinit();
@@ -165,19 +165,16 @@ fn scenario(gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32, asy
     try trace.appendSlice(gpa, &.{ st.parks, st.delta_parks, st.drops, st.covered_drops, st.hits_ram, st.hits_disk, r.pool.freePages(), r.pool.entry_only });
     var id = r.store.oldest;
     while (id != store_mod.none) : (id = r.store.entry(id).extra.newer) for (r.store.entry(id).extra.pages) |pg| try trace.append(gpa, pg);
+    return r.disk.used;
 }
 
 /// After the scenario: a new process on the same tier finds every file and resumes chat 1 through its delta chain.
-fn restart(gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32) !void {
+fn restart(gpa: std.mem.Allocator, root: []const u8, world: u32, rank: u32, used: u64) !void {
     var r: Rank = undefined;
     try r.init(gpa, root, world, rank, .{ .chats = 1 });
     defer r.deinit();
-    if (world > 1) {
-        try testing.expectError(error.SplitReconcileUnsupported, r.store.reconcile());
-        try testing.expectEqual(@as(u64, 0), r.disk.used);
-        return;
-    }
     try testing.expectEqual(@as(u32, 4), try r.store.reconcile());
+    try testing.expectEqual(used, r.disk.used); // charged what the writer charged (logical bytes when split)
     const s = try r.pool.newSlot(64 * page);
     const a = try chatIds(gpa, 1, 20 * page);
     defer gpa.free(a);
@@ -200,11 +197,11 @@ test "chats over turns: residency to NVMe, bit-identical resumes, deltas, older 
     defer t1.deinit(gpa);
     const r0 = try tmpRoot(gpa, &tmp, "sync");
     defer gpa.free(r0);
-    try scenario(gpa, r0, 1, 0, false, &t0);
-    try restart(gpa, r0, 1, 0);
+    const used = try scenario(gpa, r0, 1, 0, false, &t0);
+    try restart(gpa, r0, 1, 0, used);
     const r1 = try tmpRoot(gpa, &tmp, "async");
     defer gpa.free(r1);
-    try scenario(gpa, r1, 1, 0, true, &t1);
+    _ = try scenario(gpa, r1, 1, 0, true, &t1);
     try testing.expectEqualSlices(u64, t0.items, t1.items); // the tier thread changes when bytes move, not what is decided
 }
 
@@ -218,10 +215,11 @@ test "two split ranks make the same decisions on the same calls and each restore
     defer t1.deinit(gpa);
     const root = try tmpRoot(gpa, &tmp, "tier");
     defer gpa.free(root);
-    try scenario(gpa, root, 2, 0, false, &t0);
-    try scenario(gpa, root, 2, 1, true, &t1);
-    try restart(gpa, root, 2, 0);
-    try restart(gpa, root, 2, 1);
+    const used0 = try scenario(gpa, root, 2, 0, false, &t0);
+    const used1 = try scenario(gpa, root, 2, 1, true, &t1);
+    try testing.expectEqual(used0, used1);
+    try restart(gpa, root, 2, 0, used0);
+    try restart(gpa, root, 2, 1, used1);
     try testing.expectEqualSlices(u64, t0.items, t1.items);
 }
 
@@ -441,7 +439,7 @@ const Peer = struct {
 };
 
 fn keysOf(gpa: std.mem.Allocator, root: []const u8, rank: u32) ![]i32 {
-    const d = try disk_mod.Disk.open(gpa, testing.io, .{ .root = root, .compat = @splat(7), .rank = rank, .world = 2, .replicated = true, .chunk = 64 << 10, .staging = 4, .lanes = 2 });
+    const d = try disk_mod.Disk.open(gpa, testing.io, .{ .root = root, .compat = @splat(7), .rank = rank, .world = 2, .chunk = 64 << 10, .staging = 4, .lanes = 2 });
     defer d.close();
     var found: std.ArrayList(disk_mod.Disk.Found) = .empty;
     defer {
@@ -474,8 +472,8 @@ test "replicated ranks restart on the files both found, indexed in the same orde
     defer Rank.replicated_pair = false;
     var t: [2]std.ArrayList(u64) = .{ .empty, .empty };
     defer for (&t) |*l| l.deinit(gpa);
-    try scenario(gpa, root, 2, 0, false, &t[0]);
-    try scenario(gpa, root, 2, 1, true, &t[1]);
+    _ = try scenario(gpa, root, 2, 0, false, &t[0]);
+    _ = try scenario(gpa, root, 2, 1, true, &t[1]);
     const k0 = try keysOf(gpa, root, 0);
     defer gpa.free(k0);
     const k1 = try keysOf(gpa, root, 1);

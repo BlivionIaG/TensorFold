@@ -188,24 +188,55 @@ test "a restore its sink refuses mid-stream gives every staging buffer back, and
     try testing.expectEqual(d.staging.count, d.staging.free_n);
 }
 
-test "split reconcile refuses before deleting temporary files or indexing physical bytes" {
+test "a split world's restart indexes each file at the logical charge its writer registered" {
     const gpa = testing.allocator;
     const io = testing.io;
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     const root = try tmp.dir.realPathFileAlloc(io, ".", gpa);
     defer gpa.free(root);
-    const d = try disk.Disk.open(gpa, io, .{ .root = root, .compat = @splat(9), .world = 2 });
+    var p = try Pool.init(gpa, .{ .families = &fams, .page = 256 }, 64 * 256, 2, 1);
+    defer p.deinit();
+    var h = try HostPool.init(gpa, &p);
+    defer h.deinit();
+    const opts: disk.Options = .{ .root = root, .compat = @splat(8), .rank = 1, .world = 2, .chunk = 3 * 74_752, .staging = 3, .lanes = 2, .min_tokens = 1 };
+    var used: u64 = 0;
+    {
+        const d = try disk.Disk.open(gpa, io, opts);
+        defer d.close();
+        const a = try p.newSlot(32 * 256);
+        const pos: u64 = 9 * 256 + 100;
+        try a.ensure(pos);
+        for (a.mapped(), 0..) |pg, k| fill(&h, &p, @intCast(k), pg, 1);
+        const ids = try gpa.alloc(i32, pos);
+        defer gpa.free(ids);
+        for (ids, 0..) |*t, i| t.* = @intCast(i * 3 + 1);
+        const fp = try familyPages(gpa, &p, a.mapped(), 0, true);
+        defer freePages(gpa, fp);
+        var blob: [5000]u8 = undefined;
+        @memset(&blob, 3);
+        const src: disk.WriteSrc = .{ .key = @splat(1), .tag = 4, .page = 256, .pos = pos, .npages = a.len, .ids = ids, .store = h.store(), .families = &fams, .pages = fp, .blobs = &.{.{ .name = "rings", .bytes = &blob }}, .measure = 3000 };
+        const size = try d.writeFile(&src);
+        _ = try d.register(&src, size);
+        used = d.used;
+        try testing.expect(used % 4096 == 0 and used != size); // logical, whole 4 KiB units, not the file's bytes
+    }
+    const d = try disk.Disk.open(gpa, io, opts);
     defer d.close();
-    const f = try d.dir.createFile(io, "unreconciled.tmp", .{});
-    f.close(io);
     var found: std.ArrayList(disk.Disk.Found) = .empty;
-    defer found.deinit(gpa);
-    try testing.expectError(error.SplitReconcileUnsupported, d.scan(&found));
-    try testing.expectEqual(@as(usize, 0), d.recs.items.len);
-    try testing.expectEqual(@as(u64, 0), d.used);
-    const kept = try d.dir.openFile(io, "unreconciled.tmp", .{});
-    kept.close(io);
+    defer {
+        for (found.items) |f| gpa.free(f.ids);
+        found.deinit(gpa);
+    }
+    try d.scan(&found);
+    try testing.expectEqual(@as(usize, 1), found.items.len);
+    try testing.expectEqual(used, d.used);
+    try testing.expectEqual(used, d.get(@splat(1)).?.charge);
+    // a split file whose header carries no logical charge is not adopted
+    var head = found.items[0].head;
+    head.charge_kib = 0;
+    try testing.expectError(error.BadHeader, @import("disk_charge.zig").ofFile(&head, 2, 1));
+    try testing.expectEqual(@as(u64, 77), try @import("disk_charge.zig").ofFile(&head, 1, 77));
 }
 
 test "logical charge counts delta pages and bounded measure independently of blob and padded file bytes" {
@@ -219,6 +250,7 @@ test "logical charge counts delta pages and bounded measure independently of blo
     src.families = &fams;
     var expected: u64 = 3012;
     for (fams) |f| expected += 3 * f.pageBytes(64) / (if (f.split) @as(u64, 2) else 1);
+    expected = std.mem.alignForward(u64, expected, 4096); // a split charge is whole 4 KiB units
     try testing.expectEqual(expected, charge(&src, 2, 999999));
     try testing.expectEqual(expected, charge(&src, 2, 4096));
     try testing.expectEqual(@as(u64, 4096), charge(&src, 1, 4096));

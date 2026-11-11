@@ -7,6 +7,7 @@ const Disk = disk.Disk;
 const lanes_mod = @import("lanes.zig");
 const Head = @import("format.zig").Head;
 const Digest = @import("prefix.zig").Digest;
+const charge = @import("disk_charge.zig");
 
 /// A valid file found on restart: its header, size and verified ids (tokens [first_page x page, pos), owned).
 pub const Found = struct {
@@ -31,15 +32,9 @@ pub fn deinitFound(d: *Disk, out: *std.ArrayList(Found)) void {
     out.deinit(d.gpa);
 }
 
-fn refuse(d: *const Disk) !void {
-    if (@import("builtin").os.tag != .linux) return error.UnsupportedPlatform;
-    // a split world's files hold a rank's share: the ranks' tiers can not be reconciled file by file
-    if (d.opts.world > 1 and !d.opts.replicated) return error.SplitReconcileUnsupported;
-}
-
 /// Reads the directory on restart: drops .tmp and bad files, checks ids; the valid files, in no order.
 pub fn collect(d: *Disk, out: *std.ArrayList(Found)) !void {
-    try refuse(d);
+    if (@import("builtin").os.tag != .linux) return error.UnsupportedPlatform;
     var it = d.dir.iterate();
     var nb: [48]u8 = undefined;
     while (try it.next(d.io)) |ent| {
@@ -81,7 +76,7 @@ pub fn adopt(d: *Disk, out: *std.ArrayList(Found)) !void {
             discard(d, out, i);
             continue;
         }
-        _ = try d.add(f.head.key, base, f.head.tag, f.head.kind, f.head.pos, f.head.first_page, f.head.npages, f.size, f.size);
+        _ = try d.add(f.head.key, base, f.head.tag, f.head.kind, f.head.pos, f.head.first_page, f.head.npages, f.size, try charge.ofFile(&f.head, d.opts.world, f.size));
         i += 1;
     }
     const by_age = try d.gpa.dupe(Found, out.items);
@@ -105,6 +100,7 @@ fn found(d: *Disk, name: [:0]const u8) !Found {
     var kb: [48]u8 = undefined;
     if (!std.mem.eql(u8, Disk.fileName(h.key, "tfs", &kb), name)) return error.BadHeader;
     if (!std.mem.eql(u8, &h.compat, &d.opts.compat) or h.rank != d.opts.rank or h.world != d.opts.world) return error.Foreign;
+    _ = try charge.ofFile(&h, d.opts.world, 0); // a split world's file without its logical charge is not adopted
     var st: linux.Statx = undefined;
     if (linux.errno(linux.statx(f.fd, "", linux.AT.EMPTY_PATH, .{ .SIZE = true, .MTIME = true }, &st)) != .SUCCESS or st.size < h.total) return error.Truncated;
     const seg = lay.find(.ids, "ids") orelse return error.BadHeader;
