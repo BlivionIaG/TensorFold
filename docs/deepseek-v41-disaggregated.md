@@ -119,10 +119,10 @@ The listen daemon logs `peer ready over roce` once the Mac connects. `NAME` is t
 ## 6. The prefill pair
 
 Rank 1 is `tf-dsv41 follow`; rank 0 is `tensorfold-dsv41 serve` with one more flag. The pair needs a profile whose
-prefill state can be exported: replicated KV, whole-prompt prefill, a paged pool. It must **not** run
-`TF_DSV41_PREFILL=replay` (decoder layers' state for the prefix never exists), `TF_DSV41_PREFILL_PIECES=1` (a prompt in
-pieces never stands at the cut) or `TF_DSV41_KV_SPLIT=1` (half the pages are on the other rank); the server refuses to
-start, by name, with any of them.
+prefill state can be exported: a replicated KV pool and a paged pool. Replay prefill (`TF_DSV41_PREFILL=replay`) and prompts
+in pieces (`TF_DSV41_PREFILL_PIECES=1`) are exported; it must **not** run `TF_DSV41_KV_SPLIT=1` (half the pages are on the
+other rank); the server refuses to start, by name, with it. A pair that serves its own lanes with pieces exports in the same
+process: the decode lanes keep running while a prompt's pieces and its export run.
 
 ```
 # both machines
