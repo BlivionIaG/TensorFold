@@ -3,7 +3,7 @@
 
     /tmp/mlxenv/bin/python tools/vega-macos/moe_ref.py [MODEL_DIR] [OUT.json] [N]
 
-(mlx 0.32.4, mlx_lm 0.32.2: `uv venv /tmp/mlxenv && uv pip install --python /tmp/mlxenv/bin/python mlx-lm`). tools/vega-macos/moe_gate.py compares a running server with OUT.json.
+(mlx 0.32.4, mlx_lm 0.32.2: `uv venv /tmp/mlxenv && uv pip install --python /tmp/mlxenv/bin/python mlx-lm`). `zig build tf-moe-gate` (tools/vega-macos/moe_gate.zig) compares a running server with OUT.json.
 """
 import hashlib, json, os, sys
 import mlx.core as mx
