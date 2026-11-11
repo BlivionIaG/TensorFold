@@ -1,7 +1,4 @@
-//! TF_DSV41_CONE_CHECK=<sizes>: the cone prefill against the full path on slot 0, at each prompt size (comma list).
-//!
-//! For each size: prefill, last-token logits, kept state (storage, live, taps), greedy tokens; once through the full
-//! path and once through the cone, then the comparison and each path's prefill time.
+//! TF_DSV41_CONE_CHECK=<sizes>: the cone prefill against the full path on slot 0 (logits, kept state, greedy ids, time).
 const std = @import("std");
 const tf = @import("tensorfold");
 const ds = tf.deepseek_v41;

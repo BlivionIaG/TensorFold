@@ -1,10 +1,4 @@
-//! Cone prefill (TF_DSV41_CONE=1): encoder layers over every prompt row, decoder layers over the last rows only.
-//!
-//! A prompt's chunks run layers 0..d-1 and layer d's compressor (the kv source's rows, every position), and stash the
-//! stream state entering layer d for the chunk's last `rows` rows. When the prompt ends, the decoder layers d..39 run over
-//! the stashed rows with the chunks' own boundaries (`ced.zig`'s exact rule: the rows that influence the kept outputs
-//! and the kept window ring). Anything that needs the slot's state mid-prompt (a snapshot, a call that is not the next
-//! chunk) replays what is stashed first; a replay is exact at the position it ends, and the prompt continues from there.
+//! Cone prefill (TF_DSV41_CONE=1): encoder layers over every prompt row, the decoder layers over the cone's last rows.
 const std = @import("std");
 const mtl = @import("metal");
 const ced = @import("ced.zig");
