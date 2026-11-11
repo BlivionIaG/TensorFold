@@ -1,0 +1,6 @@
+chat0    prompt    36  decode 1599  prefill   1.8s  decode  36.4s (44 tok/s with capture)
+chat3    prompt    36  decode  987  prefill   0.1s  decode  24.6s (40 tok/s with capture)
+code0    prompt    28  decode 1599  prefill   0.1s  decode  34.1s (47 tok/s with capture)
+math0    prompt    36  decode 1599  prefill   0.1s  decode  39.5s (41 tok/s with capture)
+long0    prompt    35  decode 1599  prefill   0.1s  decode  55.7s (29 tok/s with capture)
+long2    prompt    34  decode 1599  prefill   0.2s  decode  52.0s (31 tok/s with capture)

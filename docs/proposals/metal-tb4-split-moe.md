@@ -946,6 +946,213 @@ Cluster tests (`zig test` on the cluster root with stand-in modules, because `te
 * Milestone M2 (stale stamps over 10^6 replies) is not done; the receipt's `hop_*` fields are the card's numbers from the
   first run. The 2-stream runs of M3 are done on the 4B (Streams and chunked prefill).
 
+## Expert cache on the external GPU
+
+Question: with the Vega's 8 GiB holding the dense part and a cache of hot routed experts, and the cold experts in Mac host
+memory, can the Mac plus card beat the Mac alone (88.8 tok/s, one sequence) on Qwen3.6-35B-A3B? Answer, from measured router
+traces and a cost model built on the numbers above: **no, at one to four sequences**, and it is not close. The cache hit rate is
+not the limit; a card that holds every expert it needs decodes this model slower than the Mac. Raw tables:
+[cache_sim_results.txt](metal-tb4-split-moe-probe/cache_sim_results.txt) and
+[cost_model_results.txt](metal-tb4-split-moe-probe/cost_model_results.txt); code: `routing_trace.py`, `cache_sim.py`,
+`cost_model.py` beside them. The Mac was shared with other builds (load about 5) during the captures; routing does not depend
+on that.
+
+### What a cache slot is (MLX 4-bit layout, nothing requantized)
+
+`mlx-community/Qwen3.6-35B-A3B-4bit` @38740b84. The routed experts of a layer are three stacked tensors a projection
+(`switch_mlp.{gate,up,down}_proj.{weight,scales,biases}`, first axis 256). One expert is one slice of each, byte counts read
+from the safetensors headers (identical in all 40 layers):
+
+| Tensor of one expert | Shape | Bytes |
+| --- | --- | ---: |
+| `gate_proj.weight` (packed u32, 4 bit) | 512 x 64 words (K 2048) | 524,288 |
+| `gate_proj.scales`, `.biases` (bf16, group 64) | 512 x 32 each | 32,768 + 32,768 |
+| `up_proj` weight, scales, biases | same as gate | 524,288 + 32,768 + 32,768 |
+| `down_proj.weight` (packed u32) | 2048 x 64 words (K 512) | 524,288 |
+| `down_proj.scales`, `.biases` | 2048 x 8 each | 32,768 + 32,768 |
+| **One expert** | | **1,769,472 B = 1.6875 MiB** |
+| One layer's 256 experts | | 432 MiB |
+| All 40 layers | | 18,119,393,280 B = 16.875 GiB |
+
+A slot holds those nine slices as the MLX affine kernels consume them (the host may concatenate the nine slices of an expert into
+one 1,769,472-byte blob at load time so a copy is one transfer; the bytes are the checkpoint's). The non-expert side is 1.29 GiB.
+On the 8 GiB Vega at 8k context and one stream: 7.9 usable - 1.29 dense - 0.4 scratch - 0.2 KV and state = **5.9 GiB, 3,580
+slots, 89 a layer (35% of the experts)**. A card of V GiB gets about V - 1.9 GiB for experts.
+
+### What was measured: router traces
+
+`routing_trace.py` runs mlx_lm 0.32.2 on the checkpoint above, greedy or sampled (temperature 0.7, top-k 20, top-p 0.95) through
+the real chat template, and records for every token the router's top-8 ids and weights of all 40 layers (the same arithmetic as
+`Qwen3NextSparseMoeBlock`), plus five lookahead guesses a layer: the layer's own router applied to the residual entering it, to the
+residual two layers earlier, and so on. 34 prompts: 8 chat, 8 code, 8 math, 8 long-form, 2 summaries of the design note (2,000-token
+prompts); half of each category with the model's thinking on; 9,698 decode tokens (up to 287 a prompt) and 5,222 prefill tokens.
+A second set of six prompts generated up to 1,600 tokens each (8,982 decode tokens) checks that nothing changes late in a
+generation. The traces are 39 MB and are not committed; `routing_trace.py` rebuilds them in about 8 minutes.
+
+| Property (decode) | Value |
+| --- | --- |
+| Share of a layer's accesses served by its 8 / 32 / 60 / 89 / 128 most popular experts (of 256) | 11.6% / 33.5% / 51.5% / 65.7% / 80.0% (uniform: 3.1 / 12.5 / 23.4 / 34.8 / 50.0%) |
+| Normalized routing entropy, mean over layers (1 = uniform) | 0.943 (0.921 to 0.982) |
+| Distinct experts a layer uses over the whole trace | 255 of 256 on average |
+| A layer's experts that were also used by the previous token | 37.4% (random: 3.1%) |
+| Accesses whose expert was used in that layer within the last 1 / 4 / 16 / 64 / 256 tokens | 37.2% / 56.1% / 76.0% / 89.4% / 92.9% |
+| Distinct experts a layer touches in a prefill chunk of 1 / 8 / 32 / 128 / 512 / 1,982 tokens | 8 / 37 / 82 / 142 / 189 / 225 of 256 |
+| Union a layer reads in a decode round of N = 1 / 2 / 4 / 8 sequences (different prompts) | 8.0 / 15.5 / 29.3 / 53.1 experts |
+| Lookahead: share of the true 8 found in the guess, own router on the entering residual (A0) / one layer earlier (A1) / two layers earlier (A2) | 83.2% / 74.8% / 68.5% |
+| Same from the residual after the earlier layer's mixer, one / two layers earlier (B1, B2) | 80.3% / 73.1% |
+| Guess = previous token's experts / the layer's static hot 8 | 38.8% / 11.6% |
+
+The router is only mildly skewed: a profile of 60 experts a layer covers half the accesses. Locality in time is much stronger than
+skew in frequency (a prompt has its own working set of roughly 60 to 90 experts a layer), which is why recency beats a profile
+below. Prefill touches nearly every expert (88% for a 2,000-token prompt), so a cache cannot serve prefill; the cache is a decode
+structure and prefill stays on the Mac, which holds all experts.
+
+### Hit rates
+
+Simulator `cache_sim.py`: per layer (or one global pool) slots of 1,769,472 B; a round is one decode step, a layer's access set the
+union over the rows; the static profile is always trained on other prompts (4 folds by prompt); dynamic caches start warm from that
+profile. Miss = expert not resident when its layer starts. Decode hit rate %, one sequence, no prefetch, admit every miss (static
+admits none); the last column holds for 20 and 24 GiB too (every expert resident):
+
+| Expert budget GiB (card VRAM) | 2 (3.9) | 3 (4.9) | 4 (5.9) | 5 (6.9) | **5.9 (7.8, the Vega)** | 8 (9.9) | 10 (11.9) | 12 (13.9) | 16 (17.9) | >= 16.9 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Static top-frequency, held-out | 27.9 | 37.3 | 45.6 | 53.0 | 59.2 | 71.3 | 80.5 | 88.3 | 98.5 | 100 |
+| Static, profiled on the tested prompts (bound) | 37.7 | 49.4 | 58.9 | 66.7 | 72.9 | 83.8 | 90.9 | 95.7 | 99.8 | 100 |
+| LRU, per layer | 63.4 | 72.3 | 78.7 | 83.4 | **86.8** | 92.0 | 95.0 | 97.2 | 99.7 | 100 |
+| LRU, one global pool | 62.7 | 72.4 | 79.6 | 84.8 | **88.3** | 93.6 | 96.3 | 97.9 | 99.9 | 100 |
+| LFU (history counts) | 54.3 | 62.5 | 69.3 | 74.9 | 79.2 | 87.0 | 92.2 | 96.0 | 99.7 | 100 |
+| Frequency + recency (half-life 128 tokens, admit only if it beats the weakest) | 51.2 | 62.4 | 70.8 | 77.3 | 82.1 | 89.7 | 94.1 | 97.0 | 99.8 | 100 |
+| Hybrid: half static pinned, half LRU | 58.3 | 68.4 | 75.4 | 80.8 | 84.6 | 90.8 | 94.5 | 97.1 | 99.7 | 100 |
+| Belady optimum with bypass (no online policy reaches it) | 78.7 | 85.2 | 89.2 | 91.9 | 93.7 | 96.4 | 97.9 | 98.9 | 99.9 | 100 |
+| Misses a token (of 320), LRU | 117.0 | 88.6 | 68.3 | 53.2 | **42.4** | 25.6 | 15.9 | 9.0 | 0.8 | 0 |
+| Misses a token, static | 230.7 | 200.6 | 174.0 | 150.3 | 130.6 | 91.9 | 62.5 | 37.3 | 4.7 | 0 |
+| Layers with at least one miss %, LRU | 89.7 | 79.8 | 69.6 | 60.0 | **51.8** | 36.7 | 26.0 | 16.8 | 1.9 | 0 |
+| Layers with at least one miss %, static | 99.9 | 99.3 | 98.1 | 95.9 | 93.2 | 83.5 | 70.6 | 53.5 | 10.0 | 0 |
+
+* **Recency beats a profile by 27 points at 5.9 GiB** (86.8 against 59.2), and the global pool beats per-layer slots by 1.5
+  points. Even a profile fitted to the tested prompts reaches only 72.9.
+* **Cross-prompt generalisation is poor.** Static profile, 5.9 GiB: in-sample 65.7%; 4-fold held-out 59.2%; trained on one random prompt
+  48.9%, on 24 prompts 59.6% (it saturates); a category held out: chat 57.3, long 57.9, doc 64.2, code 46.8, **math 37.9**. Trained and tested
+  inside one category it reaches 76 to 90%. Top-60 overlap between category profiles is 27 to 69% (math shares 27 to 45% with the others).
+  Experts are chosen per prompt, not per model; an offline profile is a warm start, not a cache.
+* **Warm-up and length.** With caches emptied at each prompt, LRU misses 158 / 71 / 48 / 40 experts a token in decode positions 0-8 / 8-32 / 32-64 / 64-128 and
+  about 40 after (122 to 137 for static); on 1,600-token generations LRU holds 87-88% from token 100 to 1,600 (static 61-66%).
+* **Batches** (union rows): LRU at 5.9 GiB falls to 82.8% at two and 76.8% at four sequences (68.9 misses a row at four).
+  At 2 GiB with four sequences the batch's union (29 experts) nearly fills a layer's 30 slots; read that column as degenerate.
+
+Prefetch (router lookahead guesses, previous-token set), LRU, 5.9 GiB, one sequence. Previous-token prefetch adds nothing to an LRU
+(those experts are already resident). Lookahead raises the hit rate but moves many experts that are not used:
+
+| Prefetch | Loads a token (uncapped) | Precision | Hit % uncapped | Hit % with at most 18 loads a token |
+| --- | ---: | ---: | ---: | ---: |
+| none | 0 | | 86.8 | 86.8 |
+| A0 (own router, residual entering the layer: 0.1 ms of lead) | 46.8 | 65% | 95.7 | 89.5 |
+| B1 (one layer ahead after the mixer) | 40.4 | 62% | 94.3 | 89.5 |
+| A2 (two layers ahead) | 42.7 | 44% | 91.5 | 87.8 |
+
+Eighteen loads a token is what the link carries in about 10 ms (1.769 MB at 3.17 GB/s is 0.558 ms). One layer takes about 0.25 to 0.3 ms
+on the card, so an expert needs a lead of two to three layers, where the guess is 68% (A2) right. The simulation charges the cap but not
+lead time; it is therefore an upper bound for prefetch.
+
+### Cost per token
+
+`cost_model.py`: a round is the card's dense part, then per layer the routed experts, hits on the card, misses by a path. Constants:
+host read through the card's GEMV 3.2 GB/s (0.553 ms an expert); DMA copy 3.17 GB/s (0.558 ms); Metal crossing = card flag to
+Metal completion 159 us p50 (479 p99) + 30 us dispatches + 70 us release = 259 us, plus 12.3 us an expert at the Mac's 144 GB/s.
+Dense part on the Vega: the 35B's 1,185 MiB a token (non-expert weights, the head, DeltaNet state read and written, KV at 512) over
+**142 GB/s** (the 4B's layer, 66 MB in the measured 0.52 ms minus 12.3 launches of 4.4 us) plus 880 launches of 4.4 us: **12.6 ms**
+[INFERENCE: scaled from the 4B, not measured on the 35B]. A resident expert is read at 250 GB/s (7.1 us); all 320 a token is 2.3 ms.
+One layer's m misses on the critical path, microseconds:
+
+| m missed in the layer | 1 | 2 | 4 | 8 | 16 | 32 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| (a) direct host read over Thunderbolt | 553 | 1,106 | 2,212 | 4,424 | 8,847 | 17,695 |
+| (b) Metal computes them (p50 crossing) | 271 | 284 | 308 | 357 | 456 | 652 |
+| (b) at the p99 crossing | 593 | 606 | 630 | 679 | 778 | 974 |
+| (b) at an idle Mac's 65 us wake (not the case while the card works) | 132 | 145 | 169 | 218 | 317 | 513 |
+| (c) DMA prefetch: link time to move m experts | 558 | 1,116 | 2,233 | 4,466 | 8,931 | 17,862 |
+
+(b) wins from the first miss. (a) needs the link for every miss; (c) moves bytes ahead of time but the link is one 3.17 GB/s
+resource: copies (prefetch and admission) plus direct reads cannot exceed it, so a round is also bounded below by
+copies x 0.558 ms. LRU at 5.9 GiB admits 42 experts a token under (b): 23.7 ms of link per token before any compute.
+
+**One sequence, tok/s** (Mac alone 88.8). Path (b) charges one DMA copy per admitted miss; (a) is read-through (the miss also fills
+its slot, so no extra link bytes [INFERENCE: not built]); the last two rows throttle admission (each miss admitted with probability p) or filter it by frequency:
+
+| Expert budget GiB (card VRAM) | 2 (3.9) | 4 (5.9) | **5.9 (7.8)** | 8 (9.9) | 10 (11.9) | 12 (13.9) | 16 (17.9) | >= 16.9 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| LRU, (a) direct reads | 12.7 | 19.2 | 26.3 | 34.6 | 42.4 | 50.5 | 65.2 | 67.1 |
+| LRU, (b) Metal misses, every miss copied | 15.3 | 26.2 | 42.3 | 53.1 | 56.6 | 59.9 | 66.2 | 67.1 |
+| LRU, (b), admit with p = 0.5 | | 43.3 | **47.2** | | | | | |
+| Frequency + recency (admission filter), (b) | 38.9 | 42.0 | **46.0** | 50.7 | 55.2 | 59.5 | 66.2 | 67.1 |
+| Static, (b), nothing copied | 37.8 | 38.5 | 39.6 | 41.6 | 44.4 | 48.4 | 62.6 | 67.1 |
+| Belady optimum, (b), copies free (bound) | 43.9 | 50.1 | 54.7 | 58.5 | 61.4 | 63.8 | 66.8 | 67.1 |
+| Best realizable row over the Mac alone (88.8) | 0.44 | 0.49 | **0.53** | 0.60 | 0.64 | 0.67 | 0.75 | 0.76 |
+
+* **The ceiling is the card, not the cache.** With every expert resident the card takes 12.6 + 2.3 = 14.9 ms: **67 tok/s, 0.76x of the
+  Mac**; with the planner's 152 GB/s for everything, 63; with the 4B's whole layer cost (0.52 ms) per layer, 40. Only if every dense
+  kernel also streamed at 250 GB/s does the resident card tie the Mac (90 tok/s), and that is above every card result in this
+  document. The card's compute must be at least 1.32x the 4B-fit figure (the bytes stream at 245 GB/s end to end, launches included)
+  before 100% hits reach 88.8.
+* **No hit rate at 8 GiB reaches the Mac.** Multiplier on all the card's compute needed to reach 88.8 with LRU and Metal misses:
+  never at 5.9 GiB (86.8% hits) or 8 GiB (92.0%); 1.8x at 10 GiB (95.0%); 1.6x at 12 GiB (97.2%); 1.3x at 16 GiB (99.7%). With admission
+  copies free: 2.7x at 5.9 GiB, 2.1x at 8 GiB. So the hit rate needed is above 97% *and* a card 1.6x the Vega; below 99.7% every
+  layer with a stray miss pays 0.27 ms, 40 layers of it.
+* **Calibration does not change the verdict**, LRU 5.9 GiB, (b): 42.3 tok/s with the 4B-fit and with dense kernels at 250 GB/s
+  (link bound at 23.7 ms in both); 32.6 with the flat 0.52 ms a layer; 36.8 at the p99 crossing.
+* **Prefetch does not rescue it.** LRU 5.9 GiB with A0 or B1 lookahead capped at 18 loads: 34.9 / 35.1 tok/s against 42.3 without (the
+  wasted loads and the admission copies together keep the link saturated); uncapped 29.5 / 30.5.
+* **Two and four sequences** (aggregate tok/s, dense part scaled by the Vega's measured 4B rows fit [INFERENCE]; Mac alone 135.8 and 176.4):
+
+  | Expert budget GiB | 4 | 5.9 | 8 | 10 | 12 | 16 | >= 16.9 |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | 2 sequences, LRU (b) | 21.0 | 33.4 | 56.1 | 68.5 | 73.2 | 82.1 | 83.5 |
+  | 4 sequences, LRU (b) | 17.1 | 26.0 | 42.4 | 71.5 | 79.8 | 89.9 | 91.6 |
+
+  The Vega's second row costs 7.5 ms ([card results](#stages-that-step-rows-of-several-sequences-pull-request-2-offline-half)) and a
+  batch's union of experts grows (29 a layer at four rows), so more sequences make the card relatively worse, as they did on the 4B.
+
+### Bigger cards
+
+Same traces, same Metal path and TB4 link; compute from the planner's profiles (7900 XTX class 960 GB/s at 0.50, 2.5 us launches; 5090
+class 1,792 GB/s at 0.55, 1.5 us) [INFERENCE: published peaks, one assumed efficiency each]; LRU, misses by Metal, tok/s at one sequence:
+
+| Card VRAM GiB | 8 | 10 | 12 | 16 | 20 | 24 | 32 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 7900 XTX-class compute | 45 | 72 | 114 | 146 | 168 | 168 | 168 |
+| 5090-class compute | 45 | 72 | 117 | 251 | 317 | 317 | 317 |
+
+From about 18.8 GiB of VRAM every expert is resident (16.875 GiB of experts + 1.9 GiB), the cache disappears and the card is the
+resident placement: 168 and 317 tok/s here (1.9x and 3.6x the Mac), 158 and 299 in the planner above. With a 12 GiB card of 7900 XTX
+class (97% hits) the cache gives 114 tok/s (1.3x); at 16 GiB 146 (1.6x); at 10 GiB 72, below the Mac. A card that fast and with that
+much memory is the case the cache is for; at 20 GiB and up, no cache.
+
+### Recommended design, and the decision
+
+If a cache were built for a card of this class, the data pick:
+
+* **Miss path: (b), Metal computes the missed experts**, once a layer with any miss, against the host copy; never (a) as the
+  primary (0.553 ms a miss against 0.271 ms for the first). Prefetch (c) only as admission traffic under a cap, not as lookahead.
+* **Policy: dynamic, recency first, admission filtered**, one global pool of slots, warm-started from the offline profile (LRU 88.3% against
+  59.4% for a static global allocation at 5.9 GiB): LRU admitting half the misses, or the frequency-gated variant (82.1% hits for 15 copies a
+  token), 46 to 47 tok/s. A static profile is the wrong choice (generalisation above) and costs nothing but speed.
+* **Budget: everything that is left**, 5.9 GiB on the 8 GiB Vega (3,580 slots).
+
+**Go / no-go for implementing it on the Vega: no-go.** Predicted 46 to 47 tok/s at one sequence against 88.8 (0.53x), 33 at two sequences against 135.8, 26 at four against 176.4 (every miss copied, admission not throttled); the optimum no policy can reach gives 54.7. The reason survives every assumption tried: a fully resident Vega
+is 0.76x of the Mac [INFERENCE], and each stray miss adds a 0.27 ms round trip. It does not even help as a capacity feature: the layer
+split already predicts 64 tok/s for a 24 GiB Mac (above), more than the cache's 46 to 47. Reopen if (1) a measured Vega decode of the 35B's
+dense part is at or below about 9 ms (kernels at 250 GB/s, launches folded), or (2) a card of at least 12 GiB with 1.6x the
+Vega's compute exists, or (3) a card of 18.8 GiB or more, which needs no cache. What the data say about the design space either way:
+hit rates of 95% and above need 10 GiB or more of experts, the link (3.17 GB/s) is the constraint on any copy policy, and
+prefill has to stay on the Mac.
+
+Limits of this study: prompts are short (28 to 64 tokens, two of about 2,000) and generations 287 to 1,600 tokens; routing under other
+prompt types (multi-turn, tool use, long documents) is not covered; sampled decoding at temperature 0.7 and greedy for code and math;
+lookahead lead time is not simulated, only a cap on loads; the cost model's Vega dense time is scaled from the 4B, never measured on the
+35B (no card here), its multi-row scaling is the 4B's, the Metal half is the random-weight probe's 94 to 112 us a layer, and link contention
+with the window traffic (4 KiB a layer) is ignored; the sequential crossing of 40 layers per token is priced, a Metal wake that stays
+at 149 us rests on the card-in-use probe.
+
 ## Pull requests
 
 One behaviour each, stacked, each against `main`, each linking the issue with `Refs #N`. Items marked *hipmac* depend
@@ -971,7 +1178,9 @@ on out-of-tree runtime work; everything else is generic.
    kernels; boundary kernels with contract entries. Needs the native Metal engine to admit the 35B-A3B's shape (it does
    not today) or a baseline outside it.
 4. **Hot-expert cache and adaptive placement.** Routing histograms, resident-expert sets chosen from measured hit rates,
-   re-planning between requests (never inside a round), MTP head placement. Only after M6.
+   re-planning between requests (never inside a round), MTP head placement. The traces are in ([Expert cache on the external
+   GPU](#expert-cache-on-the-external-gpu)): on the 8 GiB Vega a cache predicts 46-47 tok/s against the Mac's 88.8, so this
+   item is not built for that card; it stays open for a card of 12 GiB or more with at least 1.6x the Vega's compute.
 
 Documentation (recipe page, README row) lands with the first pull request that has receipts for it. The optimization
 ledger cell for the family is updated by the pull request that adds or drops an optimization.
@@ -1013,7 +1222,9 @@ each pull request, resolve every `"conflicts"` entry, `atc land <issue> <session
   link at startup, and the planner uses the receipt, not a constant.
 * **Hardware coverage.** Only an M4 Pro and a Vega 56 are available; everything about stronger cards and other chips
   needs other testers.
-* **Router skew** (hot-expert cache) is unmeasured; PR 3 is conditional on M6.
+* **Router skew** is measured (34 prompts, 9,698 decode tokens): mild skew, strong locality in time; a 5.9 GiB LRU on the Vega
+  hits 86.8% and still decodes at 0.53x of the Mac alone, because a fully resident Vega is 0.76x of it [INFERENCE]; the
+  Vega's dense time on the 35B is scaled from the 4B, not measured.
 * **Upstream drift.** The local base predates upstream's Metal MoE; first work is the rebase.
 
 ## Reproduce
@@ -1026,6 +1237,10 @@ uv venv /tmp/mlxenv && uv pip install --python /tmp/mlxenv/bin/python mlx mlx-lm
 /tmp/mlxenv/bin/python mlx_expert_probe.py 40
 /tmp/mlxenv/bin/python -m mlx_lm generate --model <35B-A3B dir> --max-tokens 256 --temp 0 --ignore-chat-template
 python3 placement_model.py
+/tmp/mlxenv/bin/python routing_trace.py <35B-A3B dir> traces 288                    # router decisions, about 4 minutes
+ONLY=chat0,code0,math0,long0,long2,chat3 /tmp/mlxenv/bin/python routing_trace.py <35B-A3B dir> traces_long 1600
+/tmp/mlxenv/bin/python cache_sim.py all > cache_sim_results.txt                     # hit rates, 3-5 minutes on five cores
+/tmp/mlxenv/bin/python cost_model.py > cost_model_results.txt
 ```
 
 The probes are development tools in the sense of CONTRIBUTING (Objective-C and Python are not part of the native build);

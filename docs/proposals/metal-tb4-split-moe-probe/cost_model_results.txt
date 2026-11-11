@@ -1,0 +1,191 @@
+expert = 1,769,472 B = 1.6875 MiB (3 x [524,288 packed u32 weight + 32,768 bf16 scales + 32,768 bf16 biases]); T_direct 0.553 ms, T_dma 0.558 ms, Metal crossing 259 us + 12.3 us a miss
+card dense bytes a token 1185 MiB (incl. head 273 MiB, DeltaNet state r+w, KV at 512), 880 launches; Mac alone 88.8 tok/s = 11.26 ms a token
+  dense 4B-fit: 12.64 ms;  all 320 expert reads resident at the expert rate 2.26 ms;  => a fully resident card: 67 tok/s
+  dense best-250: 8.84 ms;  all 320 expert reads resident at the expert rate 2.26 ms;  => a fully resident card: 90 tok/s
+  dense planner: 12.04 ms;  all 320 expert reads resident at the expert rate 3.73 ms;  => a fully resident card: 63 tok/s
+  dense flat-0.52: 22.83 ms;  all 320 expert reads resident at the expert rate 2.26 ms;  => a fully resident card: 40 tok/s
+
+### cost of one layer's m misses on the critical path, microseconds
+m missed experts in the layer                      1       2       4       8      16      32
+(a) direct host read over Thunderbolt            553    1106    2212    4424    8847   17695
+(b) Metal computes them (p50 crossing)           271     284     308     357     456     652
+(b) at the p99 crossing                          593     606     630     679     778     974
+(b) at the best-case crossing (idle Mac)         132     145     169     218     317     513
+(c) DMA prefetch: link time to move m experts     558    1116    2233    4466    8931   17862
+
+### 1 sequence: tok/s by policy, budget and miss path (4B-fit calibration; Mac alone 88.8). 'card GiB' = budget + 1.9 (dense 1.29, scratch 0.4, KV+state 0.2)
+policy / path  \ expert budget GiB                 2       3       4       5     5.9       8      10      12      16      24
+  (card VRAM GiB)                                3.9     4.9     5.9     6.9     7.8     9.9    11.9    13.9    17.9    25.9
+LRU / (a)                                       12.7    15.8    19.2    22.8    26.3    34.6    42.4    50.5    65.2    67.1
+LRU / (b)                                       15.3    20.2    26.2    33.7    42.3    53.1    56.6    59.9    66.2    67.1
+LRU / (b*)                                      40.3    42.3    44.5    46.7    48.8    53.1    56.6    59.9    66.2    67.1
+hybrid / (a)                                    11.4    14.3    17.3    20.6    23.9    32.4    40.9    49.9    65.2    67.1
+hybrid / (b)                                    13.4    17.7    22.8    29.1    36.4    51.8    55.7    59.6    66.2    67.1
+hybrid / (b*)                                   39.3    41.0    42.9    45.1    47.2    51.8    55.7    59.6    66.2    67.1
+freq+recency+prior / (a)                        10.0    12.4    15.2    18.4    21.7    30.4    39.8    49.6    65.1    67.1
+freq+recency+prior / (b)                        38.9    40.2    42.0    44.0    46.0    50.7    55.2    59.5    66.2    67.1
+freq+recency+prior / (b*)                       38.9    40.2    42.0    44.0    46.0    50.7    55.2    59.5    66.2    67.1
+static CV (no admission) / (a)                   7.1     8.0     9.1    10.3    11.6    15.4    20.4    28.3    57.2    67.1
+static CV (no admission) / (b)                  37.8    38.1    38.5    39.0    39.6    41.6    44.4    48.4    62.6    67.1
+static CV (no admission) / (b*)                 37.8    38.1    38.5    39.0    39.6    41.6    44.4    48.4    62.6    67.1
+Belady OPT (bound) / (a)                        19.2    24.6    29.7    34.5    38.7    47.2    53.9    59.6    66.4    67.1
+Belady OPT (bound) / (b)                        43.9    47.2    50.1    52.7    54.7    58.5    61.4    63.8    66.8    67.1
+Belady OPT (bound) / (b*)                       43.9    47.2    50.1    52.7    54.7    58.5    61.4    63.8    66.8    67.1
+
+  path (b) rows charge one DMA copy of 1.69 MiB for every admitted miss (the link bound: a round cannot be shorter than the link's busy time).
+
+### calibration sensitivity, 1 sequence, LRU, 5.9 GiB expert budget (8 GiB card), tok/s [stall ms | dense ms | hit ms | link busy ms]
+  4B-fit     (a):  26.3 tok/s   stall  23.4 | dense  12.6 | hit  2.0 | link  23.4  round  38.0 ms
+  4B-fit     (b):  42.3 tok/s   stall   5.9 | dense  12.6 | hit  2.0 | link  23.7  round  23.7 ms
+  best-250   (a):  29.2 tok/s   stall  23.4 | dense   8.8 | hit  2.0 | link  23.4  round  34.2 ms
+  best-250   (b):  42.3 tok/s   stall   5.9 | dense   8.8 | hit  2.0 | link  23.7  round  23.7 ms
+  planner    (a):  25.8 tok/s   stall  23.4 | dense  12.0 | hit  3.2 | link  23.4  round  38.7 ms
+  planner    (b):  42.3 tok/s   stall   5.9 | dense  12.0 | hit  3.2 | link  23.7  round  23.7 ms
+  flat-0.52  (a):  20.7 tok/s   stall  23.4 | dense  22.8 | hit  2.0 | link  23.4  round  48.2 ms
+  flat-0.52  (b):  32.6 tok/s   stall   5.9 | dense  22.8 | hit  2.0 | link  23.7  round  30.7 ms
+  4B-fit (b) with best-case crossing 120 us:  42.3 tok/s (stall 3.0 ms, link 23.7 ms)
+  4B-fit (b) with p99 crossing:  36.8 tok/s (stall 12.6 ms, link 23.7 ms)
+
+### the ceiling: a card that holds everything it needs (hit 100%, nothing crosses): tok/s vs the Mac alone
+  4B-fit    :  67.1 tok/s for 1 sequence (0.76x of the Mac alone)
+  best-250  :  90.0 tok/s for 1 sequence (1.01x of the Mac alone)
+  planner   :  63.4 tok/s for 1 sequence (0.71x of the Mac alone)
+  flat-0.52 :  39.8 tok/s for 1 sequence (0.45x of the Mac alone)
+  speed-up of the card's kernels (dense and expert, with the same launches) needed to reach the Mac alone at 100% hits, 4B-fit:
+    1.32x  (dense 9.55 ms + experts 1.71 ms; the launches stay at 3.9 ms of it if they do not scale, so the bytes must stream at 245 GB/s end to end)
+
+### speed needed from the card for the cache to pay (LRU, path b with copies): smallest multiplier on all the card's compute (rates and launches) that reaches 88.8 tok/s
+budget GiB                                         2       3       4       5     5.9       8      10      12      16      24
+LRU hit rate %                                  63.4    72.3    78.7    83.4    86.8    92.0    95.0    97.2    99.7   100.0
+LRU layers with a miss %                        89.7    79.8    69.6    60.0    51.8    36.7    26.0    16.8     1.9     0.0
+multiplier on dense+expert compute             never   never   never   never   never   never    1.8x    1.6x    1.3x    1.3x
+  same, admissions free (throttled to 0)       26.8x    7.5x    4.5x    3.3x    2.7x    2.1x    1.8x    1.6x    1.3x    1.3x
+
+### 2 and 4 sequences (4B-fit; the card's dense part scales with the 4B's measured rows fit)
+
+  N=2: Mac alone 135.8 tok/s (aggregate)
+  policy / path \ expert budget GiB                2       3       4       5     5.9       8      10      12      16      24
+  LRU / (a)                                     11.3    14.1    17.1    20.5    24.2    34.0    44.8    57.3    80.4    83.5
+  LRU / (b)                                     12.8    16.5    21.0    26.6    33.4    56.1    68.5    73.2    82.1    83.5
+  hybrid / (a)                                  10.3    12.9    15.8    19.0    22.4    31.7    42.5    55.6    80.4    83.5
+  hybrid / (b)                                  11.6    15.0    19.0    24.1    29.9    50.0    67.4    72.3    82.1    83.5
+  fully resident (24 GiB card): 83.5 tok/s
+
+  N=4: Mac alone 176.4 tok/s (aggregate)
+  policy / path \ expert budget GiB                2       3       4       5     5.9       8      10      12      16      24
+  LRU / (a)                                     10.0    12.1    14.7    17.6    20.6    29.4    40.7    55.8    87.7    91.6
+  LRU / (b)                                     11.4    13.7    17.1    21.3    26.0    42.4    71.5    79.8    89.9    91.6
+  hybrid / (a)                                   9.0    11.5    13.9    16.7    19.7    28.4    39.3    54.0    87.6    91.6
+  hybrid / (b)                                  20.3    14.5    16.0    20.0    24.6    40.2    67.3    79.1    89.9    91.6
+  fully resident (24 GiB card): 91.6 tok/s
+
+### (c) prefetch: tok/s, 1 sequence, 4B-fit, (b) misses; cap 18 loads a token; copies = prefetch loads + admitted copies (LRU admits every miss)
+policy    GiB  prefetch  cap  hit %  pf/tok  adm/tok   tok/s     (a)
+lru         4      None None   78.7     0.0     68.3    26.2    19.2
+lru         4      prev None   78.7     0.0     68.1    26.3    19.2
+lru         4      prev   18   78.7     0.0     68.1    26.3    19.2
+lru         4        A0 None   93.7    74.2     20.1    19.0    19.0
+lru         4        A0   18   81.6    18.0     58.8    23.3    21.3
+lru         4        A1 None   90.0    71.8     32.1    17.2    17.3
+lru         4        A1   18   80.5    18.0     62.3    22.3    20.4
+lru         4        A2 None   87.7    69.0     39.5    16.5    16.6
+lru         4        A2   18   80.0    18.0     64.1    21.8    20.0
+lru         4        B1 None   91.7    65.4     26.6    19.5    19.5
+lru         4        B1   18   81.7    18.0     58.6    23.4    21.3
+lru         4        B2 None   88.8    62.8     35.7    18.2    18.2
+lru         4        B2   18   80.8    18.0     61.4    22.6    20.6
+lru         4   prev+A2 None   87.7    69.0     39.3    16.5    16.6
+lru         4   prev+A2   18   80.0    18.0     64.1    21.8    20.0
+hybrid      4      None None   75.4     0.0     78.6    22.8    17.3
+hybrid      4      prev None   75.5     0.0     78.4    22.9    17.3
+hybrid      4      prev   18   75.5     0.0     78.4    22.9    17.3
+hybrid      4        A0 None   92.7    84.4     23.4    16.6    16.7
+hybrid      4        A0   18   78.5    18.0     68.8    20.6    19.1
+hybrid      4        A1 None   88.5    82.2     36.7    15.1    15.1
+hybrid      4        A1   18   77.4    18.0     72.4    19.8    18.4
+hybrid      4        A2 None   86.0    79.8     44.8    14.4    14.4
+hybrid      4        A2   18   76.8    18.0     74.2    19.4    18.1
+hybrid      4        B1 None   90.5    75.5     30.4    16.9    17.0
+hybrid      4        B1   18   78.5    18.0     68.7    20.7    19.1
+hybrid      4        B2 None   87.3    73.2     40.7    15.7    15.8
+hybrid      4        B2   18   77.6    18.0     71.6    20.0    18.5
+hybrid      4   prev+A2 None   86.1    79.8     44.5    14.4    14.5
+hybrid      4   prev+A2   18   76.8    18.0     74.1    19.5    18.1
+lru       5.9      None None   86.8     0.0     42.4    42.3    26.3
+lru       5.9      prev None   86.8     0.0     42.3    42.3    26.3
+lru       5.9      prev   18   86.8     0.0     42.3    42.3    26.3
+lru       5.9        A0 None   95.7    46.8     13.8    29.5    29.6
+lru       5.9        A0   18   89.5    17.8     33.5    34.9    30.1
+lru       5.9        A1 None   93.1    45.0     22.1    26.7    26.8
+lru       5.9        A1   18   88.4    17.8     37.0    32.7    28.5
+lru       5.9        A2 None   91.5    42.7     27.1    25.7    25.8
+lru       5.9        A2   18   87.8    17.8     38.9    31.6    27.7
+lru       5.9        B1 None   94.3    40.4     18.3    30.5    30.6
+lru       5.9        B1   18   89.5    17.5     33.6    35.1    30.1
+lru       5.9        B2 None   92.3    38.3     24.5    28.5    28.6
+lru       5.9        B2   18   88.7    17.4     36.3    33.3    28.8
+lru       5.9   prev+A2 None   91.6    42.7     27.0    25.7    25.8
+lru       5.9   prev+A2   18   87.9    17.8     38.8    31.6    27.7
+hybrid    5.9      None None   84.6     0.0     49.2    36.4    23.9
+hybrid    5.9      prev None   84.7     0.0     49.1    36.5    24.0
+hybrid    5.9      prev   18   84.7     0.0     49.1    36.5    24.0
+hybrid    5.9        A0 None   94.9    53.9     16.2    25.5    25.6
+hybrid    5.9        A0   18   87.6    17.9     39.8    31.0    27.3
+hybrid    5.9        A1 None   92.0    52.3     25.5    23.0    23.1
+hybrid    5.9        A1   18   86.4    17.9     43.4    29.2    25.9
+hybrid    5.9        A2 None   90.3    50.3     31.0    22.0    22.1
+hybrid    5.9        A2   18   85.9    17.9     45.2    28.4    25.3
+hybrid    5.9        B1 None   93.4    47.1     21.2    26.2    26.3
+hybrid    5.9        B1   18   87.5    17.8     39.9    31.1    27.3
+hybrid    5.9        B2 None   91.2    45.4     28.2    24.3    24.4
+hybrid    5.9        B2   18   86.7    17.8     42.7    29.6    26.2
+hybrid    5.9   prev+A2 None   90.4    50.3     30.8    22.1    22.2
+hybrid    5.9   prev+A2   18   85.9    17.9     45.1    28.4    25.3
+
+### admission throttle on the Metal path (1 sequence): tok/s with the link busy time charged
+policy    GiB     p  hit % copies/tok  link ms stall ms   tok/s
+lru         4     1   78.7       68.3     38.1      8.1    26.2
+lru         4   0.5   76.1       38.2     21.3      8.7    43.3
+lru         4  0.25   73.3       21.4     11.9      9.3    42.3
+lru         4   0.1   68.0       10.3      5.7     10.2    41.0
+lru         4  0.03   58.5        4.0      2.2     11.4    39.4
+lru         4     0   45.6        0.0      0.0     12.3    38.5
+hybrid      4     1   75.4       78.6     43.9      8.9    22.8
+hybrid      4   0.5   73.0       43.3     24.1      9.5    41.4
+hybrid      4  0.25   70.6       23.6     13.2     10.0    41.3
+hybrid      4   0.1   66.7       10.7      6.0     10.5    40.5
+hybrid      4  0.03   59.2        3.9      2.2     11.4    39.4
+hybrid      4     0   45.6        0.0      0.0     12.3    38.5
+fr          4     1   70.9       14.6      8.1      9.6    42.0
+fr          4   0.5   69.7       10.8      6.0      9.8    41.7
+fr          4  0.25   68.1        8.2      4.6     10.1    41.3
+fr          4   0.1   64.8        5.7      3.2     10.6    40.5
+fr          4  0.03   57.7        3.1      1.7     11.5    39.3
+fr          4     0   45.6        0.0      0.0     12.3    38.5
+lru       5.9     1   86.8       42.4     23.7      5.9    42.3
+lru       5.9   0.5   84.7       24.5     13.7      6.6    47.2
+lru       5.9  0.25   81.9       14.5      8.1      7.5    45.5
+lru       5.9   0.1   76.8        7.5      4.2      8.8    43.1
+lru       5.9  0.03   68.8        3.0      1.7     10.2    40.9
+lru       5.9     0   59.2        0.0      0.0     11.3    39.6
+hybrid    5.9     1   84.6       49.2     27.5      6.6    36.4
+hybrid    5.9   0.5   82.7       27.7     15.5      7.3    45.9
+hybrid    5.9  0.25   80.6       15.5      8.7      7.9    44.7
+hybrid    5.9   0.1   76.6        7.5      4.2      8.9    43.0
+hybrid    5.9  0.03   69.6        2.9      1.6     10.2    41.0
+hybrid    5.9     0   59.2        0.0      0.0     11.3    39.6
+fr        5.9     1   82.1       15.1      8.4      7.2    46.0
+fr        5.9   0.5   80.9       11.1      6.2      7.6    45.3
+fr        5.9  0.25   79.1        8.3      4.6      8.1    44.4
+fr        5.9   0.1   75.5        5.5      3.1      9.0    42.9
+fr        5.9  0.03   69.0        2.7      1.5     10.2    41.0
+fr        5.9     0   59.2        0.0      0.0     11.3    39.6
+
+### bigger cards (1 sequence). VRAM -> expert budget = VRAM - 1.9 GiB; compute from the planner's profiles (7900 XTX-class 960 GB/s eff 0.5, 2.5 us launches;
+    5090-class 1792 GB/s eff 0.55, 1.5 us) [INFERENCE: published peaks, one assumed efficiency each]; misses by Metal (b); same TB4 link and Metal numbers
+card \ VRAM GiB                                    8      10      12      16      20      24      32
+7900 XTX-class (LRU, Metal misses)                45      72     114     146     168     168     168
+5090-class (LRU, Metal misses)                    45      72     117     251     317     317     317
+  7900 XTX-class resident (hit 100%): 1 sequence 168 tok/s vs Mac 88.8 (1.89x)
+  5090-class resident (hit 100%): 1 sequence 317 tok/s vs Mac 88.8 (3.57x)
+  (the proposal's own planner gives resident 158 / 299 tok/s at 8k for these two; this model drops the 8k KV read and uses ctx 512)
