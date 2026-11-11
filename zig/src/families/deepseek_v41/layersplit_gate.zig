@@ -1,4 +1,4 @@
-//! Layer-split gate G3: enter the forward at layer `k` from another engine's boundary rows, or stop there and dump them.
+//! Layer-split gate G3: enter the forward at layer `k` from another engine's boundary rows, or stop and dump them.
 const std = @import("std");
 const View = @import("view.zig").View;
 

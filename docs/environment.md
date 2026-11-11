@@ -53,6 +53,9 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
 | `TF_PREFILL_API_KEY_FILE` | With `--prefill-from`: the path of a file only its owner can read, holding the GB10 server's API key, which the trigger sends as a Bearer token; unset sends none, and a GB10 started with `--api-key` then answers 401 |
 | `TF_PRODUCE_HELD_GIB` | With `--mcdma-produce`: whole GiB 1 through 1024 of hand-off exports a GB10 holds at once; an export past it is refused by name and the Mac prefills that prompt itself; default 32 |
 | `TF_DSV41_HANDOFF_DUMP` | A directory path without control characters, used as given; a DeepSeek-V4.1 producer also writes each hand-off export there as a file, with or without `--mcdma-produce`. Unset or blank writes none |
+| `TF_LS_DUMP_DIR` | A directory path without control characters, used as given; with `TF_LS_DUMP_LAYERS`, a DeepSeek-V4.1 CUDA prefill writes each listed layer's output boundary rows there (`L<n>.x.bf16`, `L<n>.pre.f32`) for the layer-split numerics gate. Unset or blank writes none |
+| `TF_LS_DUMP_LAYERS` | Comma-separated whole layer numbers (text without control characters, used as given) whose output boundary a DeepSeek-V4.1 CUDA prefill dumps into `TF_LS_DUMP_DIR`. Unset or blank dumps none |
+| `TF_LS_CHECK` | `dir:k,k:ids`, text without control characters, for the layer-split numerics gate on a DeepSeek-V4.1 Metal host: `dir` holds a CUDA prefill's boundary dumps, `k,k` the layers to enter at, `ids` a text file of the prompt's token ids; the host runs the check after loading. Unset or blank runs none |
 | `TF_PREFILL_TIMEOUT_S` | With `--prefill-from`: whole seconds 1 through 86400 for the trigger and, with `--mcdma-link http`, separately for the transfer of the export; default 60 plus 1 per 400 tokens sent |
 | `XPU_A8_BITS` | Exactly `4` or `8`, for the XPU quantization study; unset keeps the study's existing setting |
 | `LFM3_FUSE` | Whole u32 fusion mask; default 7 |
