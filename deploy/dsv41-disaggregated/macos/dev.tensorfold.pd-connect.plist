@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- LaunchDaemon (system domain) that drops to the serving user: the connect end of the MCDMA link.
+     Why a daemon and not a LaunchAgent: macOS lets "any daemon started by launchd" use the local network, while an
+     agent needs the user's Local Network grant (Apple TN3179, "macOS considerations"). The setup datagrams go to the
+     producer's LAN address. The program is the daemon itself, with no shell in between: launchd is its parent and its
+     process-group leader, so a stop (launchctl bootout) reaches it and nothing is orphaned. AbandonProcessGroup stays
+     false: when the job ends launchd kills anything left in the group.
+     The daemon ignores SIGHUP, and SIGKILL skips its teardown: ExitTimeOut gives its orderly SIGTERM stop time. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.tensorfold.pd-connect</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>@RPCD@</string>
+        <string>connect</string>
+        <string>@LINK_NAME@,@LAN_IF@/@PRODUCER_LAN_LL@,@EXCHANGE_PORT@,@MAC_DEV@,0,4096,4,64</string>
+    </array>
+    <key>UserName</key>
+    <string>@TF_USER@</string>
+    <key>GroupName</key>
+    <string>@TF_GROUP@</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>@TF_HOME@</string>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Restart after a failure (the CX5 device may not be up yet at boot); a clean exit (SHUTDOWN) stays down. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+    <key>ExitTimeOut</key>
+    <integer>60</integer>
+    <key>AbandonProcessGroup</key>
+    <false/>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>StandardOutPath</key>
+    <string>@LOG_DIR@/connect.log</string>
+    <key>StandardErrorPath</key>
+    <string>@LOG_DIR@/connect.log</string>
+</dict>
+</plist>

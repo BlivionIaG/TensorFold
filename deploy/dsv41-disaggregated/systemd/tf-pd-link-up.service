@@ -1,0 +1,15 @@
+# What a reboot loses on the port cabled to the Mac: NetworkManager's claim, the MTU, the 100G speed and the static
+# neighbour of the Mac's CX5 interface. Never touches the pair's own RoCE port. Parameters: /etc/tensorfold/mac-link.env.
+[Unit]
+Description=Mac-facing RDMA port: unmanaged, MTU 9000, 100G, static neighbour
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/tensorfold/mac-link.env
+ExecStart=@LIBEXEC@/tf-pd-link-up
+Restart=on-failure
+RestartSec=10
+SyslogIdentifier=tf-pd-link-up
