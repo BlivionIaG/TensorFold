@@ -105,6 +105,7 @@ fn compare(m: *const ds.Model, n: usize, full: Run, cone: Run, decode_steps: usi
     const tp = diffBytes(full.snap.taps, cone.snap.taps, &first);
     const ring_bytes = @as(usize, m.caches[0].plan.layers) * ds.kv.cache.window * ds.kv.cache.ring_stride;
     const layer_bytes = ds.kv.cache.window * ds.kv.cache.ring_stride;
+    regions(m.caches[0].plan, full.snap, cone.snap);
     log.info("n={d}: last-token logits differ in {d}/{d} values (worst {e}), argmax {d}/{d}", .{ n, lg[0], vocab, lg[1], argmax(full.logits), argmax(cone.logits) });
     log.info("n={d}: greedy {d} tokens sha full {x} cone {x}, {d} step rows differ (worst {e})", .{ n, decode_steps, sha(full.picks), sha(cone.picks), steps_bad, steps_worst });
     log.info("n={d}: storage {d} of {d} bytes differ (first {d}), live {d} of {d} (first {d}, ring layer {d}, ring {d} B), taps {d} of {d}; pos {d}/{d} taps_row {d}/{d} taps_n {d}/{d} last {d}/{d} base {d}/{d}", .{
@@ -120,6 +121,32 @@ fn compare(m: *const ds.Model, n: usize, full: Run, cone: Run, decode_steps: usi
         @as(f64, @floatFromInt(n)) / cone.prefill_s,
         full.prefill_s / cone.prefill_s,
     });
+}
+
+/// Where the kept state differs: storage by owner and kind, live by ring layer, then the scratch behind the rings.
+fn regions(plan: ds.kv.cache.Plan, full: *const ds.Model.Snapshot, cone: *const ds.Model.Snapshot) void {
+    const cache = ds.kv.cache;
+    var off: usize = 0;
+    for (cache.ratios, 0..) |r, o| {
+        const rows = plan.capacity / r;
+        inline for (.{ .{ "main", cache.main_stride }, .{ "index", cache.index_stride } }) |part| {
+            const len = rows * part[1];
+            var first: usize = 0;
+            const bad = diffBytes(full.storage[off..][0..len], cone.storage[off..][0..len], &first);
+            if (bad != 0) log.info("  storage owner layer {d} {s}: {d} bytes differ, first row {d} of {d}", .{ cache.owners[o], part[0], bad, first / part[1], rows });
+            off += len;
+        }
+    }
+    const ring = cache.window * cache.ring_stride;
+    for (0..plan.layers) |l| {
+        var first: usize = 0;
+        const bad = diffBytes(full.live[l * ring ..][0..ring], cone.live[l * ring ..][0..ring], &first);
+        if (bad != 0) log.info("  live ring layer {d}: {d} bytes differ, first slot {d}", .{ l, bad, first / cache.ring_stride });
+    }
+    const tail = @as(usize, plan.layers) * ring;
+    var first: usize = 0;
+    const bad = diffBytes(full.live[tail..], cone.live[tail..], &first);
+    if (bad != 0) log.info("  live scratch past the rings: {d} bytes differ, first at {d}", .{ bad, first });
 }
 
 fn tokens(a: std.mem.Allocator, io: std.Io, n: usize) ![]u32 {
