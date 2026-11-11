@@ -18,23 +18,24 @@ measurement are in "Reproducing the numbers on this page" at the end.
 | Piece | Source | Pin |
 | --- | --- | --- |
 | compiler, linker | Homebrew `llvm` and `lld` (clang 23, the version of the ROCm wheel's own clang) | llvm 23.1.3, lld 23.1.3 (`brew install llvm lld`) |
-| HIP headers `include/hip/**` | TheRock nightly wheel `rocm_sdk_core`, extracted by `fetch-rocm.sh` | rocm 10.1.0a20260822, HIP 7.16.26332 |
+| HIP headers `include/hip/**` | TheRock nightly wheel `rocm_sdk_core`, extracted by `tf-fetch-rocm` | rocm 10.1.0a20260822, HIP 7.16.26332 |
 | device libraries `lib/llvm/amdgcn/bitcode/*.bc` (ocml, ockl, oclc_*, hip, opencl) | the same wheel | same |
 | libc++ and libm headers the device compile includes | the Xcode macOS SDK (`xcrun --show-sdk-path`), passed as `-isysroot` | SDK 26.5 here |
 
 The wheel is `rocm_sdk_core-10.1.0a20260822-py3-none-linux_x86_64.whl` from `https://rocm.nightlies.amd.com/whl-multi-arch/`
 (the index jkuepker/ut4g-usbgpu's `pins.json` pins for its ROCm stack), 416,591,253 bytes, sha256
 `cf376d3465cffd0c755a1e1ec08324c519eaf3d79c56778ffede1f6a7a2a5729`. Only 163 files of it are used (6 MB); its Linux x86-64
-compiler and libraries are not. `tools/vega-macos/pins.env` holds the pins; `fetch-rocm.sh` checks the sha256.
+compiler and libraries are not. `tools/vega-macos/pins.env` holds the pins (`tf-fetch-rocm` has them built in, `--pins FILE` overrides); it checks the sha256.
 
 ```sh
 brew install llvm lld                                  # clang 23: AMDGPU target, offload bundler
-ROCM=$(tools/vega-macos/fetch-rocm.sh)                 # ~/.cache/tensorfold-vega/rocm-10.1.0a20260822 (or --wheel PATH)
 export PATH=$HOME/.local/zig-0.17.0:$PATH              # Zig 0.17.0 (.zig-version), unpacked from ziglang.org; no sudo
+zig build tf-hipcc tf-fetch-rocm                       # zig-out/bin/tf-hipcc and tf-fetch-rocm (Zig; they were the shell scripts hipcc and fetch-rocm.sh)
+ROCM=$(zig-out/bin/tf-fetch-rocm)                      # ~/.cache/tensorfold-vega/rocm-10.1.0a20260822 (or --wheel PATH)
 zig build native-hip tf-qwen35-test -Dhipcc=$ROCM/bin/hipcc -Doptimize=ReleaseFast
 ```
 
-`$ROCM/bin/hipcc` is a symlink to `tools/vega-macos/hipcc`, a bash wrapper that behaves as `hipcc --genco` does for what
+`$ROCM/bin/hipcc` is a symlink to `tf-hipcc` (`tools/vega-macos/hipcc.zig`, `zig build tf-hipcc`), a wrapper that behaves as `hipcc --genco` does for what
 `zig/build/hip.zig` asks of it (one `.hip` file, `--offload-arch`, `-I`, `-D`, `-o`): `-x hip --cuda-device-only
 --offload-device-only --no-gpu-bundle-output`, `-O3` unless an `-O` level is given, `-mllvm -amdgpu-early-inline-all=true -mllvm
 -amdgpu-function-calls=false` (all three as hipcc 7.x does), `--rocm-path` and `--rocm-device-lib-path` at the fetched root, lld
@@ -561,7 +562,7 @@ shell call that produced the numbers) or **R** (reconstructed from the pieces). 
 Environment of the builds and runs (**V**, `/tmp/up_all.sh`, `/tmp/k2/env_up.sh`; adapt the paths):
 
     export PATH=$PWD/tools/vega-macos/xcrun-metal-shim:$HOME/.local/zig-0.17.0:$PATH           # the shim only for the Metal targets
-    ROCM=$HOME/.cache/tensorfold-vega/rocm-10.1.0a20260822                                      # tools/vega-macos/fetch-rocm.sh
+    ROCM=$HOME/.cache/tensorfold-vega/rocm-10.1.0a20260822                                      # zig-out/bin/tf-fetch-rocm
     export HIPMAC_BACKEND=ut4g TENSORFOLD_HIP=<ut4g-usbgpu>/hipmac/build/libamdhip64.dylib      # card; HIPMAC_BACKEND=mock for the offline tests
     export UT4G_METRICS_LOG=/tmp/metrics.csv:1                                                  # optional: one telemetry sample a second
 
