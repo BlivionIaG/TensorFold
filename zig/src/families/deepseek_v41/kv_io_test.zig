@@ -35,6 +35,7 @@ test "Snapshot state: failed page I/O keeps private transfer storage and never b
     p.ctx = &ctx;
     p.tensors = &tensors;
     p.staging = null;
+    p.guard = .unlocked;
     p.io = .{ .d = &d, .handle = null };
     defer {
         mock.fail_sync = false;

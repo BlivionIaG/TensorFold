@@ -22,42 +22,13 @@ const Blob = sessions.disk.Blob;
 
 pub const Error = error{ NoPool, BadBlob, SlotNotActive };
 
-pub const Options = struct {
-    /// TF_DSV41_SESSIONS (default 1)
-    enabled: bool = true,
-    disk: ?[]const u8 = null,
-    disk_budget: u64 = 64 << 30,
-    disk_min_tokens: u64 = 1024,
-    /// TF_DSV41_SESSION_RESIDENT / _RESIDENT_GIB: idle chats and bytes kept in RAM (null: unlimited; 0: none idle)
-    resident: ?u32 = null,
-    resident_bytes: ?u64 = null,
-    /// TF_DSV41_SESSION_RAM_MIB (default 256)
-    ram_bytes: u64 = 256 << 20,
-    staging_mib: u32 = 128,
-    skip_covered: bool = false,
-    delta: bool = false,
-    /// TF_DSV41_SESSION_FRESH=1: purge the NVMe tier at boot (default: entries of this model and profile survive)
-    fresh: bool = false,
-    /// TF_DSV41_SESSION_SLOTS=1: the store with several live slots too (default off)
-    several: bool = false,
-};
+const opts_mod = @import("session_options.zig");
+const writes = @import("session_writes.zig");
+pub const Options = opts_mod.Options;
+const policy = opts_mod.policy;
 
 fn flag(name: [:0]const u8) !bool {
     return @import("sys").environment.read(bool, name, false);
-}
-
-/// The store's policy from the family's options: an unset residency stays unlimited, as sessions.Policy reads null.
-fn policy(o: Options) sessions.store.Policy {
-    return .{ .ram_bytes = o.ram_bytes, .chats = o.resident, .resident_bytes = o.resident_bytes, .skip_covered = o.skip_covered, .delta = o.delta, .write_through = o.disk != null };
-}
-
-test "the default session options keep idle chats unlimited; an explicit 0 keeps none" {
-    const unset = policy(.{});
-    try std.testing.expectEqual(@as(?u32, null), unset.chats);
-    try std.testing.expectEqual(@as(?u64, null), unset.resident_bytes);
-    const zero = policy(.{ .resident = 0, .resident_bytes = 0 });
-    try std.testing.expectEqual(@as(?u32, 0), zero.chats);
-    try std.testing.expectEqual(@as(?u64, 0), zero.resident_bytes);
 }
 
 pub fn optionsFromEnv() !Options {
@@ -82,6 +53,7 @@ pub fn optionsFromEnv() !Options {
     o.delta = try flag("TF_DSV41_SESSION_DELTA");
     o.several = try flag("TF_DSV41_SESSION_SLOTS");
     o.fresh = try flag("TF_DSV41_SESSION_FRESH");
+    o.save_queue_mib = try @import("sys").environment.read(u64, "TF_DSV41_SAVE_QUEUE_MIB", o.save_queue_mib);
     return o;
 }
 
@@ -216,7 +188,7 @@ pub const Sessions = struct {
             if (!quiet) std.log.scoped(.dsv41).info("sessions: {d} entries found on the NVMe tier at boot", .{n});
         }
         if (f.comm.world() > 1) s.agreement = try graphs.Agreement.init(f.runner.d, f.comm, f.runner.stream);
-        f.sess = .{ .ptr = s, .reserve = reserveFn, .commit = commitFn, .save = saveFn, .restore = restoreFn, .reset = resetFn, .prompt = promptFn, .admit = admitFn };
+        f.sess = .{ .ptr = s, .reserve = reserveFn, .commit = commitFn, .save = saveFn, .restore = restoreFn, .reset = resetFn, .prompt = promptFn, .admit = admitFn, .settle = writes.settleFn };
         return s;
     }
 
@@ -268,6 +240,9 @@ pub const Sessions = struct {
         try s.f.runner.stream.synchronize();
         try s.kx.dev.io.synchronize();
         try s.store.settleAll();
+        writes.flush(s);
+        const r = writes.report(s);
+        if (!quiet and r.counters != null) std.log.scoped(.dsv41).info("sessions: write-through saves settled at drain{f}", .{r});
     }
     pub fn close(s: *Sessions) !void {
         try s.drain();
@@ -399,6 +374,7 @@ pub const Sessions = struct {
     pub fn save(s: *Sessions) !?u32 {
         const h = &s.hist[s.cur()];
         if (h.items.len != s.f.slot.pos or s.f.slot.pending != null) return error.BadWindow;
+        try writes.retire(s);
         try s.f.sendSess(.save, 0);
         if (h.items.len == 0) return null;
         const snap = try s.snapshot();
@@ -419,6 +395,7 @@ pub const Sessions = struct {
         const h = &s.hist[s.cur()];
         if (h.items.len != s.f.slot.pos or s.f.slot.pending != null) return error.BadWindow;
         if (pf.state(s.f).mode == .replay and s.f.slot.ced.hi != s.f.slot.pos) return error.BadWindow;
+        try writes.retire(s);
         try s.f.sendSess(.prompt, 0);
         if (h.items.len == 0) return null;
         const snap = try s.snapshot();
@@ -459,6 +436,7 @@ pub const Sessions = struct {
 
     /// The longest saved entry strictly prefixing `prompt`; under the exact replay, none short of the cone.
     pub fn find(s: *Sessions, prompt: []const u32) !?sessions.store.Hit {
+        try writes.retire(s); // the settle point before the lookup and the plan: no settle falls between a hit and its restore
         const ids = try s.gpa.alloc(i32, prompt.len);
         defer s.gpa.free(ids);
         for (ids, prompt) |*d, t| d.* = @intCast(t);
@@ -493,7 +471,7 @@ pub const Sessions = struct {
         const want: fwd.Forward.Want = .{ .pos = h.pos, .key = s.store.entry(h.id).key };
         try s.f.sendRestore(h.id, want, ids);
         if (!try s.restoreAs(h.id, want, ids)) return .{ .damaged = true };
-        std.log.scoped(.dsv41).info("sessions: slot {d} resumed {d} of {d} prompt tokens from {s}", .{ s.cur(), h.pos, n, if (h.ram) "RAM" else "NVMe" });
+        std.log.scoped(.dsv41).info("sessions: slot {d} resumed {d} of {d} prompt tokens from {s}{f}", .{ s.cur(), h.pos, n, if (h.ram) "RAM" else "NVMe", writes.report(s) });
         return .{ .at = h.pos };
     }
 
@@ -581,6 +559,7 @@ pub const Sessions = struct {
 
     /// Every RAM entry parked to the NVMe tier now (a server parks through the budget).
     pub fn parkAll(s: *Sessions) !u32 {
+        writes.flush(s);
         var n: u32 = 0;
         var ids: std.ArrayList(u32) = .empty;
         defer ids.deinit(s.gpa);

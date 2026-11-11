@@ -205,7 +205,7 @@ fn publish(r: *Rows, j: *io.Job) !void {
     noteWriteLatency(r, nowNs() - j.began);
     r.counts.writes += 1;
     if (j.verify) r.counts.verified += 1;
-    if (!@import("builtin").is_test) std.log.info("imprint: {d} tokens on disk: {d} new blocks and its own {d} MiB ({d} MiB this state, {d} MiB of rows it shares) in {d:.0} ms", .{ j.at, j.files.len - 1, s.own >> 20, j.bytes >> 20, s.rows >> 20, @as(f64, @floatFromInt(nowNs() - j.began)) / 1e6 });
+    if (!@import("builtin").is_test) std.log.info("imprint: {d} tokens on disk: {d} new blocks and its own {d} MiB ({d} MiB this state, {d} MiB of rows it shares) in {d:.0} ms [saves: {d} written, {d} skipped, {d} failed]", .{ j.at, j.files.len - 1, s.own >> 20, j.bytes >> 20, s.rows >> 20, @as(f64, @floatFromInt(nowNs() - j.began)) / 1e6, r.counts.writes, r.counts.skipped, r.counts.failed });
 }
 
 /// Whether every block the job's state names is on disk or among the files it publishes now.

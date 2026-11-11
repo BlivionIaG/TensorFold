@@ -145,6 +145,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_DSV41_SESSION_DELTA", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
     .{ .name = "TF_DSV41_SESSION_SLOTS", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
     .{ .name = "TF_DSV41_SESSION_FRESH", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
+    .{ .name = "TF_DSV41_SAVE_QUEUE_MIB", .scope = .dsv41, .kind = .u64, .trim = " ", .max = 1 << 20, .forms = "a whole MiB count from 0 to 1048576 (default 256; 0 writes each session save's file inline on the engine thread)" },
     .{ .name = "TF_DSV41_ENGRAM_QD", .scope = .dsv41, .kind = .u32, .forms = "a whole reader-thread count from 0 to 4294967295 (0 reads serially)" },
     .{ .name = "TF_DSV41_ENGRAM_READERS", .scope = .dsv41, .kind = .u32, .max = 32, .forms = "a whole reader-thread count from 0 to 32 (0 reads serially)" },
     .{ .name = "TF_DSV41_GEN_STREAMS", .scope = .dsv41, .kind = .size, .min = 1, .forms = "a whole request count from 1 to the native size maximum" },

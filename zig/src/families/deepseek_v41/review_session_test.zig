@@ -144,3 +144,30 @@ test "Completion ownership: config identity ignores inactive list storage and bi
     b.eps *= 2;
     try t.expect(!std.mem.eql(u8, &first, &identity.semantics(b)));
 }
+
+const Settled = struct {
+    var total: u32 = 0;
+    fn run(_: *anyopaque, n: u32) anyerror!void {
+        total += n;
+    }
+};
+
+test "Session saves: a follower settles the leader's count, and refuses a malformed or unwired one" {
+    const follow = @import("forward_follow.zig");
+    var cfg: @import("config.zig").Config = .{};
+    var widths: @import("block.zig").Widths = .{};
+    var f = fwd.Forward.init(t.allocator, &cfg, &widths, .{}, undefined, undefined);
+    defer f.arena.deinit();
+    var ids: std.ArrayList(u32) = .empty;
+    var prompt: std.ArrayList(u32) = .empty;
+    var picks: std.ArrayList(u32) = .empty;
+    f.sess = .{ .ptr = &f, .commit = undefined, .save = undefined, .restore = undefined, .reset = undefined, .prompt = undefined, .settle = Settled.run };
+    try t.expectEqual([2]i64{ follow.op_sess_settle, 7 }, follow.sessSettleOp(7));
+    try t.expect(!try follow.followOp(&f, &follow.sessSettleOp(3), &ids, &prompt, &picks));
+    try t.expectEqual(@as(u32, 3), Settled.total);
+    const bad = [_][]const i64{ &.{follow.op_sess_settle}, &.{ follow.op_sess_settle, 0 }, &.{ follow.op_sess_settle, -1 }, &.{ follow.op_sess_settle, 1, 2 }, &.{ follow.op_sess_settle, 1 << 40 } };
+    for (bad) |msg| try t.expectError(error.BadPlan, follow.followOp(&f, msg, &ids, &prompt, &picks));
+    try t.expectEqual(@as(u32, 3), Settled.total);
+    f.sess.?.settle = null;
+    try t.expectError(error.BadPlan, follow.followOp(&f, &follow.sessSettleOp(1), &ids, &prompt, &picks));
+}
