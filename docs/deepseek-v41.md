@@ -67,7 +67,12 @@ GLM_LOAD_LIMIT_GB=430 tensorfold-native serve <pack> \
 
 `--parallel` is the lane count: each lane is one stream with its own caches and Engram
 cursor. `--prompt-cache-gib` sizes the retained prompt cache (a resumed turn processes only
-the suffix — 78 of 21,966 rows in 0.85 s on the receipt prompt).
+the suffix — 78 of 21,966 rows in 0.85 s on the receipt prompt); without it
+`TF_DSV41_PROMPT_CACHE_GIB` does, and without either the server takes the automatic budget the other
+Metal engines use (`0` keeps none). A kept prompt holds the rows its prompt used — 890 bytes a token
+plus a few MB of ring state — not the lane's whole `--context`, and restores into a lane of any
+capacity from its length up. `--learn-conversations` (with `--learn-dir`, `--spill-gib`) also keeps
+those states on disk and reads them back where that is faster than prefilling again.
 
 ## The kernels
 

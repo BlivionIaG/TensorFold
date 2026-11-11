@@ -4,6 +4,7 @@ const mtl = @import("metal");
 const sources = @import("kernel_sources");
 const View = @import("view.zig").View;
 pub const cache = @import("metal_kv_state.zig");
+pub const image = @import("kv_image.zig");
 pub const Kind = enum(u32) { window_fp8 = 0, main_fp4 = 1, index_fp4 = 2 };
 pub const Pack = extern struct {
     rows: u32,
