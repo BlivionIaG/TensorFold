@@ -114,8 +114,16 @@ def one(prompt, max_tokens, out, i, barrier):
         data = json.dumps(body(prompt, max_tokens))
         barrier.wait()
         t0 = time.perf_counter()
-        c.request("POST", BASE + "/v1/chat/completions", data, headers())
-        resp = c.getresponse()
+        for attempt in range(8):  # a server with a small listen backlog (mlx_lm.server's) resets some of c simultaneous connections: retry, TTFT counts from the first send
+            try:
+                c.request("POST", BASE + "/v1/chat/completions", data, headers())
+                resp = c.getresponse()
+                break
+            except (BrokenPipeError, ConnectionResetError, http.client.RemoteDisconnected):
+                rec["retries"] = attempt + 1
+                c.close()
+                time.sleep(0.05)
+                c = conn()
         if resp.status != 200:
             rec["error"] = f"HTTP {resp.status}: {resp.read()[:200]!r}"
             return
