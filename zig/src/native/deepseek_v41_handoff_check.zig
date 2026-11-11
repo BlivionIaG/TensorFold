@@ -128,7 +128,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8, c
     compare("control (the native snapshot restored)", ref, control, steps);
 
     // the hand-off: a file (or the round trip's own export) landed in a blank Snapshot as a pull lands it
-    const snap = try m.snapshotBlank();
+    const snap = try m.snapshotBlank(upto);
     defer m.snapshotDrop(snap);
     const parts = if (file != null) null else try exportNative(a, m, native, prompt[0..upto]);
     const bytes = if (parts) |p| try ho.blob.write(a, checkpoint, prompt[0..upto], p) else null;
@@ -188,7 +188,7 @@ const Part = enum { swa, carry, comp, ixk };
 
 /// `native` with only `part`'s regions replaced by the landed hand-off's: shows which part carries the difference.
 fn graft(m: *ds.Model, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, part: Part, upto: u32) !*ds.Model.Snapshot {
-    const out = try m.snapshotBlank();
+    const out = try m.snapshotBlank(upto);
     errdefer m.snapshotDrop(out);
     @memcpy(out.storage, native.storage);
     @memcpy(out.live, native.live);

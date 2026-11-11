@@ -289,8 +289,13 @@ pub const Backend = struct {
     }
 
     /// The prompt cache's Snapshots functions over the resident model (`ptr`: the *Backend, `owner`: the stream).
-    pub fn snapBytes(ptr: *anyopaque, _: u32) u64 {
-        return self(ptr).model.snapshotBytes();
+    pub fn snapBytes(ptr: *anyopaque, at: u32) u64 {
+        return self(ptr).model.snapshotBytes(at);
+    }
+
+    /// What a kept state holds: the rows its position uses, as `snapBytes` priced them.
+    pub fn snapCharged(_: *anyopaque, saved: *anyopaque) u64 {
+        return ds.Model.snapshotCharged(@ptrCast(@alignCast(saved)));
     }
 
     pub fn snapSave(ptr: *anyopaque, owner: ?*anyopaque, _: u32) anyerror!*anyopaque {

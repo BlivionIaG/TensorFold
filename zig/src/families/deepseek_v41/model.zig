@@ -210,11 +210,14 @@ pub const Model = struct {
     pub fn endSnapTail(m: *Model) void {
         model_lifecycle.endSnapTail(m);
     }
-    pub fn snapshotBytes(m: *const Model) u64 {
-        return model_lifecycle.snapshotBytes(m);
+    /// The most storage `snapshotSave` takes for a state at `at` tokens: the rows `at` uses, not the slot's capacity.
+    pub fn snapshotBytes(m: *const Model, at: u32) u64 {
+        return model_lifecycle.snapshotBytes(m, at);
     }
     pub const Snapshot = struct {
+        /// The pool's rows, laid out for `capacity` rows of the ratio-1 owner (`kv_prefix.Layout`), whatever the slot's.
         storage: []u8,
+        capacity: u32,
         live: []u8,
         taps: []u8,
         position: u32,
@@ -226,6 +229,10 @@ pub const Model = struct {
         taps_base: u32,
     };
 
+    /// The storage a kept Snapshot holds.
+    pub fn snapshotCharged(snap: *const Snapshot) u64 {
+        return model_lifecycle.snapshotCharged(snap);
+    }
     pub fn snapshotSave(m: *Model, slot: u32) !*Snapshot {
         return model_lifecycle.snapshotSave(m, slot);
     }
@@ -235,9 +242,9 @@ pub const Model = struct {
     pub fn snapshotRestore(m: *Model, slot: u32, snap: *const Snapshot) !void {
         return model_lifecycle.snapshotRestore(m, slot, snap);
     }
-    /// A zeroed Snapshot an importer fills (model_import.zig), sealed restorable after `upto` tokens.
-    pub fn snapshotBlank(m: *Model) !*Snapshot {
-        return model_import.blank(m);
+    /// A zeroed Snapshot an importer fills (model_import.zig) for a prefix of `rows` tokens, sealed restorable after them.
+    pub fn snapshotBlank(m: *Model, rows: u32) !*Snapshot {
+        return model_import.blank(m, rows);
     }
     pub fn snapshotSeal(m: *const Model, snap: *Snapshot, tokens: []const u32, upto: u32) !void {
         return model_import.seal(m, snap, tokens, upto);
