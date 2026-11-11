@@ -2,6 +2,7 @@
 const std = @import("std");
 const mtl = @import("metal");
 const View = @import("view.zig").View;
+const prefix = @import("kv_prefix.zig");
 pub const owners = [_]u32{ 2, 8, 14, 20 };
 pub const ratios = [_]u32{ 2, 2, 2, 1 };
 pub const index_sources = [_]u32{ 2, 8, 14, 20, 24, 28, 32, 36 };
@@ -9,6 +10,8 @@ pub const main_stride = 288;
 pub const index_stride = 68;
 pub const ring_stride = 528;
 pub const window = 128;
+/// The pool's packed layout: per owner, main rows then index rows (see `Plan.packedBytes`).
+pub const pool_layout: prefix.Layout = .{ .ratios = &ratios, .strides = &.{ main_stride, index_stride } };
 /// The backbone's layers, and the plan a drafter's three blocks add on top of them.
 pub const backbone_layers = 40;
 pub const drafter_layers = backbone_layers + 3;
@@ -44,9 +47,7 @@ pub const Plan = struct {
             return error.InvalidCacheCapacity;
     }
     pub fn packedBytes(p: Plan) usize {
-        var bytes: usize = 0;
-        for (ratios) |r| bytes += @as(usize, p.capacity / r) * (main_stride + index_stride);
-        return bytes;
+        return pool_layout.storageBytes(p.capacity);
     }
     pub fn mutableBytes(p: Plan) usize {
         return @as(usize, p.layers) * window * ring_stride + 7 * 2 * 512 * 4 + owners.len * captureBytes();
