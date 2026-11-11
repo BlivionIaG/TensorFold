@@ -50,11 +50,11 @@ fn multiRows() u32 {
 
 /// Column tiles a warp in the exact half-FMA decode bodies: 0 (the LUT bodies), 1, 2 or 4.
 fn fmaTiles() u32 {
-    const v = std.c.getenv("TF_DSV41_EXL3_FMA_TILES") orelse return 4;
-    const n = std.fmt.parseInt(u32, std.mem.span(v), 10) catch return 4;
+    const v = std.c.getenv("TF_DSV41_EXL3_FMA_TILES") orelse return 2;
+    const n = std.fmt.parseInt(u32, std.mem.span(v), 10) catch return 2;
     return switch (n) {
         0, 1, 2, 4 => n,
-        else => 4,
+        else => 2,
     };
 }
 

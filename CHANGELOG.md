@@ -4,7 +4,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
-- DeepSeek V4.1 on Metal: the EXL3 decode matvec computes each mul1 weight with one half FMA on the state's byte sum instead of reading a threadgroup lookup table, and one warp decodes up to four column tiles that share a block's activation loads (`TF_DSV41_EXL3_FMA_TILES`, 4 by default, 0 restores the table bodies). Every output is bit-identical to the table bodies (new GPU test over all widths and codebooks).
+- DeepSeek V4.1 on Metal: the EXL3 decode matvec computes each mul1 weight with one half FMA on the state's byte sum instead of reading a threadgroup lookup table, and one warp decodes up to four column tiles that share a block's activation loads (`TF_DSV41_EXL3_FMA_TILES`, 2 by default and 4 allowed, 0 restores the table bodies). Every output is bit-identical to the table bodies (new GPU test over all widths and codebooks). On an M5, decode goes from 40.7 to 44.5 tok/s at one stream and from 50.6 to 56.1 aggregate at four, with the same tokens.
 
 - DeepSeek-V4.1 on CUDA: a `TF_DSV41_PREFILL=replay` prompt is exportable (`--mcdma-produce`): the cut stands after the decoder replay, the decoder layers' rings and the drafter's rings are read from the live slot (the window's oldest row, never replayed, is zero), so the GB10 pair exports at its replay prefill speed (about 2.2k to 2.6k tokens/s at 8k to 32k) instead of about 1.2k.
 
