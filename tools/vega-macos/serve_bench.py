@@ -119,7 +119,7 @@ def one(prompt, max_tokens, out, i, barrier):
                 c.request("POST", BASE + "/v1/chat/completions", data, headers())
                 resp = c.getresponse()
                 break
-            except (BrokenPipeError, ConnectionResetError, http.client.RemoteDisconnected):
+            except (OSError, http.client.RemoteDisconnected):  # BrokenPipe, reset, and macOS's EINVAL on a socket the server already closed
                 rec["retries"] = attempt + 1
                 c.close()
                 time.sleep(0.05)
