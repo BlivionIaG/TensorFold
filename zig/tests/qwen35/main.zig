@@ -167,7 +167,8 @@ const Check = struct {
             .@"union" => switch (dev) {
                 inline else => |payload, tag| try c.walk(payload, @field(h, @tagName(tag))),
             },
-            .optional => if (dev) |d| try c.walk(d, h.?) else if (h != null) return error.ShapeMismatch,
+            // a device field with no host twin (the stacked gate_up of gfx900, a view over gate and up) has nothing to compare with
+            .optional => if (@TypeOf(h) == void) {} else if (dev) |d| try c.walk(d, h.?) else if (h != null) return error.ShapeMismatch,
             else => {},
         }
     }
