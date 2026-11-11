@@ -31,20 +31,16 @@ pub fn stashed(f: *Forward, start: u64, ids: []const u32) void {
     if (f.slot.cone_id == st.cone_id) st.cone.extend(start, ids);
 }
 
-/// The cone's rows behind a prompt ending at `end`.
-fn rowsOf(f: *const Forward, end: u64) !u32 {
-    return ced.groupRows(f.cfg.window, f.cfg.layers - try ced.decoderStart(f.cfg), 0, end);
-}
-
 /// Whether the slot's ring holds the cone of a prompt ending at `end` (all of it, or from position 0) and it can run.
 pub fn usable(f: *const Forward, end: u64) bool {
     const st = pf.state(f);
     if (!st.cone_on or end <= ced.keep) return false;
-    const rows = rowsOf(f, end) catch return false;
+    const nd = f.cfg.layers - (ced.decoderStart(f.cfg) catch return false);
+    const rows = ced.groupRows(f.cfg.window, nd, 0, end);
     // a cone past the forward's rows runs in the workspace (this prompt call's agreement)
     if (rows > f.opts.prefill_rows and !(st.k4 and st.ws_ok)) return false;
     if (f.slot.cone_id == 0 or f.slot.cone_id != st.cone_id or st.cone.hi != end) return false;
-    return st.cone.lo() == 0 or end - st.cone.lo() >= rows;
+    return ced.coneHeld(f.cfg.window, nd, end, st.cone.lo());
 }
 
 /// The exact decoder replay for the prompt ending at `f.slot.pos`; false (nothing run) when the cone cannot.

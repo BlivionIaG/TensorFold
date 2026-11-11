@@ -328,3 +328,69 @@ test "CED: the exact replay's programs, chained, run the decoder pass's calls in
         try testing.expectEqual(whole_taps, taps);
     };
 }
+
+const prompt_lengths = [_]u64{ 128, 328, 1024, 1810, 2047, 2048, 2600, 4096, 10572 };
+
+test "CED: the exact replay's rows per layer equal the cone rule's, for prompts from the window past the cone" {
+    const cfg: Config = .{};
+    const d = try ced.decoderStart(&cfg);
+    const nd = cfg.layers - d;
+    var layers: [64]u32 = undefined;
+    for (layers[0..cfg.layers], 0..) |*l, i| l.* = @intCast(i);
+    const dec = layers[d..cfg.layers];
+    const W = cfg.window;
+    try testing.expectEqual(ced.cone_keep, ced.groupRows(W, nd, 0, std.math.maxInt(u64)));
+    for (prompt_lengths) |n| for ([_]u32{ 1, 4, 5, 20 }) |group| {
+        const end = n - 1;
+        var buf: [32]ced.Group = undefined;
+        const gs = ced.groups(&cfg, dec, group, &buf);
+        var prev: u32 = std.math.maxInt(u32);
+        var seen: u32 = 0;
+        for (gs) |g| {
+            const rows = ced.groupRows(W, nd, g.first, end);
+            // the program starts on its first layer's cone and a later program never runs more rows than an earlier one
+            try testing.expectEqual(@min(end, try ced.layerRows(&cfg, ced.replay_rows, d + g.first)), rows);
+            try testing.expect(rows <= prev and rows <= ced.cone_keep and rows <= end);
+            prev = rows;
+            for (g.first..g.first + g.count) |k| {
+                const rule = try ced.layerRowsOf(&cfg, ced.replay_rows, d + @as(u32, @intCast(k)), @intCast(end));
+                // every layer of the program replays its cone's rows (a group of one: exactly them)
+                try testing.expect(rows >= rule);
+                if (g.count == 1) try testing.expectEqual(rule, rows);
+                seen += 1;
+            }
+        }
+        try testing.expectEqual(nd, seen);
+        // the first program starts at the prompt's start when the cone is not shorter, else on cone rows of the stash
+        try testing.expectEqual(@min(end, ced.cone_keep), ced.groupRows(W, nd, gs[0].first, end));
+        // the last program: the window's rows (or the whole prompt below it)
+        try testing.expectEqual(@min(end, W), ced.groupRows(W, nd, gs[gs.len - 1].first + gs[gs.len - 1].count - 1, end));
+        // the stash a prompt run from 0 leaves holds every program's rows
+        try testing.expect(ced.coneHeld(W, nd, end, end -| ced.cone_keep));
+    };
+}
+
+test "CED: a prompt resumed from a snapshot keeps the exact replay only when the stash after it holds the cone" {
+    const cfg: Config = .{};
+    const T = struct { n: u64, at: u64, exact: bool };
+    const cases = [_]T{
+        .{ .n = 128, .at = 64, .exact = true }, // 127 prefilled rows: the bounded replay is already exact
+        .{ .n = 129, .at = 0, .exact = true },
+        .{ .n = 129, .at = 64, .exact = false },
+        .{ .n = 329, .at = 320, .exact = false }, // the 328-token prompt's snapshot under a longer one
+        .{ .n = 1811, .at = 0, .exact = true },
+        .{ .n = 1811, .at = 320, .exact = false }, // the 1,810-token export resumed at the 328-token one's snapshot
+        .{ .n = 2048, .at = 16, .exact = false },
+        .{ .n = 2049, .at = 16, .exact = false },
+        .{ .n = 2601, .at = 59, .exact = true }, // end 2,600: the cone is 2,541 rows, 2,541 remain behind 59
+        .{ .n = 2601, .at = 64, .exact = false },
+        .{ .n = 4097, .at = 1024, .exact = true },
+        .{ .n = 4097, .at = 1600, .exact = false },
+        .{ .n = 10573, .at = 1792, .exact = true }, // the 10,572-token export resumed at the 1,810-token one's snapshot
+        .{ .n = 10573, .at = 8031, .exact = true },
+        .{ .n = 10573, .at = 8032, .exact = false },
+    };
+    for (cases) |c| try testing.expectEqual(c.exact, ced.resumeExact(&cfg, c.n - 1, c.at));
+    // a resume at 0 is a cold prompt: exact for every length
+    for (prompt_lengths) |n| try testing.expect(ced.resumeExact(&cfg, n - 1, 0));
+}

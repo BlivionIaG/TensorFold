@@ -101,6 +101,18 @@ pub fn groupRows(window: u32, nd: u32, first: u32, avail: u64) u32 {
     return @intCast(@min(avail, window + (nd - 1 - first) * (window - 1)));
 }
 
+/// The exact replay's stash rule: the stash from `lo` holds the cone of a prompt prefilled to `end`, or starts at 0.
+pub fn coneHeld(window: u32, nd: u32, end: u64, lo: u64) bool {
+    return lo == 0 or end - lo >= groupRows(window, nd, 0, end);
+}
+
+/// Whether a prompt prefilled to `end` stays exact when it resumes a snapshot at `at` (its stash starts there).
+pub fn resumeExact(cfg: *const Config, end: u64, at: u64) bool {
+    if (end <= keep) return true;
+    const nd = cfg.layers - (decoderStart(cfg) catch return true);
+    return coneHeld(cfg.window, nd, end, @max(at, end -| cone_keep));
+}
+
 /// Every row: an encoder layer is not cone-limited.
 pub const all_rows: u32 = std.math.maxInt(u32);
 
