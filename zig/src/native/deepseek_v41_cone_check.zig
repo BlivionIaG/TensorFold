@@ -23,10 +23,27 @@ fn seconds(io: std.Io) f64 {
     return @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .awake).toNanoseconds())) / 1e9;
 }
 
+/// The slot's kept buffers and cursors, copied out after a prefill.
+const Kept = struct { storage: []u8, live: []u8, taps: []u8, position: u32, taps_row: u32, taps_n: u32, taps_rows_last: u32, taps_base: u32 };
+
+fn capture(m: *ds.Model, a: std.mem.Allocator) !Kept {
+    const state = &m.caches[0];
+    return .{
+        .storage = try a.dupe(u8, state.storage.contents()[0..state.plan.packedBytes()]),
+        .live = try a.dupe(u8, state.live.contents()[0..state.plan.mutableBytes()]),
+        .taps = try a.dupe(u8, m.taps.contents()[0..m.taps.length()]),
+        .position = state.position,
+        .taps_row = m.taps_row,
+        .taps_n = m.taps_n,
+        .taps_rows_last = m.taps_rows_last,
+        .taps_base = m.taps_base,
+    };
+}
+
 /// One path's run: the prefill's last row, its kept state, the greedy ids after it.
 const Run = struct {
     logits: []f32,
-    snap: *ds.Model.Snapshot,
+    snap: Kept,
     picks: []u32,
     steps: []f32,
     prefill_s: f64,
@@ -49,7 +66,7 @@ fn prefill(m: *ds.Model, a: std.mem.Allocator, io: std.Io, ids: []const u32) !st
 fn run(m: *ds.Model, a: std.mem.Allocator, io: std.Io, ids: []const u32, decode_steps: usize, cone: bool) !Run {
     ds.forward_cone.force(m, cone);
     const pre = try prefill(m, a, io, ids);
-    const snap = try m.snapshotSave(0);
+    const snap = try capture(m, a);
     const picks = try a.alloc(u32, decode_steps);
     const steps = try a.alloc(f32, decode_steps * vocab);
     var logits: []const f32 = pre[0];
@@ -105,7 +122,7 @@ fn compare(m: *const ds.Model, n: usize, full: Run, cone: Run, decode_steps: usi
     const tp = diffBytes(full.snap.taps, cone.snap.taps, &first);
     const ring_bytes = @as(usize, m.caches[0].plan.layers) * ds.kv.cache.window * ds.kv.cache.ring_stride;
     const layer_bytes = ds.kv.cache.window * ds.kv.cache.ring_stride;
-    regions(m.caches[0].plan, full.snap, cone.snap);
+    regions(m.caches[0].plan, &full.snap, &cone.snap);
     log.info("n={d}: last-token logits differ in {d}/{d} values (worst {e}), argmax {d}/{d}", .{ n, lg[0], vocab, lg[1], argmax(full.logits), argmax(cone.logits) });
     log.info("n={d}: greedy {d} tokens sha full {x} cone {x}, {d} step rows differ (worst {e})", .{ n, decode_steps, sha(full.picks), sha(cone.picks), steps_bad, steps_worst });
     log.info("n={d}: storage {d} of {d} bytes differ (first {d}), live {d} of {d} (first {d}, ring layer {d}, ring {d} B), taps {d} of {d}; pos {d}/{d} taps_row {d}/{d} taps_n {d}/{d} last {d}/{d} base {d}/{d}", .{
@@ -124,7 +141,7 @@ fn compare(m: *const ds.Model, n: usize, full: Run, cone: Run, decode_steps: usi
 }
 
 /// Where the kept state differs: storage by owner and kind, live by ring layer, then the scratch behind the rings.
-fn regions(plan: ds.kv.cache.Plan, full: *const ds.Model.Snapshot, cone: *const ds.Model.Snapshot) void {
+fn regions(plan: ds.kv.cache.Plan, full: *const Kept, cone: *const Kept) void {
     const cache = ds.kv.cache;
     var off: usize = 0;
     for (cache.ratios, 0..) |r, o| {
@@ -201,10 +218,6 @@ pub fn runSizes(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const 
             @as(f64, @floatFromInt(n)) / cone2.prefill_s,
             full2.prefill_s / cone2.prefill_s,
         });
-        m.snapshotDrop(full.snap);
-        m.snapshotDrop(cone.snap);
-        m.snapshotDrop(full2.snap);
-        m.snapshotDrop(cone2.snap);
     }
     ds.forward_cone.force(m, false);
     try m.reset();
