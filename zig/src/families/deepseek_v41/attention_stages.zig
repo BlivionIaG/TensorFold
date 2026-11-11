@@ -67,6 +67,7 @@ pub const Stage = struct {
     qkv_merged: bool,
     main: View,
     compressed_rows: u32,
+    mode: common.ConeMode = .full,
 
     /// `Attention.forward`'s first half: `qr = q_norm(wq_a(x))`, `q = wq_b(qr)`, then the query's RoPE.
     pub fn queryStage(self: *Stage, comptime diagnostic: bool) !void {
@@ -161,7 +162,7 @@ pub const Stage = struct {
             compressed_rows = end / ratio;
             const complete = compressed_rows - position / ratio;
             const latent = work.view(.latent);
-            if (source.owner == layer) {
+            if (source.owner == layer and self.mode != .skip) {
                 const compressor = if (w.compressor) |*value| value else return error.MissingAttentionCompressor;
                 const output: exl3.Output = if (ratio == 1) .bf16 else .f32;
                 const values = work.view(.values);
@@ -192,6 +193,14 @@ pub const Stage = struct {
                     try p.cache.encodePack(e, key, source.index, .{ .rows = complete, .width = c.index_dim, .stride = c.index_dim, .packed_stride = kv.cache.index_stride, .block = 32, .kind = .index_fp4, .first = position / ratio });
                     attnMark(layer, "index_k", prof, &e);
                 }
+            }
+            if (self.mode == .publish) {
+                // The index keys consumed the normalized latent; the main rows follow as the full pass writes them.
+                if (source.owner == layer and complete != 0) {
+                    try rotate(p, e, latent, complete, 1, c.head_dim, position / ratio * ratio, ratio, ratio, false, c);
+                    try p.cache.encodePack(e, latent, source.main, .{ .rows = complete, .width = c.head_dim, .stride = c.head_dim, .packed_stride = kv.cache.main_stride, .block = 16, .kind = .main_fp4, .first = position / ratio });
+                }
+                return;
             }
             // Every visible key is kept when there are no more compressed keys than the selection keeps.
             const few_keys = compressed_rows <= c.index_topk;
@@ -393,7 +402,7 @@ pub const Stage = struct {
             } else if (work.selection_layer != precedingIndex(layer) or
                 work.selection_position != position or work.selection_rows != rows) return error.MissingAttentionSelection;
             // Index K consumes the normalized latent before this in-place RoPE mutates it.
-            if (source.owner == layer and complete != 0) {
+            if (source.owner == layer and complete != 0 and self.mode != .skip) {
                 try rotate(p, e, latent, complete, 1, c.head_dim, position / ratio * ratio, ratio, ratio, false, c);
                 try p.cache.encodePack(e, latent, source.main, .{ .rows = complete, .width = c.head_dim, .stride = c.head_dim, .packed_stride = kv.cache.main_stride, .block = 16, .kind = .main_fp4, .first = position / ratio });
                 attnMark(layer, "main_pack", prof, &e);
