@@ -1,9 +1,10 @@
 //! Cone prefill (TF_DSV41_CONE=1): encoder layers over every prompt row, decoder layers over the last rows only.
 //!
-//! A prompt's non-final chunks run layers 0..d-1 and layer d's compressor (the kv source's rows, every position), and
-//! stash the stream state entering layer d for the chunk's last `rows` rows. The final chunk does the same, then the
-//! decoder layers d..39 run over the stashed rows with the full path's chunk boundaries (`ced.zig`'s exact rule: the
-//! rows that influence the kept outputs and the kept window ring).
+//! A prompt's chunks run layers 0..d-1 and layer d's compressor (the kv source's rows, every position), and stash the
+//! stream state entering layer d for the chunk's last `rows` rows. When the prompt ends, the decoder layers d..39 run over
+//! the stashed rows with the chunks' own boundaries (`ced.zig`'s exact rule: the rows that influence the kept outputs
+//! and the kept window ring). Anything that needs the slot's state mid-prompt (a snapshot, a call that is not the next
+//! chunk) replays what is stashed first; a replay is exact at the position it ends, and the prompt continues from there.
 const std = @import("std");
 const mtl = @import("metal");
 const ced = @import("ced.zig");
@@ -17,7 +18,7 @@ const Seg = model.Seg;
 const Logits = model.Logits;
 const View = view.View;
 
-/// Stash ring rows (positions modulo this); at least the cone's rows.
+/// Stash ring rows (position p at row p % cap); at least the cone's rows.
 pub const cap: u32 = 4096;
 /// A chunk shorter than this is not worth a cone (decode rows, tails).
 const min_rows: u32 = 17;
@@ -37,12 +38,15 @@ pub const Cone = struct {
     phase: Phase = .off,
     /// the decoder's first layer
     d: u32 = 20,
+    /// the rows the decoder replays at most
+    rows: u32 = 0,
     stash: ?mtl.Buffer = null,
     ids: [cap]u32 = undefined,
     chunks: [max_chunks]Chunk = undefined,
     count: usize = 0,
     pending: bool = false,
     slot: u32 = 0,
+    /// the pending run's first position and the next one it continues at
     first: u32 = 0,
     next: u32 = 0,
     /// the decoder chunk's first position (loadStash)
@@ -60,40 +64,64 @@ pub const Cone = struct {
 };
 
 fn enabled(m: *Model) bool {
+    if (m.cone.on) |v| return v;
+    return configure(m, @import("sys").environment.read(bool, "TF_DSV41_CONE", false) catch false);
+}
+
+/// Set the cone on or off; on only when the config has a decoder the cone rule covers.
+fn configure(m: *Model, knob: bool) bool {
     const c = &m.cone;
-    if (c.on) |v| return v;
-    var v = false;
-    if (std.c.getenv("TF_DSV41_CONE")) |e| v = std.mem.eql(u8, std.mem.span(e), "1");
-    if (v) {
-        c.d = ced.decoderStart(&m.cfg) catch {
-            c.on = false;
-            return false;
-        };
-        const rows = ced.suffixRows(&m.cfg, kept) catch cap + 1;
-        if (rows > cap) v = false;
-    }
-    c.on = v;
-    return v;
+    c.on = false;
+    if (!knob) return false;
+    const d = ced.decoderStart(&m.cfg) catch return false;
+    const rows = ced.suffixRows(&m.cfg, kept) catch return false;
+    if (rows > cap) return false;
+    // the decoder layers read the first one's pool: no other kv source among them
+    for (d + 1..m.cfg.layers) |l| if (m.cfg.isKvSource(@intCast(l))) return false;
+    c.d = d;
+    c.rows = rows;
+    c.on = true;
+    return true;
+}
+
+/// The check harness's switch between the paths (no run pending).
+pub fn force(m: *Model, on: bool) void {
+    _ = configure(m, on);
 }
 
 fn eligible(m: *Model, segs: []const Seg, logits: Logits) bool {
     return segs.len == 1 and logits != .all and m.profile == null and m.observer == null and
         m.attention_observer == null and m.pipelines.hc_boundary != null and m.publish_limit == 0 and
         std.c.getenv("TF_DSV41_LAYER_CB") == null and std.c.getenv("TF_DSV41_HID_HASH") == null and
-        std.c.getenv("TF_DSV41_STAGE_CB") == null;
+        std.c.getenv("TF_DSV41_STAGE_CB") == null and std.c.getenv("TF_DSV41_ATTN_PROF") == null;
 }
 
 /// The cone path of one forward, or null when the call takes the full path.
 pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
     if (!enabled(m)) return null;
     const c = &m.cone;
-    if (c.pending and (segs.len != 1 or segs[0].slot != c.slot or segs[0].p0 != c.next or logits == .all)) _ = try replay(m, .none);
-    if (!eligible(m, segs, logits)) return null;
+    if (segs.len == 0 or segs[0].slot >= m.lanes) return null;
     const sg = segs[0];
+    var mine = false;
+    if (c.pending) for (segs) |s| if (s.slot == c.slot) {
+        mine = true;
+    };
+    // another prompt is half done in the stash: this call takes the full path
+    if (c.pending and !mine) return null;
+    const ok = eligible(m, segs, logits);
+    if (mine) {
+        // the slot's state was replaced under the pending run: nothing to replay
+        if (segs.len != 1 or sg.p0 != c.next) {
+            c.pending = false;
+            return null;
+        }
+        if (!ok or c.count == max_chunks) _ = try replay(m, .none);
+    }
+    if (!ok) return null;
     const rows: u32 = @intCast(sg.ids.len);
     const final = logits != .none;
     if (!c.pending) {
-        if (final or rows < min_rows) return null;
+        if (rows < min_rows or (final and rows <= c.rows)) return null;
         c.pending = true;
         c.slot = sg.slot;
         c.first = sg.p0;
@@ -103,25 +131,20 @@ pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
     try ensureStash(m);
     c.phase = .encoder;
     defer c.phase = .off;
-    _ = try impl.forwardCore(m, segs, .none);
+    const out = try impl.forwardCore(m, segs, .none);
     for (sg.ids, 0..) |id, i| c.ids[(sg.p0 + i) % cap] = id;
-    if (c.count == max_chunks) {
-        std.mem.copyForwards(Chunk, c.chunks[0 .. max_chunks - 1], c.chunks[1..max_chunks]);
-        c.count -= 1;
-    }
     c.chunks[c.count] = .{ .pos = sg.p0, .rows = rows };
     c.count += 1;
     c.next = sg.p0 + rows;
-    if (!final) return m.workspace.logits(0);
+    if (!final) return out;
     return try replay(m, logits);
 }
 
-/// The decoder layers over the stashed rows, chunk by chunk, ending the pending prompt.
+/// The decoder layers over the stashed rows, chunk by chunk, ending the pending run.
 pub fn replay(m: *Model, logits: Logits) ![]const f32 {
     const c = &m.cone;
     const end = c.next;
-    const r = ced.suffixRows(&m.cfg, kept) catch return error.InvalidPrefillChunk;
-    const start = @max(end -| r, c.first);
+    const start = @max(end -| c.rows, c.first);
     const state = &m.caches[c.slot];
     c.pending = false;
     defer c.phase = .off;
@@ -129,6 +152,12 @@ pub fn replay(m: *Model, logits: Logits) ![]const f32 {
     for (c.chunks[0..c.count], 0..) |ch, i| {
         const a = @max(ch.pos, start);
         const b = ch.pos + ch.rows;
+        // the drafter's tap ring advances as the full pass advances it, over rows the replay skips too
+        if (model.tapsOn()) {
+            const extra = @min(ch.rows, 128) - (if (a < b) @min(b - a, 128) else 0);
+            m.taps_row = (m.taps_row + extra) % 128;
+            m.taps_n = @min(m.taps_n + extra, 128);
+        }
         if (a >= b) continue;
         state.position = a;
         c.at = a;
@@ -142,11 +171,29 @@ pub fn replay(m: *Model, logits: Logits) ![]const f32 {
     return out;
 }
 
+/// Replay a pending run on `slot` so its state is exact at the position it stands at.
+pub fn flush(m: *Model, slot: u32) !void {
+    if (m.cone.pending and m.cone.slot == slot) _ = try replay(m, .none);
+}
+
+/// Forget a pending run on `slot` whose state is being replaced.
+pub fn drop(m: *Model, slot: u32) void {
+    if (m.cone.pending and m.cone.slot == slot) m.cone.pending = false;
+}
+
+pub fn release(m: *Model) void {
+    if (m.cone.stash) |b| b.deinit();
+    m.cone.stash = null;
+}
+
 fn ensureStash(m: *Model) !void {
     const c = &m.cone;
     if (c.stash != null) return;
     const buf = try m.device.buffer(Cone.totalBytes(), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+    errdefer buf.deinit();
     m.residency.add(buf);
+    m.residency.commit();
+    m.residency.requestResidency();
     c.stash = buf;
 }
 
@@ -158,8 +205,7 @@ fn sources(m: *const Model) [5]View {
 /// Copy the state entering the decoder (the chunk's last rows, at most the cone's) into the stash ring.
 pub fn stashRows(m: *Model, enc: mtl.ComputeEncoder, rows: u32, p0: u32) void {
     const c = &m.cone;
-    const r = ced.suffixRows(&m.cfg, kept) catch cap;
-    const take = @min(rows, r);
+    const take = @min(rows, c.rows);
     const q0 = p0 + rows - take;
     const first = @min(take, cap - q0 % cap);
     const src = sources(m);
