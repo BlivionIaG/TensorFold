@@ -124,6 +124,7 @@ const Pool = struct {
     slots: []policy.Id,
     line: []policy.Line,
     stamp: []u32,
+    flags: []bool,
     where: []i32,
     scratch_unique: []policy.Id,
     ids: []policy.Id,
@@ -272,6 +273,7 @@ pub const Store = struct {
             s.gpa.free(p.slots);
             s.gpa.free(p.line);
             s.gpa.free(p.stamp);
+            s.gpa.free(p.flags);
             s.gpa.free(p.where);
             s.gpa.free(p.scratch_unique);
             s.gpa.free(p.ids);
@@ -374,8 +376,9 @@ pub const Store = struct {
         return p.chunks[slot / p.per_chunk].base() + (slot % p.per_chunk) * s.shape.blobBytes();
     }
 
-    /// `total` cache lines of device memory, a prompt span's scratch (one layer's every expert) among them; decode admits at most `copy_experts` misses a round.
-    pub fn attachPool(s: *Store, total: usize, copy_experts: usize) Error!void {
+    /// `total` cache lines of device memory, a prompt span's scratch (one layer's every expert) among them; decode admits at most `copy_experts` misses a round;
+    /// `protect_pct` percent of the lines are an SLRU's protected segment (0: plain LRU).
+    pub fn attachPool(s: *Store, total: usize, copy_experts: usize, protect_pct: u8) Error!void {
         std.debug.assert(s.pool == null);
         const blob = s.shape.blobBytes();
         const keys = s.shape.layers * s.shape.experts;
@@ -397,6 +400,8 @@ pub const Store = struct {
         errdefer s.gpa.free(line);
         const stamp = try s.gpa.alloc(u32, lines);
         errdefer s.gpa.free(stamp);
+        const flags = try s.gpa.alloc(bool, lines);
+        errdefer s.gpa.free(flags);
         const where = try s.gpa.alloc(i32, keys);
         errdefer s.gpa.free(where);
         const picks_max = s.shape.trace_rows * (s.shape.picks - 1);
@@ -415,13 +420,16 @@ pub const Store = struct {
         errdefer scratch.free();
         var copy = try Stream.init(s.r);
         errdefer copy.deinit();
+        var vram = policy.Vram.init(slots, line, stamp, where);
+        if (protect_pct > 0) vram.enableSegments(flags, lines * @as(usize, protect_pct) / 100);
         s.pool = .{
             .chunks = chunks,
             .per_chunk = per_chunk,
-            .vram = policy.Vram.init(slots, line, stamp, where),
+            .vram = vram,
             .slots = slots,
             .line = line,
             .stamp = stamp,
+            .flags = flags,
             .where = where,
             .scratch_unique = unique,
             .ids = ids,
@@ -739,7 +747,7 @@ test "stages fill window slots, admitted misses name their lines (the GEMVs writ
     try std.testing.expectError(error.BadShape, s.addLayer(2, t0));
 
     // 12 lines of device memory: 4 of them (one layer's every expert) the prompt scratch
-    try s.attachPool(12, 2);
+    try s.attachPool(12, 2, 0);
     try std.testing.expectEqual(@as(usize, 8), s.lineCount());
     // stage 1 (layer 0, decode): rows name 1 twice, 2 and 3. Two admissions fit the budget: the hottest (key 1) and the lowest id of the rest
     setPicks(&s, 0, &.{ 1, 2, 4 });
