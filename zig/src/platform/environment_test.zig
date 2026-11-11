@@ -97,6 +97,9 @@ const valid = [_]Case{
     .{ .name = "TF_PREFILL_KEEP", .raw = "1", .n = 1 },
     .{ .name = "TF_PREFILL_AHEAD", .raw = "1", .n = 1 },
     .{ .name = "TF_PREFILL_TIMEOUT_S", .raw = "86400", .n = 86400 },
+    .{ .name = "TF_DSV41_PROMPT_CACHE_GIB", .raw = " 16 ", .n = @bitCast(@as(f64, 16)) },
+    .{ .name = "TF_DSV41_PROMPT_CACHE_GIB", .raw = "0.5", .n = @bitCast(@as(f64, 0.5)) },
+    .{ .name = "TF_DSV41_PROMPT_CACHE_GIB", .raw = "0", .n = @bitCast(@as(f64, 0)) },
     .{ .name = "TF_PREFILL_API_KEY_FILE", .raw = "/etc/tensorfold/gb10.key", .n = 0 },
     .{ .name = "TF_PRODUCE_HELD_GIB", .raw = "32", .n = 32 },
     .{ .name = "TF_DSV41_HANDOFF_DUMP", .raw = "/tmp/handoff exports", .n = 0 },
@@ -147,6 +150,7 @@ test "environment: range, enum, whitespace and native prompt geometry refusals a
         .{ "TF_PREFILL_KEEP", "true" },         .{ "TF_PREFILL_AHEAD", "0" },
         .{ "TF_PREFILL_TAIL", "-1" },           .{ "TF_PREFILL_TAIL", "1.5" },
         .{ "TF_PREFILL_TIMEOUT_S", "0" },       .{ "TF_PREFILL_TIMEOUT_S", "86401" },
+        .{ "TF_DSV41_PROMPT_CACHE_GIB", "-1" }, .{ "TF_DSV41_PROMPT_CACHE_GIB", "inf" },
     }) |c| try t.expectError(error.InvalidEnvironment, e.parse(c[0], c[1]));
     try t.expectEqual(@as(?u64, null), try e.parse("TF_CUDA_DEVICE", "   "));
     try t.expectEqual(@as(?u64, 0), try e.parse("TF_Q27_COPY_ROWS", "+0"));

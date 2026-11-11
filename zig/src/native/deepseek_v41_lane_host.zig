@@ -6,6 +6,7 @@ const tf = @import("tensorfold");
 const ds = tf.deepseek_v41;
 const lanes = tf.lanes;
 const cache_fit = @import("cache_fit.zig");
+const environment = @import("sys").environment;
 const remote = @import("deepseek_v41_remote.zig");
 const Allocator = std.mem.Allocator;
 
@@ -178,21 +179,22 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         .greedy_only = false, // the port samples: temperature, top_k, top_p, min_p (backend.sampleRow)
         .penalties = true, // Presence/frequency, applied in backend.verify over each row s path
     });
-    // THE RETAINED PROMPT CACHE.
-    if (o.prompt_cache_gib) |gib| if (gib > 0) {
+    // THE RETAINED PROMPT CACHE: --prompt-cache-gib, else TF_DSV41_PROMPT_CACHE_GIB, else the automatic budget (0: none).
+    const asked: ?f64 = o.prompt_cache_gib orelse try environment.read(?f64, "TF_DSV41_PROMPT_CACHE_GIB", null);
+    if (asked == null or asked.? > 0) {
         var why: []const u8 = "";
-        const plan = cache_fit.budgetUnder(limit, gib, o.prompt_cache_over_cap, 0, a, &why, "") catch |e| {
+        const plan = cache_fit.budgetUnder(limit, asked, o.prompt_cache_over_cap, 0, a, &why, "") catch |e| {
             if (e == error.CacheOverCap) problem.* = why;
             return e;
         };
         h.host.info_.prompt_cache_plan = plan;
         if (plan.budget_bytes > 0) {
             const B = tf.deepseek_v41_backend.Backend;
-            h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = &h.back, .vtable = &.{ .bytes = B.snapBytes, .save = B.snapSave, .restore = B.snapRestore, .drop = B.snapDrop } }, .{ .lookahead = 0, .planned = true, .grid = model_ptr.workspace.plan.rows, .tail = true, .tail_align = 128, .end_mark = if (std.c.getenv("TF_DSV41_END_MARK")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true, .resumed_tail = if (std.c.getenv("TF_DSV41_RESUMED_TAIL")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true }, plan.budget_bytes);
+            h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = &h.back, .vtable = &.{ .bytes = B.snapBytes, .save = B.snapSave, .restore = B.snapRestore, .drop = B.snapDrop, .charged = B.snapCharged } }, .{ .lookahead = 0, .planned = true, .grid = model_ptr.workspace.plan.rows, .tail = true, .tail_align = 128, .end_mark = if (std.c.getenv("TF_DSV41_END_MARK")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true, .resumed_tail = if (std.c.getenv("TF_DSV41_RESUMED_TAIL")) |v| !std.mem.eql(u8, std.mem.span(v), "0") else true }, plan.budget_bytes);
             h.host.cache = &h.cache.?;
             h.host.info_.prompt_cache = true;
         }
-    };
+    }
     if (o.remote_prefill.on()) {
         const id = try remote.checkpointId(a, io, o.dir);
         try remote.attach(h, io, a, o.remote_prefill, id, problem);
