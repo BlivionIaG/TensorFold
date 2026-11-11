@@ -61,7 +61,7 @@ test "breaker: the pair is down for a missing link or a silent server, up for an
 }
 
 test "deadline: TF_PREFILL_TIMEOUT_S as given, else 15 s and three times the predicted pull between 30 s and 30 min" {
-    var r: Route = .{};
+    var r: Route = .{ .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } };
     try t.expectEqual(@as(u64, 30), r.deadlineS(100)); // 15 + 3 * 1.1 = 18.3: the floor
     try t.expectEqual(@as(u64, 43), r.deadlineS(8191)); // 15 + 3 * (8.191 + 1) = 42.6
     try t.expectEqual(@as(u64, 1800), r.deadlineS(900000));
