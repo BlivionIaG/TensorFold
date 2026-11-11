@@ -9,6 +9,9 @@ pub const Gate = struct {
     /// enter at `k` (layers before it and the embedding are skipped) reading `<dir>/<prefix>L<k-1>.{x.bf16,pre.f32}`
     entry_dir: ?[]const u8 = null,
     entry_prefix: []const u8 = "",
+    /// enter at `k` from these rows of the forward's chunk (layer-split prefill: the producer's boundary rows, host
+    /// bytes laid out [row][4 x 5120 bf16 stream, 4 f32 pre]); no file is read
+    entry_rows: ?[]const u8 = null,
     /// stop before layer `stop_k` (post applied) and write `<dir>/M.L<stop_k-1>.*` (an own file set)
     stop_dir: ?[]const u8 = null,
     stop_k: usize = 0,
@@ -37,12 +40,27 @@ pub const Gate = struct {
         if (std.c.pwrite(fd, src.ptr, src.len, @intCast(at)) != src.len) return error.GateFileShort;
     }
 
-    /// The rows [p0, p0 + rows) of the entry files into the stream and previous-pre views (host-visible).
+    /// Whether the forward enters at layer `k` (from files or from memory) instead of from the embedding.
+    pub fn entered(g: *const Gate) bool {
+        return g.entry_dir != null or g.entry_rows != null;
+    }
+
+    /// The rows [p0, p0 + rows) of the entry files (or the memory rows: [row][stream, pre]) into the stream and
+    /// previous-pre views (host-visible).
     pub fn loadEntry(g: *const Gate, stream: View, pre: View, p0: usize, rows: usize) !void {
-        var b: [512]u8 = undefined;
         const x = stream.buffer.contents()[stream.offset..][0 .. rows * hidden_row];
-        try read(try path(&b, g.entry_dir.?, g.entry_prefix, g.k - 1, "x.bf16"), x, p0 * hidden_row);
         const q = pre.buffer.contents()[pre.offset..][0 .. rows * pre_row];
+        if (g.entry_rows) |src| {
+            if (src.len != rows * (hidden_row + pre_row)) return error.GateRows;
+            for (0..rows) |r| {
+                const row = src[r * (hidden_row + pre_row) ..];
+                @memcpy(x[r * hidden_row ..][0..hidden_row], row[0..hidden_row]);
+                @memcpy(q[r * pre_row ..][0..pre_row], row[hidden_row..][0..pre_row]);
+            }
+            return;
+        }
+        var b: [512]u8 = undefined;
+        try read(try path(&b, g.entry_dir.?, g.entry_prefix, g.k - 1, "x.bf16"), x, p0 * hidden_row);
         try read(try path(&b, g.entry_dir.?, g.entry_prefix, g.k - 1, "pre.f32"), q, p0 * pre_row);
     }
 

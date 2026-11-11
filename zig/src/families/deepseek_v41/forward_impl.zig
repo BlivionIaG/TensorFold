@@ -169,7 +169,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     if (cone_phase == .decoder) {
         forward_cone.loadStash(m, enc, rows);
         hid.record(enc, &p.ops, m.streamView(), rows, .embed, 0);
-    } else if (m.gate.entry_dir) |_| {
+    } else if (m.gate.entered()) {
         if (segs.len != 1) return error.GateStop;
         try m.gate.loadEntry(ws.view(.stream), ws.view(.previous_pre), segs[0].p0, rows);
     } else {
@@ -189,7 +189,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     }
     for (&m.weights.layers, 0..) |*layer, index| {
         if (cone_phase == .decoder and index < m.cone.lo) continue;
-        if (m.gate.entry_dir != null and index < m.gate.k) continue;
+        if (m.gate.entered() and index < m.gate.k) continue;
         if (m.gate.stop_dir != null and index == m.gate.stop_k) {
             if (logits != .none or segs.len != 1) return error.GateStop;
             if (m.pending_expand) {
