@@ -4,8 +4,19 @@ const std = @import("std");
 /// TF_PREFILL_ROUTE: `auto` weighs each prompt (see `Route.weigh`); `always` sends every long prompt, behind any pull.
 pub const Mode = enum { auto, always };
 
-/// A queued prompt as the source sees it: its length, the tokens the engine's cache has, the streams decoding.
-pub const Ask = struct { len: u64, cached: u64, decoding: u32 };
+/// Where a request wants its prompt prefilled: `force` skips the weighing, `never` keeps it off the pair.
+pub const Directive = enum {
+    auto,
+    force,
+    never,
+
+    pub fn parse(word: []const u8) ?Directive {
+        return std.meta.stringToEnum(Directive, word);
+    }
+};
+
+/// A queued prompt as the source sees it: its length, the engine's cached tokens, the streams decoding, its directive.
+pub const Ask = struct { len: u64, cached: u64, decoding: u32, directive: Directive = .auto };
 
 /// A source's answer for a queued prompt: the pair takes it, it never qualifies (`small`, `off`), or not now (`later`).
 pub const Verdict = enum {
@@ -40,8 +51,8 @@ pub const Verdict = enum {
 pub const Pass = enum { local, remote, tail };
 pub const Measured = struct { pass: Pass, rows: u64, ns: u64 };
 
-/// What a prompt costs on each side, in nanoseconds: the pair's pull end to end, and this machine's own prefill.
-pub const Estimate = struct { remote_ns: u64, local_ns: u64 };
+/// A prompt's cost on each side in ns (a pull end to end, its own prefill); `pinned` (forced) waits out any pull.
+pub const Estimate = struct { remote_ns: u64, local_ns: u64, pinned: bool = false };
 
 /// What `enter` says to a prompt: the pair is its own now, wait a little for it, or prefill here.
 pub const Gate = enum { entered, wait, local };
@@ -113,6 +124,13 @@ pub const Route = struct {
         return r.cost(prefix, rest);
     }
 
+    /// `estimate` for a request with `directive`: one that forces the pair waits for it.
+    pub fn estimateFor(r: *Route, prefix: u64, rest: u64, directive: Directive) Estimate {
+        var e = r.estimate(prefix, rest);
+        e.pinned = directive == .force;
+        return e;
+    }
+
     /// A pass this machine or a pull timed: measured rates replace the seeds, a third to three times at a time.
     pub fn observe(r: *Route, m: Measured) void {
         if (m.ns == 0) return;
@@ -129,7 +147,7 @@ pub const Route = struct {
 
     /// Whether a prompt that came at `arrived` and looks again at `now` is better off here than behind the pull.
     fn goesLocal(r: *const Route, now: u64, arrived: u64, e: Estimate) bool {
-        if (r.mode == .always) return false;
+        if (r.mode == .always or e.pinned) return false;
         return (now -| arrived) +| (r.ends -| now) +| e.remote_ns > e.local_ns;
     }
 
@@ -137,7 +155,7 @@ pub const Route = struct {
     pub fn weigh(r: *Route, now: u64, ask: Ask, prefix: u64) Verdict {
         r.acquire();
         defer r.lock.unlock();
-        if (r.mode == .always) return .remote;
+        if (r.mode == .always or ask.directive == .force) return .remote;
         const e = r.cost(prefix, ask.len - ask.cached);
         if (r.held and r.goesLocal(now, now, e)) return .busy;
         return if (ask.decoding > 0 or e.remote_ns <= e.local_ns) .remote else .slower;

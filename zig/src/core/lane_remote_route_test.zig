@@ -148,7 +148,7 @@ const Rec = struct {
         return x.verdict;
     }
 
-    fn fill(_: *anyopaque, _: []const u32, _: u64) anyerror!?remote.Filled {
+    fn fill(_: *anyopaque, _: []const u32, _: u64, _: remote.Directive) anyerror!?remote.Filled {
         return error.NotUsed;
     }
 
@@ -209,9 +209,9 @@ const Pair = struct {
         return p.route.weigh(Route.nowNs(t.io), ask, p.at);
     }
 
-    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64) anyerror!?remote.Filled {
+    fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: remote.Directive) anyerror!?remote.Filled {
         const p: *Pair = @ptrCast(@alignCast(ptr));
-        _ = p.route.admit(t.io, p.route.estimate(p.at, prompt.len - cached), &p.closing) orelse return null;
+        _ = p.route.admit(t.io, p.route.estimateFor(p.at, prompt.len - cached, directive), &p.closing) orelse return null;
         defer p.route.leave();
         _ = p.fills.fetchAdd(1, .acq_rel);
         try std.Io.sleep(t.io, .fromMilliseconds(p.delay_ms), .awake);
