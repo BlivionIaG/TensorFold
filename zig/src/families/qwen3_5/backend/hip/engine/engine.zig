@@ -220,7 +220,10 @@ pub const Engine = struct {
             if (pf.weights > pf.pool.room(pf.held)) return error.WeightsDoNotFit;
         }
         _ = try steps.done(.{ 0, 0 }, .first);
-        e.weights = try weights.Model.loadRankWith(gpa, io, &e.driver, dir, group, chat, if (offload) .{} else null);
+        const window: usize = if (@import("sys").getenv("TF_EXPERT_WINDOW_MIB")) |v| (std.fmt.parseInt(usize, v, 10) catch 1536) << 20 else 1536 << 20;
+        e.weights = try weights.Model.loadRankWith(gpa, io, &e.driver, dir, group, chat, if (offload) .{ .window_bytes = window } else null);
+        // stream value waits cannot be captured: an offloaded model's rounds run eager
+        if (offload) e.o.graphs = false;
         errdefer e.weights.deinit();
         if (e.plain() or chat) {
             // a bf16 checkpoint's products (rocBLAS, or widened for chat): one rank, not qualified under graphs
@@ -469,6 +472,7 @@ pub const Engine = struct {
         const lines = @min(bytes / blob, keys);
         if (lines == 0) return error.OutOfDeviceMemory;
         try s.attachPool(lines, e.o.expert_copies);
+        try s.start();
         std.log.info("experts: {d} layers x {d} routed in a {d:.2} GiB host tier ({d} B each), {d:.2} GiB resident (shared experts, tables); cache {d} lines = {d:.2} GiB ({d:.1}% of the experts), at most {d} copies a round", .{
             s.shape.layers,
             s.shape.experts,
@@ -480,11 +484,6 @@ pub const Engine = struct {
             100.0 * @as(f64, @floatFromInt(lines)) / @as(f64, @floatFromInt(keys)),
             e.o.expert_copies,
         });
-    }
-
-    /// The expert tables up to the device before a forward reads them (a graph's first node, a prompt span's first launch).
-    fn sendExperts(e: *Engine) !void {
-        if (e.weights.experts) |s| try s.send(e.stream.handle);
     }
 
     /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order.
@@ -555,7 +554,6 @@ pub const Engine = struct {
         @memcpy(ids, prompt[pos0..end]);
         try e.ids_dev.uploadAsync(0, e.ids.view(0, 4 * ids.len), e.stream);
         var p: Poll = undefined;
-        try e.sendExperts();
         const rows = try fwd.span(e.ops(&e.prompts), e.model(), caches, e.ids_dev.base(), end - pos0, pos0, e.poll(cancel, end - pos0, &p));
         try e.stream.synchronize();
         return rows;
@@ -571,7 +569,6 @@ pub const Engine = struct {
         const ids = e.ids.slice(u32)[0..len];
         @memcpy(ids, prompt[pos0..]);
         try e.ids_dev.uploadAsync(0, e.ids.view(0, 4 * ids.len), e.stream);
-        try e.sendExperts();
         const o = e.ops(&e.prompts);
         var p: Poll = undefined;
         const hidden = try fwd.span(o, m, caches, e.ids_dev.base(), len, pos0, e.poll(cancel, len, &p));

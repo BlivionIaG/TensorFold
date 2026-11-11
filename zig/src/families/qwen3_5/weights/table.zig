@@ -188,7 +188,7 @@ pub fn textBytes(gpa: std.mem.Allocator, io: Io, dir: []const u8) !u64 {
 
 /// The bytes of the routed experts' stacks (`switch_mlp` tensors of an MLX MoE checkpoint): what an offloaded model keeps in host memory.
 pub fn routedBytes(gpa: std.mem.Allocator, io: Io, dir: []const u8) !u64 {
-    var files = try Files.indexed(gpa, io, dir);
+    var files = try Files.list(gpa, io, dir);
     defer files.deinit();
     var total: u64 = 0;
     for (files.model) |path| {

@@ -45,7 +45,7 @@ pub fn mlpView(m: weights.Mlp, sliced: bool) Error!view.Mlp {
                     .count = r.experts.count,
                     .width = r.experts.width,
                     .dims = r.experts.dims,
-                    .trace = if (r.offload) |o| o.trace else 0,
+                    .hook = if (r.offload) |o| o.hook else null,
                 },
             } };
         },

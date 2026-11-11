@@ -160,7 +160,7 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     e.graphs.submit_ns += nowNs() - began;
     try e.drawRows(o, done.y, total, reqs, out, m.tp == null);
     // the round is over (drawRows waited): its picks decide which experts the next rounds' copies move
-    if (e.weights.experts) |s| try s.endRound(total);
+    if (e.weights.experts) |s| try s.endRound(total, nowNs() - began);
     st.last = .{ .plan = p, .keep_at = 4 * l.keep, .hidden = done.hidden.ptr };
     return .{ .hidden = done.hidden };
 }
