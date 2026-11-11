@@ -156,11 +156,15 @@ three, prompt length 1k / 8k / 32k:
 | export profile with the knobs above | 1.04k | 1.19k | 1.23k | yes, byte-identical to the untuned export |
 
 The knobs above add 0.5 to 6 %: they are optional. What makes the serving profile fast is replay prefill
-(`TF_DSV41_PF_4K`, `TF_DSV41_PF_TBO` and `TF_DSV41_PREFILL_ROWS` above 2048 are refused without it). Replay computes the
-decoder layers over the last 127 rows only, at the cut: the export carries those layers' rings from that replay (the
-window's oldest row is zero), so the decoder layers' rings differ from a full prefill's (normalized RMS 0.3 to 0.5, growing
-with layer depth) while the sliding-window rows below layer 20, the carries, the compressed pages and the index keys are
-byte-identical. Prefill on the plain export profile costs about 0.83 ms a row at every length from 1k to 32k: it is GPU-compute bound, not Engram bound (7 %).
+(`TF_DSV41_PF_4K`, `TF_DSV41_PF_TBO` and `TF_DSV41_PREFILL_ROWS` above 2048 are refused without it). By default
+(`TF_DSV41_REPLAY_EXACT`) the decoder layers replay over their exact cone at the cut: the encoder pass keeps the last
+2,541 rows of the first decoder layer's input, and the decoder pass runs in programs of `TF_DSV41_REPLAY_GROUP` layers
+(default 4, rounded up to index sources), each over its layers' own cone, so those layers' rings and the drafter's taps
+are expected to equal a full prefill's up to the CUDA kernels' reduction order [INFERENCE, not yet compared on the pair]. `TF_DSV41_REPLAY_EXACT=0` keeps the bounded replay over the
+last 127 rows (the window's oldest row is zero in the export; normalized RMS 0.3 to 0.5 against a full prefill, growing
+with layer depth); a prompt resumed from a saved session and `TF_DSV41_PF_TBO=1` also use it. The sliding-window rows
+below layer 20, the carries, the compressed pages and the index keys are byte-identical either way. The exact replay runs
+about 30.5k layer-rows against 2.5k for the bounded one [INFERENCE, not yet measured on the pair]. Prefill on the plain export profile costs about 0.83 ms a row at every length from 1k to 32k: it is GPU-compute bound, not Engram bound (7 %).
 A prompt of 61k tokens (the pool's 65,536-token cap) exports in 51 s.
 Of the knobs tried, `TF_DSV41_ENGRAM_GATE`, `TF_DSV41_ENGRAM_PREFETCH`, `TF_DSV41_INDEX_BUDGET_MIB`,
 `TF_DSV41_ROUTER_GROUP_ROT` and `TF_DSV41_KV_NORM_STORE` together made the export fail (HTTP 409, "the prompt pass ended

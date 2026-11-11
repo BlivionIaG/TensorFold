@@ -245,13 +245,13 @@ fn earlyOn() !bool {
 const period: i64 = 256;
 
 /// A program family over one position: `emit(end)` (the window or segment ending there).
-const Family = struct {
+pub const Family = struct {
     ctx: *const anyopaque,
     emit: *const fn (ctx: *const anyopaque, a: std.mem.Allocator, end: i64) anyerror![]const calls.Call,
 };
 
 /// Ends [lo, hi]: the first 512 each, then every 256th, plus 256 on each side where two samples' launches differ.
-fn scan(n: *Needs, fam: Family, lo: i64, hi: i64) !void {
+pub fn scan(n: *Needs, fam: Family, lo: i64, hi: i64) !void {
     if (hi < lo) return;
     const fp = struct {
         fn at(nd: *Needs, f: Family, e: i64) !u64 {
@@ -497,6 +497,7 @@ fn prompts(gpa: std.mem.Allocator, a: std.mem.Allocator, n: *Needs, cfg: *const 
         }
         try log.print("aot-needs: CED decoder, {d} programs, {d} variants\n", .{ n.programs, n.keys.count() });
         try log.flush();
+        if (try @import("aot_needs_cone.zig").wanted(sv)) try @import("aot_needs_cone.zig").programs(gpa, n, cfg, w, sv, layers);
         if (sv.replay_runs) {
             var k: i64 = 33;
             while (k <= ced.keep) : (k += 1) {

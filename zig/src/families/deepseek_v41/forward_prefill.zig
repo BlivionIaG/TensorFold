@@ -18,6 +18,7 @@ const graphs = @import("graphs.zig");
 const serve_knobs = @import("serve_knobs.zig");
 const pf_k4 = @import("forward_prefill_k4.zig");
 const pf_finish = @import("forward_prefill_finish.zig");
+const pf_cone = @import("forward_prefill_cone.zig");
 const pf_glue = @import("forward_prefill_glue.zig");
 const Forward = fwd.Forward;
 
@@ -55,11 +56,20 @@ pub const State = struct {
     next: std.ArrayList(u32) = .empty,
     /// TF_DSV41_PREFILL: `.replay` = CED (segments are encoder passes, `finish` runs the decoder); `.full`: every layer
     mode: serve_knobs.PrefillMode = .full,
-    /// the decoder replay's ids (the glue reads them through Forward.ids while it runs)
-    tail_ids: [ced.keep]u32 = undefined,
+    /// the decoder replay's ids (the glue reads them through Forward.ids); the exact replay's cone at most
+    tail_ids: [ced.cone_keep]u32 = undefined,
     /// what "w.taps" holds after the prompt: positions [taps_at, taps_at + taps_rows) at rows 0 ..: the DSpark hand-off
     taps_at: u64 = 0,
     taps_rows: u32 = 0,
+    /// TF_DSV41_REPLAY_EXACT: the encoder pass fills the cone ring, `finish` runs the exact decoder replay (pf_cone)
+    cone_on: bool = false,
+    /// TF_DSV41_REPLAY_GROUP: the layers a program of the exact replay runs
+    cone_group: u32 = 4,
+    /// the cone ring's prompt: its positions and ids, the ticket the slot holding them carries (`Slot.cone_id`)
+    cone: ft.ConeStash = .{},
+    cone_id: u64 = 0,
+    /// the last prompt's decoder replay was the exact one (the export keeps every ring row)
+    replay_exact: bool = false,
 
     pub fn deinit(s: *State, gpa: std.mem.Allocator) void {
         s.long.deinit(gpa);
@@ -191,7 +201,8 @@ fn planReplay(f: *Forward, p: *buffers.Plan, rows: u32, layers: []const u32) !vo
     const dec = try decoderLayers(f, layers);
     var ea = std.heap.ArenaAllocator.init(f.gpa);
     defer ea.deinit();
-    try p.add(try block_prefill.emitReplay(ea.allocator(), f.cfg, f.widths, image_opts.planOptions(f), enc, rows, 0, .encoder));
+    const part: block_prefill.Part = if (state(f).cone_on) .encoder_cone else .encoder;
+    try p.add(try block_prefill.emitReplay(ea.allocator(), f.cfg, f.widths, image_opts.planOptions(f), enc, rows, 0, part));
     for ([_]u32{ 16, 17, 32, 33, 64, 65, ced.keep }) |m| {
         if (m > rows) continue;
         const top = try lastStart(f, dec, m, .decoder);
@@ -201,6 +212,7 @@ fn planReplay(f: *Forward, p: *buffers.Plan, rows: u32, layers: []const u32) !vo
             try p.add(try block_prefill.emitReplay(da.allocator(), f.cfg, f.widths, image_opts.planOptions(f), dec, m, start, .decoder));
         }
     }
+    if (state(f).cone_on) try pf_cone.plan(f, p, rows, layers, false);
 }
 
 /// The encoder pass's layers: the forward's up to the decoder's first (ced.decoderStart), inclusive.
@@ -221,7 +233,12 @@ pub fn decoderLayers(f: *Forward, layers: []const u32) ![]const u32 {
 fn emits(f: *Forward, o: block.Options, layers: []const u32, n: u32, start: i64, part: block_prefill.Part) !bool {
     var ea = std.heap.ArenaAllocator.init(f.gpa);
     defer ea.deinit();
-    _ = block_prefill.emitReplay(ea.allocator(), f.cfg, f.widths, o, layers, n, start, part) catch |e| switch (e) {
+    const a = ea.allocator();
+    const emitted = switch (part) {
+        .cone_mid, .cone_last => block_prefill.emitCone(a, f.cfg, f.widths, o, layers, n, start, part, null),
+        else => block_prefill.emitReplay(a, f.cfg, f.widths, o, layers, n, start, part),
+    };
+    _ = emitted catch |e| switch (e) {
         error.Unsupported => return false,
         else => return e,
     };
@@ -235,7 +252,7 @@ fn lastStart(f: *Forward, layers: []const u32, n: u32, part: block_prefill.Part)
 
 /// `lastStart` with options `o` (TF_DSV41_PF_4K's segments: k4Options).
 pub fn lastStartWith(f: *Forward, o: block.Options, layers: []const u32, n: u32, part: block_prefill.Part) !i64 {
-    var hi: i64 = o.limit - n - @intFromBool(part == .decoder);
+    var hi: i64 = o.limit - n - @intFromBool(part.decoding());
     if (hi < 0) return error.BadWindow;
     if (try emits(f, o, layers, n, hi, part)) return hi;
     if (!try emits(f, o, layers, n, 0, part)) {
@@ -286,7 +303,9 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
     }
     const ids = st.ids.items;
     st.taps_rows = 0;
+    st.replay_exact = false;
     try ready(f);
+    if (st.cone_on) pf_cone.begin(f);
     // TF_DSV41_PF_4K / _PF_TBO: the workspace for this call, decided on every rank alike (else 2,048-row segments)
     st.ws_ok = true;
     if (st.k4 or (st.mode == .replay and f.opts.pf_tbo)) st.ws_ok = try wsAgreed(f);
@@ -424,7 +443,8 @@ fn segment(f: *Forward, ids: []const u32, head: bool) !void {
     // TF_DSV41_PF_4K: a segment past the forward's rows runs in the workspace (its own roles: block_prefill.ownCalls)
     const big = st.k4 and st.ws_ok and n > f.opts.prefill_rows;
     const o = if (big) k4Options(image_opts.segmentOptions(f, ids)) else image_opts.segmentOptions(f, ids);
-    const emitted = if (replay) block_prefill.emitReplay(a, f.cfg, f.widths, o, layers, n, @intCast(start), .encoder) else block_prefill.emitPrefill(a, f.cfg, f.widths, o, layers, n, @intCast(start), head);
+    const part: block_prefill.Part = if (st.cone_on) .encoder_cone else .encoder;
+    const emitted = if (replay) block_prefill.emitReplay(a, f.cfg, f.widths, o, layers, n, @intCast(start), part) else block_prefill.emitPrefill(a, f.cfg, f.widths, o, layers, n, @intCast(start), head);
     const plain = emitted catch |e| {
         if (e == error.Unsupported) if (!quiet) log.warn("prefill: the {d}-row segment at {d} is not on the prefill path (block_prefill: Unsupported)", .{ n, start });
         return e;
@@ -452,6 +472,7 @@ fn segment(f: *Forward, ids: []const u32, head: bool) !void {
     if (big) try commitRoles(f, n, 0, K4.tag, n) else try commit(f, n);
     // replay.encode: the stash's ids follow its rows (a segment that does not continue it starts it over)
     if (replay) f.slot.ced.extend(start, ids);
+    if (replay and st.cone_on) pf_cone.stashed(f, start, ids);
     f.last_rows = if (replay) 0 else n;
     st.taps_at = start;
     st.taps_rows = if (replay) 0 else n;

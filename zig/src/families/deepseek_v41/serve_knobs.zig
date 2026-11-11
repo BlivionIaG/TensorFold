@@ -168,6 +168,16 @@ pub fn prefetchAhead(get: Get) !bool {
     return @import("sys").environment.value(bool, "TF_DSV41_PREFETCH_AHEAD", get("TF_DSV41_PREFETCH_AHEAD"), false);
 }
 
+/// TF_DSV41_REPLAY_EXACT (0 / 1; unset: on under TF_DSV41_PREFILL=replay, off with PF_TBO): the exact decoder replay.
+pub fn replayExact(get: Get) !?bool {
+    return @import("sys").environment.value(?bool, "TF_DSV41_REPLAY_EXACT", get("TF_DSV41_REPLAY_EXACT"), null);
+}
+
+/// TF_DSV41_REPLAY_GROUP (1-20, default 4): the decoder layers a program of the exact replay runs (to index sources).
+pub fn replayGroup(get: Get) !u32 {
+    return @import("sys").environment.value(u32, "TF_DSV41_REPLAY_GROUP", get("TF_DSV41_REPLAY_GROUP"), 4);
+}
+
 /// TF_DSV41_KV_NORM_STORE=1: KV-only RMS + SWA RoPE/FP8 store, default off.
 pub fn kvNormStore(get: Get) !bool {
     return @import("sys").environment.value(bool, "TF_DSV41_KV_NORM_STORE", get("TF_DSV41_KV_NORM_STORE"), false);

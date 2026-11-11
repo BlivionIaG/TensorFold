@@ -35,6 +35,8 @@ pub const Slot = struct {
     pending: ?struct { start: u64, n: u32 } = null,
     /// CED replay (TF_DSV41_PREFILL=replay): the positions and ids of the stash ring "s.ced.*" (ced.zig)
     ced: ft.Stash = .{},
+    /// the exact replay's ticket (forward_prefill.State.cone_id): the cone ring holds this slot's prompt while equal
+    cone_id: u64 = 0,
 };
 
 pub const Forward = struct {

@@ -300,11 +300,13 @@ pub const Seg = struct {
                 try e.glue("ced_load", &try stashArgs(e));
             }
             try s.leave(n);
-        } else if (s.part == .decoder) {
-            // decoder replay: every row's window starts at R0 (ctx.lo); the entering rows come from the stash
+        } else if (s.part.decoding()) {
+            // decoder replay: every row's window starts at R0 (ctx.lo); the entering rows come from the stash or ring
             try e.glue("positions", &.{ try pos(e), try e.buf("w.pos64", .{}, .i64, &.{n}), try e.buf("w.lo", .{}, .i32, &.{n}), .{ .i = e.start } });
-            const st = try stashArgs(e);
-            try e.glue("ced_load", &st);
+            if (s.part == .decoder) {
+                const st = try stashArgs(e);
+                try e.glue("ced_load", &st);
+            } else try e.glue("cone_load", &try coneArgs(e));
         } else if (s.multi != null) {
             // every segment's positions (rope over the run's rows); each segment's own at its CSA2 steps (pf_seg)
             try e.glue("mpositions", &.{try e.buf("w.mpos64", .{}, .i64, &.{n})});
@@ -318,7 +320,7 @@ pub const Seg = struct {
             // TF_DSV41_PF_TBO: a layer's attention part starts here (the first's at the program's first call)
             if (i > 0) if (e.marks) |m| try m.append(e.a, e.out.items.len);
             e.layer_ratio = e.cfg.compressRatio(L);
-            if (s.part == .decoder and i == 0) {
+            if (s.part.decoding() and i == 0) {
                 // entered (forward._layers): the first block's attention site is the stash's
             } else if (i == 0 or e.cfg.isEngram(L)) {
                 // the run's first block, or an Engram block: post alone, Engram, then a site collapsing with the pre
@@ -327,7 +329,9 @@ pub const Seg = struct {
                 try s.site(L, "hc_attn", if (i == 0) .site1 else .site2);
             } else try s.site(L, "hc_attn", .boundary);
             // CED's encoder pass stops at the decoder's first layer once its site and compressor ran (`upto`)
-            if (s.part == .encoder and i + 1 == layers.len) return s.encoderEnd(L);
+            if (s.part.encoding() and i + 1 == layers.len) return s.encoderEnd(L);
+            // the exact replay's program before the last ends on the next one's first site, its rows into the cone ring
+            if (s.part == .cone_mid and i + 1 == layers.len) return e.glue("cone_stash", &try coneArgs(e));
             try s.attention(L);
             if (s.short) try e.prefetchF(L);
             // TF_DSV41_PF_OVERLAP: the partial went out a piece at a time behind its producer
@@ -366,17 +370,26 @@ pub const Seg = struct {
 
 /// The CED stash glue's tensors: the run's streams, normed input and coefficients, then the ring's roles.
 pub fn stashArgs(e: *E) ![10]Arg {
+    return stashArgsOf(e, ced.roles, ced.ring);
+}
+
+/// The exact replay's cone ring: the same tensors over `ced.cone_keep` rows.
+pub fn coneArgs(e: *E) ![10]Arg {
+    return stashArgsOf(e, ced.cone_roles, ced.cone_keep);
+}
+
+fn stashArgsOf(e: *E, comptime roles: [5][]const u8, ring_rows: i64) ![10]Arg {
     const D: i64 = e.cfg.hidden;
-    const R: i64 = ced.ring;
+    const R: i64 = ring_rows;
     const c = try Seg.coefs(e, e.coef);
     const x = try e.streams();
     const r0 = e.row0;
     return .{
-        try Seg.rowsOf(e, x, .bf16, r0, e.n, 4 * D),     try Seg.rowsOf(e, try e.buf("w.out", .{}, .bf16, &.{ e.n, D }), .bf16, r0, e.n, D),
-        try Seg.rowsOf(e, c[0], .f32, r0, e.n, 4),       try Seg.rowsOf(e, c[1], .f32, r0, e.n, 4),
-        try Seg.rowsOf(e, c[2], .f32, r0, e.n, 16),      try e.buf(ced.roles[0], .{}, .bf16, &.{ R, 4 * D }),
-        try e.buf(ced.roles[1], .{}, .bf16, &.{ R, D }), try e.buf(ced.roles[2], .{}, .f32, &.{ R, 4 }),
-        try e.buf(ced.roles[3], .{}, .f32, &.{ R, 4 }),  try e.buf(ced.roles[4], .{}, .f32, &.{ R, 16 }),
+        try Seg.rowsOf(e, x, .bf16, r0, e.n, 4 * D), try Seg.rowsOf(e, try e.buf("w.out", .{}, .bf16, &.{ e.n, D }), .bf16, r0, e.n, D),
+        try Seg.rowsOf(e, c[0], .f32, r0, e.n, 4),   try Seg.rowsOf(e, c[1], .f32, r0, e.n, 4),
+        try Seg.rowsOf(e, c[2], .f32, r0, e.n, 16),  try e.buf(roles[0], .{}, .bf16, &.{ R, 4 * D }),
+        try e.buf(roles[1], .{}, .bf16, &.{ R, D }), try e.buf(roles[2], .{}, .f32, &.{ R, 4 }),
+        try e.buf(roles[3], .{}, .f32, &.{ R, 4 }),  try e.buf(roles[4], .{}, .f32, &.{ R, 16 }),
     };
 }
 
@@ -392,10 +405,27 @@ fn stageRows(e: *const E) i64 {
 pub const emitMulti = block_prefill_emit.emitMulti;
 pub const planRuns = block_prefill_emit.planRuns;
 
-/// A prefill program's part: a whole segment, or one of CED replay's passes (ced.zig).
-pub const Part = enum { whole, encoder, decoder };
+/// A prefill program's part: a whole segment, or one of CED replay's passes; `cone_*`: the exact decoder replay's.
+pub const Part = enum {
+    whole,
+    encoder,
+    encoder_cone,
+    decoder,
+    cone_mid,
+    cone_last,
+
+    pub fn encoding(p: Part) bool {
+        return p == .encoder or p == .encoder_cone;
+    }
+
+    /// A decoder replay's program: its first layer is entered from a stash, every row's window starts at its first row.
+    pub fn decoding(p: Part) bool {
+        return p == .decoder or p == .cone_mid or p == .cone_last;
+    }
+};
 
 pub const emitReplay = block_prefill_emit.emitReplay;
+pub const emitCone = block_prefill_emit.emitCone;
 pub const emitPrefill = block_prefill_emit.emitPrefill;
 pub const tbo_min = block_prefill_emit.tbo_min;
 pub const own_scratch = block_prefill_emit.own_scratch;

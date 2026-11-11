@@ -57,8 +57,8 @@ exactly what the Metal engine itself applies to a bf16 row: the fp4 pool (served
   A pool that is not split exports whole from rank 0 as before; `--mcdma-produce http` exports a replicated pool only.
 * The CUDA snapshot must hold the rings of every layer; a state without one is an error (`MissingRing`), never zeros.
   Replay prefill (`TF_DSV41_PREFILL=replay`) is exported: the cut stands after the decoder replay, so the live slot holds the
-  decoder layers' rings (the last 127 positions the replay wrote). The window's oldest position of those layers was never
-  written by the replay (the next token does not read it) and is zero in the export.
+  decoder layers' rings. With the exact replay (`TF_DSV41_REPLAY_EXACT`, default) every ring row of the window was written;
+  with the bounded replay (`=0`) only the last 127 positions were, and the window's oldest is zero in the export.
 
 ## What a reader does
 
