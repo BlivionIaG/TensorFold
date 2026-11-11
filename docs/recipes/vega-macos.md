@@ -515,7 +515,32 @@ its client had no connection retry yet: one of the eight 1k c = 8 requests faile
 
 TensorFold's Metal server cannot serve the 4B: `tensorfold-native serve` (the Metal build of this branch) stops at start with `the native Qwen engine cannot
 load this checkpoint (UnsupportedQwenGeometry)` (upstream's Metal Qwen3.5 backend is the pinned 2B; the 4B runs on the Mac only through the `qwen27` layer-range
-engine of the offload branch, which has no HTTP server). So there is no TensorFold-Metal row for the 4B. The Vega row (`tensorfold-native` from `native-hip`,
-`--parallel 8 --context 17600`) is not measured yet: the card was not available for this job. Note for it: 8 sequences of 17.6k tokens need the KV pages of
-all of them in the card's 8 GiB beside the weights; if the engine's memory budget refuses that, the cell is reported as "does not fit" with the
-budget's own message, not run at a smaller load.
+engine of the offload branch, which has no HTTP server). So there is no TensorFold-Metal row for the 4B.
+
+### RX Vega 56 through hipmac (`c95d708`), `tensorfold-native` from `native-hip` on `vega-macos-up` `c14179e9e4`, 2026-11-11
+
+Qwen3.5-4B-MLX-4bit, DPM auto (`UT4G_METRICS_LOG=file:1`, samples with activity above 30%: sclk median 1361-1369 MHz, range 1207-1501, mclk 800 MHz, 180 W of the
+180 W limit, edge at most 69 C, hotspot at most 81 C, HBM at most 72 C), 2 rounds a cell. **16k / 1k at c = 8 does not fit**: the server refuses to start with
+`--parallel 8 --context 17600`: "`--parallel 8 needs 5.51 GiB at a 17600-token window, and the HIP memory budget leaves 4.52 GiB: serve --parallel 6, or lower --context`"
+(2.21 GiB of weights, 1.0 GiB reserve, 0.59 GiB a stream at that window; 6 streams fit). The 16k rows therefore ran on `--parallel 6 --context 17600` (c = 1, 2, 4;
+the load is not shrunk); the 1k rows ran on `--parallel 8 --context 2048` (the 1.5k tokens of a request fit: c = 8 is served, with the 17.6k window the same c would not be).
+
+| load | c | prefill tok/s agg | prefill tok/s per request (mean) | decode tok/s agg | decode tok/s per request (mean) | total tok/s agg | TTFT s (mean / p90) | ITL ms (mean / p50 / p90) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1k / 512 | 1 | 305.6 | 305.6 | 76.8 | 76.8 | 51.2 | 3.35 / 3.35 | 13.0 / 13.0 / 13.2 |
+| 1k / 512 | 2 | 301.5 | 228.4 | 83.8 | 50.2 | 65.9 | 5.07 / 6.79 | 20.5 / 17.1 / 17.4 |
+| 1k / 512 | 4 | 298.6 | 158.0 | 89.9 | 30.8 | 78.5 | 8.52 / 13.72 | 34.2 / 24.3 / 24.5 |
+| 1k / 512 | 8 | 295.9 | 96.8 | 89.9 | 17.7 | 83.9 | 17.51 / 26.75 | 60.7 / 41.7 / 42.1 |
+| 16k / 1k | 1 | 300.6 | 300.6 | 57.7 | 57.7 | 14.2 | 54.50 / 54.53 | 17.3 / 17.3 / 17.7 |
+| 16k / 1k | 2 | 291.3 | 215.1 | 25.3 | 26.0 | 14.8 | 85.03 / 112.52 | 52.0 / 25.6 / 26.0 |
+| 16k / 1k | 4 | 286.5 | 125.2 | 20.8 | 12.7 | 15.2 | 157.22 / 228.71 | 109.0 / 41.1 / 41.6 |
+| 16k / 1k | 8 | does not fit (above) | | | | | | |
+
+Reading the rows. The card's prefill is one stream at a time at about 300 tok/s whatever c is (the aggregate is flat 286-306), so a request's TTFT is its
+queue of prefills; the per-request prefill figure divides the prompt by that wait. The "decode agg" column is the sum of (out - 1) over the span from the
+earliest first token to the latest last token, which includes the other requests' prefills (a later request's prefill stalls the earlier ones' decode:
+ITL mean far above p50, p90 about the stall's decode round), so at 16k it is low (20-25 tok/s) while the steady decode with every stream running is what the
+ITL p50 gives: 17.3 ms at c = 1, about 25.6 ms at c = 2 and 41 ms at c = 4 (`prompt cache: kept nothing at 16320 tokens: 255 pages pass the limit of 92` warnings:
+the cache is 0.33 GiB, so a 16k prompt is not kept, which is wanted here). Against the Mac's mlx_lm.server on the same loads the Vega decodes faster at c = 1 on 1k
+(76.8 against 57.2 tok/s, ITL 13.0 against 18.1 ms), level at c = 1 on 16k (57.7 against 56.5), and is behind in total tok/s at 16k (14-15 against 24-32); its
+prefill (about 300 tok/s) is below mlx's 660-760. That the card prefills one prompt at a time is [INFERENCE] from the flat aggregate and the TTFT queue, not from the engine's code.
