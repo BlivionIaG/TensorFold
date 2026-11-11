@@ -16,6 +16,7 @@ test {
     _ = layout;
     _ = split;
     _ = budget;
+    _ = @import("budget_1m_test.zig");
     _ = device;
     _ = @import("split_test.zig");
     _ = @import("union_plan_test.zig");

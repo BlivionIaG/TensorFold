@@ -12,6 +12,7 @@ const attention = @import("attention.zig");
 const attention_common = @import("attention_common.zig");
 const kv = @import("kv.zig");
 const prefix = @import("kv_prefix.zig");
+const metal_plan = @import("metal_plan.zig");
 const ops = @import("ops.zig");
 const mhc = @import("mhc.zig");
 const csa2 = @import("csa2.zig");
@@ -101,15 +102,17 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     const wp = try work.Plan.initLanes(round_rows, lanes);
     const kp = kv.cache.Plan{ .capacity = capacity, .layers = 40 };
     const workspace_bytes = try std.math.add(usize, wp.bytes, attention.Workspace.bytes(o.chunk_rows));
-    const cache_bytes = try std.math.add(usize, kp.residentBytes(), weights.sizeofDescriptors());
-    const execution_bytes = try std.math.add(usize, workspace_bytes, try std.math.mul(usize, cache_bytes, lanes));
+    const lane_fixed = 2 * kp.mutableBytes() + weights.sizeofDescriptors();
     const rotary_bytes = attention.Pipelines.residentBytes(capacity, c);
-    const needed = try std.math.add(usize, plan.bytes, try std.math.add(usize, execution_bytes, rotary_bytes));
     // The int8 twin lives beside the trellis it supersedes at prompt rows.
     const int8_extra: usize = if (exl3.knobs.i8_prefill) 5 << 30 else 0;
-    const needed_all = try std.math.add(usize, needed, int8_extra);
+    // A full-context lane a stream beside one set of weights and workspaces (metal_plan.zig)
+    var mp = metal_plan.Plan.of(.{ .weights = plan.bytes, .workspace = workspace_bytes, .rotary = rotary_bytes, .extra = int8_extra, .lanes = lanes, .lane = metal_plan.laneBytes(kv.cache.pool_layout, capacity, kp.mutableBytes(), weights.sizeofDescriptors()), .lane_per_position = 890.0, .capacity = capacity, .limit = o.ram_limit_bytes, .available = std.math.maxInt(u64) });
+    const needed = mp.needed;
+    const needed_all = mp.needed_all;
+    var plan_text: [768]u8 = undefined;
     if (o.ram_limit_bytes) |limit| if (needed_all > limit) {
-        std.log.err("the resident payload needs {d} bytes; the load limit is {d}", .{ needed_all, limit });
+        std.log.err("the resident payload needs {d} bytes; the load limit is {d}: {s}", .{ needed_all, limit, mp.refusal(&plan_text, lane_fixed) });
         return error.LoadLimitExceeded;
     };
     const load_started = std.Io.Timestamp.now(io, .awake);
@@ -117,13 +120,15 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     errdefer device.deinit();
     const margin: u64 = 8 << 30;
     const available = device.maxWorkingSet() -| device.allocated() -| margin;
+    mp.in.available = available;
     if (needed_all > available) {
-        std.log.err("full residency needs {d} bytes plus {d} margin; Metal admission allows {d}", .{ needed_all, margin, available });
+        std.log.err("full residency needs {d} bytes plus {d} margin; Metal admission allows {d}: {s}", .{ needed_all, margin, available, mp.refusal(&plan_text, lane_fixed) });
         return error.InsufficientResidentMemory;
     }
     const max_buffer = mtl.objc.msg(u64, device.id, "maxBufferLength", .{});
     for (plan.shards.items) |shard| if (shard.end - shard.begin > max_buffer) return error.ShardExceedsMetalBufferLimit;
     std.log.info("full resident admission: weights={d}, total={d}, context={d}, headroom={d}", .{ plan.bytes, needed, capacity, available - needed });
+    std.log.info("{s}", .{mp.line(&plan_text)});
     var pipelines = try Pipelines.init(device, gpa, capacity, c);
     errdefer pipelines.deinit();
     const queue = try device.queue();
