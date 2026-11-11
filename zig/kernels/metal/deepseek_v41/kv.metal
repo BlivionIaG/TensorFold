@@ -145,8 +145,7 @@ kernel void dsv41_publish_window(device const uchar *chunk [[buffer(0)]], device
     uint row = first + i.y, slot = (p.y + row) % 128;
     ring[slot * p.w + i.x] = chunk[row * p.z + i.x];
 }
-// A batched decode window's publish: slot z copies its chunk row (chunk + z * p.y) into ITS ring at position pos[z] % 128.
-// p: (ring offset in the slot's live buffer, row stride, bytes a row, unused); addr[4 * z] is slot z's live buffer.
+// Batched publish: slot z's chunk row into its ring at pos[z] % 128; p = (ring offset, row stride, row bytes, 0).
 kernel void dsv41_publish_rows(device const uchar *chunk [[buffer(0)]], constant uint4 &p [[buffer(1)]],
     device const ulong *addr [[buffer(2)]], device const uint *pos [[buffer(3)]], uint2 i [[thread_position_in_grid]]) {
     if (i.x >= p.z) return;

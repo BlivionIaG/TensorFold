@@ -259,8 +259,7 @@ pub const Pipelines = struct {
         enc.dispatchGroups(mtl.Size.of(args.width / args.block, args.rows, 1), mtl.Size.of(256, 1, 1));
         enc.barrier();
     }
-    /// Each slot's chunk row (`chunk`, 528 bytes a row) into ITS ring (`ring_offset` into its live buffer, `addr` a slot's
-    /// 4 ulongs) at `pos % 128`.
+    /// Each slot's chunk row into its own ring (`ring_offset` into its live buffer) at `pos % 128`.
     pub fn publishRows(p: *const Pipelines, enc: mtl.ComputeEncoder, chunk: View, addr: View, pos: View, ring_offset: usize, rows: u32) void {
         enc.setPipeline(p.publish_rows);
         enc.setBuffer(chunk.buffer, chunk.offset, 0);

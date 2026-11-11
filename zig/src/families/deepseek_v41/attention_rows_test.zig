@@ -39,7 +39,7 @@ fn fill(b: mtl.Buffer, len: usize, state: *u64) void {
 fn fillBf(b: mtl.Buffer, count: usize, state: *u64) void {
     for (b.slice(u16, count)) |*x| x.* = bf((@as(f32, @floatFromInt(draw(state) % 2000)) - 1000.0) / 995.0);
 }
-// A key row's scale bytes stay small: e8m0 near 2^0 for the window rows (base 124), an e4 code near 2^-3 for compressed (0x20).
+// A key row's scale bytes stay small: e8m0 near 2^0 (base 124) for the window, e4 near 2^-3 (0x20) for compressed.
 fn fixScales(b: mtl.Buffer, rows: usize, stride: usize, body: usize, base: u32, state: *u64) void {
     for (0..rows) |r| for (b.contents()[r * stride + body .. (r + 1) * stride]) |*x| {
         x.* = @intCast(base + draw(state) % 4);
