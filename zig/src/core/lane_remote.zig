@@ -142,6 +142,21 @@ pub fn wins(h: *LaneHost, job: *const Job) bool {
     return f.at > kept;
 }
 
+/// Whether a queued request waits for its remote fill, the engine having no work of its own meanwhile (lock held).
+pub fn waiting(h: *LaneHost) bool {
+    for (h.queued.items) |job| if (held(job)) return true;
+    return false;
+}
+
+/// A keepalive tick when one is due: macOS unwires an idle model after 1-2 s, and the first pass then pays the re-wire.
+pub fn keepWarm(h: *LaneHost) void {
+    const target = h.keepalive_target orelse return;
+    const now = std.Io.Clock.awake.now(h.io).toNanoseconds();
+    if (now - h.warm_tick < api.keepalive.served_interval_ns) return;
+    h.warm_tick = now;
+    target.tick(target.ctx);
+}
+
 /// Where a landed remote prefix that beats the cache's own starts the pass (0: none), for the lookup's marks.
 pub fn resumeAt(h: *LaneHost, job: *const Job) u32 {
     if (!wins(h, job)) return 0;

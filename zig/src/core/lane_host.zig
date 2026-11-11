@@ -58,6 +58,7 @@ pub const LaneHost = struct {
     live_tokens: std.ArrayList(u32) = .empty,
     /// A Metal engine's keepalive target, set by the family that owns the queue; null keeps the ticker off.
     keepalive_target: ?api.keepalive.Target = null,
+    warm_tick: i96 = 0, // the awake-clock nanosecond of the last tick the engine made itself, while a remote fill was awaited
     live_generated: u64 = 0,
     lone: ?api.Lone = null, // the backend's driver for a lone greedy stream; null: every stream in the lane core
     lone_job: ?*Job = null, // the job that driver holds now
@@ -559,9 +560,11 @@ pub const LaneHost = struct {
                 }
                 activity.end();
                 if (rows_host.idle(h)) continue;
+                const awaiting = remote.waiting(h);
                 if (h.cancels.items.len == 0 and (h.queued.items.len == 0 or h.admitted.items.len >= h.info_.lanes or admit.holds(h)))
                     h.wake.waitTimeout(h.io, &h.mutex, .{ .duration = .{ .raw = .fromMilliseconds(100), .clock = .awake } }) catch {};
                 h.unlock();
+                if (awaiting) remote.keepWarm(h);
                 continue;
             }
             h.unlock();
