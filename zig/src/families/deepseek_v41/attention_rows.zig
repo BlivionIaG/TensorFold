@@ -16,11 +16,11 @@ const splitScan = common.splitScan;
 
 var enabled_cache: ?bool = null;
 
-/// TF_DSV41_BATCH_ATTN=0 keeps the per-slot dispatch chain (the exact same arithmetic, k times the dispatches).
+/// TF_DSV41_BATCH_ATTN=1 runs the slot phase batched; the default is the per-slot chain (same arithmetic).
 fn enabled() bool {
     if (enabled_cache == null) {
         const raw = std.c.getenv("TF_DSV41_BATCH_ATTN");
-        enabled_cache = raw == null or !std.mem.eql(u8, std.mem.span(raw.?), "0");
+        enabled_cache = raw != null and std.mem.eql(u8, std.mem.span(raw.?), "1");
     }
     return enabled_cache.?;
 }
@@ -69,6 +69,12 @@ fn chunkView(work: *const Workspace) View {
 /// Every slot's query rotated and its window row normed, rotated and packed, in two dispatches.
 pub fn head(p: *const Pipelines, e: mtl.ComputeEncoder, w: *const weights.Attention, work: *Workspace, q: View, raw: View, c: config.Config, ratio: u32, segs: []const Seg) !void {
     try upload(p, work, segs);
+    // The kernels reach these buffers by address, so the encoder must be told it uses them (and order them).
+    for (segs, 0..) |sg, s| {
+        e.useResource(sg.state.live, mtl.ResourceUsage.read | mtl.ResourceUsage.write);
+        e.useResource(sg.state.storage, mtl.ResourceUsage.read);
+        e.useResource(work.selectionFor(s).buffer, mtl.ResourceUsage.read);
+    }
     const n: u32 = @intCast(segs.len);
     const spectrum: rope.Spectrum = if (ratio == 0) .normal else .compressed;
     const pos = view(work, RowsScratch.pos_at);

@@ -7,8 +7,9 @@ const rope = @import("rope.zig");
 const View = @import("view.zig").View;
 
 const slots = 4;
-const positions = [slots]u32{ 5, 130, 700, 1500 }; // before the ring fills, wrapped, and past the pick budget
-const main_rows = 800;
+const positions = [slots]u32{ 5, 130, 700, 16700 }; // before the ring fills, wrapped, past the pick budget, a long prompt
+const main_rows = 8400;
+const ring_at = 2 * 128 * 528; // the layer's ring inside a slot's live buffer
 const heads = 64;
 const width = 512;
 const q_stride = heads * width;
@@ -58,7 +59,7 @@ test "batched decode windows match the per-slot chain bit for bit" {
     defer sparse.deinit();
     var cache = try kv.Pipelines.load(device);
     defer cache.deinit();
-    var rot = try rope.Pipelines.load(device, 2048, 64, .{ .theta = 10000 }, .{ .theta = 160000 });
+    var rot = try rope.Pipelines.load(device, 17000, 64, .{ .theta = 10000 }, .{ .theta = 160000 });
     defer rot.deinit();
     if (!sparse.rowsReady(heads, width)) return error.SkipZigTest;
     const opts = mtl.ResourceOptions.shared;
@@ -68,11 +69,11 @@ test "batched decode windows match the per-slot chain bit for bit" {
     var main: [slots]mtl.Buffer = undefined;
     var sel: [slots]mtl.Buffer = undefined;
     for (0..slots) |s| {
-        live[s] = try device.buffer(128 * 528, opts);
+        live[s] = try device.buffer(3 * 128 * 528, opts);
         main[s] = try device.buffer(main_rows * 288, opts);
         sel[s] = try device.buffer(512 * 4, opts);
-        fill(live[s], 128 * 528, &state);
-        fixScales(live[s], 128, 528, 512, 124, &state);
+        fill(live[s], 3 * 128 * 528, &state);
+        fixScales(live[s], 3 * 128, 528, 512, 124, &state);
         fill(main[s], main_rows * 288, &state);
         fixScales(main[s], main_rows, 288, 256, 0x20, &state);
         const comp: u32 = (positions[s] + 1) / 2;
@@ -117,7 +118,7 @@ test "batched decode windows match the per-slot chain bit for bit" {
         pos_t[s] = positions[s];
         addr_t[4 * s] = live[s].gpuAddress();
         addr_t[4 * s + 2] = sel[s].gpuAddress();
-        mains_t[4 * s] = main[s].gpuAddress();
+        mains_t[4 * s + 2] = main[s].gpuAddress();
     }
     const pos_v = at(tab, 0);
     const addr_v = at(tab, 32);
@@ -135,7 +136,7 @@ test "batched decode windows match the per-slot chain bit for bit" {
         const enc = cb.compute(.serial);
         for (0..slots) |s| {
             const comp: u32 = (positions[s] + 1) / 2;
-            try sparse.encode(enc, at(q_a, s * q_stride * 2), view(live[s]), at(chunk, s * 528), view(main[s]), view(sel[s]), view(sink), at(q_a, s * q_stride * 2), view(dense_one), view(parts), .{
+            try sparse.encode(enc, at(q_a, s * q_stride * 2), at(live[s], ring_at), at(chunk, s * 528), view(main[s]), view(sel[s]), view(sink), at(q_a, s * q_stride * 2), view(dense_one), view(parts), .{
                 .rows = 1,
                 .q_stride = q_stride,
                 .position = positions[s],
@@ -154,8 +155,8 @@ test "batched decode windows match the per-slot chain bit for bit" {
         sparse.encodeRows(enc, view(q_b), view(sink), view(chunk), view(dense_all), view(parts), pos_v, addr_v, mains_v, .{
             .rows = slots,
             .q_stride = q_stride,
-            .ring_off = 0,
-            .owner = 0,
+            .ring_off = ring_at,
+            .owner = 2,
             .ratio = 2,
             .splits = 8,
         });
@@ -208,17 +209,17 @@ test "batched decode windows match the per-slot chain bit for bit" {
 
     var ring_ref: [slots]mtl.Buffer = undefined;
     for (0..slots) |s| {
-        ring_ref[s] = try device.buffer(128 * 528, opts);
-        @memcpy(ring_ref[s].contents()[0 .. 128 * 528], live[s].contents()[0 .. 128 * 528]);
+        ring_ref[s] = try device.buffer(3 * 128 * 528, opts);
+        @memcpy(ring_ref[s].contents()[0 .. 3 * 128 * 528], live[s].contents()[0 .. 3 * 128 * 528]);
     }
     defer for (0..slots) |s| ring_ref[s].deinit();
     {
         const cb = queue.commandBuffer();
         const enc = cb.compute(.serial);
-        for (0..slots) |s| try cache.publishWindow(enc, at(chunk_b, s * 528), view(ring_ref[s]), 1, positions[s]);
-        cache.publishRows(enc, view(chunk_b), addr_v, pos_v, 0, slots);
+        for (0..slots) |s| try cache.publishWindow(enc, at(chunk_b, s * 528), at(ring_ref[s], ring_at), 1, positions[s]);
+        cache.publishRows(enc, view(chunk_b), addr_v, pos_v, ring_at, slots);
         try submit(cb, enc);
     }
-    for (0..slots) |s| try std.testing.expectEqualSlices(u8, ring_ref[s].contents()[0 .. 128 * 528], live[s].contents()[0 .. 128 * 528]);
+    for (0..slots) |s| try std.testing.expectEqualSlices(u8, ring_ref[s].contents()[0 .. 3 * 128 * 528], live[s].contents()[0 .. 3 * 128 * 528]);
     std.debug.print("[batched decode windows] {d} slots bit-exact: scan+merge, rope both ways, glue, publish\n", .{slots});
 }

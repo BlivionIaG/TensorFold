@@ -34,7 +34,7 @@ pub fn verify(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) a
     for (windows) |w| {
         if (w.parents != null or w.early or w.masks.len > 0) return error.TreeWindowsUnsupported;
     }
-    // A round wider than one batched forward (TF_DSV41_BATCH_MAX, eight by default) runs as several.
+    // A round wider than one batched forward (TF_DSV41_BATCH_MAX, four by default) runs as several.
     const wide = batchMax();
     if (windows.len > wide and batchOn() and noBatchInstrument()) {
         var all_one = true;
