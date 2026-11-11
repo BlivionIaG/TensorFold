@@ -186,7 +186,7 @@ The branch is on upstream main. What the older base (`vega-macos`) had and what 
 
 ## Decode on the card (Vega 56 through hipmac, TinyGPU)
 
-Measured with `tools/vega-macos/vega_gate.py` (starts `tensorfold-native serve` on `libamdhip64.dylib`, checks the greedy tokens against
+Measured with `vega_gate.py` (now `tools/vega-macos/vega_gate.zig`, built by `zig build tf-vega-gate`: same options, console text and `results.jsonl` line as the Python it replaced, compared on a fake server; the card was not available to rerun the numbers with it) (starts `tensorfold-native serve` on `libamdhip64.dylib`, checks the greedy tokens against
 the mlx_lm references of `tools/vega-macos/mlx_ref.py`, then runs story decodes and reads `tensorfold.tokens_per_second`). Every number
 in this section was measured on the older base the branch had before it was rebased onto upstream main (`vega-macos`), except the table
 "On the rebased branch" below, which was measured on `vega-macos-up`.
@@ -232,8 +232,8 @@ samples with activity above 30%: median sclk 1309-1375 MHz, mclk 800 MHz, 179-18
 
 | Check | Result |
 | --- | --- |
-| sha gate, nothink / think96 (`vega_gate.py`) | `eb415dcbaf6e` / `bf86edaf9c17`, identical to mlx_lm |
-| decode N = 1 (`vega_gate.py`, median of 3 128-token stories) | 81.4 tok/s (81.3-81.5); 80.9 in an earlier gate run with the card at DPM HIGH after a `--force` boot |
+| sha gate, nothink / think96 (`tf-vega-gate`) | `eb415dcbaf6e` / `bf86edaf9c17`, identical to mlx_lm |
+| decode N = 1 (`tf-vega-gate`, median of 3 128-token stories) | 81.4 tok/s (81.3-81.5); 80.9 in an earlier gate run with the card at DPM HIGH after a `--force` boot |
 | `hip-kernel-test` | 157 passed, 14 skipped, 2 failed of 173; the two failures are the nemotron relu^2 / fc1 + shared up tests of before |
 | `hip-affine-test` | 30/30 |
 | per-row bit identity (`kernel_tests/affine/stream.zig`, in `hip-kernel-test`) | passes: row r of a several-row launch equals the launch of row r alone, m = 2, 3, 4, 5, 8, 16 |
@@ -260,8 +260,8 @@ Prefill (server `prefill_seconds` of a chat prompt with a salt in front so no pr
 105 tokens take 748 ms and 53 take 383 ms: about 7.2 ms a token up to 105 tokens, the one-row path the short prompts take. The rows gain 1.9x at 53-105
 tokens and 1.6x at 531-1024 over the 852 MHz rows, from 1.5x of clock.
 
-Logits against mlx_lm (`vega_gate.py --logits`, 87 rows through the decode path): cosine min 0.998616, mean 0.999881, argmax equal 87/87 (the older base
-with `TF_G9_MIX=1`: 0.99857 / 0.99988 / 87/87). The script's own bar is cosine min above 0.999, which this does not reach on either base; the argmax gate passes.
+Logits against mlx_lm (`tf-vega-gate --logits`, 87 rows through the decode path): cosine min 0.998616, mean 0.999881, argmax equal 87/87 (the older base
+with `TF_G9_MIX=1`: 0.99857 / 0.99988 / 87/87). The gate's own bar is cosine min above 0.999, which this does not reach on either base; the argmax gate passes.
 `tf-qwen35-test`, which the logits gate uses, did not compile with the stacked gate/up on gfx900: `zig/tests/qwen35/main.zig`'s `walk` took `h.?` of a
 device field (`gate_up`) with no host twin; it skips such a field now (one line).
 
@@ -285,7 +285,7 @@ fp16 *source* whatever MODE.FP_DENORM holds (setreg of all four denorm bits chan
 are the fused pair's bits: `hip-kernel-test` 63/63, `hip-affine-test` pass, 52.7 tok/s. `TF_G9_MIX=2` keeps x as fp16 pairs and flushes
 a denormal x (|x| < 6.1e-5; a term that small is below the fp32 rounding of a sum of terms of ordinary size): 56.4 tok/s, tokens
 identical in the gate, but `hip-kernel-test` 62/63 (that case). `-DTF_G9_MIX=0` is the fused pair without the mix (about 36 to 49
-tok/s). Logits against mlx_lm (87 rows through the decode path, `vega_gate.py --logits`, MIX=1): cosine min 0.99857, mean 0.99988,
+tok/s). Logits against mlx_lm (87 rows through the decode path, `tf-vega-gate --logits`, MIX=1): cosine min 0.99857, mean 0.99988,
 argmax equal 87/87.
 
 Dropped: reading the codes as fp16 denormals (`TF_G9_RAW`, 51 tok/s): `v_mad_mix_f32` flushes denormal inputs on Vega and the tokens
@@ -308,12 +308,12 @@ dispatch costs the GPU about 4.4 us (barrier and cache acquire), about 1.7 ms a 
 
 Profiling: `tools/vega-macos/hipprof.zig` is a shim `libamdhip64` that forwards to the runtime and times `hipModuleLaunchKernel`
 (`HIPPROF_REP=N` runs N extra back-to-back launches of each kernel for the pipelined time; its modes and variables are in `tools/vega-macos/README.md`);
-`vega_gate.py --prof each` builds it (`zig build tf-hipprof`), `prof_report.py` prints the per-token table. `--no-gate --story-tokens 16` is enough for a profile.
+`tf-vega-gate --prof each` builds it (`zig build tf-hipprof`), `tf-prof-report` (`zig build tf-prof-report`) prints the per-token table. `--no-gate --story-tokens 16` is enough for a profile.
 
 ## Not yet verified
 
 - `hip-gpu-test` on the card (never run; against the mock backend six of its runtime tests fail because they need a GPU: 34 pass, 6 fail of 40, 2026-11-11), and the stream test's other recorded pins on a second card.
-- Logits cosine against mlx on the card: run (`vega_gate.py --logits`, 87 rows, "Retest on upstream `fb8fdf3d85`" above): cosine min 0.998616, which does **not** reach the script's own bar of 0.999 (`--logits` exits 1; the argmax gate passes 87/87). No document accepts or explains the gap.
+- Logits cosine against mlx on the card: run (`tf-vega-gate --logits`, 87 rows, "Retest on upstream `fb8fdf3d85`" above): cosine min 0.998616, which does **not** reach the tool's own bar of 0.999 (`--logits` exits 1; the argmax gate passes 87/87). No document accepts or explains the gap.
 - The two nemotron `hip-kernel-test` failures (`epilogue.zig`: relu^2, fc1 + shared up) are not diagnosed; they fail on the rebase base too.
 - The default `--mtp-drafts 3` of a discrete GPU is irrelevant for this checkpoint (it has no MTP head).
 
@@ -582,15 +582,15 @@ A cached result prints `run test cached` and does not touch the card; the runs a
 killed leaves the card needing `ut4g-boot --force`. `hip-gpu-test` was never run on the card. The gfx1030 identity check: build `hip-kernel-build -Dhip-arch=gfx1030` in this tree and in an
 `upstream/main` checkout with the same wrapper (`--cache-dir`/`-p` apart), `llvm-objcopy -O binary --only-section=.text groupN.hsaco`, `cmp` for the 16 groups (**V**: all identical).
 
-Gate, rounds, prefill (**V**; each tag leaves `~/.cache/tensorfold-vega/bench/<tag>.server.log` and a row in `results.jsonl`):
+Gate, rounds, prefill (**V**, as `python3 tools/vega-macos/vega_gate.py` with these options, before that tool became `tf-vega-gate` (`zig build tf-vega-gate`, installed to `zig-out/bin`); each tag leaves `~/.cache/tensorfold-vega/bench/<tag>.server.log` and a row in `results.jsonl`):
 
     tools/vega-macos/setup-mlx-env.sh                                                           # once; or `uvx --from mlx-lm ...`
     ~/.cache/tensorfold-vega/mlxenv/bin/python tools/vega-macos/mlx_ref.py ~/models/Qwen3.5-4B-MLX-4bit ~/.cache/tensorfold-vega/ref      # references (R: no run line was recorded)
-    UT4G_METRICS_LOG=/tmp/up_a_gate.csv:1 python3 tools/vega-macos/vega_gate.py --tag up-auto-gate --speed 3          # sha gate + decode median of 3: 81.39 tok/s
-    python3 tools/vega-macos/vega_gate.py --tag up-auto-logits --speed 0 --logits                                       # logits: cosine min 0.998616, FAILS the 0.999 bar
+    UT4G_METRICS_LOG=/tmp/up_a_gate.csv:1 zig-out/bin/tf-vega-gate --tag up-auto-gate --speed 3                         # sha gate + decode median of 3: 81.39 tok/s
+    zig-out/bin/tf-vega-gate --tag up-auto-logits --speed 0 --logits                                                    # logits: cosine min 0.998616, FAILS the 0.999 bar
 
 The round-time and prefill tables ran with a throw-away client (`up_bench.py rounds BIN MODEL N TAG` and `prefill BIN MODEL 1 TAG`: N concurrent 128-token story requests, then unique-salted
-prompts of 53/105/225/531/1024 tokens; kept in `ut4g-usbgpu` `artifacts/results/scripts/vega-4b/`); `vega_gate.py` itself spawns `tensorfold-native serve MODEL --parallel 1 --context 4096 --port
+prompts of 53/105/225/531/1024 tokens; kept in `ut4g-usbgpu` `artifacts/results/scripts/vega-4b/`); `tf-vega-gate` itself spawns `tensorfold-native serve MODEL --parallel 1 --context 4096 --port
 18099 --no-thinking --temperature 0 --no-drafts`.
 
 Serving report, Vega rows (**V**, script `up_vega_sb.sh`; port 18210; `$M` = `~/models/Qwen3.5-4B-MLX-4bit`; one server per load, stopped with SIGINT after the client):
