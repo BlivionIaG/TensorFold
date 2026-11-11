@@ -223,6 +223,7 @@ pub const ComputeEncoder = struct {
 
     /// Later dispatches see every buffer write before this point (concurrent encoders).
     pub fn barrier(self: ComputeEncoder) void {
+        if (diag.no_barrier) return;
         objc.msg(void, self.id, "memoryBarrierWithScope:", .{types.BarrierScope.buffers});
     }
 
