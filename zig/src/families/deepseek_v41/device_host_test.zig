@@ -12,6 +12,7 @@ test {
     _ = @import("branches_test.zig");
     _ = @import("aot_needs_test.zig");
     _ = @import("kx_early_test.zig");
+    _ = @import("graph_precapture_test.zig");
 }
 
 test {

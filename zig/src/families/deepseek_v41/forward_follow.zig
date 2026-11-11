@@ -45,6 +45,9 @@ pub const op_ced_multi: i64 = 53;
 pub const op_export: i64 = 70;
 pub const op_export_fail: i64 = 71;
 
+/// 66: [op, last]: capture the planned decode graphs up to position `last` (TF_DSV41_GRAPH_PRECAPTURE), never run them
+pub const op_graph_warm: i64 = 66;
+
 /// A hand-off id as the two plan-link words its message carries.
 pub fn idWords(id: [16]u8) [2]i64 {
     return .{ std.mem.readInt(i64, id[0..8], .little), std.mem.readInt(i64, id[8..16], .little) };
@@ -380,6 +383,7 @@ fn followOp(f: *Forward, msg: []const i64, ids: *std.ArrayList(u32), prompt: *st
             const x = f.export_shard orelse return false;
             try x.run(x.ptr, msg);
         },
+        op_graph_warm => if (f.ext) |x| try x.run(x.ptr, msg) else try f.followWarmGraphs(msg),
         else => {
             const x = f.ext orelse return error.BadPlan;
             try x.run(x.ptr, msg);

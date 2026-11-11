@@ -22,6 +22,7 @@ const fwd_follow = @import("forward_follow.zig");
 const fwd_glue = @import("forward_glue.zig");
 const fwd_engram = @import("forward_engram.zig");
 const fwd_graph = @import("forward_graph.zig");
+const fwd_graph_warm = @import("forward_graph_warm.zig");
 
 pub const Error = error{ GlueNotBuilt, BadWindow };
 
@@ -464,6 +465,7 @@ pub const Forward = struct {
     pub const fillEngramRows = fwd_engram.fillEngramRows;
     pub const engramSource = fwd_engram.engramSource;
     pub const armEngram = fwd_engram.armEngram;
+    pub const gatesRows = fwd_engram.gatesRows;
     pub const gatedEnd = fwd_engram.gatedEnd;
     pub const engramCheck = fwd_engram.engramCheck;
     pub const gateCopy = fwd_engram.gateCopy;
@@ -475,6 +477,9 @@ pub const Forward = struct {
     const graphedWindow = fwd_graph.graphedWindow;
     const graphBody = fwd_graph.graphBody;
     pub const fingerprint = fwd_graph.fingerprint;
+    /// TF_DSV41_GRAPH_PRECAPTURE: the planned decode windows' graphs captured before the first request.
+    pub const precaptureGraphs = fwd_graph_warm.precapture;
+    pub const followWarmGraphs = fwd_graph_warm.follow;
 };
 
 pub const Graphed = fwd_graph.Graphed;

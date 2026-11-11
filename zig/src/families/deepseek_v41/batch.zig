@@ -24,6 +24,8 @@ const batch_engram = @import("batch_engram.zig");
 const batch_graph = @import("batch_graph.zig");
 const batch_target = @import("batch_target.zig");
 const batch_prof = @import("batch_prof.zig");
+const batch_precapture = @import("batch_precapture.zig");
+const forward_follow = @import("forward_follow.zig");
 
 pub const Error = error{ BadWindow, NotAChain, RowsCap, BadPlan, TreeWindow, Sampling, Slots };
 
@@ -229,7 +231,7 @@ pub const Batch = struct {
         try k.dev.syncTables();
         pt.mark(.tables);
         const s = b.settings;
-        const key: graphs.Key = .{ .rows = R, .ctx = graphs.bucketOf(rowtab.lastPos(mix), s.bucket, s.grow) };
+        const key = graphs.keyFor(R, rowtab.lastPos(mix), s);
         const cs = try b.program(key, s);
         pt.mark(.program);
         const r = f.runner;
@@ -278,12 +280,11 @@ pub const Batch = struct {
             const fp = b.fingerprint();
             pt.mark(.fingerprint);
             // TF_DSV41_ROUND_GRAPH=split: the head's graph, then the tail's, launched while the GPU runs the head
-            const at = if (b.rg.split) round_graph.splitAt(cs, b.rg.head) else null;
-            const parts: [2][2]usize = if (at) |i| .{ .{ 0, i }, .{ i, cs.len } } else .{ .{ 0, cs.len }, .{ cs.len, cs.len } };
-            for (parts, 0..) |sp, pi| {
+            const parts = graphs.Parts.of(cs, b.rg);
+            for (parts.spans, 0..) |sp, pi| {
                 if (sp[0] == sp[1]) continue;
                 b.span = sp;
-                const pk: graphs.Key = .{ .rows = key.rows, .ctx = key.ctx, .part = if (at == null) 0 else @intCast(pi + 1) };
+                const pk = parts.key(key, pi);
                 const t0 = ph.nowNs();
                 const out = try g.cache.run(pk, r.stream, fp, .{ .ctx = b, .run = body });
                 pt.mark(if (pi == 0) .launch_head else .launch_tail);
@@ -297,9 +298,8 @@ pub const Batch = struct {
                     .eager => b.stats.eager += 1,
                     .replayed => {},
                 }
-                if (outcomeLog(out, g)) std.log.scoped(.dsv41).info("row graphs: capture {d} ({d} rows, context bucket {d}, part {d}), {d} replayed", .{ g.cache.stats.captured, pk.rows, pk.ctx, pk.part, g.cache.stats.replayed });
             }
-            if (at != null) b.stats.split += 1;
+            if (parts.at != null) b.stats.split += 1;
             return f.gatedEnd();
         }
         try r.timedWindow(cs);
@@ -437,6 +437,7 @@ pub const Batch = struct {
             slots_mod.op_select => try b.ss.activate(@intCast(msg[1])),
             slots_mod.op_rows_keep => try b.keep(@intCast(msg[1]), @intCast(msg[2])),
             slots_mod.op_rows_drop => try b.dropPending(@intCast(msg[1])),
+            forward_follow.op_graph_warm => try batch_precapture.followWarm(b, msg),
             op_engram_warm => {
                 var asks: [max_warm]iface.Warm = undefined;
                 var ids: [max_warm * max_warm_ids]u32 = undefined;
@@ -482,6 +483,9 @@ pub const Batch = struct {
     }
 
     const fingerprint = batch_graph.fingerprint;
+
+    /// TF_DSV41_GRAPH_PRECAPTURE: every planned row graph captured before the first request (batch_precapture.zig).
+    pub const precapture = batch_precapture.precapture;
 };
 
 /// The forward's options for a row-mode program (block.Options.rows: RowWin's selections).
@@ -510,7 +514,6 @@ pub const Table = batch_graph.Table;
 const Stash = struct { layer: u32, buf: cuda.DeviceBuffer };
 
 const graphLog = batch_graph.graphLog;
-const outcomeLog = batch_graph.outcomeLog;
 const Graphs = batch_graph.Graphs;
 pub const warmLookback = batch_engram.warmLookback;
 pub const WinProf = batch_prof.WinProf;
