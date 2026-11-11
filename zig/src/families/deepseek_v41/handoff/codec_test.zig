@@ -49,8 +49,7 @@ test "comp rows decode to the byte fields' values, and a row on the fp8 grid rou
         try std.testing.expectEqualSlices(u16, &s.recordRef(&rec), &out);
         // RoPE dims are bf16 verbatim
         try std.testing.expectEqualSlices(u16, row[448..], out[448..]);
-        // the decoded row is on the grid: quantising it again is a fixed point of the values (the bytes may differ:
-        // a tile whose peak code is under 448 re-encodes under a smaller exponent)
+        // the decoded row is on the grid: re-quantising it is a fixed point of the values (bytes may differ)
         var rec2: [g.cuda_record_bytes]u8 = undefined;
         s.encodeRecord(&out, &rec2);
         var again: [512]u16 = undefined;

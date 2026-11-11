@@ -1,8 +1,4 @@
-//! The Metal side: neutral parts landing, one by one, in a Metal engine's state buffers (metal.zig's layouts).
-//!
-//! The importer owns no transport: a decoder hands it each part (shard, layer, name, dtype, shape, bytes) in any order. Every
-//! part is checked against the plan the exporter's shape defines (name, rows, dtype, bytes), applied once, and the import is
-//! `complete` only when every part of every shard has landed. An imported prefix is outside the exactness contract.
+//! Metal-side importer: checks each neutral part against the plan, lands it once; `complete` when all parts landed.
 const std = @import("std");
 const g = @import("geometry.zig");
 const c = @import("codec.zig");
@@ -125,7 +121,7 @@ pub const Import = struct {
     }
 };
 
-/// Engram's lookback ids after `upto` prompt tokens: the last `n` of them (fewer for a short prompt), as the CUDA engine's tail.
+/// Engram lookback ids after `upto` prompt tokens: the last `n` (fewer for a short prompt), as the CUDA engine's tail.
 pub fn lookbackIds(tokens: []const u32, upto: u64, n: u32) []const u32 {
     const end: usize = @intCast(@min(upto, tokens.len));
     return tokens[end -| n..end];

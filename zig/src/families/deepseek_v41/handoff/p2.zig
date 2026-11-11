@@ -1,9 +1,4 @@
-//! The hand-off as an MKVH protocol 2 export: each layer one `recurrent` layer of named parts, a part a frame.
-//!
-//! Nothing here widens the wire. A part is a bf16 / f32 tensor of shape [rows, cols] with dims {tap, channel}; the manifest's
-//! `model` is the checkpoint id both ends give, `prompt_tokens` is `upto`, `tp_rank` / `tp_size` name the shard (KV_SPLIT:
-//! one producer per Spark rank). A protocol 1 reader refuses the manifest and its headers as foreign (protocol 2's rule).
-//! Producer: `layers` over `export.build`'s parts. Decoder: `check` the manifest, one `ShardSink` per pulled shard.
+//! The hand-off as an MKVH protocol 2 export: a `recurrent` layer per model layer, a named part per frame.
 const std = @import("std");
 const fabric = @import("fabric");
 const plan = @import("plan.zig");
@@ -59,7 +54,7 @@ pub fn layers(arena: std.mem.Allocator, parts: []const export_cuda.Part) !Built 
     return .{ .layers = ls, .sources = sources };
 }
 
-/// The plan a manifest announces: `upto` from its prompt length, the drafter's rows from its ring parts, the shards from tp_size.
+/// The plan a manifest announces: `upto` from the prompt length, drafter rows from ring parts, shards from tp_size.
 pub fn shapeOf(geo: @import("geometry.zig").Geometry, m: manifest.Manifest) Error!plan.Shape {
     if (m.protocol != fabric.wire.recurrent_version or m.tp_size > plan.max_world) return error.BadManifest;
     var ds_rows: u32 = 0;

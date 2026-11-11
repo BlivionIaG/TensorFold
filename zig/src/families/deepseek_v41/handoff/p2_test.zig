@@ -1,5 +1,4 @@
-//! The hand-off over protocol 2, end to end on the fake link: the producer's responder serves the converted parts, the
-//! decoder's pull lands them through `ShardSink`, and the landed Metal buffers equal those of a direct import.
+//! The hand-off over protocol 2 on the fake link: served parts pulled through `ShardSink` equal a direct import.
 const std = @import("std");
 const fabric = @import("fabric");
 const g = @import("geometry.zig");

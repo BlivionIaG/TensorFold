@@ -1,9 +1,4 @@
-//! A hand-off as a file: the prompt tokens, the protocol 2 manifest and every part's bytes, in the order a pull delivers them.
-//!
-//! A test and validation carrier, not a wire format: it lets a Mac land (and decode against) a prefix with no network and no
-//! GB10, from a synthetic state, a Metal-side export, or a dump of a producer's parts. `feed` makes the calls a decoder's
-//! pull makes of its sink: (layer, part index, rows = 1, the part's bytes). Layout, all little-endian:
-//!   "DSV41HOF" | u32 version (1) | u32 token count | u32 manifest bytes | tokens u32[] | manifest JSON | parts, layer by layer
+//! A hand-off file for tests, not a wire format: tokens, manifest and parts; `feed` replays pulls into a sink.
 const std = @import("std");
 const fabric = @import("fabric");
 const manifest = fabric.manifest;
@@ -75,9 +70,7 @@ pub const Blob = struct {
     }
 };
 
-/// A producer's stream (`<id>.mkvh2`: the MANIFEST, then every DATA frame) as a Blob. The stream is replayed through the
-/// decoder's own checks (`expect`: the checkpoint's name and the exported prefix's tokens, which a stream does not carry), and
-/// every part is kept, reordered into delivery order, so the Blob feeds a sink as a pull would.
+/// A producer's `.mkvh2` stream replayed through the decoder's checks (`expect` supplies name and tokens) as a Blob.
 pub fn fromStream(arena: std.mem.Allocator, bytes: []const u8, expect: fabric.decoder.Expect, reason: *fabric.decoder.Reason) !Blob {
     const Entry = struct { layer: u32, part: u64, bytes: []const u8 };
     const Recorder = struct {

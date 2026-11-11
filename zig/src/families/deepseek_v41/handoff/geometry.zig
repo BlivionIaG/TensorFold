@@ -1,7 +1,4 @@
-//! The DeepSeek-V4.1 hand-off geometry and the CUDA record constants every conversion is checked against.
-//!
-//! Everything here is a fact of the CUDA engine (kv/layout.zig, kv/sess.zig, kv_glue.cu, the Triton `_index_k`) or of the
-//! release config; `guard_test.zig` fails loudly when the engine's own constants stop agreeing with these.
+//! DeepSeek-V4.1 hand-off geometry and CUDA record constants; `guard_test.zig` fails when the engine's constants drift.
 const std = @import("std");
 
 comptime {

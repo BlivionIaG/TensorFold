@@ -1,5 +1,4 @@
-//! The Metal -> neutral direction: a Packed slot exported and imported again reproduces the slot, and the neutral parts it
-//! yields are the dequantised rows Metal reads (`dsv41_unpack`).
+//! Metal -> neutral: a Packed slot exported and re-imported reproduces the slot; parts are `dsv41_unpack` rows.
 const std = @import("std");
 const g = @import("geometry.zig");
 const c = @import("codec.zig");

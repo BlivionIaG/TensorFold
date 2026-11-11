@@ -1,9 +1,4 @@
-//! The CUDA side: a finished prefill's host copies (what sessions_gpu's snapshot downloads) as the hand-off's neutral parts.
-//!
-//! Input is CUDA's own bytes, untouched: pool pages as the paged families hold them (replicated, or KV_SPLIT's owned pages
-//! per rank), SWA ring values/scales as `s.L<i>.swa.v / .s`, the ratio-2 carries as `s.L<i>.carry`, the drafter's rings as
-//! `s.L<i>.ring.v / .s`. Output is bf16/f32 parts (plan.zig) a protocol-2 export or any other carrier ships as is.
-//! A replay-mode (CED) snapshot holds rings below the decoder only: the layers it lacks are an error, never zeros.
+//! The CUDA side: a prefill's host snapshot copies become the hand-off's neutral bf16/f32 parts; absent layers error.
 const std = @import("std");
 const g = @import("geometry.zig");
 const c = @import("codec.zig");
@@ -16,8 +11,7 @@ pub const IndexFormat = enum { fp8, bf16 };
 /// A ring's two arrays: [rows][576] values and [rows][8] scales.
 pub const Ring = struct { values: []const u8, scales: []const u8 };
 
-/// One pool family's bytes by rank: page-major pages as the pool holds them. Replicated: `ranks[0]` holds every page;
-/// split: rank r holds the logical pages p with p % ranks.len == r, local page p / ranks.len.
+/// One pool family's bytes by rank: replicated holds every page on `ranks[0]`; split puts page p on rank p % ranks.len.
 pub const Paged = struct {
     split: bool,
     ranks: []const []const u8,
@@ -57,7 +51,7 @@ fn ringRow(r: Ring, row: u64) Error!struct { *const [g.cuda_values_bytes]u8, *co
     return .{ r.values[v..][0..g.cuda_values_bytes], r.scales[s..][0..g.cuda_scale_bytes] };
 }
 
-/// The rows of the last `n` positions before `upto`, oldest first, decoded from a ring whose row of position p is p % ring_rows.
+/// The rows of the last `n` positions before `upto`, oldest first, from a ring with position p at row p % ring_rows.
 fn ringPart(out: []u8, r: Ring, upto: u64, n: u32, ring_rows: u32) Error!void {
     var dec: [512]u16 = undefined;
     for (0..n) |i| {

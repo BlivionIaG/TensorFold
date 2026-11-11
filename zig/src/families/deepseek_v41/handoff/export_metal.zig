@@ -1,9 +1,4 @@
-//! The Mac's side of the neutral format run backwards: a served-lane (Packed) slot as the hand-off's bf16/f32 parts.
-//!
-//! The values are what Metal itself reads (`dsv41_unpack`: fp8 window rows, fp4 pool rows and index keys dequantised to bf16),
-//! so re-importing them re-packs the same codes up to a block whose largest value did not sit on a code point. Used by the
-//! Mac-only self-consistency check (a Metal prefill exported, imported into a blank slot and decoded against the original) and
-//! as the Metal-side producer of a hand-off file. The drafter's rings are not held in a Packed slot: no `ring` parts.
+//! Metal-to-neutral export: a served-lane Packed slot as bf16/f32 parts, as `dsv41_unpack` reads it; no drafter rings.
 const std = @import("std");
 const c = @import("codec.zig");
 const fp4 = @import("fp4.zig");
@@ -57,7 +52,7 @@ pub fn build(arena: std.mem.Allocator, shape: plan.Shape, p: metal.Packed) Error
     return parts;
 }
 
-/// Position upto-1's raw row: the open group's slot when the prefix ends inside one, else the capture's (zeros if it is off).
+/// Position upto-1's raw row: the open group's slot if the prefix ends inside one, else the capture's (zeros if off).
 fn carry(out: []u8, p: metal.Packed, src: usize, upto: u64) void {
     const slot: usize = @intCast((upto - 1) % 2);
     const from = if (upto % 2 == 1) p.partialOff(src) else p.captureOff(src) + @as(usize, @intCast((upto - 1) % metal.Packed.capture_rows)) * 2 * 2048;

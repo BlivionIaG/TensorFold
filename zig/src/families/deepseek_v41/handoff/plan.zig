@@ -1,15 +1,4 @@
-//! The hand-off's neutral state: which named tensors a prefill of `upto` tokens leaves for a decoder, as bf16/f32 parts.
-//!
-//! Both ends derive the same list from the same `Shape`, so a decoder checks a manifest by equality and an exporter cannot
-//! drift from its importer. Names (one per part, `<kind>[.split][@first_page]`):
-//!
-//!   swa            bf16 [min(upto, window), 512]   the last window rows of a layer's ring, oldest position first
-//!   carry          f32  [2, 512]                   a ratio-2 source's compressor row of position upto-1: kv, then gate
-//!   ring           bf16 [ds_rows, 512]             a DSpark block's key ring rows, positions [upto - ds_rows, upto)
-//!   comp[@p]       bf16 [rows, 512]                compressed latents of the logical pages [p, p + span) (this shard's)
-//!   ixk[@p]        bf16 [rows, 128]                index keys of the same pages
-//!
-//! A part is at most `chunk_bytes` (2 MiB), well under MCDMA's 4 MiB mailbox segment, so every part is one frame.
+//! The hand-off's neutral state: named bf16/f32 parts (swa, carry, ring, comp, ixk) both ends derive from one `Shape`.
 const std = @import("std");
 const g = @import("geometry.zig");
 

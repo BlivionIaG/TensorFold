@@ -1,4 +1,4 @@
-//! DeepSeek-V4.1 prefill/decode hand-off: CUDA state in, Metal state out, transport-independent (docs/deepseek-v41-handoff.md).
+//! DeepSeek-V4.1 prefill/decode hand-off: CUDA state in, Metal state out, transport-independent.
 pub const geometry = @import("geometry.zig");
 pub const codec = @import("codec.zig");
 pub const fp4 = @import("fp4.zig");

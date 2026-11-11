@@ -1,11 +1,4 @@
-//! Where an imported state lands: a descriptor per Metal engine layout, over host-visible slices of its buffers.
-//!
-//! `release`: main's metal/kv.zig (the release-fp8 lane): bf16 window ring mirrored over `window + max_rows` slots, bf16 pool
-//! rows, 68-byte index keys, a 4 x head_dim fp32 carry, the drafter's per-stage key rings.
-//! `packed`: the served lane's metal_kv_state.zig (PR 2373): 528-byte fp8 window rows (slot pos % 128) for the 40 backbone
-//! layers and, when the plan has 43, the drafter's three blocks; 288-byte fp4 main rows and 68-byte fp4 index keys in
-//! `storage`; the compressor's partial rows and raw-row capture in `live`. Constants are copied here and guarded by
-//! `guard_test.zig` against the engines' own files.
+//! Where an imported state lands: a descriptor per Metal engine layout (`release`, `packed`) over host buffer slices.
 const std = @import("std");
 const g = @import("geometry.zig");
 const c = @import("codec.zig");
@@ -78,8 +71,7 @@ pub const Layout = union(enum) {
     release: Release,
     @"packed": Packed,
 
-    /// Checks the buffers against `geo` and `upto`, then starts a slot's state clean: window, carry (kv 0, scores -inf in the
-    /// release layout, zero partials in the packed one) and capture. Pool and key rows are written, not cleared.
+    /// Checks buffers against `geo` and `upto`, then cleans the slot's window, carry and capture; pool/key rows stay.
     pub fn begin(l: Layout, geo: g.Geometry, upto: u64) Error!void {
         switch (l) {
             .release => |r| {
@@ -159,7 +151,7 @@ pub const Layout = union(enum) {
         }
     }
 
-    /// The ratio-2 compressor's row of position upto-1 (f32 [512] kv and gate, little-endian bytes) in slot (upto-1) % 2.
+    /// The ratio-2 compressor row of position upto-1 (f32 [512] kv and gate, little-endian) in slot (upto-1) % 2.
     pub fn setCarry(l: Layout, geo: g.Geometry, src: u32, upto: u64, kv: []const u8, gate: []const u8) void {
         const slot: usize = @intCast((upto - 1) % 2);
         switch (l) {

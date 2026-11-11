@@ -1,7 +1,4 @@
-//! Where a pulled (or file-fed) hand-off lands on a Metal slot's Packed buffers: the import behind a prefill source's sink.
-//!
-//! The served lane keeps the drafter's rings in a state of its own, not in a slot's Snapshot, so ring layers (>= the
-//! backbone's) are read off the wire and dropped, whatever a producer chose to send; a manifest without them is as good.
+//! Lands a pulled or file-fed hand-off on a Metal slot's Packed buffers; ring layers (drafter) are read and dropped.
 const std = @import("std");
 const fabric = @import("fabric");
 const g = @import("geometry.zig");

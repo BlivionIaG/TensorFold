@@ -1,7 +1,4 @@
-//! Test support: CUDA-format state written the way the CUDA kernels write it, with an independently computed expectation.
-//!
-//! `encodeRecord` follows kv_glue.cu's `kv_norm_store` (tile exponent from the peak's bits, scale byte e + 127, round-to-nearest-
-//! even e4m3) with a brute-force nearest-code search for the e4m3 step, so no codec.zig arithmetic is shared with it.
+//! Test support: CUDA-format state encoded as the kernels write it (`kv_norm_store`), with an independent expectation.
 const std = @import("std");
 const g = @import("geometry.zig");
 const c = @import("codec.zig");
@@ -104,7 +101,7 @@ pub fn genIndex(rng: *Rng, out: *[128]u16) void {
     for (out) |*v| v.* = c.f32ToBf16(rng.norm() * std.math.pow(f32, 2, @floatFromInt(k)));
 }
 
-/// `rows` rows of `row_bytes` as a pool's pages, replicated (one rank) or split over `world` ranks; unwritten rows are 0xA5.
+/// `rows` rows of `row_bytes` as pool pages, replicated (one rank) or split over `world` ranks; unwritten rows 0xA5.
 pub fn paged(arena: std.mem.Allocator, rows: []const []const u8, row_bytes: usize, page_rows: u32, world: u32, split: bool) ![]const []const u8 {
     const pages = (rows.len + page_rows - 1) / page_rows;
     const ranks = try arena.alloc([]u8, if (split) world else 1);

@@ -1,9 +1,4 @@
-//! Scalar twins of the Metal engines' cache packers: what a bf16 row becomes in each Metal layout.
-//!
-//! `release_*` mirror main's kernels/metal/deepseek_v41/compress.metal (`tf_dsv41_c_fp4pack`); `window`, `main` and `index`
-//! mirror the served lane's kv.metal / kv_glue.metal `dsv41_pack` (kinds 0, 1, 2). Each follows its kernel's float operations
-//! (f32 divides, bit-extracted exponents, ties-to-even code tables) so the bytes match what that engine would have written
-//! for the same bf16 row. `unpack*` are the matching dequantisers (`dsv41_unpack`).
+//! Scalar twins of the Metal engines' cache packers and dequantisers, matching each kernel's float operations.
 const std = @import("std");
 const c = @import("codec.zig");
 
@@ -53,8 +48,7 @@ fn amaxOf(x: []const u16) f32 {
 
 const min_e8: f32 = 6.0 * 0x1p-126;
 
-/// main's index-key packer: 32-value blocks, E8M0 scale 2^ceil(log2(max(amax, 6 2^-126) * (1/6))), E2M1 nibbles; a block with
-/// a NaN or infinity packs zero codes under the byte 255. 64 code bytes then 4 scale bytes.
+/// main's index-key packer: 32-value E2M1 blocks, E8M0 scale; a NaN/inf block packs zero codes under byte 255.
 pub fn releaseIndexKey(x: *const [128]u16, out: *[68]u8) void {
     const inv6: f32 = 1.0 / 6.0;
     for (0..4) |g| {
@@ -77,7 +71,7 @@ pub fn releaseIndexKey(x: *const [128]u16, out: *[68]u8) void {
     }
 }
 
-/// kind 0, `window_fp8`: 512 E4M3 codes in 32-value blocks, UE8M0 scale 2^ceil(log2(max(amax, 1e-4) / 448)); then 16 scales.
+/// kind 0, `window_fp8`: 32-value E4M3 blocks, UE8M0 scale 2^ceil(log2(max(amax, 1e-4) / 448)); 512 codes, 16 scales.
 pub fn window(x: *const [512]u16, out: *[528]u8) void {
     for (0..16) |g| {
         const blk = x[32 * g ..][0..32];
@@ -88,7 +82,7 @@ pub fn window(x: *const [512]u16, out: *[528]u8) void {
     }
 }
 
-/// kind 1, `main_fp4`: 16-value blocks, E4M3 scale code of max(amax, 6 2^-9) / 6, E2M1 nibbles; 256 code bytes then 32 scales.
+/// kind 1, `main_fp4`: 16-value blocks, E4M3 scale of max(amax, 6 2^-9) / 6, E2M1 nibbles; 256 code bytes, 32 scales.
 pub fn mainRow(x: *const [512]u16, out: *[288]u8) void {
     for (0..32) |g| {
         const blk = x[16 * g ..][0..16];
@@ -103,7 +97,7 @@ pub fn mainRow(x: *const [512]u16, out: *[288]u8) void {
     }
 }
 
-/// kind 2, `index_fp4`: 32-value blocks, UE8M0 scale 2^ceil(log2(max(amax, 6 2^-126) / 6)); 64 code bytes then 4 scales.
+/// kind 2, `index_fp4`: 32-value blocks, UE8M0 scale 2^ceil(log2(max(amax, 6 2^-126) / 6)); 64 codes, 4 scales.
 pub fn index(x: *const [128]u16, out: *[68]u8) void {
     for (0..4) |g| {
         const blk = x[32 * g ..][0..32];

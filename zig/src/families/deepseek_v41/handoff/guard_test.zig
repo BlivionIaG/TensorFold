@@ -1,8 +1,4 @@
-//! Layout guards: every constant the hand-off copies from an engine is checked against that engine's own file, so a
-//! changed layout fails here, loudly, instead of silently producing a wrong cache.
-//!
-//! Source-text checks (`@embedFile`) stand in for imports the host test module cannot build (Metal and CUDA host code).
-//! The PR 2373 served lane's `metal_kv_state.zig` is guarded the same way when it exists on the branch (`exl3_kv`).
+//! Layout guards: constants copied from each engine are checked against its source text so drift fails loudly.
 const std = @import("std");
 const options = @import("handoff_options");
 const layout = @import("../kv/layout.zig");

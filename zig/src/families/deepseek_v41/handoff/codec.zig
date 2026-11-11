@@ -1,8 +1,4 @@
-//! Exact scalar decoders of the CUDA engine's cache records into bf16 rows (the hand-off's neutral latent).
-//!
-//! Comp row / SWA ring row (kv_glue.cu `kv_norm_store`): value = e4m3(code) * 2^(scale - 127) for the 448 NoPE dims, a UE8M0
-//! scale byte per 64 dims; the 64 RoPE dims are stored as bf16. Index row (Triton `_index_k`, KFP8): 128 e4m3 codes and a
-//! little-endian fp32 power-of-two scale. Every product is exact in bf16 (4 significant bits), so these decoders are lossless.
+//! Exact scalar decoders of CUDA cache records (e4m3 codes + UE8M0 scale per 64 dims, RoPE bf16) into bf16 rows.
 const std = @import("std");
 const g = @import("geometry.zig");
 
