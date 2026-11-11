@@ -89,7 +89,7 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     const fma_dense_multi2 = fma_dense_ok and p.decode_fma_dense_multi2 != null and multi_rows >= 2 and
         a.rows >= 2 and (multi_ceil or a.rows % 2 == 0) and (multi_rows == 2 or !fma_dense_multi4);
     const fma_dense = fma_dense_ok and fmaDenseOn() and !fma_dense_multi4 and !fma_dense_multi2;
-    // T-tile exact half-FMA bodies (routed, one-row dense): the widest T up to the knob that keeps the groups threshold.
+    // T-tile exact half-FMA bodies (routed, one-row dense): widest T up to the knob that keeps the groups threshold.
     const tiles: u32 = if (knobs.fma_tiles == 0) 0 else blk: {
         var t: u32 = if (knobs.fma_tiles >= 4) 4 else if (knobs.fma_tiles >= 2) 2 else 1;
         while (t > 1 and ((@as(usize, a.n) + 16 * t - 1) / (16 * t)) * a.rows < knobs.fma_tile_groups) t /= 2;
