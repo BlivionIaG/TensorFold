@@ -23,6 +23,13 @@ pub const Exporter = struct {
     serve: ?Serve = null,
 };
 
+/// The host's held exports, when it serves them over HTTP (the engine's `handoff` hook).
+pub fn serveHook(ctx: *anyopaque) ?Serve {
+    const h: *LaneHost = @ptrCast(@alignCast(ctx));
+    const x = h.exporter orelse return null;
+    return x.serve;
+}
+
 /// An export's bytes read over HTTP: the producer's replies to a decoder's OPEN and every PULL, back to back.
 pub const Stream = struct {
     ptr: *anyopaque,
