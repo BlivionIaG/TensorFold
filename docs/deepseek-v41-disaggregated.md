@@ -162,7 +162,7 @@ The knobs above add 0.5 to 6 %: they are optional. What makes the serving profil
 (default 4, rounded up to index sources), each over its layers' own cone, so those layers' rings and the drafter's taps
 are expected to equal a full prefill's up to the CUDA kernels' reduction order [INFERENCE, not yet compared on the pair]. `TF_DSV41_REPLAY_EXACT=0` keeps the bounded replay over the
 last 127 rows (the window's oldest row is zero in the export; normalized RMS 0.3 to 0.5 against a full prefill, growing
-with layer depth); a prompt resumed from a saved session and `TF_DSV41_PF_TBO=1` also use it. The sliding-window rows
+with layer depth); `TF_DSV41_PF_TBO=1` also uses it. A saved session that would leave fewer than the cone's rows after it (fewer rows of the prompt past it than its cone, at most 2,541) is not resumed under the exact replay: the prompt prefills from 0. The sliding-window rows
 below layer 20, the carries, the compressed pages and the index keys are byte-identical either way. The exact replay runs
 about 30.5k layer-rows against 2.5k for the bounded one [INFERENCE, not yet measured on the pair]. Prefill on the plain export profile costs about 0.83 ms a row at every length from 1k to 32k: it is GPU-compute bound, not Engram bound (7 %).
 A prompt of 61k tokens (the pool's 65,536-token cap) exports in 51 s.
