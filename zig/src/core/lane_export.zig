@@ -19,7 +19,7 @@ pub const Exporter = struct {
     exported: *const fn (ptr: *anyopaque, h: Handoff, tokens: []const u32, saved: pc.Saved) void,
     /// No state will come for `h`: the decoder is told why.
     failed: *const fn (ptr: *anyopaque, h: Handoff, why: []const u8) void,
-    /// The held exports as `GET /v1/handoff/<id>` on the server's own port, for a decoder with no fabric link (null: not served).
+    /// Held exports as `GET /v1/handoff/<id>` on the server's own port, for decoders with no fabric link (null: off).
     serve: ?Serve = null,
 };
 
@@ -37,14 +37,19 @@ pub const Stream = struct {
 /// What the server reads of an exporter that serves its exports over HTTP (server/handoff_routes.zig).
 pub const Serve = struct {
     ptr: *anyopaque,
-    /// A held export's stream, which holds it until closed. `NotHeld`: never held, released or expired. `Refused`: the export
-    /// failed, and `why` says why.
+    /// A held export's stream, held until closed. `NotHeld`: never held, released or expired. `Refused`: failed.
     open: *const fn (ptr: *anyopaque, id: [16]u8, why: *[]const u8) OpenError!Stream,
     /// The export released now (a decoder is done with it); false when none was held.
     release: *const fn (ptr: *anyopaque, id: [16]u8) bool,
 
     pub const OpenError = error{ NotHeld, Refused, OutOfMemory, Unreadable };
 };
+
+/// The exports `e` holds and serves over HTTP, when it serves them.
+pub fn serving(e: api.Engine) ?Serve {
+    const f = e.vtable.handoff orelse return null;
+    return f(e.ctx);
+}
 
 /// A handoff request needs an exporter, and a prompt with a token past its mark.
 pub fn exportable(h: *const LaneHost, r: *const Request) bool {

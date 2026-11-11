@@ -1,9 +1,4 @@
-//! GET and DELETE /v1/handoff/<id>: a producer's held hand-off exports, read by a decoder with no fabric link (docs/deepseek-v41-handoff.md).
-//!
-//! The body is the export's own MKVH protocol 2 stream, whole and length-delimited (`Content-Length`): the engine's replies to a
-//! decoder's OPEN and every PULL, one message at a time through a bounded buffer, so a large export is never in memory twice.
-//! Only what the engine holds under an id is reachable: the id is 32 hex digits, never a path. The key gate and its scopes run
-//! before this (server.zig `authenticate`, auth_scope.zig). A reader can fetch an export again until it is deleted or expires.
+//! GET and DELETE /v1/handoff/<id>: a producer's held exports as an MKVH stream, read by a decoder with no fabric link.
 const std = @import("std");
 const json = @import("json");
 const api = @import("engine_api");
@@ -27,14 +22,14 @@ fn serving(srv: *Server, conn: *Conn, a: Allocator, route: []const u8) ?struct {
         fail(conn, a, 400, "the hand-off id is 32 hex digits: /v1/handoff/<id>");
         return null;
     };
-    const serve = srv.engine.handoffServe() orelse {
+    const serve = api.LaneHost.Export.serving(srv.engine) orelse {
         fail(conn, a, 404, "this server serves no hand-off exports (a producer starts with --mcdma-produce http)");
         return null;
     };
     return .{ .id = id, .serve = serve };
 }
 
-/// GET: the export under the id, streamed; 404 when none is held (never made, deleted or expired), 409 with the reason when its export failed.
+/// GET: streams the export under the id; 404 when none is held, 409 with the reason when its export failed.
 pub fn get(srv: *Server, conn: *Conn, a: Allocator, route: []const u8) void {
     const s = serving(srv, conn, a, route) orelse return;
     var why: []const u8 = "";
