@@ -268,7 +268,7 @@ test "--prompt-cache-gib 40: a later 192k-token slot takes its room back from ke
     try std.testing.expectEqual(@as(usize, 1), fake.live);
 }
 
-test "a reply's end is born with its request's prompt (the history mark it kept outlives it), and on a pulled prefix is kept only with TF_PREFILL_KEEP, marked remote" {
+test "a reply's end on a pulled prefix is kept only with TF_PREFILL_KEEP, marked remote" {
     try @import("qwen27_remote_keep_test.zig").exercise(keepEnd, FakeStates);
 }
 
