@@ -6,6 +6,7 @@ const Stream = lanes.Stream;
 const Backend = @import("backend.zig").Backend;
 const split_feed = @import("split_feed.zig");
 const split_run = @import("split_run.zig");
+const entry_async = @import("entry_async.zig");
 
 /// The stream's slot, taken, reset and (for a kept prompt state) restored on the first chunk; the pass's cursor.
 fn begin(b: *Backend, s: *Stream, prompt: []const u32) !u32 {
@@ -132,7 +133,7 @@ const Calls = struct {
     cut: u32,
 
     fn ops(c: *Calls) split_run.Ops {
-        return .{ .ptr = c, .reset = reset, .position = position, .enter = enter, .restore = restore };
+        return .{ .ptr = c, .reset = reset, .position = position, .enter = enter, .sync = sync, .restore = restore };
     }
     fn self(ptr: *anyopaque) *Calls {
         return @ptrCast(@alignCast(ptr));
@@ -149,6 +150,9 @@ const Calls = struct {
     fn enter(ptr: *anyopaque, at: u32, n: u32, rows: []const u8) anyerror!void {
         const c = self(ptr);
         try c.b.model.forwardEntered(c.slot, c.prompt[at..][0..n], rows, c.cut);
+    }
+    fn sync(ptr: *anyopaque) anyerror!void {
+        try entry_async.settle(self(ptr).b.model);
     }
     fn restore(ptr: *anyopaque, snap: *anyopaque) anyerror!void {
         const c = self(ptr);

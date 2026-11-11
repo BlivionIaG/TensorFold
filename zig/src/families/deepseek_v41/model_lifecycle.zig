@@ -26,6 +26,7 @@ const scan_probe = @import("scan_probe.zig");
 const projection_knobs = @import("projection_knobs.zig");
 const model = @import("model.zig");
 const forward_cone = @import("forward_cone.zig");
+const entry_async = @import("entry_async.zig");
 const Model = model.Model;
 const CondProf = Model.CondProf;
 const Snapshot = Model.Snapshot;
@@ -213,6 +214,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     return .{ .gpa = gpa, .io = io, .device = device, .queue = queue, .residency = residency, .checkpoint = cp, .weights = bound, .cfg = c, .cfg_arena = arena, .lanes = lanes, .caches = caches, .cache = &caches[0], .engram_stash = engram_stash, .partial_stash = partial_stash, .ring_stash = ring_stash, .snap_ring = snap_ring, .taps_stash = taps_stash, .stream = stream_rows, .stream_stage = stream_stage, .workspace = workspace, .attention_workspace = aw, .taps = taps, .cond = cond, .cond_wkv = cond_wkv, .mtp_logits = mtp_logits, .pipelines = pipelines, .admitted_bytes = needed, .load_seconds = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .awake).toNanoseconds() - load_started.toNanoseconds())) / 1e9 };
 }
 pub fn deinit(m: *Model) void {
+    entry_async.release(m);
     forward_cone.release(m);
     m.queue.removeResidencySet(m.residency);
     m.residency.deinit();
@@ -247,6 +249,7 @@ pub fn reset(m: *Model) !void {
     for (0..m.lanes) |slot| try m.resetSlot(@intCast(slot));
 }
 pub fn resetSlot(m: *Model, slot: u32) !void {
+    entry_async.settleQuiet(m);
     forward_cone.drop(m, slot);
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const state = &m.caches[slot];
@@ -317,6 +320,7 @@ pub fn snapshotCharged(snap: *const Snapshot) u64 {
     return @as(u64, snap.storage.len) + snap.live.len + snap.taps.len;
 }
 pub fn snapshotSave(m: *Model, slot: u32) !*Snapshot {
+    try entry_async.settle(m);
     try forward_cone.flush(m, slot);
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const state = &m.caches[slot];
@@ -379,6 +383,7 @@ pub fn snapshotDrop(m: *Model, snap: *Snapshot) void {
     m.gpa.destroy(snap);
 }
 pub fn snapshotRestore(m: *Model, slot: u32, snap: *const Snapshot) !void {
+    try entry_async.settle(m);
     forward_cone.drop(m, slot);
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const state = &m.caches[slot];
@@ -403,6 +408,7 @@ pub fn snapshotRestore(m: *Model, slot: u32, snap: *const Snapshot) !void {
     m.valid = true;
 }
 pub fn beginSlot(m: *Model, slot: u32) !void {
+    try entry_async.settle(m);
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const view = try m.workspace.historyView(slot);
     const history: [*]u8 = @ptrCast(@alignCast(view.buffer.contents() + view.offset));
@@ -437,6 +443,7 @@ pub fn commitSlot(m: *Model, slot: u32) !void {
     try m.caches[slot].commit();
 }
 pub fn rollbackSlot(m: *Model, slot: u32) !void {
+    try entry_async.settle(m);
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const view = try m.workspace.historyView(slot);
     const history: [*]u8 = @ptrCast(@alignCast(view.buffer.contents() + view.offset));
@@ -476,6 +483,7 @@ pub fn portKeep(m: *Model, slot: u32, kept: u32) !void {
     m.taps_rows_valid = kept;
 }
 pub fn restoreRing(m: *Model, slot: u32, kept: u32, rows: u32) !void {
+    try entry_async.settle(m);
     if (!ringKeepOn()) return;
     if (slot >= m.lanes or rows > max_ring_rows or kept > rows) return;
     const state = &m.caches[slot];

@@ -6,6 +6,7 @@ const prefix = @import("kv_prefix.zig");
 const engram = @import("engram.zig");
 const model = @import("model.zig");
 const split_feed = @import("split_feed.zig");
+const entry_async = @import("entry_async.zig");
 const restore = @import("handoff/restore.zig");
 const Packed = @import("handoff/metal.zig").Packed;
 const Model = model.Model;
@@ -46,14 +47,21 @@ pub fn seal(m: *const Model, snap: *Snapshot, tokens: []const u32, upto: u32) !v
     snap.taps_rows_valid = 0;
 }
 
-/// A chunk of a layer-split prompt: layers `cut`.. over the rows of ids, entered from the producer's boundary rows
+/// A chunk of a layer-split prompt: layers `cut`.. over the rows of ids, entered from the producer's boundary rows.
+/// The rows are copied into a device buffer before this returns; the pass itself may still be running (entry_async.zig).
 pub fn forwardEntered(m: *Model, slot: u32, ids: []const u32, rows: []const u8, cut: u32) !void {
     if (!m.valid) return error.InvalidModelState;
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     if (cut == 0 or cut >= m.cfg.layers) return error.BadCut;
     if (ids.len == 0 or rows.len != ids.len * split_feed.row_bytes) return error.GateRows;
     if (m.gate.entered() or m.gate.stop_dir != null) return error.GateBusy;
-    m.gate.entry_rows = rows;
+    const n: u32 = @intCast(ids.len);
+    // the host's copy runs while the pass before is on the GPU
+    const b = try entry_async.stage(m, rows, n);
+    m.pipe.reading = b;
+    defer entry_async.done(m);
+    try entry_async.prepare(m);
+    m.gate.entry_buf = m.pipe.bufs[b].?;
     m.gate.k = cut;
     defer m.gate.off();
     _ = try m.forwardSegs(&.{.{ .slot = slot, .ids = ids, .p0 = m.caches[slot].position }}, .none);
@@ -61,6 +69,7 @@ pub fn forwardEntered(m: *Model, slot: u32, ids: []const u32, rows: []const u8, 
 
 /// Layers [0, cut) of a landed layer-split state (`snap`, sealed after its `upto` rows) into `slot`
 pub fn restoreLayers(m: *Model, slot: u32, snap: *const Snapshot, cut: u32) !void {
+    try entry_async.settle(m);
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     if (snap.taps.len != m.taps.length()) return error.SnapshotLayout;
     try restoreCache(&m.caches[slot], snap, cut);
