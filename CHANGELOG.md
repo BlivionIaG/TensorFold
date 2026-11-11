@@ -16,6 +16,10 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - DeepSeek-V4.1 on CUDA: `dsv41-serve` takes `--mcdma-produce LINK` and exports a hand-off request's prompt state (the slot's snapshot and pool pages at the prompt's last-but-one token) as MKVH protocol-2 bf16 parts for the Metal decoder; `TF_DSV41_HANDOFF_DUMP=DIR` writes each export as a `.mkvh2` file (no link needed) that `handoff_file.pull` replays into the importer. It refuses replay prefill, prefill pieces, a split KV pool and no session store by name; a replicated, full-prefill profile is exported. Run on a GB10 pair (TP=2): a 9,141-token prompt handed to an M5 Ultra over a ConnectX-7 to ConnectX-5 link (MCDMA, 8,704 tokens, 31 MiB of rows) answers correctly, and the pair's port carried the payload.
 
+- DeepSeek V4.1 on Metal: a kept prompt holds the rows its prompt used (890 bytes a token plus the rings, taps and Engram cursor), not the lane's whole `--context`: at `--context 1048576` an entry was 0.93 GB whatever its length. A kept state restores into a lane of any capacity from its length up, and the prompt cache's reserve and promise count the bytes a state will hold. `--learn-conversations` keeps these states on disk too (`--spill-gib` writes the ones RAM evicts).
+
+- DeepSeek V4.1 on Metal: `TF_DSV41_PROMPT_CACHE_GIB` sets the prompt cache's budget when `--prompt-cache-gib` is absent (`0` keeps none); with neither, the server takes the automatic budget the other Metal engines use, where it kept no prompt cache before.
+
 ## 1.2.7
 
 - GLM-5.3-Flash on CUDA: with `TF_GLM_LAYERS=N`, serve's start-up memory check counts the weights by tensor from the shard headers, only those the load reads (the first N layers, the MTP layer when drafts are on, the embedding, norm and head), where it counted every checkpoint file. A 20-layer thin load of the 163.6 GiB checkpoint now counts 66.6 GiB without drafts. Unset, the count is the files' as before (#2788, fixes #2745). Thanks to @wojo.
