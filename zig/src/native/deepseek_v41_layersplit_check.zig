@@ -1,5 +1,4 @@
-//! TF_LS_CHECK=<dir>:<k,k,..>:<ids file>: layer-split gate G3 on the Metal engine (private gate instrumentation).
-//! <dir> holds CUDA's boundaries `L<k-1>.x.bf16` / `.pre.f32` for the prompt (`ids file`: its token ids, text).
+//! TF_LS_CHECK=<dir>:<k,k,..>:<ids file>: layer-split gate G3 on the Metal engine from a CUDA prefill's dumps.
 const std = @import("std");
 const tf = @import("tensorfold");
 const ds = tf.deepseek_v41;

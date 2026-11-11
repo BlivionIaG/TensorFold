@@ -148,7 +148,8 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
     if (std.mem.eql(u8, step, "bdump")) {
         // private gate instrumentation (TF_LS_DUMP_DIR): rank 0 writes the boundary rows at their position
         if (f.comm.rank() != 0) return;
-        const dir = std.c.getenv("TF_LS_DUMP_DIR") orelse return;
+        const env = @import("sys").environment;
+        const dir = (env.path("TF_LS_DUMP_DIR", (env.Process{}).get("TF_LS_DUMP_DIR")) catch return error.BadGlue) orelse return;
         const xt = c.args[0].arg.t;
         const pt = c.args[1].arg.t;
         const layer = c.args[2].arg.i;
@@ -161,7 +162,7 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
             defer f.gpa.free(host);
             try cuda.DeviceBuffer.download(.{ .d = r.d, .ptr = try r.tensorAddr(pt_.t), .len = host.len }, 0, host);
             var path: [512]u8 = undefined;
-            const fp = try std.fmt.bufPrint(&path, "{s}/L{d}.{s}\x00", .{ std.mem.span(dir), layer, pt_.ext });
+            const fp = try std.fmt.bufPrint(&path, "{s}/L{d}.{s}\x00", .{ dir, layer, pt_.ext });
             const fd = std.c.open(@ptrCast(fp.ptr), .{ .ACCMODE = .WRONLY, .CREAT = true }, @as(std.c.mode_t, 0o644));
             if (fd < 0) return error.BadGlue;
             defer _ = std.c.close(fd);
