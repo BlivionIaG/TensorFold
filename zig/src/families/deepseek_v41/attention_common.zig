@@ -123,6 +123,9 @@ pub const Pipelines = struct {
 pub const regions = [_]usize{ 1280 * 2, 32768 * 2, 512 * 2, 512 * 4, 512 * 4, 512 * 2, 128 * 2, 4096 * 2, 32 * 2, 8192 * 2, 2560 * 2 };
 pub const Region = enum(usize) { qr, query, raw_kv, values, gates, latent, index_k, index_q, index_weights, grouped, qkv };
 
+/// `.publish` runs only a kv source layer's compressor (pool, index keys, main pack); `.skip` leaves them out.
+pub const ConeMode = enum { full, publish, skip };
+
 pub const Workspace = struct {
     buffer: mtl.Buffer,
     /// Every visible key decoded once a layer: the window ring, the chunk, then the compressed picks.
@@ -147,6 +150,8 @@ pub const Workspace = struct {
     /// A merged tail chunk's PREFIX (its rows before the tail mark) is published here as well as the whole chunk.
     publish_limit: u32 = 0,
     publish_stash: ?View = null,
+    /// The cone prefill's mode for the next attention pass (forward_cone.zig).
+    cone: ConeMode = .full,
 
     /// The selection scratch of batch segment `s`; the one-stream path is segment 0.
     pub fn selectionFor(w: *Workspace, s: usize) *index.Scratch {
