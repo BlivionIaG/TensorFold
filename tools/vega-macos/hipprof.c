@@ -192,6 +192,10 @@ static void *watcher(void *arg) {
 }
 
 __attribute__((constructor)) static void init(void) {
+    // The engine opens the runtime to read the device's caps and closes it again before the real open: an unloaded shim leaves its
+    // watcher thread and its signal handlers in unmapped text (a segfault in dyld's dlclose, about every other run). Pin the image.
+    Dl_info di;
+    if (dladdr((void *)init, &di) && di.dli_fname) dlopen(di.dli_fname, RTLD_NOW | RTLD_NODELETE);
     if (getenv("HIPPROF_REP")) rep_n = atoi(getenv("HIPPROF_REP"));
     if (getenv("HIPPROF_REP_MATCH")) rep_match = getenv("HIPPROF_REP_MATCH");
     graph_on = getenv("HIPPROF_GRAPH") != NULL;
