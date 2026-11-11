@@ -126,7 +126,7 @@ pub const Region = enum(usize) { qr, query, raw_kv, values, gates, latent, index
 /// The batched decode window's per-forward tables and per-slot scratch (attention_rows.zig): slot count, table layout.
 pub const RowsScratch = struct {
     pub const slots = 8;
-    /// The table: positions (a uint a slot), address rows (4 ulongs a slot: live, 0, selection, 0), main addresses (4 ulongs a slot).
+    /// The table: positions, then 4 ulongs a slot of addresses (live, 0, selection, 0), then 4 of owner main addresses.
     pub const pos_at = 0;
     pub const addr_at = slots * 4;
     pub const mains_at = addr_at + slots * 4 * 8;
