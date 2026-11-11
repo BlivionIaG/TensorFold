@@ -213,6 +213,13 @@ is kept off the pair for now. `TF_PREFILL_ROUTE=always` restores the old behavio
 to the pair, queued behind any pull under way, however long that is. Not yet measured on the machines: two concurrent 8k
 prompts, and the rates the average settles at.
 
+A request can overrule the weighing with a `prefill` field in its body (`/v1/chat/completions` and `/v1/completions`): `"force"`
+sends it to the pair whatever the load or the predicted times say and waits for a pull under way instead of prefilling here,
+`"never"` prefills it here, `"auto"` (the default) is the decision above. Both words keep the rules that need no judgement: a
+prompt too short to pull, a pair that is off or not answering, and a prefix the cache already covers are still prefilled here.
+The reply's `remote_prefix` says whether the pair prefilled it. A router in front of the Mac and the Sparks uses the field to
+send a prompt through the Mac to the pair (`force`) or keep it local (`never`) from its own view of both machines.
+
 ### A pair that goes away
 
 * **Deadline.** A pull is bound by `TF_PREFILL_TIMEOUT_S` if set, else by 15 s plus three times the pull the Mac's own

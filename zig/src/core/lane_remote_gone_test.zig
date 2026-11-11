@@ -17,7 +17,7 @@ const Waiter = struct {
         return .remote;
     }
 
-    fn fill(ptr: *anyopaque, _: []const u32, _: u64, gone: *const std.atomic.Value(bool)) anyerror!?remote.Filled {
+    fn fill(ptr: *anyopaque, _: []const u32, _: u64, _: remote.Directive, gone: *const std.atomic.Value(bool)) anyerror!?remote.Filled {
         const w: *Waiter = @ptrCast(@alignCast(ptr));
         w.started.store(true, .release);
         const until = std.Io.Clock.awake.now(t.io).toNanoseconds() + 3 * std.time.ns_per_s;
