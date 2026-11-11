@@ -63,8 +63,8 @@ fn prefill(m: *ds.Model, a: std.mem.Allocator, io: std.Io, ids: []const u32) !st
     return .{ last, seconds(io) - t0 };
 }
 
-fn run(m: *ds.Model, a: std.mem.Allocator, io: std.Io, ids: []const u32, decode_steps: usize, cone: bool) !Run {
-    ds.forward_cone.force(m, cone);
+fn run(m: *ds.Model, a: std.mem.Allocator, io: std.Io, ids: []const u32, decode_steps: usize, mode: u32) !Run {
+    ds.forward_cone.force(m, mode);
     const pre = try prefill(m, a, io, ids);
     const snap = try capture(m, a);
     const picks = try a.alloc(u32, decode_steps);
@@ -103,7 +103,7 @@ fn sha(picks: []const u32) [8]u8 {
     return h[0..8].*;
 }
 
-fn compare(m: *const ds.Model, n: usize, full: Run, cone: Run, decode_steps: usize) void {
+fn compare(m: *const ds.Model, n: usize, mode: u32, full: Run, cone: Run, decode_steps: usize) void {
     const lg = diffFloats(full.logits, cone.logits);
     var steps_bad: usize = 0;
     var steps_worst: f32 = 0;
@@ -123,15 +123,16 @@ fn compare(m: *const ds.Model, n: usize, full: Run, cone: Run, decode_steps: usi
     const ring_bytes = @as(usize, m.caches[0].plan.layers) * ds.kv.cache.window * ds.kv.cache.ring_stride;
     const layer_bytes = ds.kv.cache.window * ds.kv.cache.ring_stride;
     regions(m.caches[0].plan, &full.snap, &cone.snap);
-    log.info("n={d}: last-token logits differ in {d}/{d} values (worst {e}), argmax {d}/{d}", .{ n, lg[0], vocab, lg[1], argmax(full.logits), argmax(cone.logits) });
-    log.info("n={d}: greedy {d} tokens sha full {x} cone {x}, {d} step rows differ (worst {e})", .{ n, decode_steps, sha(full.picks), sha(cone.picks), steps_bad, steps_worst });
+    log.info("n={d} mode {d}: last-token logits differ in {d}/{d} values (worst {e}), argmax {d}/{d}", .{ n, mode, lg[0], vocab, lg[1], argmax(full.logits), argmax(cone.logits) });
+    log.info("n={d} mode {d}: greedy {d} tokens sha full {x} cone {x}, {d} step rows differ (worst {e})", .{ n, mode, decode_steps, sha(full.picks), sha(cone.picks), steps_bad, steps_worst });
     log.info("n={d}: storage {d} of {d} bytes differ (first {d}), live {d} of {d} (first {d}, ring layer {d}, ring {d} B), taps {d} of {d}; pos {d}/{d} taps_row {d}/{d} taps_n {d}/{d} last {d}/{d} base {d}/{d}", .{
         n,                   st,                 full.snap.storage.len, st_first,           lv,                 full.snap.live.len, lv_first,         lv_first / layer_bytes,   ring_bytes,               tp,
         full.snap.taps.len,  full.snap.position, cone.snap.position,    full.snap.taps_row, cone.snap.taps_row, full.snap.taps_n,   cone.snap.taps_n, full.snap.taps_rows_last, cone.snap.taps_rows_last, full.snap.taps_base,
         cone.snap.taps_base,
     });
-    log.info("n={d}: prefill full {d:.2} s ({d:.0} tok/s), cone {d:.2} s ({d:.0} tok/s), x{d:.2}", .{
+    log.info("n={d} mode {d}: prefill full {d:.2} s ({d:.0} tok/s), cone {d:.2} s ({d:.0} tok/s), x{d:.2}", .{
         n,
+        mode,
         full.prefill_s,
         @as(f64, @floatFromInt(n)) / full.prefill_s,
         cone.prefill_s,
@@ -190,9 +191,8 @@ pub fn runSizes(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const 
         var arena: std.heap.ArenaAllocator = .init(gpa);
         defer arena.deinit();
         const a = arena.allocator();
-        const ids = try tokens(a, io, 1024);
-        _ = try run(m, a, io, ids, 2, false);
-        _ = try run(m, a, io, ids, 2, true);
+        const ids = try tokens(a, io, 5000);
+        for ([_]u32{ 0, 1, 2 }) |mode| _ = try run(m, a, io, ids, 2, mode);
     }
     while (it.next()) |word| {
         const n = try std.fmt.parseInt(usize, word, 10);
@@ -204,22 +204,24 @@ pub fn runSizes(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const 
         defer arena.deinit();
         const a = arena.allocator();
         const ids = try tokens(a, io, n);
-        const full = try run(m, a, io, ids, decode_steps, false);
-        const cone = try run(m, a, io, ids, decode_steps, true);
-        compare(m, n, full, cone, decode_steps);
+        const full = try run(m, a, io, ids, decode_steps, 0);
+        for ([_]u32{ 1, 2 }) |mode| compare(m, n, mode, full, try run(m, a, io, ids, decode_steps, mode), decode_steps);
         // the second timing of each path, state warm
-        const full2 = try run(m, a, io, ids, 1, false);
-        const cone2 = try run(m, a, io, ids, 1, true);
-        log.info("n={d}: second prefill full {d:.2} s ({d:.0} tok/s), cone {d:.2} s ({d:.0} tok/s), x{d:.2}", .{
-            n,
-            full2.prefill_s,
-            @as(f64, @floatFromInt(n)) / full2.prefill_s,
-            cone2.prefill_s,
-            @as(f64, @floatFromInt(n)) / cone2.prefill_s,
-            full2.prefill_s / cone2.prefill_s,
-        });
+        const full2 = try run(m, a, io, ids, 1, 0);
+        for ([_]u32{ 1, 2 }) |mode| {
+            const cone2 = try run(m, a, io, ids, 1, mode);
+            log.info("n={d} mode {d}: second prefill full {d:.2} s ({d:.0} tok/s), cone {d:.2} s ({d:.0} tok/s), x{d:.2}", .{
+                n,
+                mode,
+                full2.prefill_s,
+                @as(f64, @floatFromInt(n)) / full2.prefill_s,
+                cone2.prefill_s,
+                @as(f64, @floatFromInt(n)) / cone2.prefill_s,
+                full2.prefill_s / cone2.prefill_s,
+            });
+        }
     }
-    ds.forward_cone.force(m, false);
+    ds.forward_cone.force(m, 0);
     try m.reset();
     log.info("done", .{});
 }

@@ -182,7 +182,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         }
     }
     for (&m.weights.layers, 0..) |*layer, index| {
-        if (cone_phase == .decoder and index < cone_d) continue;
+        if (cone_phase == .decoder and index < m.cone.lo) continue;
         if (pipe_layers != 0 and index == pipe_layers) {
             enc.end();
             e.commit();
@@ -379,6 +379,10 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         if (p.hc_boundary != null) m.pending_expand = true else m.post(enc, rows);
         if (m.observer) |observer| observer.encode(observer.ctx, enc, @intCast(index), .moe, m);
         try splitStage(m, &enc, &e, "moe", index);
+        if (cone_phase == .decoder and index + 1 == m.cone.hi and m.cone.hi < m.cfg.layers) {
+            forward_cone.stashRows(m, enc, rows, state.position);
+            break;
+        }
         if (layer_cb) {
             enc.end();
             e.commit();

@@ -30,8 +30,12 @@ const Chunk = struct { pos: u32, rows: u32 };
 pub const Cone = struct {
     on: ?bool = null,
     phase: Phase = .off,
-    /// the decoder's first layer
+    /// the decoder's first layer, and the layers [lo, hi) of the replay program in flight
     d: u32 = 20,
+    lo: u32 = 20,
+    hi: u32 = 40,
+    /// the replay runs in programs of a few layers, each over fewer rows
+    grouped: bool = false,
     /// the rows the decoder replays at most
     rows: u32 = 0,
     stash: ?mtl.Buffer = null,
@@ -64,14 +68,15 @@ pub fn active(m: *Model) bool {
 
 fn enabled(m: *Model) bool {
     if (m.cone.on) |v| return v;
-    return configure(m, @import("sys").environment.read(bool, "TF_DSV41_CONE", false) catch false);
+    return configure(m, @import("sys").environment.read(u32, "TF_DSV41_CONE", 0) catch 0);
 }
 
-/// Set the cone on or off; on only when the config has a decoder the cone rule covers.
-fn configure(m: *Model, knob: bool) bool {
+/// Set the cone mode (0 off, 1 one replay program, 2 layer groups); on only where the cone rule covers the config.
+fn configure(m: *Model, mode: u32) bool {
     const c = &m.cone;
     c.on = false;
-    if (!knob) return false;
+    c.grouped = mode >= 2;
+    if (mode == 0) return false;
     const d = ced.decoderStart(&m.cfg) catch return false;
     const rows = ced.suffixRows(&m.cfg, kept) catch return false;
     if (rows > cap) return false;
@@ -79,13 +84,15 @@ fn configure(m: *Model, knob: bool) bool {
     for (d + 1..m.cfg.layers) |l| if (m.cfg.isKvSource(@intCast(l))) return false;
     c.d = d;
     c.rows = rows;
+    c.lo = d;
+    c.hi = m.cfg.layers;
     c.on = true;
     return true;
 }
 
-/// The check harness's switch between the paths (no run pending).
-pub fn force(m: *Model, on: bool) void {
-    _ = configure(m, on);
+/// The check harness's switch between the modes (no run pending).
+pub fn force(m: *Model, mode: u32) void {
+    _ = configure(m, mode);
 }
 
 fn eligible(m: *Model, segs: []const Seg, logits: Logits) bool {
@@ -139,35 +146,58 @@ pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
     return try replay(m, logits);
 }
 
-/// The decoder layers over the stashed rows, chunk by chunk, ending the pending run.
+/// The decoder layers over the stashed rows, in programs of consecutive layers, ending the pending run.
 pub fn replay(m: *Model, logits: Logits) ![]const f32 {
     const c = &m.cone;
     const end = c.next;
-    const start = replayStart(end, c.first, c.rows);
     const state = &m.caches[c.slot];
     c.pending = false;
+    c.phase = .decoder;
     defer c.phase = .off;
+    defer c.count = 0;
     var out: []const f32 = m.workspace.logits(0);
-    for (c.chunks[0..c.count], 0..) |ch, i| {
-        const a = @max(ch.pos, start);
-        const b = ch.pos + ch.rows;
-        // the drafter's tap ring advances as the full pass advances it, over rows the replay skips too
-        if (model.tapsOn()) {
-            const extra = @min(ch.rows, 128) - (if (a < b) @min(b - a, 128) else 0);
-            m.taps_row = (m.taps_row + extra) % 128;
-            m.taps_n = @min(m.taps_n + extra, 128);
+    var lo = c.d;
+    while (lo < m.cfg.layers) {
+        c.lo = lo;
+        c.hi = programEnd(m, lo, end);
+        defer lo = c.hi;
+        const start = replayStart(end, c.first, rowsIn(m, lo));
+        const final = c.hi == m.cfg.layers;
+        for (c.chunks[0..c.count], 0..) |ch, i| {
+            const a = @max(ch.pos, start);
+            const b = ch.pos + ch.rows;
+            // the drafter's tap ring advances as the full pass advances it, over rows the replay skips too
+            if (final and model.tapsOn()) {
+                const extra = @min(ch.rows, 128) - (if (a < b) @min(b - a, 128) else 0);
+                m.taps_row = (m.taps_row + extra) % 128;
+                m.taps_n = @min(m.taps_n + extra, 128);
+            }
+            if (a >= b) continue;
+            state.position = a;
+            c.at = a;
+            var ids: [cap]u32 = undefined;
+            for (0..b - a) |k| ids[k] = c.ids[(a + k) % cap];
+            const last = final and i + 1 == c.count;
+            out = try impl.forwardCore(m, &.{.{ .slot = c.slot, .ids = ids[0 .. b - a], .p0 = a }}, if (last) logits else .none);
         }
-        if (a >= b) continue;
-        state.position = a;
-        c.at = a;
-        c.phase = .decoder;
-        var ids: [cap]u32 = undefined;
-        for (0..b - a) |k| ids[k] = c.ids[(a + k) % cap];
-        const last = i + 1 == c.count;
-        out = try impl.forwardCore(m, &.{.{ .slot = c.slot, .ids = ids[0 .. b - a], .p0 = a }}, if (last) logits else .none);
     }
-    c.count = 0;
     return out;
+}
+
+/// Where the decoder program that starts at layer `lo` ends: the next index source below the drafter's tap layers.
+fn programEnd(m: *const Model, lo: u32, end: u32) u32 {
+    var hi = m.cfg.layers;
+    // the candidate block filter (long contexts) carries layer d's picks across layers: one program
+    if (!m.cone.grouped or end >= 131072 or std.c.getenv("TF_DSV41_BLOCK_FILTER") != null) return hi;
+    for (m.cfg.index_sources.items()) |l| if (l > lo and l < hi and l + 4 <= m.cfg.layers) {
+        hi = l;
+    };
+    return hi;
+}
+
+/// The rows layer `lo`'s program starts from: what the kept rows depend on through the layers from `lo` on.
+fn rowsIn(m: *const Model, lo: u32) u32 {
+    return kept + (m.cfg.layers - lo) * (m.cfg.window - 1);
 }
 
 /// Replay a pending run on `slot` so its state is exact at the position it stands at.
