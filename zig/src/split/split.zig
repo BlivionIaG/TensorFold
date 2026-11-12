@@ -7,6 +7,7 @@ pub const mock = @import("mock.zig");
 pub const pipeline = @import("pipeline.zig");
 pub const remote = @import("remote.zig");
 pub const reference = @import("reference.zig");
+pub const streams = @import("streams.zig");
 pub const toy = @import("toy.zig");
 pub const geometry = @import("geometry.zig");
 pub const receipt = @import("receipt.zig");
