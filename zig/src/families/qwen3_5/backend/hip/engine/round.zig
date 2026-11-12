@@ -29,6 +29,44 @@ const Last = struct { plan: hip.plan_ops.Plan, keep_at: usize, hidden: u64 };
 /// Keep lists in flight: a flush's pinned words stay until its copy has run, which a later round's sync guarantees.
 const keep_ring = 4;
 
+/// Switches that turn the latency work off one piece at a time, to find which piece a card run pays for: `TF_LATENCY_OFF` is a
+/// comma list of `pipe` (one-token rounds wait for their token, as before), `mirror` (the token comes back by a device-to-host
+/// copy; implies `pipe`) and `topk` (sampled rows' top-k runs eagerly after the round). Unset: all of them are on.
+pub const Off = struct {
+    pipe: bool = false,
+    mirror: bool = false,
+    topk: bool = false,
+
+    pub fn read() Off {
+        const list = platform.getenv("TF_LATENCY_OFF") orelse return .{};
+        return parse(list);
+    }
+
+    fn parse(list: []const u8) Off {
+        var off: Off = .{};
+        var it = std.mem.tokenizeScalar(u8, list, ',');
+        while (it.next()) |name| {
+            if (std.mem.eql(u8, name, "pipe")) off.pipe = true;
+            if (std.mem.eql(u8, name, "mirror")) off.mirror = true;
+            if (std.mem.eql(u8, name, "topk")) off.topk = true;
+        }
+        return off;
+    }
+
+    /// Whether queued rounds run: their token comes by the host word, so `mirror` off turns them off too.
+    pub fn pipelined(off: Off) bool {
+        return !off.pipe and !off.mirror;
+    }
+};
+
+test "latency switches name one piece each" {
+    try std.testing.expect(Off.parse("").pipelined());
+    try std.testing.expect(!Off.parse("pipe").pipelined());
+    try std.testing.expect(!Off.parse("mirror").pipelined());
+    const topk = Off.parse("topk,x");
+    try std.testing.expect(topk.topk and topk.pipelined() and !topk.mirror);
+}
+
 pub const State = struct {
     buffer: plan.Buffer,
     /// The caches the padding rows run in.
@@ -44,6 +82,7 @@ pub const State = struct {
     ks: []i32,
     /// The mirror slot the next queued round stores its pick to (1 up, round to 1): slot 0 serves the rounds waited for at once.
     mirror_next: usize = 1,
+    off: Off,
     /// For checks: a layer-by-layer trace of the forward (graphs off), and a least bucket of rows.
     trace: ?fwd.Trace = null,
     pad_to: usize = 0,
@@ -81,6 +120,7 @@ pub const State = struct {
             .staging = staging,
             .keeps = keeps,
             .ks = ks,
+            .off = Off.read(),
             .votes = votes,
         };
     }
@@ -118,9 +158,9 @@ fn withDraws(e: *Engine, shape: *plan.Shape, reqs: []const draw.Request) !void {
     if (e.model().tp != null) return;
     if (reqs.len > e.round.ks.len) return error.WindowTooWide;
     const a = e.drawer.asks(reqs, e.round.ks);
-    shape.stride = plan.strideOf(a.widest);
+    shape.stride = if (e.round.off.topk) 0 else plan.strideOf(a.widest);
     // the argmax serves greedy rows; with none and a top-k launch it is left out, with neither it stays as it was
-    shape.argmax = a.greedy or a.widest == 0;
+    shape.argmax = a.greedy or shape.stride == 0;
 }
 
 /// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys); `reqs` the rows' draws.
@@ -178,8 +218,9 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     var done_draws: draw.Done = .{};
     if (m.tp == null) {
         _ = e.drawer.asks(reqs[0..total], st.ks);
-        draws = .{ .ks = st.ks[0..total], .mirror = if (c.shape.argmax) e.drawer.mirrorAddr(0) else 0 };
-        done_draws = .{ .argmax = c.shape.argmax, .mirror = if (c.shape.argmax) 0 else null, .stride = c.shape.stride, .rows = c.shape.rows };
+        const mirrored = c.shape.argmax and !st.off.mirror;
+        draws = .{ .ks = st.ks[0..total], .mirror = if (mirrored) e.drawer.mirrorAddr(0) else 0 };
+        done_draws = .{ .argmax = c.shape.argmax, .mirror = if (mirrored) 0 else null, .stride = c.shape.stride, .rows = c.shape.rows };
     }
     st.buffer.fill(l, c.shape, st.wins[0..rows.len], st.scratch.desc.base(), st.snaps, draws);
     st.layout = l;
