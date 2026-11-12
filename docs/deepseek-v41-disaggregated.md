@@ -212,27 +212,34 @@ idleness) can still pay that re-wire once.
 ### Several requests, and when a prompt goes to the pair at all
 
 The pair prefills one prompt at a time, and the Mac holds one hand-off at a time. `TF_PREFILL_ROUTE=auto` (the default)
-decides each prompt that reaches `TF_PREFILL_MIN` when it is queued, and again while it waits for a lane:
+decides each prompt that reaches `TF_PREFILL_MIN` when it is queued, and again every few milliseconds while it waits at the
+pair's gate. A prompt goes where its first token comes sooner:
 
-* **The pair is busy with another prompt**: the prompt is prefilled on the Mac at once, as a short prompt is, unless the pull
-  under way ends so soon that waiting for it and then pulling still beats the Mac's own prefill. It is not queued behind the
-  pull with the Mac idle (a mutex held across the whole pull did that).
-* **A stream is decoding on the Mac**: the prompt goes to the pair even if the pair is no faster, because a prompt pass on
-  the Mac would stall that stream for seconds (inter-token latency isolation), unless the pair is busy as above.
-* **Otherwise** it goes to the pair only if the pull is predicted no slower than the Mac's own prefill: the prefix at the
-  pair's measured rate plus the Mac's last-token pass, against the rest of the prompt at the Mac's measured rate. The rates
-  are running averages of the pulls and prompt passes this server timed (a pass under 1024 rows says too little to count;
-  one sample moves a rate by a third to three times at most). Until it has timed its own it assumes 1500 tokens a second for
-  the Mac (`TF_PREFILL_LOCAL_TPS`), 2000 for a pull (`TF_PREFILL_REMOTE_TPS`) and 0.6 s for the last-token pass, the export
-  profile's numbers: with them a lone prompt of under about 19k tokens stays on the Mac, whose prefill is as fast as the
-  pair's there (the pair's gain is the Mac's freedom, not the first token). The pair's rate is learned only from pulls, so
-  a pair that is faster than that (a replay export) is first used when a stream decodes or the prompt is long; set
-  `TF_PREFILL_REMOTE_TPS` to what it does to use it from the start.
+* **On the pair**: behind the pulls ahead of it, in the order the prompts joined (the pull under way counts what its estimate
+  has left; one that has overrun counts as much again as the overrun). Its cost is the prefix at the pair's rate for that
+  length plus the Mac's last-token pass.
+* **On the Mac**: behind the prefill the Mac already has: the prompts its engine is filling, the ones kept off the pair, and
+  the ones the gate sent back. Its cost is the prompt's rows from the cache's end at the Mac's rate for that length. Each
+  stream decoding on the Mac adds `TF_PREFILL_STALL` (0.25) seconds per second of that prefill, because a prompt pass here
+  stalls it, and when the engine shares its wall time with decoders (`TENSORFOLD_PREFILL_SHARE`, `--decode-share`) the pass
+  takes that much longer.
+* **Rates fall with context on both machines**, so both are curves, not numbers: up to 32768 prompt tokens the rate is flat
+  (`TF_PREFILL_LOCAL_TPS` 2000 and `TF_PREFILL_REMOTE_TPS` 2400), beyond it the average over a prompt of n tokens is that
+  rate times (32768 / n) to the power `TF_PREFILL_LOCAL_DECAY` (0.44) or `TF_PREFILL_REMOTE_DECAY` (0.15). The defaults
+  reproduce the measured passes: 784 s for 480k tokens on the Mac, 677 s for 968k on the pair. The rates are running
+  averages of what this server timed (a pass under 1024 rows says too little; a sample moves a rate by a third to three
+  times at most), normalised to the 32k rate; a Mac pass that shared the engine with another prompt or a decoder teaches
+  nothing, since the decode load is counted on its own.
+
+So a lone long prompt goes to the pair, two do (the second behind the first still ends before the Mac could), and with four
+1M-token prompts at once the fourth, which would end after three pulls, is prefilled on the Mac in parallel with them. A short
+prompt behind a long pull is prefilled on the Mac at once. A prompt a pull away from ending is waited for. With streams
+decoding, a Mac prefill must beat the pair by their stall cost: a prompt that is no faster here goes to the pair.
 
 The server logs `remote prefill: a prompt of N tokens (M cached) is prefilled here: REASON` once for each reason a prompt
-is kept off the pair for now. `TF_PREFILL_ROUTE=always` restores the old behaviour: every prompt past `TF_PREFILL_MIN` goes
-to the pair, queued behind any pull under way, however long that is. Not yet measured on the machines: two concurrent 8k
-prompts, and the rates the average settles at.
+is kept off the pair for now, and the reply's `remote_route` names it (`busy`: the pair's queue is longer than prefilling here,
+including a prompt the gate sent back while it waited). `TF_PREFILL_ROUTE=always` restores the old behaviour: every prompt past
+`TF_PREFILL_MIN` goes to the pair, queued behind any pull under way, however long that is.
 
 A request can overrule the weighing with a `prefill` field in its body (`/v1/chat/completions` and `/v1/completions`): `"force"`
 sends it to the pair whatever the load or the predicted times say and waits for a pull under way instead of prefilling here,

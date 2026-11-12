@@ -18,42 +18,68 @@ fn weigh(r: *Route, now: u64, len: u64, decoding: u32) Verdict {
 
 /// A route with the old seeds (950 and 1000 a second, 1 s of tail), for the tests whose numbers are written for them.
 fn slowMac() Route {
-    return .{ .local_tps = .{ .v = 950 }, .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } };
+    return .{ .local = .{ .base = .{ .v = 950 } }, .remote = .{ .base = .{ .v = 1000 } }, .tail_s = .{ .v = 1 } };
 }
 
 test "seeds: with the default priors an idle pair takes a 16k prompt and a 2k prompt stays here" {
     var r: Route = .{};
-    try t.expectEqual(Verdict.remote, weigh(&r, 0, 16384, 0)); // 8.8 s pulled against 10.9 s here
-    try t.expectEqual(Verdict.slower, weigh(&r, 0, 2048, 0)); // 1.6 s pulled against 1.4 s here
-    try t.expectEqual(Verdict.remote, weigh(&r, 0, 4096, 0)); // break-even is about 3.6k tokens
+    try t.expectEqual(Verdict.remote, weigh(&r, 0, 16384, 0)); // 7.4 s pulled against 8.2 s here
+    try t.expectEqual(Verdict.slower, weigh(&r, 0, 2048, 0)); // 1.5 s pulled against 1.0 s here
+    try t.expectEqual(Verdict.slower, weigh(&r, 0, 4096, 0)); // break-even is about 7.2k tokens
+    try t.expectEqual(Verdict.remote, weigh(&r, 0, 8192, 0)); // 4.0 s pulled against 4.1 s here
 }
 
 test "route: a prompt that finds the pair busy goes elsewhere unless waiting for it is faster, and a wait is bounded" {
     var r: Route = slowMac();
-    const e = r.estimate(8191, 8192); // 9.2 s pulled, 8.6 s prefilled here
-    try t.expectEqual(.entered, r.enter(0, 0, e));
+    const e = r.estimate(8191, 0, 8192); // 9.2 s pulled, 8.6 s prefilled here
+    const first = r.join(0, r.estimateFor(8191, 0, 8192, .force)).?; // one the pair has: the weighing would not have sent it
+    try t.expectEqual(.entered, r.poll(0, first));
     try t.expectEqual(Verdict.busy, weigh(&r, 1 * s, 8192, 0));
-    try t.expectEqual(.local, r.enter(1 * s, 1 * s, e)); // 8.2 s of the pull left, then 9.2 s of its own: the Mac is faster
-    const long = r.estimate(39999, 40000); // 41 s pulled, 42.1 s here
+    const next = r.join(1 * s, e).?;
+    try t.expectEqual(.local, r.poll(1 * s, next)); // 8.2 s of the pull left, then 9.2 s of its own: the Mac is faster
+    r.busy(2 * s, .{}); // the host counts it by now
+    const long = r.estimate(39999, 0, 40000); // 41 s pulled, 42.1 s here
     try t.expectEqual(Verdict.busy, weigh(&r, 8 * s, 40000, 0)); // 1.2 s of the pull left and 41 s of its own: 42.2 s
     try t.expectEqual(Verdict.remote, weigh(&r, 9 * s, 40000, 0)); // 0.2 s left: 41.2 s beats 42.1 s
-    try t.expectEqual(.wait, r.enter(9 * s, 9 * s, long));
-    try t.expectEqual(.wait, r.enter(10 * s, 9 * s, long)); // the pull overran its estimate: 1 s waited and 41 s to go still fit
-    try t.expectEqual(.local, r.enter(11 * s, 9 * s, long)); // 2 s and 41 s do not: the wait ends
-    r.leave();
+    const third = r.join(9 * s, long).?;
+    try t.expectEqual(.wait, r.poll(9 * s, third));
+    try t.expectEqual(.wait, r.poll(10 * s, third)); // the pull overran its estimate by 0.8 s: 41.8 s still beats 42.1 s
+    try t.expectEqual(.local, r.poll(11 * s, third)); // 1.8 s over: 42.8 s does not, the wait ends
+    r.busy(12 * s, .{});
+    r.leave(first);
     try t.expectEqual(Verdict.remote, weigh(&r, 12 * s, 40000, 0));
-    try t.expectEqual(.entered, r.enter(12 * s, 9 * s, long));
+    const fourth = r.join(12 * s, long).?;
+    try t.expectEqual(.entered, r.poll(12 * s, fourth));
 }
 
 test "route: always queues every prompt behind the pull under way, as one pull at a time did" {
     var r: Route = .{ .mode = .always };
-    const e = r.estimate(8191, 8192);
-    try t.expectEqual(.entered, r.enter(0, 0, e));
+    const e = r.estimate(8191, 0, 8192);
+    const first = r.join(0, e).?;
+    try t.expectEqual(.entered, r.poll(0, first));
     try t.expectEqual(Verdict.remote, weigh(&r, 1 * s, 8192, 0));
-    try t.expectEqual(.wait, r.enter(1 * s, 1 * s, e));
-    try t.expectEqual(.wait, r.enter(1000 * s, 1 * s, e));
-    r.leave();
-    try t.expectEqual(.entered, r.enter(1001 * s, 1 * s, e));
+    const next = r.join(1 * s, e).?;
+    try t.expectEqual(.wait, r.poll(1 * s, next));
+    try t.expectEqual(.wait, r.poll(1000 * s, next));
+    r.leave(first);
+    try t.expectEqual(.entered, r.poll(1001 * s, next));
+}
+
+test "route: pulls go through the pair in the order they joined" {
+    var r: Route = .{ .mode = .always };
+    const e = r.estimate(8191, 0, 8192);
+    const a = r.join(0, e).?;
+    const b = r.join(1, e).?;
+    const c = r.join(2, e).?;
+    try t.expectEqual(.wait, r.poll(3, c)); // asked first, but a and b are ahead
+    try t.expectEqual(.wait, r.poll(3, b));
+    try t.expectEqual(.entered, r.poll(3, a));
+    r.leave(a);
+    try t.expectEqual(.wait, r.poll(4, c));
+    try t.expectEqual(.entered, r.poll(4, b));
+    r.leave(b);
+    r.leave(a); // a second leave of a pull that is gone changes nothing
+    try t.expectEqual(.entered, r.poll(5, c));
 }
 
 /// A pull that holds the pair for `hold_ms`.
@@ -65,10 +91,13 @@ const Holder = struct {
     gone: std.atomic.Value(bool) = .init(false),
 
     fn run(h: *Holder) void {
-        _ = h.route.admit(t.io, h.route.estimate(8191, 8192), &h.closing, &h.gone) orelse return;
+        const id = switch (h.route.admit(t.io, h.route.estimate(8191, 0, 8192), &h.closing, &h.gone)) {
+            .entered => |e| e.id,
+            else => return,
+        };
         h.entered.store(true, .release);
         std.Io.sleep(t.io, .fromMilliseconds(h.hold_ms), .awake) catch {};
-        h.route.leave();
+        h.route.leave(id);
     }
 };
 
@@ -82,10 +111,11 @@ fn second(mode: route.Mode) !struct { waited_ms: i64, entered: bool } {
     var closing: std.atomic.Value(bool) = .init(false);
     var gone: std.atomic.Value(bool) = .init(false);
     const began = Route.nowNs(t.io);
-    const got = r.admit(t.io, r.estimate(8191, 8192), &closing, &gone);
+    const got = r.admit(t.io, r.estimate(8191, 0, 8192), &closing, &gone);
     const took: i64 = @intCast((Route.nowNs(t.io) - began) / std.time.ns_per_ms);
-    if (got != null) r.leave();
-    return .{ .waited_ms = took, .entered = got != null };
+    const entered = got == .entered;
+    if (entered) r.leave(got.entered.id);
+    return .{ .waited_ms = took, .entered = entered };
 }
 
 test "route: the second of two pulls is sent elsewhere at once, and under always waits out the first" {
@@ -106,9 +136,10 @@ test "route: a pull waiting at the gate stops when its request is gone, and the 
     var closing: std.atomic.Value(bool) = .init(false);
     var gone: std.atomic.Value(bool) = .init(true);
     const began = Route.nowNs(t.io);
-    try t.expectEqual(@as(?u64, null), r.admit(t.io, r.estimate(8191, 8192), &closing, &gone));
+    try t.expectEqual(route.Admission.stop, r.admit(t.io, r.estimate(8191, 0, 8192), &closing, &gone));
     try t.expect((Route.nowNs(t.io) - began) / std.time.ns_per_ms < 100);
-    try t.expect(r.held); // the first pull still has the pair
+    try t.expect(r.queue.held()); // the first pull still has the pair
+    try t.expectEqual(@as(usize, 1), r.queue.len); // and the one that left is not counted
 }
 
 test "weigh: always sends every prompt, and auto only one the pair is predicted to serve no slower, or while a stream decodes" {
@@ -116,31 +147,32 @@ test "weigh: always sends every prompt, and auto only one the pair is predicted 
     try t.expectEqual(Verdict.remote, weigh(&always, 0, 8192, 0));
     var r: Route = slowMac();
     try t.expectEqual(Verdict.slower, weigh(&r, 0, 8192, 0)); // 9.2 s pulled against 8.6 s here
-    try t.expectEqual(Verdict.remote, weigh(&r, 0, 8192, 1)); // a prompt pass here would stall the stream
+    try t.expectEqual(Verdict.remote, weigh(&r, 0, 8192, 1)); // a prompt pass here would stall the stream: 10.8 s lost
     try t.expectEqual(Verdict.remote, weigh(&r, 0, 40000, 0)); // 41 s against 42 s
-    try t.expectEqual(Verdict.slower, r.weigh(0, .{ .len = 8192, .cached = 4000, .decoding = 0 }, 8191)); // 4.2 s here
+    try t.expectEqual(Verdict.slower, r.weigh(0, .{ .len = 8192, .cached = 4000, .decoding = 0 }, 8191)); // 4.4 s here
 }
 
 test "observePull: a pull that hit the producer's prompt cache does not move the remote rate, a computed one does" {
     var r: Route = slowMac();
     r.observePull(16384, 16384 - 512, 300 * std.time.ns_per_ms); // a warm-up prompt cached there: 512 computed tokens
-    try t.expect(!r.remote_tps.seen and r.remote_tps.v == 1000);
+    try t.expect(!r.remote.base.seen and r.remote.base.v == 1000);
     r.observePull(16384, 0, 8192 * std.time.ns_per_ms); // 2000 tokens a second computed
-    try t.expectEqual(@as(f64, 2000), r.remote_tps.v);
+    try t.expectEqual(@as(f64, 2000), r.remote.base.v);
     r.observePull(16384, 12288, 4096 * std.time.ns_per_ms); // 4096 computed, 1000 a second: blends 70/30
-    try t.expectApproxEqAbs(@as(f64, 0.7 * 2000 + 0.3 * 1000), r.remote_tps.v, 1e-6);
-    const before = r.remote_tps.v;
+    try t.expectApproxEqAbs(@as(f64, 0.7 * 2000 + 0.3 * 1000), r.remote.base.v, 1e-6);
+    const before = r.remote.base.v;
     r.observePull(8192, 9000, 1); // a count past the prefix computes nothing
-    try t.expectEqual(before, r.remote_tps.v);
+    try t.expectEqual(before, r.remote.base.v);
 }
 
 test "weigh: a busy pair is not waited for beyond what prefilling here costs, even with a stream decoding" {
     var r: Route = slowMac();
-    try t.expectEqual(.entered, r.enter(0, 0, r.estimate(8191, 8192))); // under way, 9.2 s to go
+    const first = r.join(0, r.estimateFor(8191, 0, 8192, .force)).?; // under way, 9.2 s to go
+    try t.expectEqual(.entered, r.poll(0, first));
     try t.expectEqual(Verdict.busy, weigh(&r, 1 * s, 8192, 1));
     try t.expectEqual(Verdict.busy, weigh(&r, 1 * s, 60000, 0)); // 8.2 s of the pull and 61 s of its own, against 63 s
     try t.expectEqual(Verdict.remote, weigh(&r, 9 * s, 60000, 0)); // 0.2 s of the pull left: worth waiting for
-    r.leave();
+    r.leave(first);
     try t.expectEqual(Verdict.slower, weigh(&r, 10 * s, 8192, 0));
 }
 
@@ -152,39 +184,55 @@ test "observe: measured rates replace the seeds a third to three times at a time
     try t.expectEqual(Verdict.remote, weigh(&r, 0, 8192, 0)); // 4.1 s and 0.5 s against 8.6 s
     r.observe(.{ .pass = .local, .rows = 8192, .ns = 4000 * std.time.ns_per_ms }); // this Mac does 2048 a second
     try t.expectEqual(Verdict.slower, weigh(&r, 0, 8192, 0)); // 4.6 s pulled against 4.0 s here
-    const before = r.local_tps.v;
+    const before = r.local.base.v;
     r.observe(.{ .pass = .local, .rows = 512, .ns = 1 }); // too few rows
     r.observe(.{ .pass = .local, .rows = 8192, .ns = 0 }); // no time
-    try t.expectEqual(before, r.local_tps.v);
+    try t.expectEqual(before, r.local.base.v);
     r.observe(.{ .pass = .local, .rows = 8192, .ns = 1 }); // absurdly fast: three times the standing rate, blended
-    try t.expectApproxEqAbs(0.7 * before + 0.3 * 3 * before, r.local_tps.v, 1e-6);
+    try t.expectApproxEqAbs(0.7 * before + 0.3 * 3 * before, r.local.base.v, 1e-6);
 }
 
-test "knobs: the route's knobs default to auto, the notes' rates and a breaker of 3 failures and 30 s, and refuse bad text" {
+test "knobs: the route's knobs default to auto, the measured curves and a breaker of 3 failures and 30 s, and refuse bad text" {
     const env = @import("sys").environment;
-    const d = Route.build(.{ .mode = try env.value(u64, "TF_PREFILL_ROUTE", null, 0), .local_tps = try env.value(f64, "TF_PREFILL_LOCAL_TPS", null, 1500), .remote_tps = try env.value(f64, "TF_PREFILL_REMOTE_TPS", "", 2000) });
+    const d = Route.build(.{
+        .mode = try env.value(u64, "TF_PREFILL_ROUTE", null, 0),
+        .local_tps = try env.value(f64, "TF_PREFILL_LOCAL_TPS", null, 2000),
+        .remote_tps = try env.value(f64, "TF_PREFILL_REMOTE_TPS", "", 2400),
+        .stall = try env.value(f64, "TF_PREFILL_STALL", null, 0.25),
+    });
     try t.expectEqual(route.Mode.auto, d.mode);
-    try t.expectEqual((Route{}).local_tps.v, d.local_tps.v);
-    try t.expectEqual((Route{}).remote_tps.v, d.remote_tps.v);
+    try t.expectEqual((Route{}).local.base.v, d.local.base.v);
+    try t.expectEqual((Route{}).remote.base.v, d.remote.base.v);
+    try t.expectEqual((Route{}).local.decay, d.local.decay);
+    try t.expectEqual((Route{}).remote.decay, d.remote.decay);
+    try t.expectEqual((Route{}).queue.stall, d.queue.stall);
     try t.expectEqual(@as(u64, 3), d.breaker.trip);
     try t.expectEqual(30 * s, d.breaker.cooldown_ns);
     const set = Route.build(.{
         .mode = try env.value(u64, "TF_PREFILL_ROUTE", "always", 0),
         .local_tps = try env.value(f64, "TF_PREFILL_LOCAL_TPS", "2000", 1500),
         .remote_tps = try env.value(f64, "TF_PREFILL_REMOTE_TPS", " 3000.5", 2000),
+        .local_decay = try env.value(f64, "TF_PREFILL_LOCAL_DECAY", "0.5", 0.44),
+        .remote_decay = try env.value(f64, "TF_PREFILL_REMOTE_DECAY", "0", 0.15),
+        .stall = try env.value(f64, "TF_PREFILL_STALL", "0", 0.25),
         .trip = try env.value(u64, "TF_PREFILL_BREAKER", "5", 3),
         .cooldown_s = try env.value(u64, "TF_PREFILL_COOLDOWN_S", " 7", 30),
         .timeout_s = try env.value(u64, "TF_PREFILL_TIMEOUT_S", "90", 0),
     });
     try t.expectEqual(route.Mode.always, set.mode);
-    try t.expectEqual(@as(f64, 2000), set.local_tps.v);
-    try t.expectEqual(@as(f64, 3000.5), set.remote_tps.v);
+    try t.expectEqual(@as(f64, 2000), set.local.base.v);
+    try t.expectEqual(@as(f64, 3000.5), set.remote.base.v);
+    try t.expectEqual(@as(f64, 0.5), set.local.decay);
+    try t.expectEqual(@as(f64, 0), set.remote.decay);
+    try t.expectEqual(@as(f64, 0), set.queue.stall);
     try t.expectEqual(@as(u64, 5), set.breaker.trip);
     try t.expectEqual(7 * s, set.breaker.cooldown_ns);
     try t.expectEqual(@as(u64, 90), set.timeout_s);
     try t.expectError(error.InvalidEnvironment, env.value(u64, "TF_PREFILL_ROUTE", "sometimes", 0));
     try t.expectError(error.InvalidEnvironment, env.value(f64, "TF_PREFILL_LOCAL_TPS", "0", 1500));
     try t.expectError(error.InvalidEnvironment, env.value(f64, "TF_PREFILL_REMOTE_TPS", "fast", 2000));
+    try t.expectError(error.InvalidEnvironment, env.value(f64, "TF_PREFILL_LOCAL_DECAY", "-0.1", 0.44));
+    try t.expectError(error.InvalidEnvironment, env.value(f64, "TF_PREFILL_STALL", "-1", 0.25));
     try t.expectError(error.InvalidEnvironment, env.value(u64, "TF_PREFILL_COOLDOWN_S", "0", 30));
 }
 
@@ -265,8 +313,12 @@ const Pair = struct {
 
     fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: remote.Directive, gone: *const std.atomic.Value(bool)) anyerror!?remote.Filled {
         const p: *Pair = @ptrCast(@alignCast(ptr));
-        _ = p.route.admit(t.io, p.route.estimateFor(p.at, prompt.len - cached, directive), &p.closing, gone) orelse return null;
-        defer p.route.leave();
+        const entered = switch (p.route.admit(t.io, p.route.estimateFor(p.at, cached, prompt.len, directive), &p.closing, gone)) {
+            .entered => |e| e,
+            .local => return error.Shed,
+            .stop => return null,
+        };
+        defer p.route.leave(entered.id);
         _ = p.fills.fetchAdd(1, .acq_rel);
         try std.Io.sleep(t.io, .fromMilliseconds(p.delay_ms), .awake);
         const kept = try t.allocator.create(std.ArrayList(u32));
@@ -331,7 +383,7 @@ fn twoPrompts(mode: route.Mode) !struct { prefilled_ms: i64, fills: u32 } {
     var host = api.LaneHost.init(t.allocator, t.io, &core, .{ .lanes = 2 });
     var pair: Pair = .{ .route = .{ .mode = mode } };
     // 6 token prompts, a pull of 4: at 5 tokens a second an idle pair is faster, a busy one not worth waiting for
-    pair.route = .{ .mode = mode, .local_tps = .{ .v = 5 }, .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } };
+    pair.route = .{ .mode = mode, .local = .{ .base = .{ .v = 5 } }, .remote = .{ .base = .{ .v = 1000 } }, .tail_s = .{ .v = 1 } };
     host.remote = pair.source();
     try host.start();
     defer host.stop();

@@ -105,6 +105,9 @@ const valid = [_]Case{
     .{ .name = "TF_PREFILL_ROUTE", .raw = "auto", .n = 0 },
     .{ .name = "TF_PREFILL_LOCAL_TPS", .raw = "950", .n = @bitCast(@as(f64, 950)) },
     .{ .name = "TF_PREFILL_REMOTE_TPS", .raw = " 1250.5", .n = @bitCast(@as(f64, 1250.5)) },
+    .{ .name = "TF_PREFILL_LOCAL_DECAY", .raw = "0.44", .n = @bitCast(@as(f64, 0.44)) },
+    .{ .name = "TF_PREFILL_REMOTE_DECAY", .raw = "0", .n = @bitCast(@as(f64, 0)) },
+    .{ .name = "TF_PREFILL_STALL", .raw = " 0.25", .n = @bitCast(@as(f64, 0.25)) },
     .{ .name = "TF_PREFILL_BREAKER", .raw = "0", .n = 0 },
     .{ .name = "TF_PREFILL_BREAKER", .raw = " 3", .n = 3 },
     .{ .name = "TF_PREFILL_COOLDOWN_S", .raw = "1", .n = 1 },
@@ -281,6 +284,8 @@ test "environment: real settings are finite, keep their lower bound and optional
         .{ "TF_DSV41_PREFILL_SHARE", "1.1" },  .{ "TF_DSV41_EXPERT_TOPP", "nan" },
         .{ "TF_DSV41_EXPERT_TOPP", "-inf" },   .{ "TF_DSV41_FLOOR_GIB", "4 GiB" },
         .{ "TF_PREFILL_LOCAL_TPS", "0" },      .{ "TF_PREFILL_REMOTE_TPS", "fast" },
+        .{ "TF_PREFILL_LOCAL_DECAY", "-0.1" }, .{ "TF_PREFILL_REMOTE_DECAY", "2.5" },
+        .{ "TF_PREFILL_STALL", "-1" },         .{ "TF_PREFILL_STALL", "nan" },
     }) |c| try t.expectError(error.InvalidEnvironment, e.parse(c[0], c[1]));
 }
 

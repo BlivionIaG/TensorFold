@@ -15,7 +15,7 @@ pub fn pairDown(err: anyerror) bool {
     return switch (err) {
         error.Refused, error.Mismatch, error.Protocol, error.Corrupt, error.BadManifest, error.NotHeld, error.Unauthorized => false,
         error.PrefixTooLong, error.PartialPrefix, error.PartialState, error.OutOfMemory, error.NoEntropy, error.WriteFailed => false,
-        error.TriggerClosed, error.Aborted, error.TriggerUnauthorized, error.TriggerRefused => false,
+        error.TriggerClosed, error.Aborted, error.Shed, error.TriggerUnauthorized, error.TriggerRefused => false,
         else => true,
     };
 }

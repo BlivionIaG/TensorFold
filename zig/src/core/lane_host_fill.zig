@@ -41,7 +41,7 @@ fn pick(h: *const LaneHost, among: enum { all, short, long }) ?usize {
     return found;
 }
 
-fn remaining(h: *const LaneHost, j: *const LaneHost.Job) u64 {
+pub fn remaining(h: *const LaneHost, j: *const LaneHost.Job) u64 {
     const completed = if (j.fill_began and h.core.backend.vtable.reports_fill)
         @max(j.stream.cached, j.stream.fill_at.load(.monotonic))
     else if (!j.fill_began and !j.stream.reuse_failed)

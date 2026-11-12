@@ -1,6 +1,8 @@
 //! Remote prefill's gate and decider: one pull at a time reaches the pair, and a prompt goes there only when it pays.
 const std = @import("std");
 const breaker = @import("lane_remote_breaker.zig");
+const curve = @import("lane_remote_curve.zig");
+const queue = @import("lane_remote_queue.zig");
 
 /// TF_PREFILL_ROUTE: `auto` weighs each prompt (see `Route.weigh`); `always` sends every long prompt, behind any pull.
 pub const Mode = enum { auto, always };
@@ -9,6 +11,11 @@ pub const Outcome = breaker.Outcome;
 pub const Door = breaker.Door;
 pub const Change = breaker.Change;
 pub const pairDown = breaker.pairDown;
+pub const Curve = curve.Curve;
+pub const Rate = curve.Rate;
+pub const Estimate = queue.Estimate;
+pub const Gate = queue.Gate;
+pub const queue_capacity = queue.capacity;
 
 /// Where a request wants its prompt prefilled: `force` skips the weighing, `never` keeps it off the pair.
 pub const Directive = enum {
@@ -46,8 +53,8 @@ pub const Verdict = enum {
             .remote => "the pair takes it",
             .small => "it is too short to pull",
             .off => "remote prefill is off",
-            .busy => "the pair is busy with another prompt",
-            .slower => "this machine alone is predicted faster, and nothing is decoding",
+            .busy => "prefilling here ends before the pair's queue does",
+            .slower => "this machine alone is predicted faster",
             .down => "the pair is not answering",
         };
     }
@@ -55,44 +62,42 @@ pub const Verdict = enum {
 
 /// A pass the lane host or a pull timed: this machine's own prompt pass, a pull end to end, or the last-token pass.
 pub const Pass = enum { local, remote, tail };
-pub const Measured = struct { pass: Pass, rows: u64, ns: u64 };
+/// `end` is the prompt position the pass reached (0: it began at 0, so `rows`).
+pub const Measured = struct { pass: Pass, rows: u64, ns: u64, end: u64 = 0 };
 
-/// A prompt's cost on each side in ns (a pull end to end, its own prefill); `pinned` (forced) waits out any pull.
-pub const Estimate = struct { remote_ns: u64, local_ns: u64, pinned: bool = false };
+/// Prompt rows still to prefill here, from position `from` to `to`.
+pub const Span = struct { from: u64, to: u64 };
 
-/// What `enter` says to a prompt: the pair is its own now, wait a little for it, or prefill here.
-pub const Gate = enum { entered, wait, local };
+/// This machine's own prefill work and decode load: `share` is the wall-time part a prompt pass gets beside decoders.
+pub const Busy = struct { decoding: u32 = 0, share: f64 = 1, spans: []const Span = &.{} };
+
+/// How a prompt's wait at the gate ended.
+pub const Admission = union(enum) {
+    /// the pair is its own until `leave(id)`; `waited_ns` is the wait
+    entered: struct { id: u64, waited_ns: u64 },
+    /// prefilling here finishes sooner than waiting for the pair
+    local,
+    /// the server is closing or the request is gone
+    stop,
+};
 
 /// How long a pull waiting for the pair sleeps between looks (ms).
 const poll_ms = 5;
 /// A pass of fewer rows says little about a rate: a fixed cost of 0.5 s or more a forward dominates it.
 const min_rows = 1024;
-
-/// A rate or time, seeded and then blended with what is measured.
-const Rate = struct {
-    v: f64,
-    seen: bool = false,
-
-    /// A sample within a third to three times the standing value: the first replaces the seed, then 70% / 30%.
-    fn blend(r: *Rate, sample: f64) void {
-        if (!std.math.isFinite(sample) or sample <= 0) return;
-        const s = std.math.clamp(sample, r.v / 3, r.v * 3);
-        r.v = if (r.seen) 0.7 * r.v + 0.3 * s else s;
-        r.seen = true;
-    }
-};
+/// Spans of the host's own work that count (the rest are ignored): filling prompts and those kept off the pair.
+pub const max_spans = 32;
 
 /// One pair, one pull at a time. Several threads may ask; the lock only guards the bookkeeping, never a pull.
 pub const Route = struct {
     mode: Mode = .auto,
     lock: std.atomic.Mutex = .unlocked,
-    held: bool = false,
-    /// when the pull under way is expected to end, on the clock of `enter`'s callers
-    ends: u64 = 0,
-    /// this machine's prompt tokens a second (seed: 1500, the served Metal cone prefill)
-    local_tps: Rate = .{ .v = 1500 },
-    /// a pull's prefix tokens a second, end to end (seed: 2000, the exact replay export)
-    remote_tps: Rate = .{ .v = 2000 },
+    /// the pulls at the gate and the prompts sent here, in arrival order
+    queue: queue.Queue = .{},
+    /// this machine's prompt prefill by length (seed 2000 a second to 32k rows; 610 over 480k, so `decay` 0.44)
+    local: Curve = .{ .base = .{ .v = 2000 }, .decay = 0.44 },
+    /// a pull's prefix tokens a second, end to end (seed 2400 to 32k rows; 1430 over 968k: `decay` 0.15)
+    remote: Curve = .{ .base = .{ .v = 2400 }, .decay = 0.15 },
     /// the Mac's pass after the pull, in seconds: restore, the last token, its first reply (seed: 0.6)
     tail_s: Rate = .{ .v = 0.6 },
     /// closed, open or half-open: failures of the pair or its link keep prompts here for a cool-down
@@ -100,15 +105,25 @@ pub const Route = struct {
     /// TF_PREFILL_TIMEOUT_S (0: `deadlineS` derives one from the predicted pull)
     timeout_s: u64 = 0,
 
-    /// The monotonic clock every `enter` and `weigh` caller must use.
+    /// The monotonic clock every `weigh`, `join` and `poll` caller must use.
     pub fn nowNs(io: std.Io) u64 {
         return @intCast(std.Io.Clock.awake.now(io).toNanoseconds());
     }
 
     /// The knobs, as their values: `mode` is the word's index in TF_PREFILL_ROUTE's list.
-    pub const Knobs = struct { mode: u64 = 0, local_tps: f64 = 1500, remote_tps: f64 = 2000, trip: u64 = 3, cooldown_s: u64 = 30, timeout_s: u64 = 0 };
+    pub const Knobs = struct {
+        mode: u64 = 0,
+        local_tps: f64 = 2000,
+        remote_tps: f64 = 2400,
+        local_decay: f64 = 0.44,
+        remote_decay: f64 = 0.15,
+        stall: f64 = 0.25,
+        trip: u64 = 3,
+        cooldown_s: u64 = 30,
+        timeout_s: u64 = 0,
+    };
 
-    /// TF_PREFILL_ROUTE, _LOCAL_TPS, _REMOTE_TPS, _BREAKER, _COOLDOWN_S and _TIMEOUT_S, each checked by name.
+    /// Knobs from TF_PREFILL_ROUTE, _LOCAL_TPS, _REMOTE_TPS, _LOCAL_DECAY, _REMOTE_DECAY, _STALL and the breaker ones.
     pub fn fromEnv() !Route {
         const env = @import("sys").environment;
         const d: Knobs = .{};
@@ -116,6 +131,9 @@ pub const Route = struct {
             .mode = try env.read(u64, "TF_PREFILL_ROUTE", d.mode),
             .local_tps = try env.read(f64, "TF_PREFILL_LOCAL_TPS", d.local_tps),
             .remote_tps = try env.read(f64, "TF_PREFILL_REMOTE_TPS", d.remote_tps),
+            .local_decay = try env.read(f64, "TF_PREFILL_LOCAL_DECAY", d.local_decay),
+            .remote_decay = try env.read(f64, "TF_PREFILL_REMOTE_DECAY", d.remote_decay),
+            .stall = try env.read(f64, "TF_PREFILL_STALL", d.stall),
             .trip = try env.read(u64, "TF_PREFILL_BREAKER", d.trip),
             .cooldown_s = try env.read(u64, "TF_PREFILL_COOLDOWN_S", d.cooldown_s),
             .timeout_s = try env.read(u64, "TF_PREFILL_TIMEOUT_S", d.timeout_s),
@@ -123,10 +141,12 @@ pub const Route = struct {
     }
 
     pub fn build(k: Knobs) Route {
+        const always = k.mode != 0;
         return .{
-            .mode = if (k.mode == 0) .auto else .always,
-            .local_tps = .{ .v = k.local_tps },
-            .remote_tps = .{ .v = k.remote_tps },
+            .mode = if (always) .always else .auto,
+            .queue = .{ .stall = k.stall },
+            .local = .{ .base = .{ .v = k.local_tps }, .decay = k.local_decay },
+            .remote = .{ .base = .{ .v = k.remote_tps }, .decay = k.remote_decay },
             .breaker = .{ .trip = k.trip, .cooldown_ns = k.cooldown_s * std.time.ns_per_s },
             .timeout_s = k.timeout_s,
         };
@@ -136,22 +156,23 @@ pub const Route = struct {
         while (!r.lock.tryLock()) std.atomic.spinLoopHint();
     }
 
-    fn cost(r: *const Route, prefix: u64, rest: u64) Estimate {
-        const s: f64 = std.time.ns_per_s;
-        const pulled = @as(f64, @floatFromInt(prefix)) / r.remote_tps.v + r.tail_s.v;
-        return .{ .remote_ns = @intFromFloat(pulled * s), .local_ns = @intFromFloat(@as(f64, @floatFromInt(rest)) / r.local_tps.v * s) };
+    fn cost(r: *const Route, prefix: u64, cached: u64, len: u64) Estimate {
+        return .{
+            .remote_ns = r.remote.spanNs(0, prefix) +| @as(u64, @intFromFloat(r.tail_s.v * std.time.ns_per_s)),
+            .local_ns = r.local.spanNs(cached, len),
+        };
     }
 
-    /// A prefix of `prefix` tokens pulled, against `rest` tokens the engine's cache lacks prefilled here.
-    pub fn estimate(r: *Route, prefix: u64, rest: u64) Estimate {
+    /// A prefix of `prefix` tokens pulled, against the prompt's rows from `cached` to `len` prefilled here.
+    pub fn estimate(r: *Route, prefix: u64, cached: u64, len: u64) Estimate {
         r.acquire();
         defer r.lock.unlock();
-        return r.cost(prefix, rest);
+        return r.cost(prefix, cached, len);
     }
 
     /// `estimate` for a request with `directive`: one that forces the pair waits for it.
-    pub fn estimateFor(r: *Route, prefix: u64, rest: u64, directive: Directive) Estimate {
-        var e = r.estimate(prefix, rest);
+    pub fn estimateFor(r: *Route, prefix: u64, cached: u64, len: u64, directive: Directive) Estimate {
+        var e = r.estimate(prefix, cached, len);
         e.pinned = directive == .force;
         return e;
     }
@@ -159,47 +180,55 @@ pub const Route = struct {
     /// A pass this machine or a pull timed: measured rates replace the seeds, a third to three times at a time.
     pub fn observe(r: *Route, m: Measured) void {
         if (m.ns == 0) return;
-        const s = @as(f64, @floatFromInt(m.ns)) / 1e9;
-        const per_s = @as(f64, @floatFromInt(m.rows)) / s;
+        const to = @max(m.end, m.rows);
+        const from = to - m.rows;
         r.acquire();
         defer r.lock.unlock();
         switch (m.pass) {
-            .local => if (m.rows >= min_rows) r.local_tps.blend(per_s),
-            .remote => if (m.rows >= min_rows) r.remote_tps.blend(per_s),
-            .tail => r.tail_s.blend(s),
+            .local => if (m.rows >= min_rows) r.local.observe(from, to, m.ns),
+            .remote => if (m.rows >= min_rows) r.remote.observe(from, to, m.ns),
+            .tail => r.tail_s.blend(@as(f64, @floatFromInt(m.ns)) / 1e9),
         }
     }
 
     /// A pull of `prefix` tokens took `ns`; `producer_cached` of them came from the producer's cache, not its compute.
     pub fn observePull(r: *Route, prefix: u64, producer_cached: u64, ns: u64) void {
-        r.observe(.{ .pass = .remote, .rows = prefix -| producer_cached, .ns = ns });
+        r.observe(.{ .pass = .remote, .rows = prefix -| producer_cached, .ns = ns, .end = prefix });
     }
 
-    /// Whether a prompt that came at `arrived` and looks again at `now` is better off here than behind the pull.
-    fn goesLocal(r: *const Route, now: u64, arrived: u64, e: Estimate) bool {
-        if (r.mode == .always or e.pinned) return false;
-        return (now -| arrived) +| (r.ends -| now) +| e.remote_ns > e.local_ns;
+    /// The host's own load at `now`: its decoding streams and the rows of prefill it has queued or under way.
+    pub fn busy(r: *Route, now: u64, b: Busy) void {
+        r.acquire();
+        defer r.lock.unlock();
+        var ns: u64 = 0;
+        for (b.spans) |s| ns +|= r.local.spanNs(s.from, s.to);
+        r.queue.publish(now, .{ .decoding = b.decoding, .share = b.share, .local_ns = ns });
     }
 
-    /// Where a queued prompt goes: not behind a costly pull; else to the pair if a stream decodes or it is no slower.
+    /// Where a queued prompt goes: the pair unless prefilling here ends sooner, queue and decode load counted.
     pub fn weigh(r: *Route, now: u64, ask: Ask, prefix: u64) Verdict {
         r.acquire();
         defer r.lock.unlock();
         if (r.breaker.shut(now)) return .down;
         if (r.mode == .always or ask.directive == .force) return .remote;
-        const e = r.cost(prefix, ask.len - ask.cached);
-        if (r.held and r.goesLocal(now, now, e)) return .busy;
-        return if (ask.decoding > 0 or e.remote_ns <= e.local_ns) .remote else .slower;
+        var e = r.cost(prefix, ask.cached, ask.len);
+        e.pinned = false;
+        if (!r.queue.local(now, e, ask.decoding)) return .remote;
+        return if (r.queue.len > 0) .busy else .slower;
     }
 
-    /// The pair for this prompt (`entered`, until `leave`), a short wait for the pull under way, or the Mac's prefill.
-    pub fn enter(r: *Route, now: u64, arrived: u64, e: Estimate) Gate {
+    /// The prompt joins the pair's queue; null: it is full, and the prompt is prefilled here.
+    pub fn join(r: *Route, now: u64, e: Estimate) ?u64 {
         r.acquire();
         defer r.lock.unlock();
-        if (r.held) return if (r.goesLocal(now, arrived, e)) .local else .wait;
-        r.held = true;
-        r.ends = now +| e.remote_ns;
-        return .entered;
+        return r.queue.join(now, e);
+    }
+
+    /// The pair for the prompt (`entered`, until `leave`), a short wait for the pulls ahead, or the Mac's prefill.
+    pub fn poll(r: *Route, now: u64, id: u64) Gate {
+        r.acquire();
+        defer r.lock.unlock();
+        return r.queue.poll(now, id, r.mode == .auto);
     }
 
     /// A pull the gate let in asks the breaker: go, go after a liveness check (the trial), or leave it to the Mac.
@@ -221,28 +250,30 @@ pub const Route = struct {
         if (r.timeout_s != 0) return r.timeout_s;
         r.acquire();
         defer r.lock.unlock();
-        const predicted = @as(f64, @floatFromInt(tokens)) / r.remote_tps.v + r.tail_s.v;
+        const predicted = r.remote.span(0, tokens) + r.tail_s.v;
         return @intFromFloat(std.math.clamp(@ceil(15 + 3 * predicted), 30, 1800));
     }
 
-    /// The pull that `enter` let in is over.
-    pub fn leave(r: *Route) void {
+    /// The pull that `poll` let in is over, or the prompt stopped waiting.
+    pub fn leave(r: *Route, id: u64) void {
         r.acquire();
         defer r.lock.unlock();
-        r.held = false;
+        r.queue.leave(id);
     }
 
-    /// `enter`, waiting for the pull under way only while that pays; null: prefill here, or closing, or `gone`.
-    pub fn admit(r: *Route, io: std.Io, e: Estimate, closing: *const std.atomic.Value(bool), gone: *const std.atomic.Value(bool)) ?u64 {
+    /// Joins the queue and waits for the pair only while that pays; `local`: prefill here, `stop`: closing or `gone`.
+    pub fn admit(r: *Route, io: std.Io, e: Estimate, closing: *const std.atomic.Value(bool), gone: *const std.atomic.Value(bool)) Admission {
         const arrived = Route.nowNs(io);
+        const id = r.join(arrived, e) orelse return .local;
         while (!closing.load(.acquire) and !gone.load(.acquire)) {
             const now = Route.nowNs(io);
-            switch (r.enter(now, arrived, e)) {
-                .entered => return now - arrived,
-                .local => return null,
-                .wait => std.Io.sleep(io, .fromMilliseconds(poll_ms), .awake) catch return null,
+            switch (r.poll(now, id)) {
+                .entered => return .{ .entered = .{ .id = id, .waited_ns = now - arrived } },
+                .local => return .local,
+                .wait => std.Io.sleep(io, .fromMilliseconds(poll_ms), .awake) catch break,
             }
         }
-        return null;
+        r.leave(id);
+        return .stop;
     }
 };
