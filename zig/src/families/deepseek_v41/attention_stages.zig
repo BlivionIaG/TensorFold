@@ -128,11 +128,17 @@ pub const Stage = struct {
         }
         attnMark(layer, "norm_qr", prof, &e);
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .qr_norm, qr);
-        if (fused_norm) try fuse.encodeQb(ep, e, w, q, scratch, c) else for (0..dense_passes) |_| try projection(ep, e, .{ .trellis = w.wq_b }, qr, q, scratch, rows, c.q_lora, q_width, .bf16);
+        // wq_b's epilogue and the query's RoPE as one dispatch (the diagnostic's pre-RoPE capture needs them apart).
+        const fused_rope = rows == 1 and dense_passes == 1 and !diagnostic and fuse.qRopeReady(ep, p, c, position);
+        if (fused_norm or fused_rope) {
+            try fuse.encodeQb(ep, p, e, w, qr, q, scratch, c, fused_norm, if (fused_rope) .{ .ratio = ratio, .position = position } else null);
+        } else for (0..dense_passes) |_| try projection(ep, e, .{ .trellis = w.wq_b }, qr, q, scratch, rows, c.q_lora, q_width, .bf16);
         attnMark(layer, "wq_b", prof, &e);
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .q_projection, q);
-        try rotate(p, e, q, rows, c.heads, c.head_dim, position, ratio, 1, false, c);
-        if (rows == 1 and std.c.getenv("TF_DSV41_DOUBLE_ROPE") != null) try rotateRepeat(p, e, dup_view, rows, c.heads, c.head_dim, position, ratio, 1, false, c);
+        if (!fused_rope) {
+            try rotate(p, e, q, rows, c.heads, c.head_dim, position, ratio, 1, false, c);
+            if (rows == 1 and std.c.getenv("TF_DSV41_DOUBLE_ROPE") != null) try rotateRepeat(p, e, dup_view, rows, c.heads, c.head_dim, position, ratio, 1, false, c);
+        }
         attnMark(layer, "q_rope", prof, &e);
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .q, q);
     }

@@ -185,3 +185,87 @@ test "norm fused with the next rotate_in keeps every bit (packed sign scales)" {
     try qNorm(s.matrix, 1, false, 2);
     try qNorm(s.matrix, 3, true, 2);
 }
+
+/// wq_b's epilogue then dsv41_rope in place, against the one-dispatch epilogue with the rope.
+fn qRope(matrix: ex.Matrix, rows: u32, rotary: u32, position: u32, inverse: bool, prerotated: bool) !void {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    var p = try ex.Pipelines.load(device);
+    defer p.deinit();
+    if (p.chain.rotate_out_rope == null) return error.SkipZigTest;
+    const queue = try device.queue();
+    defer queue.deinit();
+    var opts = mtl.CompileOptions.mlx();
+    opts.math_functions = .precise;
+    const lib = try mtl.Library.fromSource(device, sources.deepseek_v41_rope, opts);
+    defer lib.deinit();
+    const rope = try mtl.Pipeline.init(device, lib, "dsv41_rope", false);
+    defer rope.deinit();
+    // The head is the matrix's 128 columns; the factors are arbitrary pairs (the rope is exact on any).
+    const capacity = 64;
+    const factors = try device.buffer(capacity * rotary / 2 * 8, mtl.ResourceOptions.shared);
+    defer factors.deinit();
+    var prng = std.Random.DefaultPrng.init(0xf00d);
+    for (factors.slice(f32, capacity * rotary)) |*v| v.* = prng.random().float(f32) * 2 - 1;
+    const x = try support.input(device, rows);
+    defer x.deinit();
+    const y_ref = try device.buffer(rows * n * 2, mtl.ResourceOptions.shared);
+    defer y_ref.deinit();
+    const y = try device.buffer(rows * n * 2, mtl.ResourceOptions.shared);
+    defer y.deinit();
+    const scratch = try device.buffer(try ex.scratchBytes(k, n, rows), mtl.ResourceOptions.shared);
+    defer scratch.deinit();
+    const stride = k + 16;
+    const cb = queue.commandBuffer();
+    const e = cb.compute(.concurrent);
+    try ex.encode(&p, e, matrix, .{ .buffer = x, .offset = 32 }, .{ .buffer = y_ref }, .{ .buffer = scratch }, .{ .count = rows, .x_stride = stride, .y_stride = n });
+    e.setPipeline(rope);
+    e.setBuffer(y_ref, 0, 0);
+    e.setValue(extern struct { rows: u32, heads: u32, width: u32, rotary: u32, stride: u32, position: u32, step: u32, inverse: u32, spectrum: u32 }{ .rows = rows, .heads = 1, .width = n, .rotary = rotary, .stride = n, .position = position, .step = 1, .inverse = @intFromBool(inverse), .spectrum = 0 }, 1);
+    e.setBuffer(factors, 0, 2);
+    e.dispatchThreads(.{ .width = rotary / 2, .height = 1, .depth = rows }, .{ .width = 128 });
+    e.barrier();
+    // The fused form, from a plain or a prerotated input.
+    var input_view: ex.View = .{ .buffer = x, .offset = 32 };
+    var call: ex.Rows = .{ .count = rows, .x_stride = stride, .y_stride = n };
+    if (prerotated) {
+        e.setPipeline(p.rotate_in);
+        e.setBuffer(x, 32, 0);
+        e.setBuffer(matrix.suh.buffer, matrix.suh.offset, 1);
+        e.setBuffer(scratch, 0, 2);
+        var args = try ex.rowsArgs(k, n, call, input_view, .{ .buffer = y }, .{ .buffer = scratch });
+        args.su_signs = @intFromBool(matrix.suh_format == .packed_signs);
+        e.setValue(args, 3);
+        e.setBuffer(scratch, 0, 4);
+        e.setBuffer(scratch, 0, 5);
+        e.setBuffer(scratch, 0, 6);
+        e.dispatchGroups(.{ .width = (k / 128 + 3) / 4, .height = rows }, .{ .width = 128 });
+        e.barrier();
+        input_view = .{ .buffer = scratch };
+        call.x_stride = k;
+        call.prerotated = true;
+    }
+    try ex.chain.encodeRotateOutRope(&p, e, matrix, input_view, .{ .buffer = y }, .{ .buffer = scratch }, call, .{ .buffer = factors }, .{ .width = n, .rotary = rotary, .position = position, .inverse = inverse });
+    try complete(cb, e);
+    try std.testing.expectEqualSlices(u16, y_ref.slice(u16, rows * n), y.slice(u16, rows * n));
+}
+
+test "wq_b epilogue fused with the query rope keeps every bit (f16 scales, biases)" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    const w = try Owned.init(device, 6, .mul1, 51);
+    defer w.deinit();
+    for ([_]u32{ 1, 3 }) |rows| for ([_]u32{ 32, 64, 96 }) |rotary| for ([_]bool{ false, true }) |inverse| for ([_]bool{ false, true }) |pre|
+        try qRope(w.matrix, rows, rotary, 7 + rows, inverse, pre);
+}
+
+test "wq_b epilogue fused with the query rope keeps every bit (packed sign scales)" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    const w = try Owned.init(device, 4, .inst3, 52);
+    defer w.deinit();
+    const s = try Signed.init(device, w, 0x7a31, 0x25c9);
+    defer s.deinit();
+    try qRope(s.matrix, 1, 32, 5, false, false);
+    try qRope(s.matrix, 2, 64, 9, true, true);
+}

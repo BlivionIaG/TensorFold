@@ -17,17 +17,20 @@ const bind = core.bind;
 pub const Set = struct {
     rotate_out_in: ?mtl.Pipeline = null,
     rms_rotate_in: ?mtl.Pipeline = null,
+    rotate_out_rope: ?mtl.Pipeline = null,
 
     pub fn load(device: mtl.Device, lib: mtl.Library) Set {
         return .{
             .rotate_out_in = pipeline(device, lib, "tf_exl3_rotate_out_in", 128),
             .rms_rotate_in = pipeline(device, lib, "tf_exl3_rms_rotate_in", 256),
+            .rotate_out_rope = pipeline(device, lib, "tf_exl3_rotate_out_rope", 128),
         };
     }
 
     pub fn deinit(s: *Set) void {
         if (s.rotate_out_in) |pf| pf.deinit();
         if (s.rms_rotate_in) |pf| pf.deinit();
+        if (s.rotate_out_rope) |pf| pf.deinit();
     }
 };
 
@@ -128,5 +131,39 @@ pub fn encodeRmsRotateIn(p: *const Pipelines, e: mtl.ComputeEncoder, x: View, we
     bind(e, su, 4);
     bind(e, scratch, 5);
     e.dispatchGroups(.{ .width = d.rows }, .{ .width = rmsThreads(d.width) });
+    e.barrier();
+}
+
+/// A rope over each output row's heads: `width` columns a head, the last `rotary` of them rotated at
+/// `position + row * step` with the factors the caller binds (`factors`: a float2 per position and pair).
+pub const Rope = struct { width: u32, rotary: u32, position: u32, step: u32 = 1, inverse: bool = false };
+
+const RopeArgs = extern struct { width: u32, rotary: u32, position: u32, step: u32, inverse: u32, reserved0: u32 = 0, reserved1: u32 = 0, reserved2: u32 = 0 };
+
+/// `encode` of a dense matrix with its epilogue fused with the output's RoPE (`dsv41_rope` over the heads of `y`, in
+/// place after the bf16 rounding): `y` receives the rotated rows. `r.prerotated` is honoured. The rotary columns must
+/// be a multiple of 32, end the head, and the head must hold whole 128-column blocks; bias and sign scales both work.
+pub fn encodeRotateOutRope(p: *const Pipelines, e: mtl.ComputeEncoder, m: core.Matrix, x: View, y: View, scratch: View, r: Rows, factors: View, rope: Rope) !void {
+    const kernel = p.chain.rotate_out_rope orelse return error.UnsupportedExl3Chain;
+    if (r.output != .bf16 or r.output_ids != null or r.routes != null or r.y_stride != m.n or rope.width % 128 != 0 or
+        m.n % rope.width != 0 or rope.rotary == 0 or rope.rotary % 32 != 0 or rope.rotary > 128 or r.count == 0)
+        return error.InvalidExl3Chain;
+    const a = try enc.matrixArgs(m, x, y, scratch, r);
+    var plain = r;
+    plain.no_epilogue = true;
+    swi.stages(p, e, a, m.trellis, m.suh, m.svh, m.bias orelse m.svh, scratch, x, y, scratch, plain);
+    const sums = View{ .buffer = scratch.buffer, .offset = scratch.offset + try core.rotatedBytes(a.k, a.rows) };
+    e.setPipeline(kernel);
+    bind(e, sums, 0);
+    bind(e, m.svh, 1);
+    bind(e, m.bias orelse m.svh, 2);
+    bind(e, y, 3);
+    e.setValue(a, 4);
+    bind(e, scratch, 5);
+    bind(e, scratch, 6);
+    bind(e, scratch, 7);
+    bind(e, factors, 8);
+    e.setValue(RopeArgs{ .width = rope.width, .rotary = rope.rotary, .position = rope.position, .step = rope.step, .inverse = @intFromBool(rope.inverse) }, 9);
+    e.dispatchGroups(.{ .width = (@as(usize, a.n) / 128 + 3) / 4, .height = a.rows }, .{ .width = 128 });
     e.barrier();
 }
