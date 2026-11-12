@@ -63,3 +63,61 @@ kernel void tf_exl3_rotate_out_in(const device float* sums [[buffer(0)]],
   }
   tf_exl3_chain_rotate_in(v, lane, su_next, next.su_signs, uint(first % next.k) + lane, rotated, first + lane);
 }
+
+struct TfExl3RmsRot {
+  uint rows, width, x_stride, y_stride;
+  float eps;
+  uint weight_f32, su_signs, reserved;
+};
+
+inline float tf_exl3_chain_weight(const device uchar* w, ulong i, uint f32) {
+  if (f32) return reinterpret_cast<const device float*>(w)[i];
+  return tf_exl3_chain_bf(reinterpret_cast<const device ushort*>(w)[i]);
+}
+
+// dsv41_rms over a row, then the next projection's rotate_in over the rounded bf16 result: one threadgroup a row, one
+// SIMDgroup a 128-element block (a block a SIMDgroup, the groups striding when there are more blocks than groups).
+// The sum of squares runs on the first 256 threads in dsv41_rms's own order; `y` receives the normalized bf16 row
+// (in place over `x` is allowed) and `rotated` the next projection's prerotated input (width halfs a row).
+// Contraction is off for the whole kernel, as for dsv41_rms (its sum of squares must not fuse).
+#pragma clang fp contract(off)
+kernel void tf_exl3_rms_rotate_in(const device ushort* x [[buffer(0)]],
+                                  const device uchar* w [[buffer(1)]],
+                                  device ushort* y [[buffer(2)]],
+                                  constant TfExl3RmsRot& d [[buffer(3)]],
+                                  const device ushort* su [[buffer(4)]],
+                                  device half* rotated [[buffer(5)]],
+                                  uint row [[threadgroup_position_in_grid]],
+                                  uint t [[thread_index_in_threadgroup]],
+                                  uint lane [[thread_index_in_simdgroup]],
+                                  uint sg [[simdgroup_index_in_threadgroup]],
+                                  uint threads [[threads_per_threadgroup]]) {
+  threadgroup float sums[8];
+  if (row >= d.rows) return;
+  if (t < 256) {
+    float s = 0;
+    for (uint i = t; i < d.width; i += 256) { float a = tf_exl3_chain_bf(x[ulong(row) * d.x_stride + i]); s += a * a; }
+    s = simd_sum(s);
+    if (lane == 0) sums[sg] = s;
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (sg == 0) {
+    float total = simd_sum(lane < 8 ? sums[lane] : 0.0f);
+    const float factor = 1.0f / float(d.width);
+    if (lane == 0) sums[0] = rsqrt(total * factor + d.eps);
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  const float scale = sums[0];
+  for (uint block = sg; block < d.width / 128u; block += threads / 32u) {
+    const uint first = block * 128u + lane;
+    float v[4];
+    for (uint j = 0; j < 4; ++j) {
+      const uint i = first + 32 * j;
+      const ushort bits = tf_exl3_round_bf16((tf_exl3_chain_bf(x[ulong(row) * d.x_stride + i]) * scale) * tf_exl3_chain_weight(w, i, d.weight_f32));
+      y[ulong(row) * d.y_stride + i] = bits;
+      v[j] = tf_exl3_chain_bf(bits);
+    }
+    tf_exl3_chain_rotate_in(v, lane, su, d.su_signs, first, rotated, ulong(row) * d.width + first);
+  }
+}
+#pragma clang fp contract(on)
