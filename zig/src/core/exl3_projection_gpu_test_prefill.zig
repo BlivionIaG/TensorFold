@@ -101,9 +101,10 @@ test "shared prefill retains exact row bits and guards across tile boundaries an
     legacy.prefill = null;
     const queue = try device.queue();
     defer queue.deinit();
-    const w = try Owned.init(device, 5, .mul1, 0x7368617265);
-    defer w.deinit();
-    for ([_]usize{ 31, 32, 33, 63, 64, 65 }) |count| {
+    // A half-bit width (5) never takes the tensor-unit tile; a whole-bit width (6) does from 64 rows.
+    for ([_]u16{ 5, 6 }) |halves| for ([_]usize{ 31, 32, 33, 63, 64, 65 }) |count| {
+        const w = try Owned.init(device, halves, .mul1, 0x7368617265);
+        defer w.deinit();
         const x = try input(device, count);
         defer x.deinit();
         const ids = try device.buffer(count * 4, mtl.ResourceOptions.shared);
@@ -133,8 +134,9 @@ test "shared prefill retains exact row bits and guards across tile boundaries an
                 try complete(cb, e);
                 // The same body gives the same bits; a shared window and the plain eight-row body differ in rounding.
                 if (count < 32 or filtered) try std.testing.expectEqualSlices(u8, original.slice(u8, bytes + 64), actual.slice(u8, bytes + 64)) else try expectWindowClose(kind, original.slice(u8, bytes + 64), actual.slice(u8, bytes + 64), count);
-                // From 64 rows the device may take its tensor-unit tile, a body this test does not qualify.
-                if (!filtered and count < 64) {
+                const tile = halves % 2 == 0 and count >= 64;
+                // The tensor-unit tile is another body, not this check's.
+                if (!filtered and !tile) {
                     @memset(original.slice(u8, bytes + 64), 0xa5);
                     const resumed = queue.commandBuffer();
                     const re = resumed.compute(.concurrent);
@@ -150,7 +152,7 @@ test "shared prefill retains exact row bits and guards across tile boundaries an
                     try complete(resumed, re);
                     if (count == 31) try std.testing.expectEqualSlices(u8, original.slice(u8, bytes + 64), actual.slice(u8, bytes + 64)) else try expectWindowClose(kind, original.slice(u8, bytes + 64), actual.slice(u8, bytes + 64), count);
                 }
-                if (!filtered and count >= 32 and count < 64) {
+                if (!filtered and count >= 32 and !tile) {
                     // A shared row's bits do not depend on its window: the last 32 rows alone are the same rows.
                     @memset(original.slice(u8, bytes + 64), 0xa5);
                     const from = count - 32;
@@ -177,7 +179,7 @@ test "shared prefill retains exact row bits and guards across tile boundaries an
                 for (scratch.slice(u8, scratch_bytes + 32)[scratch_bytes + 16 ..]) |v| try std.testing.expectEqual(@as(u8, 0xcd), v);
             }
         }
-    }
+    };
 }
 
 test "shared prefill preserves gather and scatter maps across a partial tile" {
