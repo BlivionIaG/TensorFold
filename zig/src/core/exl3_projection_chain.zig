@@ -16,13 +16,18 @@ const bind = core.bind;
 /// The chain kernels' resident pipelines; a pipeline that failed to build leaves its entry null.
 pub const Set = struct {
     rotate_out_in: ?mtl.Pipeline = null,
+    rms_rotate_in: ?mtl.Pipeline = null,
 
     pub fn load(device: mtl.Device, lib: mtl.Library) Set {
-        return .{ .rotate_out_in = pipeline(device, lib, "tf_exl3_rotate_out_in", 128) };
+        return .{
+            .rotate_out_in = pipeline(device, lib, "tf_exl3_rotate_out_in", 128),
+            .rms_rotate_in = pipeline(device, lib, "tf_exl3_rms_rotate_in", 256),
+        };
     }
 
     pub fn deinit(s: *Set) void {
         if (s.rotate_out_in) |pf| pf.deinit();
+        if (s.rms_rotate_in) |pf| pf.deinit();
     }
 };
 
@@ -75,5 +80,53 @@ pub fn encodeIndexedRotateNext(p: *const Pipelines, e: mtl.ComputeEncoder, exper
     e.setValue(NextArgs{ .k = @intCast(next.k), .su_signs = @intFromBool(next.su_signs) }, 9);
     bind(e, scratch, 10);
     e.dispatchGroups(.{ .width = (@as(usize, a.n) / 128 + 3) / 4, .height = a.rows }, .{ .width = 128 });
+    e.barrier();
+}
+
+/// A row-wise RMS norm (`dsv41_rms`) and the next projection's rotate_in: `y` receives the normalized bf16 rows (it may
+/// be `x`) and the scratch base the prerotated input of a projection with `width` columns (run it `prerotated`).
+pub const Rms = struct {
+    rows: u32,
+    width: u32,
+    x_stride: u32,
+    y_stride: u32,
+    eps: f32,
+    weight_f32: bool,
+    su_signs: bool,
+};
+
+const RmsArgs = extern struct { rows: u32, width: u32, x_stride: u32, y_stride: u32, eps: f32, weight_f32: u32, su_signs: u32, reserved: u32 = 0 };
+
+/// Threads a row's threadgroup runs: one SIMDgroup a 128-block, and at least the eight of the norm's 256 threads.
+fn rmsThreads(width: u32) usize {
+    return 32 * @max(8, width / 128);
+}
+
+/// The widest row `encodeRmsRotateIn` takes on these pipelines (0 when the kernel is unavailable).
+pub fn rmsRotateInWidth(p: *const Pipelines) u32 {
+    const kernel = p.chain.rms_rotate_in orelse return 0;
+    return @intCast(kernel.maxThreads() / 32 * 128);
+}
+
+pub fn encodeRmsRotateIn(p: *const Pipelines, e: mtl.ComputeEncoder, x: View, weight: View, y: View, su: View, scratch: View, d: Rms) !void {
+    const kernel = p.chain.rms_rotate_in orelse return error.UnsupportedExl3Chain;
+    if (d.rows == 0 or d.width % 128 != 0 or d.width > rmsRotateInWidth(p) or d.x_stride < d.width or d.y_stride < d.width)
+        return error.InvalidExl3Chain;
+    const x_bytes = (@as(usize, d.rows - 1) * d.x_stride + d.width) * 2;
+    const y_bytes = (@as(usize, d.rows - 1) * d.y_stride + d.width) * 2;
+    const rotated_bytes = try core.rotatedBytes(d.width, d.rows);
+    try core.check(x, x_bytes, 2);
+    try core.check(y, y_bytes, 2);
+    try core.check(scratch, rotated_bytes, 16);
+    try core.disjoint(x, x_bytes, scratch, rotated_bytes);
+    try core.disjoint(y, y_bytes, scratch, rotated_bytes);
+    e.setPipeline(kernel);
+    bind(e, x, 0);
+    bind(e, weight, 1);
+    bind(e, y, 2);
+    e.setValue(RmsArgs{ .rows = d.rows, .width = d.width, .x_stride = d.x_stride, .y_stride = d.y_stride, .eps = d.eps, .weight_f32 = @intFromBool(d.weight_f32), .su_signs = @intFromBool(d.su_signs) }, 3);
+    bind(e, su, 4);
+    bind(e, scratch, 5);
+    e.dispatchGroups(.{ .width = d.rows }, .{ .width = rmsThreads(d.width) });
     e.barrier();
 }

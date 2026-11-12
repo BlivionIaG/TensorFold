@@ -1,6 +1,7 @@
 //! The chain kernels against the unfused dispatches they replace: every output bit must agree.
 const std = @import("std");
 const mtl = @import("metal");
+const sources = @import("kernel_sources");
 const ex = @import("exl3_projection.zig");
 const support = @import("exl3_projection_gpu_test_support.zig");
 const k = support.k;
@@ -110,4 +111,77 @@ test "wo_a epilogue fused with wo_b's rotate_in keeps every bit (packed sign sca
     const sb = try Signed.init(device, wb, 0x5f01, 0x8e3c);
     defer sb.deinit();
     try woChain(s0.matrix, s1.matrix, sb.matrix);
+}
+
+/// dsv41_rms in place, then the projection's own rotate_in, against the one-dispatch norm + rotate_in.
+fn qNorm(matrix: ex.Matrix, rows: u32, weight_f32: bool, scale: f32) !void {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    var p = try ex.Pipelines.load(device);
+    defer p.deinit();
+    if (ex.chain.rmsRotateInWidth(&p) < k) return error.SkipZigTest;
+    const queue = try device.queue();
+    defer queue.deinit();
+    var opts = mtl.CompileOptions.mlx();
+    opts.math_functions = .precise;
+    const lib = try mtl.Library.fromSource(device, sources.deepseek_v41_ops, opts);
+    defer lib.deinit();
+    const rms = try mtl.Pipeline.init(device, lib, "dsv41_rms", false);
+    defer rms.deinit();
+    const stride = k + 16;
+    const x_ref = try device.buffer(rows * stride * 2, mtl.ResourceOptions.shared);
+    defer x_ref.deinit();
+    const x = try device.buffer(rows * stride * 2, mtl.ResourceOptions.shared);
+    defer x.deinit();
+    var prng = std.Random.DefaultPrng.init(0x51a7);
+    for (x_ref.slice(u16, rows * stride)) |*v| v.* = support.bf16((prng.random().float(f32) - 0.5) * scale);
+    @memcpy(x.slice(u16, rows * stride), x_ref.slice(u16, rows * stride));
+    const weight = try device.buffer(k * 4, mtl.ResourceOptions.shared);
+    defer weight.deinit();
+    for (0..k) |i| {
+        const value = 0.25 + prng.random().float(f32) * 2;
+        if (weight_f32) weight.slice(f32, k)[i] = value else weight.slice(u16, 2 * k)[i] = support.bf16(value);
+    }
+    const y_ref = try device.buffer(rows * n * 2, mtl.ResourceOptions.shared);
+    defer y_ref.deinit();
+    const y = try device.buffer(rows * n * 2, mtl.ResourceOptions.shared);
+    defer y.deinit();
+    const scratch = try device.buffer(try ex.scratchBytes(k, n, rows), mtl.ResourceOptions.shared);
+    defer scratch.deinit();
+    const eps: f32 = 1e-6;
+    const cb = queue.commandBuffer();
+    const e = cb.compute(.concurrent);
+    e.setPipeline(rms);
+    e.setBuffer(x_ref, 0, 0);
+    e.setBuffer(weight, 0, 1);
+    e.setBuffer(x_ref, 0, 2);
+    e.setValue(extern struct { rows: u32, width: u32, x_stride: u32, y_stride: u32, eps: f32, weight_f32: u32 }{ .rows = rows, .width = k, .x_stride = stride, .y_stride = stride, .eps = eps, .weight_f32 = @intFromBool(weight_f32) }, 3);
+    e.dispatchGroups(.{ .width = rows }, .{ .width = 256 });
+    e.barrier();
+    try ex.encode(&p, e, matrix, .{ .buffer = x_ref }, .{ .buffer = y_ref }, .{ .buffer = scratch }, .{ .count = rows, .x_stride = stride, .y_stride = n });
+    try ex.chain.encodeRmsRotateIn(&p, e, .{ .buffer = x }, .{ .buffer = weight }, .{ .buffer = x }, matrix.suh, .{ .buffer = scratch }, .{ .rows = rows, .width = k, .x_stride = stride, .y_stride = stride, .eps = eps, .weight_f32 = weight_f32, .su_signs = matrix.suh_format == .packed_signs });
+    try ex.encode(&p, e, matrix, .{ .buffer = scratch }, .{ .buffer = y }, .{ .buffer = scratch }, .{ .count = rows, .x_stride = k, .y_stride = n, .prerotated = true });
+    try complete(cb, e);
+    try std.testing.expectEqualSlices(u16, x_ref.slice(u16, rows * stride), x.slice(u16, rows * stride));
+    try std.testing.expectEqualSlices(u16, y_ref.slice(u16, rows * n), y.slice(u16, rows * n));
+}
+
+test "norm fused with the next rotate_in keeps every bit (bf16 and f32 weights, f16 scales)" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    const w = try Owned.init(device, 6, .mul1, 41);
+    defer w.deinit();
+    for ([_]u32{ 1, 3 }) |rows| for ([_]bool{ false, true }) |f32_weight| for ([_]f32{ 0.05, 2, 300 }) |scale|
+        try qNorm(w.matrix, rows, f32_weight, scale);
+}
+
+test "norm fused with the next rotate_in keeps every bit (packed sign scales)" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    const w = try Owned.init(device, 4, .inst3, 42);
+    defer w.deinit();
+    const s = try Signed.init(device, w, 0x6c35, 0x3a17);
+    defer s.deinit();
+    try qNorm(s.matrix, 1, false, 2);
+    try qNorm(s.matrix, 3, true, 2);
 }

@@ -121,11 +121,15 @@ pub const Stage = struct {
         } else for (0..dense_passes) |_| try projection(ep, e, .{ .trellis = w.wq_a }, x, qr, scratch, rows, c.hidden, c.q_lora, .bf16);
         attnMark(layer, "qkv", prof, &e);
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .qr_projection, qr);
-        norm(p, e, qr, w.q_norm, rows, c.q_lora, c.eps);
-        if (rows == 1 and std.c.getenv("TF_DSV41_DOUBLE_ATTN_NORM") != null) normRepeat(p, e, qr, dup_view, w.q_norm, rows, c.q_lora, c.eps);
+        // The norm and wq_b's rotate_in as one dispatch; wq_b then runs on the rotated input it left in the scratch.
+        const fused_norm = rows == 1 and dense_passes == 1 and fuse.qNormReady(ep, w, c);
+        if (fused_norm) try fuse.encodeQNorm(ep, e, w, qr, scratch, c) else {
+            norm(p, e, qr, w.q_norm, rows, c.q_lora, c.eps);
+            if (rows == 1 and std.c.getenv("TF_DSV41_DOUBLE_ATTN_NORM") != null) normRepeat(p, e, qr, dup_view, w.q_norm, rows, c.q_lora, c.eps);
+        }
         attnMark(layer, "norm_qr", prof, &e);
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .qr_norm, qr);
-        for (0..dense_passes) |_| try projection(ep, e, .{ .trellis = w.wq_b }, qr, q, scratch, rows, c.q_lora, q_width, .bf16);
+        if (fused_norm) try fuse.encodeQb(ep, e, w, q, scratch, c) else for (0..dense_passes) |_| try projection(ep, e, .{ .trellis = w.wq_b }, qr, q, scratch, rows, c.q_lora, q_width, .bf16);
         attnMark(layer, "wq_b", prof, &e);
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .q_projection, q);
         try rotate(p, e, q, rows, c.heads, c.head_dim, position, ratio, 1, false, c);

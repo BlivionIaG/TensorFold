@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- DeepSeek V4.1 on Metal: a decode layer's query latent norm and wq_b's input rotation are one dispatch: one threadgroup normalizes the row in the norm kernel's own summation order, rounds to BF16, and rotates it, so the output is bit-identical and the normalized row is still written for the indexer (`TF_DSV41_NO_FUSE_QNORM=1` keeps the two dispatches).
+
 - DeepSeek V4.1 on Metal: a decode layer's attention output projections run one dispatch fewer: the eight-group wo_a call's Hadamard epilogue and wo_b's input rotation are one kernel that rounds each value to BF16 exactly as the stored intermediate was, so the output is bit-identical (`TF_DSV41_NO_FUSE_WO_CHAIN=1` keeps the two dispatches).
 
 - DeepSeek-V4.1 on CUDA: `TF_DSV41_PREFILL=replay` now runs the decoder layers' replay over the exact cone (`TF_DSV41_REPLAY_EXACT`, on by default; `0` keeps the bounded 127-row replay): the encoder pass also keeps the last 2,541 rows of the first decoder layer's input, and the decoder pass runs in programs of `TF_DSV41_REPLAY_GROUP` layers (default 4) over each layer's own cone, so the decoder layers' SWA rings and the drafter's taps equal a full prefill's and an exported hand-off no longer zeroes the window's oldest row. It runs about 30.5k layer-rows against 2.5k for the bounded replay (not yet timed on the pair); a saved session that would leave less than the cone's rows after it is not resumed (the prompt prefills from 0, so its export stays exact), and a prompt run with `TF_DSV41_PF_TBO=1` keeps the bounded replay. `aot-needs` lists the new programs' variants.
