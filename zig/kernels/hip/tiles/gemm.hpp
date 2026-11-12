@@ -7,6 +7,7 @@
 
 #include "common/dot2.hpp"
 #include "common/vec.hpp"
+#include "common/wave.hpp"
 #include "tiles/plan.hpp"
 
 namespace tf {
@@ -72,7 +73,7 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
     const int xrow = tid >> 1;
     const int xhalf = tid & 1;
     // Rows past the end are not loaded, stored or summed: a stager wave has 16 rows, a summer 32: whole waves skip.
-    const int wave = __builtin_amdgcn_readfirstlane(tid >> 5);
+    const int wave = group32(tid);
     const bool xlive = wave * 16 < a.m - m0;
     const bool sxlive = (line & ~31) < a.m - m0;
     const int row_s = m0 + xrow < a.m ? m0 + xrow : 0;

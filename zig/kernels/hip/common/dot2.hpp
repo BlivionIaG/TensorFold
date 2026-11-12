@@ -5,6 +5,7 @@
 #include <hip/hip_fp16.h>
 
 #include "common/arch.hpp"
+#include "common/fdot2.hpp"
 
 namespace tf {
 namespace rocm {
@@ -28,11 +29,11 @@ struct DotF16 {
     __device__ static pair two(elem a, elem b) { return __halves2half2(a, b); }
     __device__ static float lo(pair p) { return __low2float(p); }
     __device__ static float hi(pair p) { return __high2float(p); }
-    __device__ static float dot(pair x, pair q, float acc) { return __builtin_amdgcn_fdot2(x, q, acc, false); }
-    // On RDNA2 the DPP form of v_dot2c_f32_f16 does it in one instruction at full rate (row_share would halve it).
+    __device__ static float dot(pair x, pair q, float acc) { return TF_FDOT2(x, q, acc); }
+    // RDNA2's DPP v_dot2c_f32_f16 does it in one full-rate instruction (row_share halves it); gfx900 moves x then fuses.
     template <int I>
     __device__ static float quad(uint32_t x, uint32_t w, float acc) {
-#if !TF_DOT2_BF16
+#if TF_DOT2_F16 && !TF_DOT2_BF16
         asm("v_dot2c_f32_f16_dpp %0, %1, %2 quad_perm:[%3,%3,%3,%3] row_mask:0xf bank_mask:0xf"
             : "+v"(acc)
             : "v"(x), "v"(w), "n"(I));

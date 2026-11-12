@@ -57,7 +57,7 @@ pub fn steps(b: *std.Build, o: Options) void {
     const gates = "Every registered HIP kernel through the contract's gates on this GPU, each control red";
     b.step("hip-kernel-contract", gates).dependOn(&run.step);
     const all = b.addWriteFiles();
-    for (limits.rdna) |t| {
+    for (limits.audited) |t| {
         _ = all.addCopyDirectory(hip.objectFiles(b, o.hipcc, t.name).getDirectory(), t.name, .{});
         const ctl = hip.compile(b, o.hipcc, t.name, source, "contract_controls.hsaco");
         _ = all.addCopyFile(ctl, b.fmt("{s}/contract_controls.hsaco", .{t.name}));
@@ -68,7 +68,7 @@ pub fn steps(b: *std.Build, o: Options) void {
         .install_subdir = "hsaco",
     };
     const dir = b.addInstallDirectory(to);
-    const each = "Every kernel group and the controls for each RDNA chip we serve (hsaco/)";
+    const each = "Every kernel group and the controls for each RDNA chip we serve and for gfx900 (hsaco/)";
     b.step("hip-kernel-contract-objects", each).dependOn(&dir.step);
     const audit = b.addRunArtifact(runner(b, b.graph.host, .Debug, o.host, o.lighton_host, controls(b, "", null)));
     audit.addArg("limits");

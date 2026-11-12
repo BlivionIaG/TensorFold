@@ -66,8 +66,8 @@ pub fn main(init: std.process.Init) !u8 {
         std.debug.print("FAIL kernel-contract-limits: {d} problems\n", .{n});
         return 1;
     }
-    std.debug.print("PASS kernel-contract-limits: every registered launch fits gfx1030, gfx1100, gfx1151 and " ++
-        "gfx1201, every record current, every control red\n", .{});
+    std.debug.print("PASS kernel-contract-limits: every registered launch fits gfx1030, gfx1100, gfx1151 and gfx1201 " ++
+        "(every record current) and gfx900 (read from its objects), every control red\n", .{});
     return 0;
 }
 

@@ -80,7 +80,7 @@ fn fillConfig(n: u32) launch.Config {
     return .{ .grid = .{ .x = (n + 255) / 256 }, .block = .{ .x = 256 } };
 }
 
-test "device copies, word fills, mapped host memory, a module global and wave32" {
+test "device copies, word fills, mapped host memory, a module global and the wave width" {
     var r = try Runtime.open();
     defer r.close();
     var ctx = try Context.init(&r, 0);
@@ -141,10 +141,17 @@ test "device copies, word fills, mapped host memory, a module global and wave32"
     try stream.synchronize();
     var wave: i32 = 0;
     try b.download(0, std.mem.asBytes(&wave));
-    try std.testing.expectEqual(@as(i32, 32), wave);
+    try std.testing.expectEqual(try deviceWave(&r), wave);
 }
 
 const runtime_check = @import("runtime.zig").check;
+
+/// The wavefront width of device 0's architecture in the caps table: 32 on RDNA, 64 on gfx900.
+fn deviceWave(r: *Runtime) !c_int {
+    var buffer: [256]u8 = undefined;
+    const arch = try @import("device_arch.zig").query(r, 0, &buffer);
+    return @import("caps.zig").Caps.of(arch).?.wave;
+}
 
 test "a captured stream replays, and its nodes take new arguments in place" {
     var r = try Runtime.open();
@@ -272,7 +279,7 @@ test "a cooperative grid of one block a compute unit, and the device's attribute
     defer stream.deinit();
     var name_buf: [256]u8 = undefined;
     try std.testing.expect((try ctx.name(&name_buf)).len > 0);
-    try std.testing.expectEqual(@as(c_int, 32), try ctx.attribute(.warp_size));
+    try std.testing.expectEqual(try deviceWave(&r), try ctx.attribute(.warp_size));
     // Windows HIP has no cooperative launch support (ROCm/HIP#3640), so the grid runs plain there.
     const cooperative = (try ctx.attribute(.cooperative_launch)) != 0;
     const cus: u32 = @intCast(try ctx.attribute(.multiprocessor_count));

@@ -66,7 +66,9 @@ Direct `one` callers remain responsible for cleanup.
    (rounded per warp), static plus dynamic shared bytes, launch bounds and clusters against sm_80, sm_86, sm_89, sm_120
    and sm_121. HIP: VGPRs a wave (a workgroup's waves spread over the WGP's four SIMDs, each rounded to the chip's
    allocation step), static plus dynamic LDS bytes, the kernel's `__launch_bounds__` and its wave size against gfx1030,
-   gfx1100, gfx1151 and gfx1201, one chip a generation. Tools re-derive the records: on a Mac, `tf-kernel-contract
+   gfx1100, gfx1151 and gfx1201, one chip a generation, and against gfx900 (Vega 10: wave64, 256 VGPRs a lane in the one
+   register file of a SIMD), whose usage no record holds: each run reads it from the code objects. Tools re-derive the
+   records: on a Mac, `tf-kernel-contract
    --offline DIR` compiles each pipeline for M1 and M2 with Xcode's Metal toolchain (native code built for T threads
    equal to the plain build means the plain pipeline runs T); on a CUDA build machine, `tf-cuda-test
    kernel-contract-limits DIR` reads registers, shared bytes and launch bounds from the fatbins' ELF images for every
@@ -100,8 +102,9 @@ For a mixed release and sm_110 set, each planted control must go red on each tar
 
 On an AMD machine, run `zig build hip-kernel-contract -Dhip-arch=ARCH -Dhipcc=...` on a GPU of that chip (the
 controls are built with the kernels). For the limits of every served chip, `zig build hip-kernel-contract-limits
--Dhipcc=...` compiles every kernel group and the controls for gfx1030, gfx1100, gfx1151 and gfx1201 and checks each
-record against them, no GPU needed; `hip-kernel-contract-objects` installs those code objects into `zig-out/hsaco/`.
+-Dhipcc=...` compiles every kernel group and the controls for gfx1030, gfx1100, gfx1151, gfx1201 and gfx900, checks each
+record against its chip's objects and each launch the RDNA2 family serves against gfx900's limits, no GPU needed;
+`hip-kernel-contract-objects` installs those code objects into `zig-out/hsaco/`.
 Its `RECORD` lines are the values `hip_records.zig` holds for that hipcc. The records hold ROCm 10.1's hipcc (HIP 7.16),
 which ROCm 10.1 installs under `core/bin` of its root.
 

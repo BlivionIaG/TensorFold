@@ -163,7 +163,7 @@ pub fn cuda(l: CudaLaunch, u: Usage, t: Sm, out: *std.ArrayList(u8), a: std.mem.
     return n;
 }
 
-/// An RDNA chip we serve, one a generation: a workgroup's limits and a SIMD's wave32 register file (WGP mode).
+/// A HIP chip we serve: a workgroup's limits and a SIMD's register file (RDNA: wave32 in WGP mode, Vega 10: wave64).
 pub const Rdna = struct {
     name: []const u8,
     threads: u32 = 1024,
@@ -183,6 +183,12 @@ pub const rdna = [_]Rdna{
     .{ .name = "gfx1151", .vgprs_simd = 1536, .granule = 24 },
     .{ .name = "gfx1201", .vgprs_simd = 1536, .granule = 24 },
 };
+
+/// Vega 10: its SIMD's one 64 KiB register file holds 256 VGPRs a lane of a wave64, allocated in steps of 4.
+pub const vega: Rdna = .{ .name = "gfx900", .wave = 64, .vgprs_simd = 256, .granule = 4 };
+
+/// Every chip whose code objects the contract builds; only `rdna`'s have recorded usage, Vega's comes from its objects.
+pub const audited = rdna ++ [_]Rdna{vega};
 
 /// A HIP kernel as launched: its symbol, its code object, most threads a workgroup and dynamic LDS bytes.
 pub const HipLaunch = struct {
@@ -335,6 +341,23 @@ test "HIP: bounds, wave size, VGPRs a SIMD and LDS per chip" {
     big.dynamic = 32 * 1024;
     try std.testing.expectEqual(@as(usize, 1), try hip(big, .{ .vgprs = 32, .lds = 40 * 1024 }, rdna[0], &out, a));
     try std.testing.expectEqual(@as(usize, 0), try hip(big, .{ .vgprs = 32, .lds = 32 * 1024 }, rdna[0], &out, a));
+}
+
+test "HIP: Vega 10 holds 256 VGPRs a lane in one register file a SIMD, and its objects are wave64" {
+    const a = std.testing.allocator;
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(a);
+    const l = HipLaunch{ .name = "k", .symbol = "k", .image = "ops", .threads = 1024 };
+    try std.testing.expectEqual(@as(u32, 256), simdVgprs(64, 1024, vega)); // 16 waves, 4 a SIMD
+    try std.testing.expectEqual(@as(u32, 272), simdVgprs(68, 1024, vega)); // 68 is a multiple of the step 4
+    try std.testing.expectEqual(@as(usize, 0), try hip(l, .{ .vgprs = 64, .wave = 64 }, vega, &out, a));
+    try std.testing.expectEqual(@as(usize, 1), try hip(l, .{ .vgprs = 68, .wave = 64 }, vega, &out, a));
+    try std.testing.expectEqual(@as(usize, 1), try hip(l, .{ .vgprs = 64 }, vega, &out, a)); // built for wave32
+    var one = l;
+    one.threads = 64;
+    try std.testing.expectEqual(@as(usize, 0), try hip(one, .{ .vgprs = 256, .wave = 64, .bound = 64 }, vega, &out, a));
+    try std.testing.expectEqual(@as(usize, 2), try hip(one, .{ .vgprs = 257, .wave = 64, .bound = 64 }, vega, &out, a));
+    try std.testing.expectEqualStrings(vega.name, audited[audited.len - 1].name);
 }
 /// A Vulkan entry point as dispatched, with its workgroup geometry and shared-memory use.
 pub const VulkanLaunch = struct {

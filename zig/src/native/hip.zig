@@ -28,10 +28,14 @@ pub const std_options: std.Options = .{ .signal_stack_size = null };
 pub const serves: []const []const u8 = &.{ "--tp", "--policy", "--mtp-drafts", "--mtp-confidence", "--checkpoint-slots", "--backend=rocm" };
 pub const families: []const api.Family = fam.list(registry);
 
-/// The GPU family gate entries name ("rdna2" for gfx103x, "rdna3" for gfx11 / gfx12); null without a usable GPU.
+/// The GPU family gate entries name ("gcn5" gfx900, "rdna2" gfx103x, "rdna3" gfx11 / gfx12); null without a usable GPU.
 pub fn chip(a: Allocator) ?[]const u8 {
     const caps = hip.Device.capsOf(0) orelse return null;
-    return a.dupe(u8, if (caps.generation == .rdna2) "rdna2" else "rdna3") catch null;
+    return a.dupe(u8, switch (caps.generation) {
+        .gcn5 => "gcn5",
+        .rdna2 => "rdna2",
+        .rdna3, .rdna3_5, .rdna4 => "rdna3",
+    }) catch null;
 }
 
 /// A flag or a resource the engine cannot take: `problem` says why.
