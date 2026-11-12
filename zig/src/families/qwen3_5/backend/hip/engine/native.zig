@@ -13,6 +13,7 @@ const state = @import("../forward/state.zig");
 const worker = @import("worker.zig");
 const hip_lanes = @import("hip_lanes.zig");
 const joint = @import("joint_readout.zig");
+const experts = @import("experts.zig");
 const config = @import("../../../weights/config.zig");
 
 /// The MLX affine widths this native text server loads, each with its group size.
@@ -138,6 +139,9 @@ fn prepare(
     steps: *hip.Startup,
     problem: *[]const u8,
 ) (Refused || std.mem.Allocator.Error)!Prepared {
+    const environment = @import("sys").environment;
+    if (try environment.refusal(a, environment.Process{}, .{ .hip = true })) |why| return steps.refuseAll(a, problem, "{s}", .{why});
+    const settings = experts.Settings.read(o.experts_gib) catch unreachable; // the refusal above checked every setting
     const rows = hip_lanes.Hip.max_window;
     const held = hip.usage(false).device;
     var pf: engine.Preflight = .{};
@@ -151,6 +155,7 @@ fn prepare(
         .world = o.world,
         .group = dev.group,
         .startup = steps,
+        .experts = settings,
     }) catch |err| return switch (err) {
         error.PeerRefused, error.LinkFailed => steps.stoppedBy(a, problem),
         error.WeightsDoNotFit => steps.refuseAll(
@@ -253,7 +258,8 @@ fn prepare(
     const left = room - need;
     const policy = dev.policy;
     const keep: usize = policy.slots;
-    var budget: usize = if (o.cache_gib) |g| @intFromFloat(g * (1 << 30)) else left;
+    // offloaded experts take what the streams leave, so the prompt cache is only what --prompt-cache-gib names
+    var budget: usize = if (o.cache_gib) |g| @intFromFloat(g * (1 << 30)) else if (e.weights.experts != null) 0 else left;
     if (budget > left and !o.cache_over_cap) {
         return steps.refuseAll(
             a,
@@ -343,6 +349,8 @@ fn openEngine(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip
         own.joint = try openJoint(a, gpa, p.e, loaded, p.bounds, &steps, problem);
         try own.backend.useReadout(own.joint.?.readout());
     }
+    // the rest of the device, after every other allocation of the plan, is the offloaded experts' cache
+    p.e.attachExperts(io) catch |err| return steps.refuseAll(a, problem, "the native HIP engine cannot size its expert cache ({s})", .{@errorName(err)});
     // rank 0 serves only once every follower is ready behind it
     _ = try steps.together(a, .{ 0, 0 }, .first, problem);
     // a lone rank times its forwards for the depth rule; the ranks of a group draft without costs; bf16 drafts none

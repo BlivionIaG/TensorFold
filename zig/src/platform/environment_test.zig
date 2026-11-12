@@ -3,7 +3,7 @@ const std = @import("std");
 const e = @import("environment.zig");
 const t = std.testing;
 const a = t.allocator;
-const all: e.Flags = .{ .cuda = true, .metal = true, .xpu = true, .slide = true, .hooks = true, .dsv41 = true, .gemma4 = true, .drama3 = true, .glm = true, .flashnext = true };
+const all: e.Flags = .{ .cuda = true, .metal = true, .xpu = true, .slide = true, .hooks = true, .dsv41 = true, .gemma4 = true, .drama3 = true, .glm = true, .flashnext = true, .hip = true };
 const Env = struct {
     name: []const u8,
     raw: ?[]const u8,
@@ -56,6 +56,10 @@ const valid = [_]Case{
     .{ .name = "TF_CUDA_CARVEOUT", .raw = "0", .n = 0 },
     .{ .name = "TF_CUDA_CARVEOUT", .raw = "1", .n = 1 },
     .{ .name = "TF_CUDA_CARVEOUT_MIB", .raw = "1792", .n = 1792 },
+    .{ .name = "TF_EXPERT_OFFLOAD", .raw = "1", .n = 1 },
+    .{ .name = "TF_EXPERT_COPIES", .raw = "4096", .n = 4096 },
+    .{ .name = "TF_EXPERT_PROTECT", .raw = "75", .n = 75 },
+    .{ .name = "TF_EXPERT_WINDOW_MIB", .raw = "1536", .n = 1536 },
     .{ .name = "TF_MTP_DRAFTS", .raw = "0", .n = 0 },
     .{ .name = "TF_MTP_DRAFTS", .raw = "4294967295", .n = std.math.maxInt(u32) },
     .{ .name = "TF_DSPINE_WINDOW", .raw = "16", .n = 16 },

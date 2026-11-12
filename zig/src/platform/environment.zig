@@ -3,7 +3,7 @@ const std = @import("std");
 const sys = @import("sys.zig");
 
 pub const Error = error{InvalidEnvironment};
-pub const Scope = enum { common, cuda, metal, xpu, slide, hooks, dsv41, gemma4, drama3, glm, flashnext };
+pub const Scope = enum { common, cuda, metal, xpu, slide, hooks, dsv41, gemma4, drama3, glm, flashnext, hip };
 pub const Kind = enum { u32, u64, size, percent, positive, device, segments, mib, bit_width, word, prompt, flag, toggle, real, positive_real, signed_real, range, path };
 pub const Rule = struct {
     name: [:0]const u8,
@@ -186,6 +186,10 @@ pub const rules = [_]Rule{
     .{ .name = "TF_FLASHNEXT_KV_PAGE_TEST", .scope = .flashnext, .kind = .size, .forms = "a page size the kernels take, whole blocks of the indexer's ratio up to the window (unset: off)" },
     .{ .name = "TF_FLASHNEXT_CONFIDENCE", .scope = .flashnext, .kind = .signed_real, .forms = "a finite number (default -0.4)" },
     .{ .name = "TF_FLASHNEXT_PROMPT", .scope = .flashnext, .kind = .word, .words = &.{"rows"}, .forms = "rows for the rows path (unset or blank keeps the plain path)" },
+    .{ .name = "TF_EXPERT_OFFLOAD", .scope = .hip, .kind = .flag, .forms = "0 or 1 (unset: offload the routed experts when the weights do not fit)" },
+    .{ .name = "TF_EXPERT_COPIES", .scope = .hip, .kind = .size, .forms = "a whole nonnegative native-size count of experts the cache admits a round (default 4096)" },
+    .{ .name = "TF_EXPERT_PROTECT", .scope = .hip, .kind = .percent, .forms = "a whole percentage from 0 to 100, capped at 95 (default 75; 0 is a plain LRU)" },
+    .{ .name = "TF_EXPERT_WINDOW_MIB", .scope = .hip, .kind = .mib, .forms = "a positive whole MiB count of pinned host memory for the window (default 1536)" },
 };
 
 pub fn rule(name: []const u8) Rule {
@@ -349,6 +353,7 @@ pub const Flags = struct {
     drama3: bool = false,
     glm: bool = false,
     flashnext: bool = false,
+    hip: bool = false,
     device: ?u32 = null,
     segments: ?u32 = null,
     carveout: bool = false,
@@ -366,6 +371,7 @@ pub const Flags = struct {
             .drama3 => f.drama3,
             .glm => f.glm,
             .flashnext => f.flashnext,
+            .hip => f.hip,
         };
     }
 };

@@ -53,6 +53,10 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
 | `TF_SLIDE_FIT_GIB` | Whole native-size nonnegative GiB count; default 4 |
 | `TF_SLIDE_POCKET_DUMP` | A directory path without control characters, used as given; each lesson's read rows are written there for offline study. Unset or blank writes none |
 | `TF_SLIDE_FORGET_FAIL` | Whole u32 fact index, zero off; only checked in a slide-test-hooks build |
+| `TF_EXPERT_OFFLOAD` | HIP MoE: exactly `0` or `1`; `1` keeps the routed experts in host memory with a device cache, `0` never does; unset does it when the weights do not fit |
+| `TF_EXPERT_COPIES` | HIP MoE offload: whole native-size count of experts the cache admits a round at most; default 4096 |
+| `TF_EXPERT_PROTECT` | HIP MoE offload: whole percentage 0 through 100, capped at 95, of the cache lines an SLRU protects; 0 is a plain LRU; default 75 |
+| `TF_EXPERT_WINDOW_MIB` | HIP MoE offload: positive whole MiB count of pinned host memory the device reads in place; default 1536 |
 
 The video-token reader has no fixed model-independent token ceiling. Its unsigned storage width is not a useful token budget.
 The request geometry and model context decide whether a parsed budget fits; zero remains accepted as before.
@@ -74,6 +78,7 @@ The carveout size is checked only when the carveout is enabled, and still rounds
 `TF_NO_TREES` retains precedence over `TF_DRAFT_NODES`.
 Backend-specific settings are checked when that backend starts; slide settings require learning to be enabled.
 The `TF_GLM_*` rows are checked when GLM's CUDA family opens, on every rank, so they never stop another family.
+The `TF_EXPERT_*` rows are read when a HIP MoE engine plans its expert offload ([recipe](recipes/hip-moe-expert-offload.md)).
 Common server settings are checked before checkpoint resolution, including when no request would use them yet.
 Direct family readers also refuse malformed values when called without the server.
 
