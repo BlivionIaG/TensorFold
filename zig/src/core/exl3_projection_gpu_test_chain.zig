@@ -363,3 +363,156 @@ test "the output rope fused into wo_a's rotate_in keeps every bit (alone and cha
         try oRope(s0.matrix, s1.matrix, sb.matrix, rotary, 3, chained);
     };
 }
+
+/// A random matrix of any k and n (the shared `Owned` is 256 by 128).
+const Wide = struct {
+    matrix: ex.Matrix,
+    buffers: [4]mtl.Buffer,
+
+    fn init(device: mtl.Device, halves: u16, book: ex.format.Codebook, seed: u64, kk: usize, nn: usize) !Wide {
+        const words = @as(usize, halves) * 8 * (kk / 16) * (nn / 16);
+        const t = try device.buffer(words * 2 + 16, mtl.ResourceOptions.shared);
+        errdefer t.deinit();
+        const su = try device.buffer(kk * 2 + 16, mtl.ResourceOptions.shared);
+        errdefer su.deinit();
+        const sv = try device.buffer(nn * 2 + 16, mtl.ResourceOptions.shared);
+        errdefer sv.deinit();
+        const bias = try device.buffer(nn * 2 + 16, mtl.ResourceOptions.shared);
+        errdefer bias.deinit();
+        var prng = std.Random.DefaultPrng.init(seed);
+        for (t.slice(i16, words + 8)[8..]) |*x| x.* = prng.random().int(i16);
+        for (su.slice(f16, kk + 8)[8..], 0..) |*x, i| x.* = if (i % 3 == 0) -0.75 else 1.125;
+        for (sv.slice(f16, nn + 8)[8..], 0..) |*x, i| x.* = if (i % 5 == 0) -0.25 else 0.875;
+        for (bias.slice(f16, nn + 8)[8..], 0..) |*x, i| x.* = @floatCast(@as(f32, @floatFromInt(i % 7)) / 16);
+        return .{ .matrix = .{ .trellis = .{ .buffer = t, .offset = 16 }, .suh = .{ .buffer = su, .offset = 16 }, .svh = .{ .buffer = sv, .offset = 16 }, .bias = .{ .buffer = bias, .offset = 16 }, .k = kk, .n = nn, .width = .{ .halves = halves }, .codebook = book }, .buffers = .{ t, su, sv, bias } };
+    }
+    fn deinit(w: Wide) void {
+        for (w.buffers) |b| b.deinit();
+    }
+};
+
+/// The merged query/key call (latent and key of 512 columns), then the latent's norm, wq_b's rotate_in and the
+/// key's window glue, against the one epilogue dispatch that carries all three.
+fn qkvTail(weight_f32: bool, position: u32, scale: f32) !void {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    var p = try ex.Pipelines.load(device);
+    defer p.deinit();
+    if (!ex.chain.qkvEpilogueReady(&p)) return error.SkipZigTest;
+    const queue = try device.queue();
+    defer queue.deinit();
+    const wq = try Wide.init(device, 6, .mul1, 71, k, 512);
+    defer wq.deinit();
+    const wkv = try Wide.init(device, 6, .mul1, 72, k, 512);
+    defer wkv.deinit();
+    const wb = try Wide.init(device, 6, .mul1, 73, 512, n);
+    defer wb.deinit();
+    var opts = mtl.CompileOptions.mlx();
+    opts.math_functions = .precise;
+    const ops = try mtl.Library.fromSource(device, sources.deepseek_v41_ops, opts);
+    defer ops.deinit();
+    const rms = try mtl.Pipeline.init(device, ops, "dsv41_rms", false);
+    defer rms.deinit();
+    const glue_lib = try mtl.Library.fromSource(device, sources.deepseek_v41_kv_glue, opts);
+    defer glue_lib.deinit();
+    const glue = try mtl.Pipeline.init(device, glue_lib, "dsv41_kv_glue", false);
+    defer glue.deinit();
+    const rotary: u32 = 64;
+    const capacity = 4096;
+    const factors = try device.buffer(capacity * rotary / 2 * 8, mtl.ResourceOptions.shared);
+    defer factors.deinit();
+    var prng = std.Random.DefaultPrng.init(0xcafe);
+    for (factors.slice(f32, capacity * rotary)) |*v| v.* = prng.random().float(f32) * 2 - 1;
+    const descriptors = try device.buffer(2 * @sizeOf(ex.ExpertDescriptor), mtl.ResourceOptions.shared);
+    defer descriptors.deinit();
+    descriptors.slice(ex.ExpertDescriptor, 2)[0] = try ex.descriptor(wq.matrix);
+    descriptors.slice(ex.ExpertDescriptor, 2)[1] = try ex.descriptor(wkv.matrix);
+    const ids = try device.buffer(2 * 4, mtl.ResourceOptions.shared);
+    defer ids.deinit();
+    @memcpy(ids.slice(u32, 2), &[_]u32{ 0, 1 });
+    const pair = try device.buffer(2 * 4, mtl.ResourceOptions.shared);
+    defer pair.deinit();
+    @memset(pair.slice(u32, 2), 0);
+    const x = try support.input(device, 1);
+    defer x.deinit();
+    const q_weight = try device.buffer(512 * 4, mtl.ResourceOptions.shared);
+    defer q_weight.deinit();
+    const kv_weight = try device.buffer(512 * 2, mtl.ResourceOptions.shared);
+    defer kv_weight.deinit();
+    for (0..512) |i| {
+        const value = 0.25 + prng.random().float(f32) * 2;
+        if (weight_f32) q_weight.slice(f32, 512)[i] = value else q_weight.slice(u16, 1024)[i] = support.bf16(value);
+    }
+    for (kv_weight.slice(u16, 512)) |*v| v.* = support.bf16(0.25 + prng.random().float(f32) * 2);
+    const y_ref = try device.buffer(2 * 512 * 2, mtl.ResourceOptions.shared);
+    defer y_ref.deinit();
+    const y = try device.buffer(2 * 512 * 2, mtl.ResourceOptions.shared);
+    defer y.deinit();
+    @memset(y_ref.slice(u16, 2 * 512), 0);
+    @memset(y.slice(u16, 2 * 512), 0);
+    const out_ref = try device.buffer(n * 2, mtl.ResourceOptions.shared);
+    defer out_ref.deinit();
+    const out = try device.buffer(n * 2, mtl.ResourceOptions.shared);
+    defer out.deinit();
+    const packed_ref = try device.buffer(528, mtl.ResourceOptions.shared);
+    defer packed_ref.deinit();
+    const packed_out = try device.buffer(528, mtl.ResourceOptions.shared);
+    defer packed_out.deinit();
+    @memset(packed_ref.slice(u8, 528), 0);
+    @memset(packed_out.slice(u8, 528), 0);
+    const scratch = try device.buffer(try ex.scratchBytes(k, 512, 2) + try ex.scratchBytes(512, n, 1), mtl.ResourceOptions.shared);
+    defer scratch.deinit();
+    const experts: ex.Experts = .{ .descriptors = .{ .buffer = descriptors }, .count = 2, .k = k, .n = 512 };
+    const rows: ex.Rows = .{ .count = 2, .x_stride = k + 16, .y_stride = 512, .input_ids = .{ .buffer = pair }, .input_rows = 1, .output_ids = .{ .buffer = ids }, .output_rows = 2, .routes = .{ .ids = .{ .buffer = ids }, .repeat = 1 } };
+    // Scale the call's output through the input: larger activations probe the norm's range.
+    for (x.slice(u16, k + 16 + 16)[16..][0..k]) |*v| v.* = support.bf16((prng.random().float(f32) - 0.5) * scale);
+    const eps: f32 = 1e-6;
+    const cb = queue.commandBuffer();
+    const e = cb.compute(.concurrent);
+    ex.useMatrix(e, wq.matrix);
+    ex.useMatrix(e, wkv.matrix);
+    // The unfused chain.
+    try ex.encodeIndexed(&p, e, experts, .{ .buffer = x, .offset = 32 }, .{ .buffer = y_ref }, .{ .buffer = scratch }, rows);
+    e.setPipeline(rms);
+    e.setBuffer(y_ref, 0, 0);
+    e.setBuffer(q_weight, 0, 1);
+    e.setBuffer(y_ref, 0, 2);
+    e.setValue(extern struct { rows: u32, width: u32, x_stride: u32, y_stride: u32, eps: f32, weight_f32: u32 }{ .rows = 1, .width = 512, .x_stride = 512, .y_stride = 512, .eps = eps, .weight_f32 = @intFromBool(weight_f32) }, 3);
+    e.dispatchGroups(.{ .width = 1 }, .{ .width = 256 });
+    e.barrier();
+    try ex.encode(&p, e, wb.matrix, .{ .buffer = y_ref }, .{ .buffer = out_ref }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = 512, .y_stride = n });
+    e.setPipeline(glue);
+    e.setBuffer(y_ref, 512 * 2, 0);
+    e.setBuffer(kv_weight, 0, 1);
+    e.setBuffer(factors, 0, 2);
+    e.setBuffer(packed_ref, 0, 3);
+    e.setBuffer(packed_ref, 0, 4);
+    e.setValue(extern struct { rows: u32, width: u32, stride: u32, packed_stride: u32, block: u32, position: u32, rotary: u32, write_y: u32, eps: f32 }{ .rows = 1, .width = 512, .stride = 512, .packed_stride = 528, .block = 32, .position = position, .rotary = rotary, .write_y = 0, .eps = eps }, 5);
+    e.dispatchGroups(.{ .width = 16 }, .{ .width = 256 });
+    e.barrier();
+    // The fused chain.
+    try ex.chain.encodeQkvEpilogue(&p, e, experts, .{ .buffer = x, .offset = 32 }, .{ .buffer = y }, .{ .buffer = scratch }, rows, .{
+        .q_weight = .{ .buffer = q_weight },
+        .q_weight_f32 = weight_f32,
+        .q_su = wb.matrix.suh,
+        .q_su_signs = false,
+        .kv_width = 512,
+        .kv_weight = .{ .buffer = kv_weight },
+        .factors = .{ .buffer = factors },
+        .packed_view = .{ .buffer = packed_out },
+        .packed_stride = 528,
+        .position = position,
+        .rotary = rotary,
+        .eps = eps,
+    });
+    try ex.encode(&p, e, wb.matrix, .{ .buffer = scratch }, .{ .buffer = out }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = 512, .y_stride = n, .prerotated = true });
+    try complete(cb, e);
+    try std.testing.expectEqualSlices(u16, y_ref.slice(u16, 2 * 512), y.slice(u16, 2 * 512));
+    try std.testing.expectEqualSlices(u16, out_ref.slice(u16, n), out.slice(u16, n));
+    try std.testing.expectEqualSlices(u8, packed_ref.slice(u8, 528), packed_out.slice(u8, 528));
+}
+
+test "the merged call's epilogue carrying the latent norm, wq_b's rotate_in and the key glue keeps every bit" {
+    for ([_]bool{ false, true }) |f32_weight| for ([_]f32{ 0.05, 2, 300 }) |scale| for ([_]u32{ 0, 7, 3001 }) |position|
+        try qkvTail(f32_weight, position, scale);
+}

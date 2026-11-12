@@ -232,3 +232,147 @@ kernel void tf_exl3_rope_rotate_in(device ushort* x [[buffer(0)]],
   for (uint j = 0; j < 4; ++j)
     rotated[ulong(row) * a.k + base + lane + 32 * j] = half(v[j] * 0.08838834764831845f);
 }
+
+struct TfExl3Qkv {
+  uint q_width, q_su_signs, q_weight_f32, kv_width;
+  uint position, rotary, packed_stride, block;
+  float eps;
+  uint reserved0, reserved1, reserved2;
+};
+
+// dsv41_rms's scalars, with contraction off as in that kernel: the sum of squares one thread contributes over
+// i = t, t + 256, ... of a row held in threadgroup memory, and the factor from the row's total.
+#pragma clang fp contract(off)
+inline float tf_exl3_chain_square_sum(threadgroup const ushort* row, uint width, uint t) {
+  float s = 0;
+  for (uint i = t; i < width; i += 256) { float a = tf_exl3_chain_bf(row[i]); s += a * a; }
+  return s;
+}
+inline float tf_exl3_chain_rms_factor(float total, uint width, float eps) {
+  const float factor = 1.0f / float(width);
+  return rsqrt(total * factor + eps);
+}
+#pragma clang fp contract(on)
+
+inline ushort tf_exl3_chain_round_plain(float x) {
+  const uint u = as_type<uint>(x);
+  return ushort((u + 0x7fff + ((u >> 16) & 1)) >> 16);
+}
+
+inline uchar tf_exl3_chain_e4code(float x) {
+  float a = min(abs(x), 448.0f);
+  if (a == 0) return signbit(x) ? 128 : 0;
+  int e = max(-6, int((as_type<uint>(a) >> 23) & 255) - 127);
+  int q = int(rint(ldexp(a, 3 - e)));
+  uint c = e == -6 && q < 8 ? uint(q) : uint((e + 7) * 8 + q - 8);
+  return uchar(min(c, 126u) | (signbit(x) ? 128u : 0u));
+}
+
+// The merged wq_a + wkv call's epilogue and what follows it, one threadgroup a row (row 0 the query latent, row 1 the
+// window key): rotate_out into threadgroup memory, then
+//  - row 0: dsv41_rms in place over `y` and wq_b's rotate_in into `rotated`;
+//  - row 1: `y` receives the raw key (as the epilogue stores it) and dsv41_kv_glue's norm, rope and window fp8 pack
+//    run on it, a 32-column block a SIMDgroup, into `packed`.
+// The call is indexed and routed (each row its own descriptor, whose `reserved` is its width), and bf16.
+kernel void tf_exl3_qkv_epilogue(const device float* sums [[buffer(0)]],
+                                 device uchar* y [[buffer(1)]],
+                                 constant TfExl3Args& a [[buffer(2)]],
+                                 const device uint* output_ids [[buffer(3)]],
+                                 const device uint* routes [[buffer(4)]],
+                                 const device TfExl3Expert* descriptors [[buffer(5)]],
+                                 const device uchar* q_weight [[buffer(6)]],
+                                 const device ushort* q_su [[buffer(7)]],
+                                 device half* rotated [[buffer(8)]],
+                                 const device ushort* kv_weight [[buffer(9)]],
+                                 const device float2* factors [[buffer(10)]],
+                                 device uchar* packed [[buffer(11)]],
+                                 constant TfExl3Qkv& d [[buffer(12)]],
+                                 uint row [[threadgroup_position_in_grid]],
+                                 uint t [[thread_index_in_threadgroup]],
+                                 uint lane [[thread_index_in_simdgroup]],
+                                 uint sg [[simdgroup_index_in_threadgroup]],
+                                 uint threads [[threads_per_threadgroup]]) {
+  threadgroup ushort bits[1280];
+  threadgroup float part[8];
+  if (!tf_exl3_active(routes, a, row)) return;
+  const uint id = routes[row];
+  const uint width = descriptors[id].reserved != 0 ? descriptors[id].reserved : a.n;
+  const device ushort* scales = descriptors[id].sv;
+  const device half* biases = descriptors[id].bias;
+  const uint signs = descriptors[id].sv_signs;
+  const uint has_bias = descriptors[id].has_bias;
+  const uint dest = a.output_ids ? output_ids[row] : row;
+  const uint groups = threads / 32u;
+  for (uint base = sg * 128; base < width; base += groups * 128) {
+    float v[4];
+    for (uint j = 0; j < 4; ++j) v[j] = sums[ulong(row) * a.n + base + lane + 32 * j];
+    tf_exl3_hadamard(v, lane);
+    for (uint j = 0; j < 4; ++j) {
+      const uint n = base + lane + 32 * j;
+      float out = (v[j] * 0.08838834764831845f) * tf_exl3_scale(scales, n, signs);
+      if (has_bias) out += float(biases[n]);
+      const bfloat stored = bfloat(out);
+      bits[n] = as_type<ushort>(stored);
+      if (row != 0) reinterpret_cast<device bfloat*>(y)[ulong(dest) * a.y_stride + n] = stored;
+    }
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (row == 0) {
+    if (t < 256) {
+      float s = simd_sum(tf_exl3_chain_square_sum(bits, width, t));
+      if (lane == 0) part[sg] = s;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sg == 0) {
+      float total = simd_sum(lane < 8 ? part[lane] : 0.0f);
+      if (lane == 0) part[0] = tf_exl3_chain_rms_factor(total, width, d.eps);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    const float scale = part[0];
+    for (uint base = sg * 128; base < width; base += groups * 128) {
+      float v[4];
+      for (uint j = 0; j < 4; ++j) {
+        const uint i = base + lane + 32 * j;
+        const ushort out = tf_exl3_round_bf16((tf_exl3_chain_bf(bits[i]) * scale) * tf_exl3_chain_weight(q_weight, i, d.q_weight_f32));
+        reinterpret_cast<device ushort*>(y)[ulong(dest) * a.y_stride + i] = out;
+        v[j] = tf_exl3_chain_bf(out);
+      }
+      tf_exl3_chain_rotate_in(v, lane, q_su, d.q_su_signs, base + lane, rotated, base + lane);
+    }
+    return;
+  }
+  // The key: dsv41_kv_glue_body over the stored bits. Its norm sums (v0, v1) = columns (t, t + 256) with fused multiply-adds.
+  if (t < 256) {
+    const float v0 = tf_exl3_chain_bf(bits[t]), v1 = tf_exl3_chain_bf(bits[t + 256u]);
+    float s = fma(v0, v0, 0.0f);
+    s = fma(v1, v1, s);
+    for (uint m = 16; m > 0; m >>= 1) s += simd_shuffle_xor(s, m);
+    if (lane == 0) part[sg] = s;
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  float total = part[0];
+  for (uint j = 1; j < 8; ++j) total += part[j];
+  const float r = precise::rsqrt(precise::divide(total, float(d.kv_width)) + d.eps);
+  for (uint blk = sg; blk < d.kv_width / d.block; blk += groups) {
+    const uint col = blk * d.block + lane;
+    ushort yb = tf_exl3_chain_round_plain(tf_exl3_chain_bf(kv_weight[col]) * (tf_exl3_chain_bf(bits[col]) * r));
+    if (col >= d.kv_width - d.rotary) {
+      const float a0 = tf_exl3_chain_bf(yb);
+      const float other = tf_exl3_chain_bf(ushort(simd_shuffle_xor(uint(yb), 1)));
+      const uint pr = (col - (d.kv_width - d.rotary)) / 2u;
+      const float2 cs = factors[ulong(d.position) * (d.rotary / 2u) + pr];
+      uint u;
+      if ((col & 1u) == 0u) u = as_type<uint>(a0 * cs.x - other * cs.y);
+      else u = as_type<uint>(other * cs.y + a0 * cs.x);
+      yb = ushort((u + 0x7fff + ((u >> 16) & 1)) >> 16);
+    }
+    const float val = tf_exl3_chain_bf(yb);
+    const float amax = simd_max(abs(val));
+    const float z = max(amax, 1e-4f) / 448.0f;
+    const uint zbits = as_type<uint>(z);
+    const int exponent = int((zbits >> 23) & 255) - 127 + ((zbits & 0x7fffff) != 0);
+    const float scale = ldexp(1.0f, exponent);
+    packed[col] = tf_exl3_chain_e4code(val / scale);
+    if (lane == 0) packed[d.kv_width + blk] = uchar(exponent + 127);
+  }
+}

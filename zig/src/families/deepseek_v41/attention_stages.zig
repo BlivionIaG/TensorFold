@@ -70,6 +70,8 @@ pub const Stage = struct {
     compressed_rows: u32,
     /// The output's inverse RoPE waits for wo_a's rotate_in (attention_fuse.zig).
     o_rope_deferred: bool = false,
+    /// The merged call's epilogue already ran the window key's norm, rope and pack (attention_fuse.zig).
+    kv_glue_done: bool = false,
 
     /// `Attention.forward`'s first half: `qr = q_norm(wq_a(x))`, `q = wq_b(qr)`, then the query's RoPE.
     pub fn queryStage(self: *Stage, comptime diagnostic: bool) !void {
@@ -101,21 +103,26 @@ pub const Stage = struct {
         self.qkv_merged = qkv_merged;
         if (qkv_merged) {
             const fused = work.view(.qkv);
-            // TF_DSV41_DOUBLE_ATTN_QKV -- the merged call's same-output duplicate.
-            const qkv_passes: u32 = if (std.c.getenv("TF_DSV41_DOUBLE_ATTN_QKV") != null) 2 else 1;
-            for (0..qkv_passes) |_| {
-                try exl3.encodeIndexed(ep, e, .{ .descriptors = .{ .buffer = w.qkv_descriptors.?, .offset = 0 }, .count = 2, .k = c.hidden, .n = c.q_lora }, core(x), core(fused), scratch, .{
-                    .count = 2,
-                    .x_stride = c.hidden,
-                    .y_stride = c.q_lora,
-                    .output = .bf16,
-                    .input_ids = .{ .buffer = work.pair_in, .offset = 0 },
-                    .input_rows = 1,
-                    .output_ids = .{ .buffer = work.ids, .offset = 0 },
-                    .output_rows = 2,
-                    .routes = .{ .ids = .{ .buffer = work.ids, .offset = 0 }, .repeat = 1 },
-                    .no_epilogue = false,
-                });
+            // The call's epilogue carries the latent's norm, wq_b's rotate_in and the key's window glue.
+            self.kv_glue_done = !diagnostic and fuse.qkvTailReady(ep, p, w, c, position) and
+                std.c.getenv("TF_DSV41_DOUBLE_ATTN_QKV") == null;
+            if (self.kv_glue_done) try fuse.encodeQkvTail(ep, p, e, w, work, x, fused, self.chunk, scratch, c, ratio, position) else {
+                // TF_DSV41_DOUBLE_ATTN_QKV -- the merged call's same-output duplicate.
+                const qkv_passes: u32 = if (std.c.getenv("TF_DSV41_DOUBLE_ATTN_QKV") != null) 2 else 1;
+                for (0..qkv_passes) |_| {
+                    try exl3.encodeIndexed(ep, e, .{ .descriptors = .{ .buffer = w.qkv_descriptors.?, .offset = 0 }, .count = 2, .k = c.hidden, .n = c.q_lora }, core(x), core(fused), scratch, .{
+                        .count = 2,
+                        .x_stride = c.hidden,
+                        .y_stride = c.q_lora,
+                        .output = .bf16,
+                        .input_ids = .{ .buffer = work.pair_in, .offset = 0 },
+                        .input_rows = 1,
+                        .output_ids = .{ .buffer = work.ids, .offset = 0 },
+                        .output_rows = 2,
+                        .routes = .{ .ids = .{ .buffer = work.ids, .offset = 0 }, .repeat = 1 },
+                        .no_epilogue = false,
+                    });
+                }
             }
             qr = fused;
             raw = .{ .buffer = fused.buffer, .offset = fused.offset + c.q_lora * 2 };
@@ -123,8 +130,8 @@ pub const Stage = struct {
         attnMark(layer, "qkv", prof, &e);
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .qr_projection, qr);
         // The norm and wq_b's rotate_in as one dispatch; wq_b then runs on the rotated input it left in the scratch.
-        const fused_norm = rows == 1 and dense_passes == 1 and fuse.qNormReady(ep, w, c);
-        if (fused_norm) try fuse.encodeQNorm(ep, e, w, qr, scratch, c) else {
+        const fused_norm = self.kv_glue_done or (rows == 1 and dense_passes == 1 and fuse.qNormReady(ep, w, c));
+        if (self.kv_glue_done) {} else if (fused_norm) try fuse.encodeQNorm(ep, e, w, qr, scratch, c) else {
             norm(p, e, qr, w.q_norm, rows, c.q_lora, c.eps);
             if (rows == 1 and std.c.getenv("TF_DSV41_DOUBLE_ATTN_NORM") != null) normRepeat(p, e, qr, dup_view, w.q_norm, rows, c.q_lora, c.eps);
         }
