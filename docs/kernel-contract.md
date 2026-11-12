@@ -346,6 +346,11 @@ HIP also checks the router over the rows a checkpoint already holds in bf16 (`tf
 form), bit-equal to the fp32-rows router it replaces at 1 to 16 rows, with both kinds' non-finite plants through gate 1
 and the exact sums of gate 4.
 
+The expert offload's kernels (`tf_expert_trace`, and the pointer-table tiles of the `affine_tiles_ptr` object) are built only for
+chips whose caps set `expert_ptrs`, which is gfx900 alone, so no RDNA record changes: each RDNA object set keeps the same
+symbols and the same usage as before. On gfx900 no record holds usage either; each run reads the `affine_tiles_ptr` object
+and holds every `affine_tiles` launch it rebuilds to the same limits as the `affine_tiles` object's.
+
 HIP also checks the DeltaNet prompt recurrence at half a value head a block (`tf_gdn_prompt_128`, its y and state),
 bit-equal to the plain window scan `gated_delta_tile` on the same tokens.
 Its prompt prework in one launch (`tf_gdn_prompt_prep`: conv, q and k head norms, v, gate, beta and the new conv state)

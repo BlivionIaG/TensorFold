@@ -23,20 +23,32 @@ fn share(p: weights.Projection, sliced: bool) Error!view.Projection {
 pub fn mlpView(m: weights.Mlp, sliced: bool) Error!view.Mlp {
     return switch (m) {
         .dense => |d| .{ .dense = .{ .gate = try projection(d.gate), .up = try projection(d.up), .down = try share(d.down, sliced) } },
-        .routed => |r| .{ .moe = .{
-            .rows32 = r.rows32.ptr,
-            .rows16 = r.router.ptr,
-            .top_k = r.top_k,
-            .rows = r.router.dim(0),
-            .remap = if (r.remap) |b| b.ptr else 0,
-            .experts = .{
-                .fused = try hip.quant.view(r.experts.fused, true),
-                .down = try hip.quant.view(r.experts.down, true),
-                .count = r.experts.count,
-                .width = r.experts.width,
-                .dims = r.experts.dims,
-            },
-        } },
+        .routed => |r| blk: {
+            var fused = try hip.quant.view(r.experts.fused, true);
+            var down = try hip.quant.view(r.experts.down, true);
+            // offloaded: a projection's expert is the blob the layer's table names, not a slice of the stack
+            if (r.offload) |o| {
+                fused.handle.mlx.ptab = o.ptab;
+                fused.handle.mlx.ptab_off = o.fused_off;
+                down.handle.mlx.ptab = o.ptab;
+                down.handle.mlx.ptab_off = o.down_off;
+            }
+            break :blk .{ .moe = .{
+                .rows32 = r.rows32.ptr,
+                .rows16 = r.router.ptr,
+                .top_k = r.top_k,
+                .rows = r.router.dim(0),
+                .remap = if (r.remap) |b| b.ptr else 0,
+                .experts = .{
+                    .fused = fused,
+                    .down = down,
+                    .count = r.experts.count,
+                    .width = r.experts.width,
+                    .dims = r.experts.dims,
+                    .hook = if (r.offload) |o| o.hook else null,
+                },
+            } };
+        },
     };
 }
 

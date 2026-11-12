@@ -186,6 +186,23 @@ pub fn textBytes(gpa: std.mem.Allocator, io: Io, dir: []const u8) !u64 {
     return total;
 }
 
+/// The bytes of the routed experts' stacks (`switch_mlp` tensors of an MLX MoE checkpoint).
+pub fn routedBytes(gpa: std.mem.Allocator, io: Io, dir: []const u8) !u64 {
+    var files = try Files.list(gpa, io, dir);
+    defer files.deinit();
+    var total: u64 = 0;
+    for (files.model) |path| {
+        var shard = try Shard.open(gpa, io, path);
+        defer shard.close(io);
+        var it = shard.names.iterator();
+        while (it.next()) |kv| {
+            if (std.mem.indexOf(u8, kv.key_ptr.*, ".switch_mlp.") == null) continue;
+            total += kv.value_ptr.end - kv.value_ptr.begin;
+        }
+    }
+    return total;
+}
+
 fn containsLower(name: []const u8, needle: []const u8) bool {
     var i: usize = 0;
     while (i + needle.len <= name.len) : (i += 1) {

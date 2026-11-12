@@ -495,8 +495,8 @@ fn exactTool(b: *std.Build, target: std.Build.ResolvedTarget, e: Engine, family_
         .imports = &.{ .{ .name = "hip", .module = e.hip }, .{ .name = "core", .module = e.hip.import_table.get("core").? }, .{ .name = "lighton_ocr", .module = e.lighton }, .{ .name = "qwen3_5", .module = e.family }, .{ .name = "lanes", .module = e.lanes }, .{ .name = "qwen_hip_vision", .module = e.family.import_table.get("qwen_hip_vision").? } },
     }) });
 }
-/// A group's source and whether it compiles with IEEE arithmetic (`strict`: -O2 -fno-fast-math, IEEE denormals).
-const Source = struct { path: []const u8, strict: bool = false };
+/// A group's source: `strict` builds with IEEE arithmetic (-O2 -fno-fast-math), `ptrs` with the expert-offload code.
+const Source = struct { path: []const u8, strict: bool = false, ptrs: bool = false };
 /// The model-free kernels' source groups, in zig/src/hip/kernels.zig's Group order.
 const groups = [_]Source{
     .{ .path = "ops/ops.hip" },
@@ -515,6 +515,7 @@ const groups = [_]Source{
     .{ .path = "lighton_ocr.hip", .strict = true },
     .{ .path = "qwen_vision.hip", .strict = true },
     .{ .path = "draft/draft.hip" },
+    .{ .path = "tiles/dot2_tiles_ptr.hip", .ptrs = true },
 };
 /// What the group sources include, so an edit to one rebuilds them.
 const headers = [_][]const u8{
@@ -530,7 +531,7 @@ const headers = [_][]const u8{
 };
 /// The flags of the kernels' first build: no contraction, C++20 (`compileSource` adds -mno-wavefrontsize64 for wave32).
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-ffp-contract=off" };
-const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
+const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const expert_ptrs = true;\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, relax_branches: bool, arch: []const u8) *std.Build.Module {
     const files = objectFiles(b, .{ .name = hipcc, .resolved = hipcc_resolved, .device_lib = device_lib, .relax_branches = relax_branches }, arch);
@@ -540,7 +541,7 @@ pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u
         decls = b.fmt("{s}const g{d} align(8) = @embedFile(\"group{d}.hsaco\").*;\n", .{ decls, i, i });
         refs = b.fmt("{s}&g{d}, ", .{ refs, i });
     }
-    return b.createModule(.{ .root_source_file = files.add("kernels.zig", b.fmt("pub const arch = \"{s}\";\n{s}pub const images = [_][]align(8) const u8{{ {s}}};\n", .{ arch, decls, refs })) });
+    return b.createModule(.{ .root_source_file = files.add("kernels.zig", b.fmt("pub const arch = \"{s}\";\npub const expert_ptrs = {any};\n{s}pub const images = [_][]align(8) const u8{{ {s}}};\n", .{ arch, caps.Caps.of(arch).?.expert_ptrs, decls, refs })) });
 }
 
 /// The HIP compiler as the build found it, the device bitcode it links, and whether gfx1100 relaxes branches earlier.
@@ -552,18 +553,18 @@ pub fn objectFiles(b: *std.Build, cc: Hipcc, arch: []const u8) *std.Build.Step.W
     for (groups, 0..) |g, i| {
         const name = b.fmt("group{d}.hsaco", .{i});
         const source = b.path(b.fmt("zig/kernels/hip/{s}", .{g.path}));
-        _ = files.addCopyFile(compileSource(b, cc, arch, source, name, g.strict), name);
+        _ = files.addCopyFile(compileSource(b, cc, arch, source, name, g.strict, g.ptrs), name);
     }
     return files;
 }
 
 /// One source's code object for `arch`, with the kernels' flags and the caps table's instruction switches.
 pub fn compile(b: *std.Build, cc: Hipcc, arch: []const u8, source: std.Build.LazyPath, out: []const u8) LazyPath {
-    return compileSource(b, cc, arch, source, out, false);
+    return compileSource(b, cc, arch, source, out, false, false);
 }
 
 /// `compile`, with `-O2 -fno-fast-math -fdenormal-fp-math=ieee` after the common flags when `strict`.
-fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, out: []const u8, strict: bool) LazyPath {
+fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, out: []const u8, strict: bool, ptrs: bool) LazyPath {
     const c = caps.Caps.of(arch).?;
     const root = std.fs.path.dirname(std.fs.path.dirname(cc.resolved) orelse ".") orelse ".";
     const run = hipccRun(b, cc.name, &.{"--genco"});
@@ -577,6 +578,7 @@ fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, o
     run.addArg(b.fmt("-DTF_SDOT8={d}", .{@intFromBool(c.sdot8)}));
     run.addArg(b.fmt("-DTF_MATRIX={d}", .{@intFromBool(c.matrix != .none)}));
     run.addArg(b.fmt("-DTF_DOT2_SIGNED_ZERO={d}", .{@intFromBool(c.dot2_signed_zero)}));
+    if (c.expert_ptrs) run.addArgs(if (ptrs) &.{ "-DTF_EXPERT_TRACE=1", "-DTF_EXPERT_PTRS=1" } else &.{"-DTF_EXPERT_TRACE=1"});
     run.addArg(b.fmt("--rocm-path={s}", .{root}));
     const lib = cc.device_lib orelse b.fmt("{s}/lib/llvm/amdgcn/bitcode", .{root});
     run.addArg(b.fmt("--rocm-device-lib-path={s}", .{lib}));
@@ -591,10 +593,4 @@ fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, o
     return object;
 }
 
-/// The backend-neutral core (checkpoint formats, the kernel registry), as the other backends import it.
-fn coreModule(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Module {
-    const core = b.createModule(.{ .root_source_file = b.path("zig/src/core/root.zig"), .target = target, .link_libc = true });
-    core.addImport("gpu_memory", @import("gpu_memory.zig").module(b, target));
-    core.addImport("tokenizer", b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .link_libc = true }));
-    return core;
-}
+const coreModule = @import("hip_core.zig").module;

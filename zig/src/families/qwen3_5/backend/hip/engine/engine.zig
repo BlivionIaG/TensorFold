@@ -23,6 +23,7 @@ const plan = @import("../forward/plan.zig");
 const config = @import("../../../weights/config.zig");
 const table = @import("../../../weights/table.zig");
 const vision = @import("vision.zig");
+const experts = @import("experts.zig");
 
 pub const Options = struct {
     vision: ?@import("engine_api").VisionOpen = null,
@@ -55,6 +56,8 @@ pub const Options = struct {
     graphs: bool = true,
     /// What the run may use, resolved once by whoever opens the engine.
     policy: hip.Policy = .{},
+    /// The routed experts of an MLX MoE checkpoint in a host tier the GPU reads in place, hot ones cached.
+    experts: experts.Settings = .{},
 };
 
 pub const Pick = lane_round.Pick;
@@ -194,14 +197,21 @@ pub const Engine = struct {
         _ = try steps.done(.{ 0, 0 }, .first);
         // a chat checkpoint's drafted and concurrent rounds equal its solo ones: rocBLAS products vary with rows
         const chat = chatCheckpoint(gpa, io, dir);
+        const pool = try e.budget(io);
+        const held = hip.usage(false).device;
+        const total = try checkpointBytes(gpa, io, dir, chat) / o.world;
+        // a checkpoint whose experts do not fit is served with them in host memory when the kernels can read them there
+        const offload = try experts.decide(gpa, io, dir, o.experts, chat, o.world, total, pool.room(held));
         if (o.preflight) |pf| {
-            // a rank loads its share of the checkpoint, near enough to refuse before reading it
-            pf.* = .{ .pool = try e.budget(io), .held = hip.usage(false).device, .weights = try checkpointBytes(gpa, io, dir, chat) / o.world };
+            // a rank loads its share, near enough to refuse before reading it; offloaded experts count what stays
+            pf.* = .{ .pool = pool, .held = held, .weights = if (offload.offload) experts.resident(total, offload.routed) else total };
             if (seen) |limits| pf.weights += try vision.Vision.bytes(try vision.Vision.config(gpa, io, dir), limits);
             if (pf.weights > pf.pool.room(pf.held)) return error.WeightsDoNotFit;
         }
         _ = try steps.done(.{ 0, 0 }, .first);
-        e.weights = try weights.Model.loadRankWith(gpa, io, &e.driver, dir, group, chat);
+        e.weights = try weights.Model.loadRankWith(gpa, io, &e.driver, dir, group, chat, if (offload.offload) .{ .window_bytes = o.experts.window_mib << 20 } else null);
+        // stream value waits cannot be captured: an offloaded model's rounds run eager
+        if (offload.offload) e.o.graphs = false;
         errdefer e.weights.deinit();
         if (e.plain() or chat) {
             // a bf16 checkpoint's products (rocBLAS, or widened for chat): one rank, not qualified under graphs
@@ -237,6 +247,7 @@ pub const Engine = struct {
     /// Allocate the scratch for streams of `capacity` positions and a pool of `pool_pages` pages (zero: the default).
     pub fn size(e: *Engine, capacity: usize, pool_pages: usize) !void {
         const rows = e.o.batch_rows;
+        if (e.weights.experts) |s| if (rows > s.shape().trace_rows) return error.OffloadRows;
         const prompt_rows = @min(e.o.prompt_rows, capacity);
         const count = if (pool_pages > 0) pool_pages else default_streams * pages.pagesFor(capacity) + pages.pagesFor(rows);
         const arenas = try e.arenaBytes(rows, prompt_rows, capacity);
@@ -434,6 +445,12 @@ pub const Engine = struct {
     /// Waits for the stream, before caches are freed (a round may still be running on them).
     pub fn drain(e: *Engine) void {
         e.stream.synchronize() catch {};
+    }
+
+    /// Gives the offloaded experts (if any) their device cache from what the plan left, and starts their stage worker.
+    pub fn attachExperts(e: *Engine, io: std.Io) !void {
+        const s = e.weights.experts orelse return;
+        try experts.attach(s, try e.budget(io), hip.usage(false).device, e.o.experts);
     }
 
     /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order.

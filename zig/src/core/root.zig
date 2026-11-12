@@ -65,6 +65,12 @@ pub const attention_range = @import("attention_range.zig");
 pub const gdn_prep_ref = @import("gdn_prep_ref.zig");
 pub const qk_ref = @import("qk_ref.zig");
 pub const moe_ref = @import("moe_ref.zig");
+/// The expert offload shared by backends with a host expert tier: policy, window layout, stage and worker.
+pub const expert_offload = @import("expert_offload.zig");
+pub const expert_window = @import("expert_window.zig");
+pub const expert_tier = @import("expert_tier.zig");
+pub const expert_service = @import("expert_service.zig");
+pub const expert_stats = @import("expert_stats.zig");
 pub const dense_ref = @import("dense_ref.zig");
 
 pub const checkpoint_weights = @import("checkpoint_weights.zig");
@@ -106,6 +112,7 @@ test {
     _ = gdn_prep_ref;
     _ = qk_ref;
     _ = moe_ref;
+    _ = @import("expert_offload_tests.zig");
     _ = dense_ref;
     _ = exl3_format;
     _ = exlr8;

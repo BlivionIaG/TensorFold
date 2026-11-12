@@ -13,6 +13,8 @@ test {
     _ = @import("graph.zig");
     _ = @import("arena.zig");
     _ = @import("launches.zig");
+    _ = @import("stream_value.zig");
+    _ = @import("expert_store.zig");
     _ = @import("ops/ops.zig");
     _ = @import("context.zig").Context.init;
     _ = @import("stream.zig").Stream.init;

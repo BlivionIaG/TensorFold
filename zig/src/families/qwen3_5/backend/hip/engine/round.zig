@@ -153,10 +153,14 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     st.layout = l;
     const p: hip.plan_ops.Plan = .{ .args = st.buffer.args(l), .rows = c.shape.rows, .slots = c.shape.slots };
     const r: win.Round = .{ .plan = p, .tokens = st.buffer.dev.base() + 4 * l.tokens, .span = c.shape.span, .inputs = st.snaps, .positions3 = st.buffer.dev.base() + 4 * l.rope, .rotary = st.buffer.dev.base() + 4 * l.rotary };
+    // experts whose copies landed since the last round are resident from this round's table
+    if (e.weights.experts) |s| s.beginRound();
     const done = try run(e, c, r);
     e.graphs.rounds += 1;
     e.graphs.submit_ns += nowNs() - began;
     try e.drawRows(o, done.y, total, reqs, out, m.tp == null);
+    // the round is over (drawRows waited): its picks decide which experts the next rounds' copies move
+    if (e.weights.experts) |s| try s.endRound(total, nowNs() - began);
     st.last = .{ .plan = p, .keep_at = 4 * l.keep, .hidden = done.hidden.ptr };
     return .{ .hidden = done.hidden };
 }
