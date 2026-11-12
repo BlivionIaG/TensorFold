@@ -4,6 +4,23 @@ const std = @import("std");
 const runtime = @import("runtime.zig");
 const DeviceBuffer = @import("memory.zig").DeviceBuffer;
 
+/// What an arena handed out and took back, in order, for the hazard check of a recorded round (`hazard.zig`); an arena with no log keeps none.
+pub const Log = struct {
+    pub const Item = union(enum) {
+        /// `bytes` bytes at `at` (the 256-aligned address `take` returned).
+        take: struct { at: u64, bytes: usize },
+        /// the arena's `used` after a `release` or `reset`.
+        release: usize,
+    };
+
+    gpa: std.mem.Allocator,
+    items: std.ArrayList(Item) = .empty,
+
+    pub fn deinit(l: *Log) void {
+        l.items.deinit(l.gpa);
+    }
+};
+
 pub const Arena = struct {
     /// Null for a counting arena.
     buf: ?DeviceBuffer,
@@ -11,6 +28,7 @@ pub const Arena = struct {
     len: usize,
     used: usize = 0,
     peak: usize = 0,
+    log: ?*Log = null,
 
     pub fn init(r: *const runtime.Runtime, bytes: usize) runtime.Error!Arena {
         const buf = try DeviceBuffer.alloc(r, bytes);
@@ -34,6 +52,7 @@ pub const Arena = struct {
             std.log.err("scratch arena of {d} bytes cannot take {d} more at {d}", .{ self.len, bytes, at });
             return error.OutOfDeviceMemory;
         }
+        if (self.log) |l| l.items.append(l.gpa, .{ .take = .{ .at = self.base + at, .bytes = bytes } }) catch return error.OutOfDeviceMemory;
         self.used = at + bytes;
         self.peak = @max(self.peak, self.used);
         return self.base + at;
@@ -46,6 +65,7 @@ pub const Arena = struct {
 
     pub fn reset(self: *Arena) void {
         self.used = 0;
+        if (self.log) |l| l.items.append(l.gpa, .{ .release = 0 }) catch {};
     }
 
     /// The current mark, to hand scratch back after a step that needs it only briefly.
@@ -56,6 +76,7 @@ pub const Arena = struct {
     pub fn release(self: *Arena, at: usize) void {
         std.debug.assert(at <= self.used);
         self.used = at;
+        if (self.log) |l| l.items.append(l.gpa, .{ .release = at }) catch {};
     }
 };
 

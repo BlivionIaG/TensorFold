@@ -4,6 +4,7 @@ const std = @import("std");
 const abi = @import("../abi.zig");
 const Launcher = @import("../launches.zig").Launcher;
 const Arena = @import("../arena.zig").Arena;
+const fork_mod = @import("../fork.zig");
 const types = @import("types.zig");
 const products = @import("project.zig");
 const attention = @import("attention.zig");
@@ -38,6 +39,8 @@ pub const Ops = struct {
     window: bool = false,
     /// rocBLAS on this stream, for bf16 projections (null: the model has none).
     blas: ?*const @import("../blas.zig").Blas = null,
+    /// The side stream the branches of a captured round use (`branch`); null: they stay on `stream`, in order.
+    fork: ?*fork_mod.Fork = null,
 
     pub const project = products.project;
     pub const projectSilu = products.projectSilu;
@@ -56,6 +59,26 @@ pub const Ops = struct {
     pub const embedAffine = products.embedAffine;
     pub const denseRows = products.denseRows;
     pub const denseGemm = products.denseGemm;
+
+    /// A branch of independent kernels: launch them with `b.ops` and call `b.end()` once they are all launched. Until then they have no order against
+    /// what is launched on `o`; the caller guarantees the two sides share no memory unless both only read it. Without a side stream (an eager
+    /// round, the counting stream) `b.ops` is `o` and the launches keep their order.
+    pub fn branch(o: Ops) Error!Branch {
+        const inner = try fork_mod.Branch.begin(o.fork, .{ .r = o.l.r, .handle = o.stream });
+        var side = o;
+        side.stream = inner.side;
+        side.fork = null;
+        return .{ .ops = side, .inner = inner };
+    }
+
+    pub const Branch = struct {
+        ops: Ops,
+        inner: fork_mod.Branch,
+
+        pub fn end(b: Branch) Error!void {
+            try b.inner.end();
+        }
+    };
 
     /// Whether decode.hip's merged launches are on.
     pub fn fused(o: Ops) bool {

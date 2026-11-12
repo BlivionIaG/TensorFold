@@ -26,9 +26,18 @@ pub const Config = struct {
     }
 };
 
+/// A test seam: while set (per thread), every launch's function, geometry, stream and complete argument pack are handed over before the launch reaches
+/// HIP, which is how the hazard check (`hazard.zig`) reads what a recorded round's kernels were given.
+pub const Observer = struct {
+    ctx: *anyopaque,
+    seen: *const fn (ctx: *anyopaque, f: Function, cfg: Config, stream: Stream, args: *const Args) void,
+};
+pub threadlocal var observer: ?Observer = null;
+
 pub fn launch(f: Function, cfg: Config, stream: Stream, args: *Args) runtime.Error!void {
     try cfg.validate();
     if (f.r != stream.r) return error.Invalid;
+    if (observer) |o| o.seen(o.ctx, f, cfg, stream, args);
     const g = cfg.grid;
     const b = cfg.block;
     if (cfg.cooperative) {

@@ -154,6 +154,17 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     b.step("hip-dense-tune", "Time the dot2 and WMMA BF16 dense tiles at Qwen3-8B's shapes (-Dhip-arch)").dependOn(&dense_tune_run.step);
     const stub_kernels = b.createModule(.{ .root_source_file = b.addWriteFiles().add("kernels.zig", stub) });
     const host = engineModules(b, b.graph.host, .Debug, stub_kernels, null);
+    // the captured-round hazard check runs the real forward over a fake runtime (no device, no code objects): the kernel library needs an architecture
+    // (the launcher's tile registry is keyed by it) and non-empty images for the fake to "load"
+    const fake_kernels = b.createModule(.{ .root_source_file = b.addWriteFiles().add("kernels.zig", fake_g9) });
+    const branch_host = engineModules(b, b.graph.host, .Debug, fake_kernels, null);
+    const branch_run = b.addRunArtifact(b.addTest(.{ .root_module = branch_host.family, .filters = &.{"round branches:"} }));
+    test_step.dependOn(&branch_run.step);
+    // the fake runtime, the table and the analysis, the fork, the policy key (all of `host.hip` also runs in `test`)
+    const branch_hip_run = b.addRunArtifact(b.addTest(.{ .root_module = host.hip, .filters = &.{ "capture_trace:", "fork:", "hazard:", "hazard table:", "branches are on unless" } }));
+    const branch_step = b.step("test-round-branches-host", "The captured decode round of Qwen3.5-4B over a fake runtime: its branches and the graph's edges against the buffers' hazards");
+    branch_step.dependOn(&branch_run.step);
+    branch_step.dependOn(&branch_hip_run.step);
     b.step("test-environment-hip-host", "Named HIP budget refusals without GPU work").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.hip, .filters = &.{ "HIP environment:", "a carve-out needs the card" } })).step);
     b.step("test-slide-hip-host", "Unsupported HIP learning refuses before device or checkpoint access").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.native, .filters = &.{"slide admission:"} })).step);
     const blas_host = b.addRunArtifact(b.addTest(.{ .root_module = host.hip, .filters = &.{ "HIP BLAS:", "HIP fixed BLAS:", "HIP convolution:", "HIP AOTriton:" } }));
@@ -374,6 +385,8 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
     });
     const qwen_vision = @import("lighton_hip.zig").vision(b, target, optimize, hip, core, lanes, serve);
     family.addImport("qwen_hip_vision", qwen_vision);
+    // the kernel sources the round's hazard table is checked against (only the test of branches in a round reads them)
+    family.addImport("hip_sources", b.createModule(.{ .root_source_file = b.path("zig/kernels/hip/hazard_sources.zig") }));
     const lighton = @import("lighton_hip.zig").module(b, target, optimize, hip, core, lanes, api, serve);
     const flashnext = b.createModule(.{
         .root_source_file = b.path("zig/src/families/flashnext/hip.zig"),
@@ -536,6 +549,8 @@ const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPB
 /// `-Dhip-cflags`: appended to every kernel compile (set by `options`).
 var extra_flags: []const []const u8 = &.{};
 const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const g9_mix: u8 = 2;\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
+/// `stub` with the architecture the Qwen3.5-4B card runs and an image the fake runtime accepts (non-empty, 8-aligned).
+const fake_g9 = std.fmt.comptimePrint("pub const arch = \"gfx900\";\npub const g9_mix: u8 = 2;\nconst image: [8]u8 align(8) = @splat(0);\npub const images: [{d}][]align(8) const u8 = @splat(&image);\n", .{groups.len});
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, relax_branches: bool, arch: []const u8) *std.Build.Module {
     const files = objectFiles(b, .{ .name = hipcc, .resolved = hipcc_resolved, .device_lib = device_lib, .relax_branches = relax_branches }, arch);

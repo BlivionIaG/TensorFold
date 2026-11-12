@@ -62,4 +62,7 @@ test {
     @import("std").testing.refAllDecls(engine.Engine);
     // the prompt route the lane host actually calls, recorded on the host
     _ = @import("backend/hip/engine/hip_prompt_test.zig");
+    // the captured round's branches against its buffers' hazards, over a fake runtime; it needs a kernel library that names an architecture, which
+    // only `zig build test-round-branches-host` gives it (the other builds' stub names none)
+    if (comptime @import("hip").kernels.arch.len != 0) _ = @import("backend/hip/forward/branch_test.zig");
 }

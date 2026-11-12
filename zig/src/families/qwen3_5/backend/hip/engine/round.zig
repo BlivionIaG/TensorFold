@@ -52,6 +52,8 @@ pub const State = struct {
     /// The layout of the plan in flight, for the copy a round starts with.
     layout: plan.Layout = undefined,
     votes: ?hip.Votes = null,
+    /// The side stream and events of the branches a captured round forks (null: tensor parallel, or `branches=off`).
+    fork: ?hip.Fork = null,
 
     pub fn init(e: *Engine) !State {
         const m = e.model();
@@ -72,6 +74,8 @@ pub const State = struct {
         errdefer e.gpa.free(ks);
         var votes: ?hip.Votes = if (e.o.world > 1) try hip.Votes.init(&e.driver, e.o.world) else null;
         errdefer if (votes) |*v| v.deinit();
+        var fork: ?hip.Fork = if (m.tp == null and e.o.world == 1 and e.o.policy.branchesOn()) try hip.Fork.init(&e.driver) else null;
+        errdefer if (fork) |*f| f.deinit();
         const keeps = try hip.HostBuffer.alloc(&e.driver, keep_ring * 4 * (rows + 1));
         return .{
             .buffer = buffer,
@@ -82,10 +86,12 @@ pub const State = struct {
             .keeps = keeps,
             .ks = ks,
             .votes = votes,
+            .fork = fork,
         };
     }
 
     pub fn deinit(s: *State, e: *Engine) void {
+        if (s.fork) |*f| f.deinit();
         if (s.votes) |*v| v.deinit();
         s.keeps.free();
         e.gpa.free(s.ks);
@@ -235,7 +241,8 @@ pub fn queued(e: *Engine, row: Rows, fed: bool) !usize {
 }
 
 /// The forward and its logits projection, and the draws its shape names (the argmax and top-k of every row when this rank holds the whole head).
-fn body(e: *Engine, r: win.Round) !round_graphs.Out {
+/// `recording`: a graph is being captured, so the forward may fork branches onto the side stream (an eager round runs them in order on one).
+fn body(e: *Engine, r: win.Round, recording: bool) !round_graphs.Out {
     const st = &e.round;
     const shape = st.chosen.?.shape;
     const l = st.layout;
@@ -244,7 +251,11 @@ fn body(e: *Engine, r: win.Round) !round_graphs.Out {
     if (!shape.piped) try st.buffer.send(e.stream.handle, l);
     const out = if (shape.piped) at + 4 * l.tokens else e.drawer.argmaxAt();
     const dl = e.drawer.launches(shape.rows, shape.stride, shape.argmax, out, at + 4 * l.mirror, at + 4 * l.ks);
-    return forwardOn(e.ops(&e.rounds), e.model(), r, st.trace, dl);
+    var o = e.ops(&e.rounds);
+    if (recording) {
+        if (st.fork) |*f| o.fork = f;
+    }
+    return forwardOn(o, e.model(), r, st.trace, dl);
 }
 
 /// `body` after the plan's copy, on `o`: on the counting stream it measures what a round takes.
@@ -263,9 +274,9 @@ pub fn forwardOn(ops: hip.ops.Ops, m: *const view.Model, r: win.Round, trace: ?f
 
 /// One round's forward as `choose` picked: replayed from the shape's graph, captured, or eager.
 fn run(e: *Engine, c: Chosen, r: win.Round) !round_graphs.Out {
-    const entry = c.entry orelse return body(e, r);
+    const entry = c.entry orelse return body(e, r, false);
     switch (c.pick) {
-        .eager => return body(e, r),
+        .eager => return body(e, r, false),
         .replay => {
             e.rounds.used = entry.out.used;
             try entry.exec.?.launchOn(e.stream);
@@ -294,7 +305,7 @@ fn capture(e: *Engine, entry: *round_graphs.Entry, r: win.Round) !round_graphs.O
     }
     e.graphs.revoke(entry);
     e.rounds.release(at);
-    if (all == .declined) return body(e, r);
+    if (all == .declined) return body(e, r, false);
     if (e.o.world == 1) return error.OutOfDeviceMemory;
     // no rank runs another collective once one could not take a round
     e.stopped = true;
@@ -307,7 +318,7 @@ const Body = struct {
     r: win.Round,
 
     fn run(b: Body) anyerror!round_graphs.Out {
-        return body(b.e, b.r);
+        return body(b.e, b.r, true);
     }
 };
 

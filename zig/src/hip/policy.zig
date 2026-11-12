@@ -48,6 +48,8 @@ pub const Policy = struct {
     slots: u32 = 8,
     /// Rank whose graph capture fails on purpose, for the tests of the fallback (-1: none). Local to a rank.
     graph_fail: i32 = -1,
+    /// `branches=off`: a captured round keeps independent kernels on one stream (no fork and join in its graph). Local to a rank: the results do not change.
+    branches: Choice = .auto,
     /// The RCCL library to load first. Local to a rank.
     rccl_lib: Path = .{},
 
@@ -93,6 +95,11 @@ pub const Policy = struct {
         return p.graphs != .off;
     }
 
+    /// Whether rounds record independent kernels as branches of their graph (only `branches=off` turns it off; a group's ranks never fork).
+    pub fn branchesOn(p: *const Policy) bool {
+        return p.branches != .off;
+    }
+
     /// Whether rank `rank` declines its captures on purpose (`graph_fail`), to check that every rank falls back.
     pub fn failsCapture(p: *const Policy, rank: usize) bool {
         return p.graph_fail >= 0 and @as(usize, @intCast(p.graph_fail)) == rank;
@@ -119,6 +126,8 @@ pub const Policy = struct {
             p.fill_rows = std.fmt.parseInt(u32, value, 10) catch return error.BadValue;
         } else if (eql(u8, key, "graph_fail")) {
             p.graph_fail = std.fmt.parseInt(i32, value, 10) catch return error.BadValue;
+        } else if (eql(u8, key, "branches")) {
+            p.branches = try parseEnum(Choice, value);
         } else if (eql(u8, key, "rccl_lib")) try p.rccl_lib.set(value) else return error.UnknownKey;
     }
 
@@ -133,6 +142,7 @@ pub const Policy = struct {
         if (p.gemm != .auto) try w.print(",gemm={t}", .{p.gemm});
         if (p.fuse != .auto) try w.print(",fuse={t}", .{p.fuse});
         if (p.graph_fail >= 0) try w.print(",graph_fail={d}", .{p.graph_fail});
+        if (p.branches != .auto) try w.print(",branches={t}", .{p.branches});
         if (p.rccl_lib.slice()) |path| try w.print(",rccl_lib={s}", .{path});
         try w.print("; mtp drafts {d} under {d}, {d} snapshots", .{ p.mtp.drafts, p.mtp.confidence, p.slots });
     }
@@ -274,4 +284,21 @@ test "graphs are on at any world size unless the policy turns them off" {
     try std.testing.expect(p.graphsOn());
     try p.apply("graphs=off");
     try std.testing.expect(!p.graphsOn());
+}
+
+test "branches are on unless the policy turns them off, and a rank keeps its own" {
+    var p: Policy = .{};
+    try std.testing.expect(p.branchesOn());
+    try p.apply("branches=on");
+    try std.testing.expect(p.branchesOn());
+    try p.apply("branches=off");
+    try std.testing.expect(!p.branchesOn());
+    try std.testing.expectError(error.BadValue, p.apply("branches=maybe"));
+    var buf: [256]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    try p.format(&w);
+    try std.testing.expect(std.mem.indexOf(u8, w.buffered(), ",branches=off") != null);
+    // a group agrees on the words, which leave it out: a follower runs with its own
+    const back = Policy.fromWords(p.words(), .{});
+    try std.testing.expect(back.branchesOn());
 }

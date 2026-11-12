@@ -18,7 +18,14 @@ pub const launch = @import("launch.zig");
 pub const graph = @import("graph.zig");
 pub const graph_cache = @import("graph_cache.zig");
 pub const graph_split = @import("graph_split.zig");
-pub const Arena = @import("arena.zig").Arena;
+/// Branches of a captured round: independent kernels on a side stream between a fork and a join.
+pub const fork = @import("fork.zig");
+pub const Fork = fork.Fork;
+pub const arena = @import("arena.zig");
+pub const Arena = arena.Arena;
+/// A runtime with no device that records a captured round's launches and edges, and the check of its hazards (the tests of branches in a round).
+pub const capture_trace = @import("capture_trace.zig");
+pub const hazard = @import("hazard.zig");
 pub const caps = @import("caps.zig");
 pub const Caps = caps.Caps;
 pub const kernels = @import("kernels.zig");
@@ -71,6 +78,10 @@ test {
     _ = dense_text;
     _ = joint_schema;
     _ = policy;
+    _ = capture_trace;
+    _ = hazard;
+    _ = fork;
+    _ = @import("hazard_table.zig");
     _ = admission;
     _ = Device;
     _ = collective;
