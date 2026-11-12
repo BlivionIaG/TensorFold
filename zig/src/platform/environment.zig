@@ -81,6 +81,8 @@ pub const rules = [_]Rule{
     .{ .name = "TF_PREFILL_REMOTE_TPS", .scope = .metal, .kind = .positive_real, .trim = " ", .forms = "a finite prompt-token rate a second greater than 0 (default 2400): a pull end to end up to 32768 prompt tokens, until it has timed its own" },
     .{ .name = "TF_PREFILL_LOCAL_DECAY", .scope = .metal, .kind = .real, .max = 2, .trim = " ", .forms = "a finite exponent from 0 to 2 (default 0.44): the Mac's average prefill rate over a prompt of n > 32768 tokens is the rate times (32768 / n) to this power" },
     .{ .name = "TF_PREFILL_REMOTE_DECAY", .scope = .metal, .kind = .real, .max = 2, .trim = " ", .forms = "a finite exponent from 0 to 2 (default 0.15): the same fall with context for a pull" },
+    .{ .name = "TF_PREFILL_LOCAL_CURVE", .scope = .metal, .kind = .path, .forms = "rows:seconds pairs, comma separated, 1 to 8 (text without control characters): measured seconds for this machine's prefill of a prompt of that many rows from empty; the route fits its rate and decay to them" },
+    .{ .name = "TF_PREFILL_REMOTE_CURVE", .scope = .metal, .kind = .path, .forms = "rows:seconds pairs, comma separated, 1 to 8 (text without control characters): measured seconds for a pull of that many rows (the producer's prefill and the transfer, not the queue wait or the tail)" },
     .{ .name = "TF_PREFILL_STALL", .scope = .metal, .kind = .real, .trim = " ", .forms = "a finite weight of at least 0 (default 0.25): the cost, per second of prefill here, of each stream decoding on the Mac (0 ignores them)" },
     .{ .name = "TF_PREFILL_BREAKER", .scope = .metal, .kind = .u64, .trim = " ", .forms = "a whole count of failed pulls in a row from 0 (default 3) after which prompts are prefilled here for the cool-down; 0 never stops" },
     .{ .name = "TF_PREFILL_COOLDOWN_S", .scope = .metal, .kind = .u64, .min = 1, .max = std.time.s_per_day, .trim = " ", .forms = "whole seconds from 1 to 86400 (default 30) that prompts stay off an unreachable pair before one pull tries it" },
@@ -316,6 +318,11 @@ pub fn read(comptime T: type, name: [:0]const u8, default: T) Error!T {
 pub fn range(name: [:0]const u8, raw: ?[]const u8) Error!?[2]u32 {
     const n = (try checked(name, raw)) orelse return null;
     return .{ @intCast(n >> 32), @truncate(n) };
+}
+
+/// A setting's text as the process has it, for `path` and the other readers that take the raw text.
+pub fn setting(name: [:0]const u8) ?[]const u8 {
+    return sys.getenv(name);
 }
 
 /// A `.path` setting's text, or null when unset or blank; nothing is logged, so the caller words the refusal.

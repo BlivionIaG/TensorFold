@@ -108,6 +108,8 @@ const valid = [_]Case{
     .{ .name = "TF_PREFILL_LOCAL_DECAY", .raw = "0.44", .n = @bitCast(@as(f64, 0.44)) },
     .{ .name = "TF_PREFILL_REMOTE_DECAY", .raw = "0", .n = @bitCast(@as(f64, 0)) },
     .{ .name = "TF_PREFILL_STALL", .raw = " 0.25", .n = @bitCast(@as(f64, 0.25)) },
+    .{ .name = "TF_PREFILL_LOCAL_CURVE", .raw = "32768:16.4,131072:80,524288:790", .n = 0 },
+    .{ .name = "TF_PREFILL_REMOTE_CURVE", .raw = " 32768:13.7 ", .n = 0 },
     .{ .name = "TF_PREFILL_BREAKER", .raw = "0", .n = 0 },
     .{ .name = "TF_PREFILL_BREAKER", .raw = " 3", .n = 3 },
     .{ .name = "TF_PREFILL_COOLDOWN_S", .raw = "1", .n = 1 },

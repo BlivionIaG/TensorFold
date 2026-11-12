@@ -121,23 +121,48 @@ pub const Route = struct {
         trip: u64 = 3,
         cooldown_s: u64 = 30,
         timeout_s: u64 = 0,
+        /// curves fitted to measured points (TF_PREFILL_LOCAL_CURVE, _REMOTE_CURVE) replace the rate and decay
+        local_fit: ?Curve = null,
+        remote_fit: ?Curve = null,
     };
 
     /// Knobs from TF_PREFILL_ROUTE, _LOCAL_TPS, _REMOTE_TPS, _LOCAL_DECAY, _REMOTE_DECAY, _STALL and the breaker ones.
     pub fn fromEnv() !Route {
-        const env = @import("sys").environment;
+        const sys = @import("sys");
+        const env = sys.environment;
         const d: Knobs = .{};
+        const local_tps = try env.read(f64, "TF_PREFILL_LOCAL_TPS", d.local_tps);
+        const remote_tps = try env.read(f64, "TF_PREFILL_REMOTE_TPS", d.remote_tps);
+        const local_decay = try env.read(f64, "TF_PREFILL_LOCAL_DECAY", d.local_decay);
+        const remote_decay = try env.read(f64, "TF_PREFILL_REMOTE_DECAY", d.remote_decay);
+        const local_fit = try calibrate("TF_PREFILL_LOCAL_CURVE", env.setting("TF_PREFILL_LOCAL_CURVE"), .{ .base = .{ .v = local_tps }, .decay = local_decay });
+        const remote_fit = try calibrate("TF_PREFILL_REMOTE_CURVE", env.setting("TF_PREFILL_REMOTE_CURVE"), .{ .base = .{ .v = remote_tps }, .decay = remote_decay });
+        if (local_fit) |c| std.log.info("remote prefill: this machine's curve {d:.0} tokens a second to 32768 rows, decay {d:.2}", .{ c.base.v, c.decay });
+        if (remote_fit) |c| std.log.info("remote prefill: the pair's curve {d:.0} tokens a second to 32768 rows, decay {d:.2}", .{ c.base.v, c.decay });
         return build(.{
             .mode = try env.read(u64, "TF_PREFILL_ROUTE", d.mode),
-            .local_tps = try env.read(f64, "TF_PREFILL_LOCAL_TPS", d.local_tps),
-            .remote_tps = try env.read(f64, "TF_PREFILL_REMOTE_TPS", d.remote_tps),
-            .local_decay = try env.read(f64, "TF_PREFILL_LOCAL_DECAY", d.local_decay),
-            .remote_decay = try env.read(f64, "TF_PREFILL_REMOTE_DECAY", d.remote_decay),
+            .local_tps = local_tps,
+            .remote_tps = remote_tps,
+            .local_decay = local_decay,
+            .remote_decay = remote_decay,
             .stall = try env.read(f64, "TF_PREFILL_STALL", d.stall),
             .trip = try env.read(u64, "TF_PREFILL_BREAKER", d.trip),
             .cooldown_s = try env.read(u64, "TF_PREFILL_COOLDOWN_S", d.cooldown_s),
             .timeout_s = try env.read(u64, "TF_PREFILL_TIMEOUT_S", d.timeout_s),
+            .local_fit = local_fit,
+            .remote_fit = remote_fit,
         });
+    }
+
+    /// The curve fitted to a setting's `rows:seconds` points (seeded with `seed`'s decay); null when unset or blank.
+    pub fn calibrate(name: [:0]const u8, raw: ?[]const u8, seed: Curve) !?Curve {
+        const text = (try @import("sys").environment.path(name, raw)) orelse return null;
+        var buf: [curve.max_points]curve.Point = undefined;
+        const points = curve.parsePoints(text, &buf) orelse {
+            if (!@import("builtin").is_test) std.log.err("{s}: expected 1 to {d} rows:seconds pairs, each over a positive row count", .{ name, curve.max_points });
+            return error.InvalidEnvironment;
+        };
+        return curve.fit(points, seed);
     }
 
     pub fn build(k: Knobs) Route {
@@ -145,8 +170,8 @@ pub const Route = struct {
         return .{
             .mode = if (always) .always else .auto,
             .queue = .{ .stall = k.stall },
-            .local = .{ .base = .{ .v = k.local_tps }, .decay = k.local_decay },
-            .remote = .{ .base = .{ .v = k.remote_tps }, .decay = k.remote_decay },
+            .local = k.local_fit orelse .{ .base = .{ .v = k.local_tps }, .decay = k.local_decay },
+            .remote = k.remote_fit orelse .{ .base = .{ .v = k.remote_tps }, .decay = k.remote_decay },
             .breaker = .{ .trip = k.trip, .cooldown_ns = k.cooldown_s * std.time.ns_per_s },
             .timeout_s = k.timeout_s,
         };

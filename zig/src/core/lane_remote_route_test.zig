@@ -444,3 +444,20 @@ test "measured: the host reports its own prompt pass, and the last-token pass af
     try t.expectEqual(route.Pass.tail, pulled.first.pass);
     try t.expectEqual(@as(u64, 100), pulled.first.rows);
 }
+
+test "calibrate: measured points replace the seeded curve, keep the online correction, and bad text is refused" {
+    const seed: route.Curve = .{ .base = .{ .v = 2000 }, .decay = 0.44 };
+    try t.expectEqual(@as(?route.Curve, null), try Route.calibrate("TF_PREFILL_LOCAL_CURVE", null, seed));
+    try t.expectEqual(@as(?route.Curve, null), try Route.calibrate("TF_PREFILL_LOCAL_CURVE", "  ", seed));
+    const fitted = (try Route.calibrate("TF_PREFILL_REMOTE_CURVE", "32768:10,131072:50,524288:260", seed)).?;
+    try t.expect(fitted.base.v > 3000 and fitted.base.v < 3500);
+    try t.expect(fitted.decay > 0.05 and fitted.decay < 0.3);
+    var r = Route.build(.{ .remote_fit = fitted });
+    try t.expectEqual(fitted.base.v, r.remote.base.v);
+    try t.expectEqual((Route{}).local.base.v, r.local.base.v); // the other side keeps its seed
+    const before = r.remote.base.v;
+    r.observe(.{ .pass = .remote, .rows = 32768, .ns = 20 * std.time.ns_per_s, .end = 32768 }); // twice as slow: blended in
+    try t.expect(r.remote.base.v < before and r.remote.base.v > before / 2);
+    try t.expectError(error.InvalidEnvironment, Route.calibrate("TF_PREFILL_LOCAL_CURVE", "32768", seed));
+    try t.expectError(error.InvalidEnvironment, Route.calibrate("TF_PREFILL_LOCAL_CURVE", "0:5", seed));
+}
