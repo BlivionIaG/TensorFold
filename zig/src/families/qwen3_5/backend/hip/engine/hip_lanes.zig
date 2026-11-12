@@ -198,7 +198,7 @@ pub const Hip = struct {
             .exact_width = max_window,
             // one-token rounds of greedy streams run a step ahead (`queueRound`) on one rank; sampled streams take windows, and so
             // do rounds that wait on expert copies (their value waits are not queueable)
-            .gpu_tokens = !drafting and h.e.o.world == 1 and h.e.weights.experts == null,
+            .gpu_tokens = !drafting and h.e.o.world == 1 and h.e.weights.experts == null and h.e.round.off.pipelined(),
             .pipe_sampled = false,
             .mtp = drafting,
             .speculate = drafting,
