@@ -12,6 +12,7 @@ const ced = @import("ced.zig");
 const Forward = fwd.Forward;
 const pf = @import("forward_prefill.zig");
 const pf_finish = @import("forward_prefill_finish.zig");
+const pf_k4 = @import("forward_prefill_k4.zig");
 const Tail = pf.Tail;
 const enterRun = pf_finish.enterRun;
 
@@ -103,14 +104,21 @@ pub fn ready(f: *Forward) !void {
     const rows: usize = @intCast(f.opts.prefill_rows);
     const W: usize = f.comm.world();
     _ = try f.sendBuffer(r, 2 * rows * f.cfg.hidden);
+    const staged = stageRows(f);
     if (f.engram) |h| {
         const cols = h.headShard(f.comm.rank(), f.comm.world())[1] * @as(usize, f.cfg.engram_head_dim);
         _ = try grow(&f.gathered, r.d, W * 2 * rows * cols);
-        for (0..h.layer_ids.len) |li| _ = try f.rows_stage[li].take(r.d, 2 * rows * cols);
+        for (0..h.layer_ids.len) |li| _ = try f.rows_stage[li].take(r.d, 2 * staged * cols);
     }
-    _ = try f.ids_stage.take(r.d, 8 * rows);
+    _ = try f.ids_stage.take(r.d, 8 * staged);
     try r.stream.synchronize();
     st.ready = true;
+}
+
+/// Rows the pinned staging is sized for: a 4K segment's under TF_DSV41_PF_4K (regrown behind kernels, it drains them).
+pub fn stageRows(f: *const Forward) usize {
+    const rows: usize = @intCast(f.opts.prefill_rows);
+    return if (pf.state(f).k4) @max(rows, pf_k4.K4.rows) else rows;
 }
 
 pub fn grow(b: *?cuda.DeviceBuffer, d: *const cuda.Driver, bytes: usize) !u64 {

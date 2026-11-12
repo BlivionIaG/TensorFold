@@ -381,3 +381,16 @@ test "TF_DSV41_GM_GU2: 0 / 1, and a 4,096-row segment's gate / up at GU2 over it
 test {
     _ = @import("index_scratch_test.zig");
 }
+
+test "TF_DSV41_PF_4K: the pinned staging is sized for the 4K segment before the first prompt runs" {
+    const glue = @import("forward_prefill_glue.zig");
+    var state: @import("forward_prefill.zig").State = .{};
+    var f: @import("forward.zig").Forward = undefined;
+    f.prefill_state = &state;
+    f.opts = .{};
+    try testing.expectEqual(@as(usize, 2048), glue.stageRows(&f));
+    state.k4 = true;
+    try testing.expectEqual(@as(usize, @import("forward_prefill_k4.zig").K4.rows), glue.stageRows(&f));
+    f.opts.prefill_rows = 8192;
+    try testing.expectEqual(@as(usize, 8192), glue.stageRows(&f));
+}
