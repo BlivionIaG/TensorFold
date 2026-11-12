@@ -80,7 +80,7 @@ test "Metal EXL3 mapped windows match independent 64-bit extraction at every off
 test "shared prefill retains exact row bits and guards across tile boundaries and fallback" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const prefill = p.prefill orelse return error.SharedPrefillUnavailable;
     try std.testing.expect(prefill.simdWidth() == 32 and prefill.maxThreads() >= 128);
@@ -154,7 +154,7 @@ test "shared prefill retains exact row bits and guards across tile boundaries an
 test "shared prefill preserves gather and scatter maps across a partial tile" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     if (p.prefill == null) return error.SharedPrefillUnavailable;
     var legacy = p;

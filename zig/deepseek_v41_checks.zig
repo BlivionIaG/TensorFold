@@ -7,6 +7,7 @@ test {
     _ = @import("src/families/deepseek_v41/kv_test.zig");
     _ = @import("src/families/deepseek_v41/forward_cone.zig");
     _ = @import("src/families/deepseek_v41/ops_check.zig");
+    _ = @import("src/families/deepseek_v41/moe_fuse_check.zig");
     _ = @import("src/families/deepseek_v41/load.zig");
     _ = @import("src/families/deepseek_v41/index_precision_test.zig");
     _ = @import("src/families/deepseek_v41/config.zig");
