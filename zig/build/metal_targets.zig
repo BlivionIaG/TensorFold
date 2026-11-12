@@ -490,6 +490,7 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
 
     // These module tests include Metal device checks when the macOS host has a GPU.
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = metal })).step);
+    b.step("test-metal-relay", "HostWindow over shm and the command-buffer Relay on this Mac's GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = metal, .filters = &.{ "host window:", "relay" } })).step);
     const helpers = b.createModule(.{
         .root_source_file = b.path("zig/tests/common.zig"),
         .target = target,
