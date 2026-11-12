@@ -26,6 +26,8 @@ pub const radix = @import("engine_api").prompt_radix;
 pub const hip_lanes = @import("backend/hip/engine/hip_lanes.zig");
 pub const mtp = @import("backend/hip/engine/mtp.zig");
 pub const worker = @import("backend/hip/engine/worker.zig");
+/// A layer range of the engine as the external stage of a model split across devices.
+pub const split_stage = @import("backend/hip/split_stage.zig");
 pub const slicing = @import("weights/slicing.zig");
 pub const reduce = @import("hip").reduce;
 pub const native_engine = @import("backend/hip/engine/native.zig");
@@ -64,5 +66,7 @@ test {
     _ = @import("backend/hip/engine/hip_prompt_test.zig");
     // layer ranges, on a recording stand-in for the HIP runtime (kernels naming gfx1030)
     _ = @import("backend/hip/split_test.zig");
+    _ = split_stage;
+    _ = @import("backend/hip/split_stage_test.zig");
     _ = @import("backend/hip/range_test.zig");
 }
