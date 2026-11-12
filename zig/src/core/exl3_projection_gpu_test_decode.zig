@@ -18,7 +18,7 @@ test "EXL3 long cancellation retains small terms in BF16 projection output" {
     const blocks = long_k / 128;
     const device = try mtl.Device.init();
     defer device.deinit();
-    var pipelines = try ex.Pipelines.load(device);
+    var pipelines = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer pipelines.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -74,7 +74,7 @@ test "EXL3 long cancellation retains small terms in BF16 projection output" {
 test "Metal EXL3 codebooks and half widths match the rotated scalar projection" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -108,7 +108,7 @@ test "Metal EXL3 codebooks and half widths match the rotated scalar projection" 
 test "Metal EXL3 rows retain exact BF16 bits across full and independently resumed windows" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -133,7 +133,7 @@ test "Metal EXL3 rows retain exact BF16 bits across full and independently resum
 test "GPU router descriptors select mixed-width experts with gather and scatter without host routing" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -180,7 +180,7 @@ test "GPU router descriptors select mixed-width experts with gather and scatter 
 test "packed signs and GPU expert filtering preserve untouched output slots" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -228,7 +228,7 @@ test "rejected views leave an encoder reusable and successful output retains its
     defer device.deinit();
     const queue = try device.queue();
     defer queue.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const w = try Owned.init(device, 6, .mul1, 17);
     defer w.deinit();
@@ -280,7 +280,7 @@ test "caller-prepared grouped expert tiles preserve scatter slots and ignore pad
     defer device.deinit();
     const queue = try device.queue();
     defer queue.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const w0 = try Owned.init(device, 3, .mul1, 81);
     defer w0.deinit();
