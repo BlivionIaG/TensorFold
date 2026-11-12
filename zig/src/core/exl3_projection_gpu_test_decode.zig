@@ -16,6 +16,8 @@ const reference = support.reference;
 test "EXL3 long cancellation retains small terms in BF16 projection output" {
     const long_k = 4096;
     const blocks = long_k / 128;
+    // A prompt window is the body that keeps compensated dots; the one-row and decode bodies sum plain f32.
+    const window = 32;
     const device = try mtl.Device.init();
     defer device.deinit();
     var pipelines = try ex.Pipelines.loadWith(device, std.testing.allocator);
@@ -37,12 +39,12 @@ test "EXL3 long cancellation retains small terms in BF16 projection output" {
     matrix.trellis = .{ .buffer = trellis };
     matrix.suh = .{ .buffer = scales };
     matrix.bias = null;
-    const x = try device.buffer(long_k * 2, mtl.ResourceOptions.shared);
+    const x = try device.buffer(window * long_k * 2, mtl.ResourceOptions.shared);
     defer x.deinit();
     var rotated: [long_k]f16 = undefined;
     for (0..blocks) |i| {
         const v: f32 = if (i == 0) 4096 else if (i == blocks - 1) -4096 else 0x1p-13;
-        @memset(x.slice(u16, long_k)[i * 128 ..][0..128], bf16(v));
+        for (0..window) |row| @memset(x.slice(u16, window * long_k)[row * long_k + i * 128 ..][0..128], bf16(v));
         var block: [128]f32 = @splat(v);
         decoder.hadamard(&block);
         for (block, 0..) |value, j| rotated[i * 128 + j] = @floatCast(value);
@@ -60,15 +62,15 @@ test "EXL3 long cancellation retains small terms in BF16 projection output" {
     const sv = base.buffers[2].slice(f16, n + 8)[8..];
     var expected_bf16: [n]u16 = undefined;
     for (expected, sv, &expected_bf16) |v, scale, *out| out.* = bf16(v * @as(f32, scale));
-    const y = try device.buffer(n * 2, mtl.ResourceOptions.shared);
+    const y = try device.buffer(window * n * 2, mtl.ResourceOptions.shared);
     defer y.deinit();
-    const scratch = try device.buffer(try ex.scratchBytes(long_k, n, 1), mtl.ResourceOptions.shared);
+    const scratch = try device.buffer(try ex.scratchBytes(long_k, n, window), mtl.ResourceOptions.shared);
     defer scratch.deinit();
     const cb = queue.commandBuffer();
     const encoder = cb.compute(.concurrent);
-    try ex.encode(&pipelines, encoder, matrix, .{ .buffer = x }, .{ .buffer = y }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = long_k, .y_stride = n });
+    try ex.encode(&pipelines, encoder, matrix, .{ .buffer = x }, .{ .buffer = y }, .{ .buffer = scratch }, .{ .count = window, .x_stride = long_k, .y_stride = n });
     try complete(cb, encoder);
-    try std.testing.expectEqualSlices(u16, &expected_bf16, y.slice(u16, n));
+    for (0..window) |row| try std.testing.expectEqualSlices(u16, &expected_bf16, y.slice(u16, window * n)[row * n ..][0..n]);
 }
 
 test "Metal EXL3 codebooks and half widths match the rotated scalar projection" {
