@@ -12,6 +12,7 @@ const kv = @import("kv.zig");
 const index = @import("csa2_index.zig");
 const rope = @import("rope.zig");
 const common = @import("attention_common.zig");
+const fuse = @import("attention_fuse.zig");
 const View = common.View;
 const State = common.State;
 const Seg = common.Seg;
@@ -494,8 +495,15 @@ pub const Stage = struct {
         const grouped = work.view(.grouped);
         const group_input = q_width / c.o_groups;
         const group_output = c.o_groups * c.o_lora;
+        // wo_a's epilogue and wo_b's rotate_in as one dispatch (`grouped` is still written).
+        const chain_wo = rows == 1 and w.wo_a_descriptors != null and dense_passes == 1 and
+            fuse.switches().wo_chain and exl3.chain.rotateOutInReady(ep) and
+            std.c.getenv("TF_DSV41_NO_FUSE_WO_A") == null and std.c.getenv("TF_DSV41_DOUBLE_ATTN_WOA") == null;
         // The multi-row path takes the same dispatch -- q is row-major.
-        if (rows <= 8 and w.wo_a_descriptors != null and std.c.getenv("TF_DSV41_NO_FUSE_WO_A") == null) {
+        if (chain_wo) {
+            try fuse.encodeWoA(ep, e, w, work, q, grouped, scratch, c);
+            attnMark(layer, "wo_a", prof, &e);
+        } else if (rows <= 8 and w.wo_a_descriptors != null and std.c.getenv("TF_DSV41_NO_FUSE_WO_A") == null) {
             for (&w.wo_a) |*m| exl3.useMatrix(e, m.*);
             // TF_DSV41_DOUBLE_ATTN_WOA -- the merged wo_a call's same-output duplicate.
             const wo_a_passes: u32 = if (std.c.getenv("TF_DSV41_DOUBLE_ATTN_WOA") != null) 2 else 1;
@@ -516,7 +524,7 @@ pub const Stage = struct {
             attnMark(layer, "wo_a", prof, &e);
         }
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .grouped, grouped);
-        for (0..dense_passes) |_| try projection(ep, e, .{ .trellis = w.wo_b }, grouped, y, scratch, rows, group_output, c.hidden, .bf16);
+        if (chain_wo) try fuse.encodeWoB(ep, e, w, y, scratch, c) else for (0..dense_passes) |_| try projection(ep, e, .{ .trellis = w.wo_b }, grouped, y, scratch, rows, group_output, c.hidden, .bf16);
         attnMark(layer, "wo_b", prof, &e);
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .wo_b, y);
         if (prof) |pf| pf.enc = e;
