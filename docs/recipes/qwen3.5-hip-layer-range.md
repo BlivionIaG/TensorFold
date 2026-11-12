@@ -2,8 +2,8 @@
 
 The HIP engine in `zig/src/families/qwen3_5/backend/hip/` can run a contiguous range of a dense model's layers, so two
 devices can each hold part of one model and pass the hidden row between them through a host window. This page covers
-the range itself; the transport and the stage that drives it are separate changes. Status: offline only. Nothing below
-has run on a card, and no token has been compared between a split and an unsplit run.
+the range itself and the stage that drives it. Status: offline only. Nothing below has run on a card, and no token has
+been compared between a split and an unsplit run.
 
 | Piece | Where |
 | --- | --- |
@@ -37,3 +37,19 @@ launcher that names gfx1030, over the 4B's shape with fake weights. It compares 
 span's launches with the unsplit ones' slice (the embedding only first, the head only last, import only non-first, export
 only non-last). The stand-in computes nothing: this checks plumbing, not tokens. `test-qwen35-hip-host` runs the range's
 validation and parse tests.
+
+## As the external stage of a split model
+
+`HipLayerStage` (`backend/hip/split_stage.zig`) records one ranged decode step per pipeline step between the wait on the
+input slot and the release write of the output slot, reading and writing the window's slots in place by GPU address.
+`HipExternal` (`zig/src/hip/offload.zig`) is the card as the split layer's `ExternalDevice`: pinned host windows mapped
+for the card, `hipStreamWaitValue32` / `hipStreamWriteValue32` on the window's words, a bounded `sync`, and device memory
+by address. It needs a runtime that exports those two calls; it refuses an architecture the kernel caps table does not
+know. A caller that owns the engine's stream passes it as `Options.stream`, so the waits, the launches and the writes
+share one stream. `zig build -Dhip=true tf-offload-hip` builds `tf-offload` with a `hip` device next to `mock`;
+`probe --device hip` needs a card and a runtime from `TENSORFOLD_HIP` or the search path.
+
+Tests, no device: `zig build -Dhip=true test-hip-offload-host` runs `HipExternal` on a stand-in runtime whose stream is
+a queue run in order by a thread, so a wait holds later operations until the host writes the word; it also checks the
+stamped row's layout against `split.wire`. `test-qwen35-split-host` also runs the real `Pipeline` over a `HipLayerStage`
+in every order and checks the stage's launches sit between the pipeline's wait and write. Not run: a stage on a card.
