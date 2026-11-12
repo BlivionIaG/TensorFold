@@ -43,11 +43,11 @@ kernel void tf_exl3_swiglu_prerotate(const device ushort* gate [[buffer(0)]],
 }
 
 // The gate+up call's rotate_out and the SwiGLU-plus-rotate in one pass, over the call's f32 sums.
-struct TfExl3GateUpRot { uint rows, shared_rows, k, sums_stride, experts, fused_experts, shared_dst, weighted; };
+struct TfExl3GateUpRot { uint rows, shared_rows, k, sums_stride, experts, fused_experts, shared_dst, weighted, shared_id; };
 kernel void tf_exl3_gateup_swiglu_prerotate(const device float* sums [[buffer(0)]],
                                            const device uint* fused_ids [[buffer(1)]],
                                            const device float* weights [[buffer(2)]],
-                                           const device uint* routes [[buffer(3)]],
+                                           device uint* routes [[buffer(3)]],
                                            const device TfExl3Expert* fused [[buffer(4)]],
                                            const device TfExl3Expert* down [[buffer(5)]],
                                            const device TfExl3Expert* shared_down [[buffer(6)]],
@@ -61,6 +61,8 @@ kernel void tf_exl3_gateup_swiglu_prerotate(const device float* sums [[buffer(0)
   if (row >= d.rows + d.shared_rows) return;
   const bool routed = row < d.rows;
   const uint slot = routed ? row : row - d.rows;
+  // The down call reads the shared rows' table entry from the id row after the routed picks.
+  if (!routed && lane == 0u && sg == 0u && tg.x == 0u && d.shared_id != 0xffffffffu) routes[row] = d.shared_id;
   const uint base = (tg.x * (tptg.x / 32u) + sg) * 128u;
   if (base >= d.k) return;
   // Gate rows lead the call, up rows follow the routed gate rows; the shared pair sits after both routed halves.

@@ -321,10 +321,12 @@ pub const GateUpRot = struct {
     fused_experts: usize,
     shared_dst: usize,
     weighted: bool = true,
+    /// Written to the id row after the routed picks for each shared row, for the down call's table: none leaves them.
+    shared_id: ?u32 = null,
 };
 
 pub fn encodeGateUpSwiGLU(p: *const Pipelines, e: mtl.ComputeEncoder, sums: View, fused_ids: View, weights: View, routes: View, fused: View, down: View, shared_down: View, rotated: View, d: GateUpRot) void {
-    const A = extern struct { rows: u32, shared_rows: u32, k: u32, sums_stride: u32, experts: u32, fused_experts: u32, shared_dst: u32, weighted: u32 };
+    const A = extern struct { rows: u32, shared_rows: u32, k: u32, sums_stride: u32, experts: u32, fused_experts: u32, shared_dst: u32, weighted: u32, shared_id: u32 };
     const args = A{
         .rows = @intCast(d.rows),
         .shared_rows = @intCast(d.shared_rows),
@@ -334,6 +336,7 @@ pub fn encodeGateUpSwiGLU(p: *const Pipelines, e: mtl.ComputeEncoder, sums: View
         .fused_experts = @intCast(d.fused_experts),
         .shared_dst = @intCast(d.shared_dst),
         .weighted = @intFromBool(d.weighted),
+        .shared_id = d.shared_id orelse std.math.maxInt(u32),
     };
     e.setPipeline(p.gateup_swiglu_prerotate);
     bind(e, sums, 0);
