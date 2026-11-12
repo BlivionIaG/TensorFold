@@ -412,8 +412,8 @@ pub const Store = struct {
         if (rows_dev != null and envOn("TF_EXPERT_VERIFY")) vbuf = HostBuffer.alloc(r, 4096) catch null;
         errdefer if (vbuf) |*b| b.free();
         var ack: Ack = .{ .host = @ptrCast(@alignCast(win.bytes[ack_at..].ptr)), .host_dev = win_dev + ack_at, .base = win.bytes.ptr };
-        // the ack is a host word in the window; a VRAM signal word (docs/LATENCY.md C3) only with TF_EXPERT_ACK=vram: hipmac's signal words hung the card in
-        // lat_probe (WAIT_REG_MEM on the signal's address never released), so that stays opt-in until the fix is validated on the card
+        // the ack is a host word in the window; a VRAM signal word (docs/LATENCY.md C3) only with TF_EXPERT_ACK=vram, which needs hipmac 07b7e35 or later (its first
+        // signal pages hung the card); validated on the card for the release leg, so opt-in until it is measured on the 35B
         const ack_vram = if (platform.getenv("TF_EXPERT_ACK")) |mode| std.mem.eql(u8, mode, "vram") else false;
         if (ack_vram) ack.signal = openSignal(r, if (chunk_items != null) 1 + max_chunks else 1);
         errdefer if (ack.signal) |*g| {
