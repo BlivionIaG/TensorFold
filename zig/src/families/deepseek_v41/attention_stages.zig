@@ -503,7 +503,7 @@ pub const Stage = struct {
         if (rows == 1 and std.c.getenv("TF_DSV41_DOUBLE_ATTN_PUBLISH") != null)
             try p.cache.publishWindow(e, chunk, ring, rows, position);
         attnMark(layer, "publish", prof, &e);
-        // The inverse RoPE rides on wo_a's rotate_in when the output stage can take it (rows == 1, no capture of the result).
+        // The inverse RoPE rides on wo_a's rotate_in when the output stage can take it (rows == 1, no capture).
         self.o_rope_deferred = rows == 1 and !diagnostic and self.dense_passes == 1 and fuse.oRopeReady(ep, p, w, c, position);
         if (!self.o_rope_deferred) {
             try rotate(p, e, q, rows, c.heads, c.head_dim, position, ratio, 1, true, c);

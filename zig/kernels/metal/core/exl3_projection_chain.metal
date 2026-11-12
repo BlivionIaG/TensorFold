@@ -1,14 +1,9 @@
 // Chain kernels: the epilogue of one EXL3 projection fused with the block-local work that follows it.
-// Appended to the core projection library, so the helpers (tf_exl3_hadamard, tf_exl3_scale, tf_exl3_round_bf16)
-// are the very ones the unfused rotate_in / rotate_out kernels use. Every expression below is copied from the
-// kernel it replaces, statement for statement: the compiler contracts a multiply-add only inside one expression, so
-// the same statements give the same bits.
 
 // A bf16 value as a float: the load tf_exl3_rotate_in does of a stored activation.
 inline float tf_exl3_chain_bf(ushort bits) { return as_type<float>(uint(bits) << 16); }
 
 // The next projection's rotate_in applied to a block whose bf16 values the lanes hold (lane l: l, l + 32, ...).
-// `at` is the first element of the lane's strip in the next projection's flat input; its blocks are 128 aligned.
 inline void tf_exl3_chain_rotate_in(thread float (&v)[4], uint lane, const device ushort* su, uint su_signs,
                                     uint first, device half* rotated, ulong dest) {
   for (uint j = 0; j < 4; ++j) v[j] = v[j] * tf_exl3_scale(su, first + 32 * j, su_signs);
@@ -20,10 +15,7 @@ struct TfExl3Next {
   uint k, su_signs, reserved0, reserved1;
 };
 
-// rotate_out of a (dense or indexed) projection, then the next projection's rotate_in on the very bf16 values the
-// rotate_out stores: one dispatch where there were two. `y` still receives the bf16 output; `rotated` is the next
-// projection's prerotated input, row-major with `next.k` halfs a row. The output row stride a.y_stride must be a
-// multiple of 128 so no block straddles two rows of the next projection.
+// rotate_out of a projection, then the next projection's rotate_in on the bf16 values it stores (y keeps them).
 kernel void tf_exl3_rotate_out_in(const device float* sums [[buffer(0)]],
                                   const device ushort* sv [[buffer(1)]],
                                   const device half* bias [[buffer(2)]],
@@ -75,11 +67,7 @@ inline float tf_exl3_chain_weight(const device uchar* w, ulong i, uint f32) {
   return tf_exl3_chain_bf(reinterpret_cast<const device ushort*>(w)[i]);
 }
 
-// dsv41_rms over a row, then the next projection's rotate_in over the rounded bf16 result: one threadgroup a row, one
-// SIMDgroup a 128-element block (a block a SIMDgroup, the groups striding when there are more blocks than groups).
-// The sum of squares runs on the first 256 threads in dsv41_rms's own order; `y` receives the normalized bf16 row
-// (in place over `x` is allowed) and `rotated` the next projection's prerotated input (width halfs a row).
-// Contraction is off for the whole kernel, as for dsv41_rms (its sum of squares must not fuse).
+// dsv41_rms over a row, then the next projection's rotate_in on the rounded row; contraction off as in dsv41_rms.
 #pragma clang fp contract(off)
 kernel void tf_exl3_rms_rotate_in(const device ushort* x [[buffer(0)]],
                                   const device uchar* w [[buffer(1)]],
@@ -126,10 +114,7 @@ struct TfExl3Rope {
   uint width, rotary, position, step, inverse, reserved0, reserved1, reserved2;
 };
 
-// rotate_out of a projection whose output rows are heads of `width` columns, then dsv41_rope over each head's last
-// `rotary` columns, on the bf16 values the rotate_out stores: one dispatch where there were two. The rotary columns
-// are a multiple of 32 and fill the end of a head's last 128-column block, so the adjacent pair a rope rotates sits in
-// two lanes of one SIMDgroup. The row is rotated at position + row * step, as dsv41_rope's absolute-position grid.
+// rotate_out, then dsv41_rope over each head's last rotary columns (a multiple of 32) on the stored bf16 values.
 kernel void tf_exl3_rotate_out_rope(const device float* sums [[buffer(0)]],
                                     const device ushort* sv [[buffer(1)]],
                                     const device half* bias [[buffer(2)]],
@@ -182,10 +167,7 @@ struct TfExl3RopeIn {
   uint width, rotary, stride, position, step, inverse, reserved0, reserved1;
 };
 
-// dsv41_rope over the heads of `x` (in place), then rotate_in of the (dense or indexed) projection that reads `x`:
-// one dispatch where there were two. The rope's rows are `rp.stride` elements apart and its heads `rp.width` columns
-// wide; the rotary columns are a multiple of 32 and end the head, so a SIMDgroup's 128-column block holds whole pairs.
-// `x` receives the rotated values exactly as the rope kernel leaves them.
+// dsv41_rope over the heads of x in place, then rotate_in of the projection that reads x.
 kernel void tf_exl3_rope_rotate_in(device ushort* x [[buffer(0)]],
                                    const device ushort* su [[buffer(1)]],
                                    device half* rotated [[buffer(2)]],
@@ -240,8 +222,7 @@ struct TfExl3Qkv {
   uint reserved0, reserved1, reserved2;
 };
 
-// dsv41_rms's scalars, with contraction off as in that kernel: the sum of squares one thread contributes over
-// i = t, t + 256, ... of a row held in threadgroup memory, and the factor from the row's total.
+// dsv41_rms's scalars (contraction off): a thread's sum of squares over i = t, t + 256, ..., and the factor.
 #pragma clang fp contract(off)
 inline float tf_exl3_chain_square_sum(threadgroup const ushort* row, uint width, uint t) {
   float s = 0;
@@ -268,12 +249,7 @@ inline uchar tf_exl3_chain_e4code(float x) {
   return uchar(min(c, 126u) | (signbit(x) ? 128u : 0u));
 }
 
-// The merged wq_a + wkv call's epilogue and what follows it, one threadgroup a row (row 0 the query latent, row 1 the
-// window key): rotate_out into threadgroup memory, then
-//  - row 0: dsv41_rms in place over `y` and wq_b's rotate_in into `rotated`;
-//  - row 1: `y` receives the raw key (as the epilogue stores it) and dsv41_kv_glue's norm, rope and window fp8 pack
-//    run on it, a 32-column block a SIMDgroup, into `packed`.
-// The call is indexed and routed (each row its own descriptor, whose `reserved` is its width), and bf16.
+// The merged wq_a + wkv epilogue: row 0 rms + wq_b rotate_in, row 1 raw key + kv_glue pack; a threadgroup a row.
 kernel void tf_exl3_qkv_epilogue(const device float* sums [[buffer(0)]],
                                  device uchar* y [[buffer(1)]],
                                  constant TfExl3Args& a [[buffer(2)]],
@@ -341,7 +317,7 @@ kernel void tf_exl3_qkv_epilogue(const device float* sums [[buffer(0)]],
     }
     return;
   }
-  // The key: dsv41_kv_glue_body over the stored bits. Its norm sums (v0, v1) = columns (t, t + 256) with fused multiply-adds.
+  // The key: dsv41_kv_glue_body over the stored bits (its norm sums columns t, t + 256 with fused multiply-adds).
   if (t < 256) {
     const float v0 = tf_exl3_chain_bf(bits[t]), v1 = tf_exl3_chain_bf(bits[t + 256u]);
     float s = fma(v0, v0, 0.0f);

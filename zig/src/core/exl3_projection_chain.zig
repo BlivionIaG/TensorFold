@@ -1,6 +1,4 @@
 //! Chain entries: an EXL3 projection's epilogue fused with the block-local work that follows it.
-//! Every fused dispatch computes, statement for statement, what the dispatches it replaces compute, so the
-//! chain is bit-identical to the unfused sequence (kernels/metal/core/exl3_projection_chain.metal).
 const std = @import("std");
 const mtl = @import("metal");
 const core = @import("exl3_projection_core.zig");
@@ -67,9 +65,7 @@ pub fn ropeRotateInReady(p: *const Pipelines) bool {
     return p.chain.rope_rotate_in != null;
 }
 
-/// A rope applied in place to the call's input before its rotate_in: `dsv41_rope` over heads of `width` columns, rows
-/// `stride` elements apart, the last `rotary` columns of a head rotated at `position + row * step`, with the
-/// rotation factors `factors` (a float2 per position and pair). The rotary columns must be a multiple of 32.
+/// A rope applied in place to the call's input before its rotate_in (dsv41_rope; rotary columns a multiple of 32).
 pub const RopeIn = struct { factors: View, width: u32, rotary: u32, stride: u32, position: u32, step: u32 = 1, inverse: bool = false };
 
 const RopeInArgs = extern struct { width: u32, rotary: u32, stride: u32, position: u32, step: u32, inverse: u32, reserved0: u32 = 0, reserved1: u32 = 0 };
@@ -77,11 +73,7 @@ const RopeInArgs = extern struct { width: u32, rotary: u32, stride: u32, positio
 /// Work fused into an indexed call: `rope_in` before its rotate_in, `next` after its rotate_out.
 pub const Fused = struct { rope_in: ?RopeIn = null, next: ?Next = null };
 
-/// `encodeIndexed` with the work in `f` fused in. `rope_in` replaces the call's rotate_in dispatch by one that applies
-/// the rope to `x` (in place) and rotates it. `next` replaces the epilogue by one that is also `next`'s rotate_in: the
-/// call's bf16 output `y` is written as ever and `next`'s rotated input lands in the scratch base, so that projection
-/// runs `prerotated`. With `next` the rows must be bf16 and contiguous (`y_stride == n`, a multiple of 128, no output
-/// ids), read by `next` as one flat row-major input of `next.k` columns.
+/// `encodeIndexed` with `rope_in` before its rotate_in and `next` fused after its rotate_out (rows bf16, contiguous).
 pub fn encodeIndexed(p: *const Pipelines, e: mtl.ComputeEncoder, experts: Experts, x: View, y: View, scratch: View, r: Rows, f: Fused) !void {
     const a = try enc.indexedArgs(experts, x, y, scratch, r);
     var plain = r;
@@ -130,8 +122,7 @@ pub fn encodeIndexed(p: *const Pipelines, e: mtl.ComputeEncoder, experts: Expert
     e.barrier();
 }
 
-/// A row-wise RMS norm (`dsv41_rms`) and the next projection's rotate_in: `y` receives the normalized bf16 rows (it may
-/// be `x`) and the scratch base the prerotated input of a projection with `width` columns (run it `prerotated`).
+/// A row-wise RMS norm (dsv41_rms) and the next projection's rotate_in; run that projection `prerotated`.
 pub const Rms = struct {
     rows: u32,
     width: u32,
@@ -178,15 +169,12 @@ pub fn encodeRmsRotateIn(p: *const Pipelines, e: mtl.ComputeEncoder, x: View, we
     e.barrier();
 }
 
-/// A rope over each output row's heads: `width` columns a head, the last `rotary` of them rotated at
-/// `position + row * step` with the factors the caller binds (`factors`: a float2 per position and pair).
+/// A rope over each output row's heads: `width` columns a head, the last `rotary` rotated at `position + row * step`.
 pub const Rope = struct { width: u32, rotary: u32, position: u32, step: u32 = 1, inverse: bool = false };
 
 const RopeArgs = extern struct { width: u32, rotary: u32, position: u32, step: u32, inverse: u32, reserved0: u32 = 0, reserved1: u32 = 0, reserved2: u32 = 0 };
 
-/// `encode` of a dense matrix with its epilogue fused with the output's RoPE (`dsv41_rope` over the heads of `y`, in
-/// place after the bf16 rounding): `y` receives the rotated rows. `r.prerotated` is honoured. The rotary columns must
-/// be a multiple of 32, end the head, and the head must hold whole 128-column blocks; bias and sign scales both work.
+/// `encode` of a dense matrix with its epilogue fused with the output's RoPE (rotary columns a multiple of 32).
 pub fn encodeRotateOutRope(p: *const Pipelines, e: mtl.ComputeEncoder, m: core.Matrix, x: View, y: View, scratch: View, r: Rows, factors: View, rope: Rope) !void {
     const kernel = p.chain.rotate_out_rope orelse return error.UnsupportedExl3Chain;
     if (r.output != .bf16 or r.output_ids != null or r.routes != null or r.y_stride != m.n or rope.width % 128 != 0 or
@@ -212,8 +200,7 @@ pub fn encodeRotateOutRope(p: *const Pipelines, e: mtl.ComputeEncoder, m: core.M
     e.barrier();
 }
 
-/// What rides on the merged query/key call's epilogue: row 0 is the query latent (norm, then wq_b's rotate_in), row 1
-/// the window key (the kv glue: norm, rope, fp8 pack into `packed_view`, `kv_width` columns, 32-column blocks).
+/// What rides on the merged query/key call's epilogue: row 0 the latent's norm and wq_b rotate_in, row 1 the key glue.
 pub const Qkv = struct {
     q_weight: View,
     q_weight_f32: bool,
@@ -237,10 +224,7 @@ pub fn qkvEpilogueReady(p: *const Pipelines) bool {
     return kernel.maxThreads() >= 320;
 }
 
-/// The merged two-row indexed call (row 0 the query latent of `experts.n` columns, row 1 the key of `f.kv_width`, both
-/// bf16, routed, each descriptor's `reserved` its width) with its epilogue and the work in `f` as one dispatch after the
-/// matmul: `y` receives the normalized latent row 0 and the raw key row 1, `f.q_su`'s rotated latent lands in the
-/// scratch base (run that projection `prerotated`), and the key's window row in `f.packed_view`.
+/// The merged two-row indexed call with its epilogue and `f`'s work as one dispatch; run wq_b `prerotated`.
 pub fn encodeQkvEpilogue(p: *const Pipelines, e: mtl.ComputeEncoder, experts: Experts, x: View, y: View, scratch: View, r: Rows, f: Qkv) !void {
     const kernel = p.chain.qkv_epilogue orelse return error.UnsupportedExl3Chain;
     if (r.count != 2 or experts.count < 2 or r.output != .bf16 or r.grouped or r.routes == null or experts.n % 128 != 0 or

@@ -270,8 +270,7 @@ test "wq_b epilogue fused with the query rope keeps every bit (packed sign scale
     try qRope(s.matrix, 2, 64, 9, true, true);
 }
 
-/// The output's inverse rope then wo_a (indexed over two groups of one 256-column head each) and wo_b, against the
-/// rope folded into wo_a's rotate_in (and, `chained`, wo_a's epilogue folded into wo_b's rotate_in).
+/// The output's inverse rope then wo_a (indexed over two groups) and wo_b, against the fused chain.
 fn oRope(first: ex.Matrix, second: ex.Matrix, next: ex.Matrix, rotary: u32, position: u32, chained: bool) !void {
     const device = try mtl.Device.init();
     defer device.deinit();
@@ -391,8 +390,7 @@ const Wide = struct {
     }
 };
 
-/// The merged query/key call (latent and key of 512 columns), then the latent's norm, wq_b's rotate_in and the
-/// key's window glue, against the one epilogue dispatch that carries all three.
+/// The merged query/key call, then the latent norm, wq_b's rotate_in and the key glue, against the fused epilogue.
 fn qkvTail(weight_f32: bool, position: u32, scale: f32) !void {
     const device = try mtl.Device.init();
     defer device.deinit();
