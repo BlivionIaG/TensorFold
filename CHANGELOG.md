@@ -10,7 +10,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Split offload planner: `zig/src/split` reads a model's `config.json`, takes a probe receipt of the Mac, the external device and the link (every number labelled documented, measured, probed or assumed), and lists every placement the model admits with a predicted decode rate and memory use, or what is missing when nothing fits; `tf-offload probe | plan | demo` writes the receipt and `placement.json` and runs a toy split over the CPU mock device. No GPU is involved and no serving path changes.
 
-- Metal: `HostWindow` wraps page-aligned shared or pinned host memory as a zero-copy Metal buffer, and `Relay` hands work between the host and the GPU through command buffers parked on a shared event (`zig build test-metal-relay`); no engine uses them yet.
+- Metal: `HostWindow` wraps page-aligned shared or pinned host memory as a zero-copy Metal buffer, and `Relay` hands work between the host and the GPU through command buffers parked on a shared event; `zig build test-metal-relay` tests both, and `zig build test-split-metal` runs the split core's toy model with Metal as the host stage and requires the unsplit run's tokens; no engine uses them yet.
 
 - Tests: main's nightly is green again. The Flash Next learn, prompt and compare tools build again on Linux (#2585 had put one file in two modules), and the dense serving and serving-identity pins take the changes #2579, #2585, #2285, #2205 and #2789 made, each named beside its pin. Serving is unchanged (#3002).
 
