@@ -14,6 +14,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Qwen3.8-27B engine on Metal: reads a tied embedding head (the head is the embedding table loaded a second time in the head's layout), so a tied checkpoint whose hidden size is not 2048, such as Qwen3.5-4B (2560 wide), opens this engine, and `Model.loadRange` loads one half-open layer range; whole-model loads are unchanged.
 
+- Qwen3.8-27B engine on Metal: a layer range runs as a stage of the split pipeline (`split_peer.zig`, decode rows, the hand-off row crossing the window as f32 words), and `zig build test-qwen27-split` requires the unsplit run's tokens at every cut on generated weights, and on a real checkpoint when `TF_SPLIT_QWEN_DIR` names one; the default engine is unchanged.
+
 - Tests: `tf-cuda-test flashnext-rank RANK PORT timeout` passes again on two GPUs. NCCL start-up keeps its 30 s bound and only the stalled collective gets 200 ms, and both ranks meet once their communicators are up, so `timeout` and `eof` fail the collective under test, not the start-up (#2976, fixes #2975). Thanks to @swbiggart.
 
 - Tokenizer: a split pattern is held to a work allowance per piece (2,048 instructions a byte, counted, not timed) and refused at load when too deep or too large, so a crafted tokenizer or prompt can't hang the pre-tokenizer; every split of the patterns we serve is unchanged (#3071).
