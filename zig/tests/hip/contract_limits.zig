@@ -166,20 +166,22 @@ pub fn objects(a: std.mem.Allocator, io: std.Io, dir: []const u8) !usize {
         }
         std.debug.print("RECORD {s}: .usage = .{{ {s}}}\n", .{ rec.launch.name, line.items });
         if (!control) n += red;
-        n += try vegaObjects(a, io, dir, rec);
+        n += try vegaObjects(a, io, dir, rec, rec.launch.image);
+        // the expert-pointer tiles are the dot2 tiles again: each one it rebuilt is held to the same limits
+        if (std.mem.eql(u8, rec.launch.image, "affine_tiles")) n += try vegaObjects(a, io, dir, rec, "affine_tiles_ptr");
     }
     return n;
 }
 
-/// One launch on gfx900 from its code object alone (no record holds its usage): its problems against the chip's row.
-fn vegaObjects(a: std.mem.Allocator, io: std.Io, dir: []const u8, rec: records.Record) !usize {
+/// One launch on gfx900 from `image_name`'s code object alone: its problems against the chip's row.
+fn vegaObjects(a: std.mem.Allocator, io: std.Io, dir: []const u8, rec: records.Record, image_name: []const u8) !usize {
     const control = isControl(rec);
     const t = limits.vega;
     if (!rec.usage[0].served and !control) {
         std.debug.print("N/A  limits {s} {s}: not served there\n", .{ t.name, rec.launch.name });
         return 0;
     }
-    const path = try file(a, dir, t.name, rec.launch.image);
+    const path = try file(a, dir, t.name, image_name);
     defer a.free(path);
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(1 << 28)) catch |err| {
         std.debug.print("FAIL limits {s}: {s}: {t} (build hip-kernel-contract-objects)\n", .{ rec.launch.name, path, err });
@@ -188,15 +190,18 @@ fn vegaObjects(a: std.mem.Allocator, io: std.Io, dir: []const u8, rec: records.R
     defer a.free(bytes);
     const listed = try hsaco.kernels(a, bytes);
     defer a.free(listed);
-    const u = (hsaco.find(listed, rec.launch.symbolOn(0)) orelse return error.SymbolNotInImage).usage;
+    // the expert-pointer image holds only the tiles it rebuilds: a launch not in it is skipped
+    const ptr = std.mem.eql(u8, image_name, "affine_tiles_ptr");
+    const found = hsaco.find(listed, rec.launch.symbolOn(0)) orelse if (ptr) return 0 else return error.SymbolNotInImage;
+    const u = found.usage;
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(a);
     const problems = try limits.hip(rec.launch, u, t, &out, a);
     const missed = control and (u.vgprs == 0 or problems == 0);
     const word = if (control) (if (missed) "MISSED" else "RED ") else if (problems != 0) "FAIL" else "PASS";
-    const say = "{s} limits {s} {s}: {d} VGPRs, {d} SGPRs, {d} LDS bytes, {d} scratch bytes, bound {d}, wave{d}{s}";
+    const say = "{s} limits {s} {s} [{s}]: {d} VGPRs, {d} SGPRs, {d} LDS bytes, {d} scratch bytes, bound {d}, wave{d}{s}";
     const end = if (out.items.len > 0) ": " else "\n";
-    std.debug.print(say, .{ word, t.name, rec.launch.name, u.vgprs, u.sgprs, u.lds, u.private, u.bound, u.wave, end });
+    std.debug.print(say, .{ word, t.name, rec.launch.name, image_name, u.vgprs, u.sgprs, u.lds, u.private, u.bound, u.wave, end });
     if (out.items.len > 0) std.debug.print("{s}", .{out.items});
     return if (control) @intFromBool(missed) else problems;
 }
