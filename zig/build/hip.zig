@@ -498,7 +498,7 @@ fn exactTool(b: *std.Build, target: std.Build.ResolvedTarget, e: Engine, family_
 /// A group's source and whether it compiles with IEEE arithmetic (`strict`: -O2 -fno-fast-math, IEEE denormals).
 const Source = struct { path: []const u8, strict: bool = false };
 /// The model-free kernels' source groups, in zig/src/hip/kernels.zig's Group order.
-const groups = [_]Source{
+pub const groups = [_]Source{
     .{ .path = "ops/ops.hip" },
     .{ .path = "ops/act.hip" },
     .{ .path = "attention/attention.hip" },

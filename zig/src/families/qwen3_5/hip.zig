@@ -68,4 +68,7 @@ test {
     @import("std").testing.refAllDecls(engine.Engine);
     // the prompt route the lane host actually calls, recorded on the host
     _ = @import("backend/hip/engine/hip_prompt_test.zig");
+    // layer ranges, on a recording stand-in for the HIP runtime (kernels naming gfx1030)
+    _ = @import("backend/hip/split_test.zig");
+    _ = @import("backend/hip/range_test.zig");
 }
