@@ -68,6 +68,8 @@ pub const Stage = struct {
     qkv_merged: bool,
     main: View,
     compressed_rows: u32,
+    /// The output's inverse RoPE waits for wo_a's rotate_in (attention_fuse.zig).
+    o_rope_deferred: bool = false,
 
     /// `Attention.forward`'s first half: `qr = q_norm(wq_a(x))`, `q = wq_b(qr)`, then the query's RoPE.
     pub fn queryStage(self: *Stage, comptime diagnostic: bool) !void {
@@ -416,6 +418,7 @@ pub const Stage = struct {
     pub fn readStage(self: *Stage, comptime diagnostic: bool) !void {
         const p = self.p;
         const w = self.w;
+        const ep = self.ep;
         const work = self.work;
         const c = self.c;
         const layer = self.layer;
@@ -480,20 +483,27 @@ pub const Stage = struct {
         if (rows == 1 and std.c.getenv("TF_DSV41_DOUBLE_ATTN_PUBLISH") != null)
             try p.cache.publishWindow(e, chunk, ring, rows, position);
         attnMark(layer, "publish", prof, &e);
-        try rotate(p, e, q, rows, c.heads, c.head_dim, position, ratio, 1, true, c);
-        if (rows == 1 and std.c.getenv("TF_DSV41_DOUBLE_ROPE") != null) try rotateRepeat(p, e, dup_view, rows, c.heads, c.head_dim, position, ratio, 1, true, c);
+        // The inverse RoPE rides on wo_a's rotate_in when the output stage can take it (rows == 1, no capture of the result).
+        self.o_rope_deferred = rows == 1 and !diagnostic and self.dense_passes == 1 and fuse.oRopeReady(ep, p, w, c, position);
+        if (!self.o_rope_deferred) {
+            try rotate(p, e, q, rows, c.heads, c.head_dim, position, ratio, 1, true, c);
+            if (rows == 1 and std.c.getenv("TF_DSV41_DOUBLE_ROPE") != null) try rotateRepeat(p, e, dup_view, rows, c.heads, c.head_dim, position, ratio, 1, true, c);
+        }
         attnMark(layer, "o_rope", prof, &e);
         if (diagnostic) try DiagnosticObserver.observe(true, self.observer, e, layer, .o, q);
     }
 
     /// `Attention.forward`'s close: `o` split into the output groups, each through its own `wo_a` block.
     pub fn outputStage(self: *Stage, comptime diagnostic: bool) !void {
+        const p = self.p;
         const w = self.w;
         const work = self.work;
         const ep = self.ep;
         const c = self.c;
         const layer = self.layer;
         const rows = self.rows;
+        const position = self.position;
+        const ratio = self.ratio;
         const scratch = self.scratch;
         const y = self.y;
         const q_width = self.q_width;
@@ -510,8 +520,8 @@ pub const Stage = struct {
             fuse.switches().wo_chain and exl3.chain.rotateOutInReady(ep) and
             std.c.getenv("TF_DSV41_NO_FUSE_WO_A") == null and std.c.getenv("TF_DSV41_DOUBLE_ATTN_WOA") == null;
         // The multi-row path takes the same dispatch -- q is row-major.
-        if (chain_wo) {
-            try fuse.encodeWoA(ep, e, w, work, q, grouped, scratch, c);
+        if (chain_wo or self.o_rope_deferred) {
+            try fuse.encodeWoA(ep, p, e, w, work, q, grouped, scratch, c, chain_wo, if (self.o_rope_deferred) .{ .ratio = ratio, .position = position } else null);
             attnMark(layer, "wo_a", prof, &e);
         } else if (rows <= 8 and w.wo_a_descriptors != null and std.c.getenv("TF_DSV41_NO_FUSE_WO_A") == null) {
             for (&w.wo_a) |*m| exl3.useMatrix(e, m.*);

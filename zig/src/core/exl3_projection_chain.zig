@@ -18,12 +18,14 @@ pub const Set = struct {
     rotate_out_in: ?mtl.Pipeline = null,
     rms_rotate_in: ?mtl.Pipeline = null,
     rotate_out_rope: ?mtl.Pipeline = null,
+    rope_rotate_in: ?mtl.Pipeline = null,
 
     pub fn load(device: mtl.Device, lib: mtl.Library) Set {
         return .{
             .rotate_out_in = pipeline(device, lib, "tf_exl3_rotate_out_in", 128),
             .rms_rotate_in = pipeline(device, lib, "tf_exl3_rms_rotate_in", 256),
             .rotate_out_rope = pipeline(device, lib, "tf_exl3_rotate_out_rope", 128),
+            .rope_rotate_in = pipeline(device, lib, "tf_exl3_rope_rotate_in", 128),
         };
     }
 
@@ -31,6 +33,7 @@ pub const Set = struct {
         if (s.rotate_out_in) |pf| pf.deinit();
         if (s.rms_rotate_in) |pf| pf.deinit();
         if (s.rotate_out_rope) |pf| pf.deinit();
+        if (s.rope_rotate_in) |pf| pf.deinit();
     }
 };
 
@@ -51,22 +54,60 @@ pub const Next = struct { su: View, su_signs: bool, k: usize };
 
 const NextArgs = extern struct { k: u32, su_signs: u32, reserved0: u32 = 0, reserved1: u32 = 0 };
 
-/// Whether `encodeIndexedRotateNext` can run on these pipelines.
+/// Whether `Fused.next` can run on these pipelines.
 pub fn rotateOutInReady(p: *const Pipelines) bool {
     return p.chain.rotate_out_in != null;
 }
 
-/// `encodeIndexed` with its epilogue fused with `next`'s rotate_in: the call's bf16 output `y` is written as ever and
-/// the next projection's rotated input lands in the scratch base, so that projection runs `prerotated`.
-/// The call's rows must be bf16 and contiguous (`y_stride == n`, a multiple of 128, no output ids), and `next` must read
-/// them as one flat row-major input of `next.k` columns.
-pub fn encodeIndexedRotateNext(p: *const Pipelines, e: mtl.ComputeEncoder, experts: Experts, x: View, y: View, scratch: View, r: Rows, next: Next) !void {
+/// Whether `Fused.rope_in` can run on these pipelines.
+pub fn ropeRotateInReady(p: *const Pipelines) bool {
+    return p.chain.rope_rotate_in != null;
+}
+
+/// A rope applied in place to the call's input before its rotate_in: `dsv41_rope` over heads of `width` columns, rows
+/// `stride` elements apart, the last `rotary` columns of a head rotated at `position + row * step`, with the
+/// rotation factors `factors` (a float2 per position and pair). The rotary columns must be a multiple of 32.
+pub const RopeIn = struct { factors: View, width: u32, rotary: u32, stride: u32, position: u32, step: u32 = 1, inverse: bool = false };
+
+const RopeInArgs = extern struct { width: u32, rotary: u32, stride: u32, position: u32, step: u32, inverse: u32, reserved0: u32 = 0, reserved1: u32 = 0 };
+
+/// Work fused into an indexed call: `rope_in` before its rotate_in, `next` after its rotate_out.
+pub const Fused = struct { rope_in: ?RopeIn = null, next: ?Next = null };
+
+/// `encodeIndexed` with the work in `f` fused in. `rope_in` replaces the call's rotate_in dispatch by one that applies
+/// the rope to `x` (in place) and rotates it. `next` replaces the epilogue by one that is also `next`'s rotate_in: the
+/// call's bf16 output `y` is written as ever and `next`'s rotated input lands in the scratch base, so that projection
+/// runs `prerotated`. With `next` the rows must be bf16 and contiguous (`y_stride == n`, a multiple of 128, no output
+/// ids), read by `next` as one flat row-major input of `next.k` columns.
+pub fn encodeIndexed(p: *const Pipelines, e: mtl.ComputeEncoder, experts: Experts, x: View, y: View, scratch: View, r: Rows, f: Fused) !void {
+    const a = try enc.indexedArgs(experts, x, y, scratch, r);
+    var plain = r;
+    if (f.rope_in) |rin| {
+        const kernel = p.chain.rope_rotate_in orelse return error.UnsupportedExl3Chain;
+        if (r.prerotated or r.grouped or rin.width % 128 != 0 or rin.rotary == 0 or rin.rotary % 32 != 0 or rin.rotary > 128 or
+            rin.stride % rin.width != 0 or experts.k % 128 != 0) return error.InvalidExl3Chain;
+        e.setPipeline(kernel);
+        bind(e, x, 0);
+        bind(e, scratch, 1);
+        bind(e, scratch, 2);
+        e.setValue(a, 3);
+        bind(e, r.input_ids orelse scratch, 4);
+        bind(e, r.routes.?.ids, 5);
+        bind(e, experts.descriptors, 6);
+        bind(e, rin.factors, 7);
+        e.setValue(RopeInArgs{ .width = rin.width, .rotary = rin.rotary, .stride = rin.stride, .position = rin.position, .step = rin.step, .inverse = @intFromBool(rin.inverse) }, 8);
+        e.dispatchGroups(.{ .width = (@as(usize, a.k) / 128 + 3) / 4, .height = a.rows }, .{ .width = 128 });
+        e.barrier();
+        plain.prerotated = true;
+    }
+    const next = f.next orelse {
+        swi.stages(p, e, a, scratch, scratch, scratch, scratch, experts.descriptors, x, y, scratch, plain);
+        return;
+    };
     const kernel = p.chain.rotate_out_in orelse return error.UnsupportedExl3Chain;
     if (r.output != .bf16 or r.output_ids != null or r.grouped or r.y_stride != experts.n or experts.n % 128 != 0 or
         next.k % 128 != 0 or (r.count * experts.n) % next.k != 0 or experts.n > experts.k or
         next.k > std.math.maxInt(u32)) return error.InvalidExl3Chain;
-    const a = try enc.indexedArgs(experts, x, y, scratch, r);
-    var plain = r;
     plain.no_epilogue = true;
     swi.stages(p, e, a, scratch, scratch, scratch, scratch, experts.descriptors, x, y, scratch, plain);
     const sums = View{ .buffer = scratch.buffer, .offset = scratch.offset + try core.rotatedBytes(a.k, a.rows) };
