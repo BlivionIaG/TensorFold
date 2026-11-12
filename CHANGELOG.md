@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- DeepSeek V4.1 on Metal: the merged wq_a + wkv call of a decode layer ends in one dispatch instead of four: its Hadamard epilogue, the query latent's norm and wq_b's input rotation, and the window key's norm, rope and fp8 pack (one threadgroup a row, the rounded BF16 values passing through threadgroup memory), each with the expressions of the kernel it replaces, so every output is bit-identical (`TF_DSV41_NO_FUSE_QKV_TAIL=1` keeps them apart; it is also off when `TF_DSV41_NO_FUSE_QNORM` or `TF_DSV41_NO_FUSE_KVGLUE` is set).
+
 - DeepSeek V4.1 on Metal: a decode layer's attention output rotation (the inverse RoPE of each head's last 64 columns) is folded into wo_a's input rotation: one dispatch applies the rope in place and rotates the result, so the output is bit-identical (`TF_DSV41_NO_FUSE_OROPE=1` keeps the two dispatches).
 
 - DeepSeek V4.1 on Metal: a decode layer's wq_b epilogue and the query's RoPE are one dispatch: the rotated pair of each head's last 64 columns is read from the neighbouring lane of the same SIMD group after the BF16 rounding, with the rope kernel's own expressions, so the query is bit-identical (`TF_DSV41_NO_FUSE_QROPE=1` keeps the two dispatches; a diagnostic capture of the pre-RoPE query also does).

@@ -22,13 +22,15 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     _ = files.addCopyFile(b.path("zig/kernels/metal/deepseek_v41/ops.metal"), "deepseek_v41_ops.metal");
     // The query RoPE, for the fused wq_b epilogue differential (dsv41_rope is the reference).
     _ = files.addCopyFile(b.path("zig/kernels/metal/deepseek_v41/rope.metal"), "deepseek_v41_rope.metal");
+    _ = files.addCopyFile(b.path("zig/kernels/metal/deepseek_v41/kv_glue.metal"), "deepseek_v41_kv_glue.metal");
     const sources = b.createModule(.{
         .root_source_file = files.add("sources.zig", "pub const core_exl3_projection = @embedFile(\"exl3_projection_core.metal\") ++ @embedFile(\"exl3_projection_wide.metal\") ++ @embedFile(\"exl3_projection_chain.metal\");\n" ++
             "pub const core_exl3_projection_i8 = @embedFile(\"exl3_projection_i8.metal\");\n" ++
             "pub const core_exl3_projection_nax = @embedFile(\"exl3_projection_nax_base.metal\") ++ @embedFile(\"exl3_projection_nax_prefill_body.metal\") ++ @embedFile(\"exl3_projection_nax_prefill.metal\") ++ @embedFile(\"exl3_projection_nax_variants_a.metal\") ++ @embedFile(\"exl3_projection_nax_variants_b.metal\") ++ @embedFile(\"exl3_projection_nax_variants_c.metal\") ++ @embedFile(\"exl3_projection_nax_fma.metal\") ++ @embedFile(\"exl3_projection_nax_fma_static_a.metal\") ++ @embedFile(\"exl3_projection_nax_fma_static_b.metal\") ++ @embedFile(\"exl3_projection_nax_fma_t.metal\") ++ @embedFile(\"exl3_projection_nax_fp8.metal\");\n" ++
             "pub const nax = @embedFile(\"nax.h\");\n" ++
             "pub const deepseek_v41_ops = @embedFile(\"deepseek_v41_ops.metal\");\n" ++
-            "pub const deepseek_v41_rope = @embedFile(\"deepseek_v41_rope.metal\");\n"),
+            "pub const deepseek_v41_rope = @embedFile(\"deepseek_v41_rope.metal\");\n" ++
+            "pub const deepseek_v41_kv_glue = @embedFile(\"deepseek_v41_kv_glue.metal\");\n"),
     });
     const imports: []const std.Build.Module.Import =
         &.{ .{ .name = "metal", .module = metal }, .{ .name = "kernel_sources", .module = sources } };

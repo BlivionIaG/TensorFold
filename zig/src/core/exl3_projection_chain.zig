@@ -19,6 +19,7 @@ pub const Set = struct {
     rms_rotate_in: ?mtl.Pipeline = null,
     rotate_out_rope: ?mtl.Pipeline = null,
     rope_rotate_in: ?mtl.Pipeline = null,
+    qkv_epilogue: ?mtl.Pipeline = null,
 
     pub fn load(device: mtl.Device, lib: mtl.Library) Set {
         return .{
@@ -26,6 +27,7 @@ pub const Set = struct {
             .rms_rotate_in = pipeline(device, lib, "tf_exl3_rms_rotate_in", 256),
             .rotate_out_rope = pipeline(device, lib, "tf_exl3_rotate_out_rope", 128),
             .rope_rotate_in = pipeline(device, lib, "tf_exl3_rope_rotate_in", 128),
+            .qkv_epilogue = pipeline(device, lib, "tf_exl3_qkv_epilogue", 320),
         };
     }
 
@@ -34,6 +36,7 @@ pub const Set = struct {
         if (s.rms_rotate_in) |pf| pf.deinit();
         if (s.rotate_out_rope) |pf| pf.deinit();
         if (s.rope_rotate_in) |pf| pf.deinit();
+        if (s.qkv_epilogue) |pf| pf.deinit();
     }
 };
 
@@ -206,5 +209,64 @@ pub fn encodeRotateOutRope(p: *const Pipelines, e: mtl.ComputeEncoder, m: core.M
     bind(e, factors, 8);
     e.setValue(RopeArgs{ .width = rope.width, .rotary = rope.rotary, .position = rope.position, .step = rope.step, .inverse = @intFromBool(rope.inverse) }, 9);
     e.dispatchGroups(.{ .width = (@as(usize, a.n) / 128 + 3) / 4, .height = a.rows }, .{ .width = 128 });
+    e.barrier();
+}
+
+/// What rides on the merged query/key call's epilogue: row 0 is the query latent (norm, then wq_b's rotate_in), row 1
+/// the window key (the kv glue: norm, rope, fp8 pack into `packed_view`, `kv_width` columns, 32-column blocks).
+pub const Qkv = struct {
+    q_weight: View,
+    q_weight_f32: bool,
+    q_su: View,
+    q_su_signs: bool,
+    kv_width: u32,
+    kv_weight: View,
+    factors: View,
+    packed_view: View,
+    packed_stride: u32,
+    position: u32,
+    rotary: u32,
+    eps: f32,
+};
+
+const QkvArgs = extern struct { q_width: u32, q_su_signs: u32, q_weight_f32: u32, kv_width: u32, position: u32, rotary: u32, packed_stride: u32, block: u32, eps: f32, reserved0: u32 = 0, reserved1: u32 = 0, reserved2: u32 = 0 };
+
+/// Whether `encodeQkvEpilogue` can run on these pipelines.
+pub fn qkvEpilogueReady(p: *const Pipelines) bool {
+    const kernel = p.chain.qkv_epilogue orelse return false;
+    return kernel.maxThreads() >= 320;
+}
+
+/// The merged two-row indexed call (row 0 the query latent of `experts.n` columns, row 1 the key of `f.kv_width`, both
+/// bf16, routed, each descriptor's `reserved` its width) with its epilogue and the work in `f` as one dispatch after the
+/// matmul: `y` receives the normalized latent row 0 and the raw key row 1, `f.q_su`'s rotated latent lands in the
+/// scratch base (run that projection `prerotated`), and the key's window row in `f.packed_view`.
+pub fn encodeQkvEpilogue(p: *const Pipelines, e: mtl.ComputeEncoder, experts: Experts, x: View, y: View, scratch: View, r: Rows, f: Qkv) !void {
+    const kernel = p.chain.qkv_epilogue orelse return error.UnsupportedExl3Chain;
+    if (r.count != 2 or experts.count < 2 or r.output != .bf16 or r.grouped or r.routes == null or experts.n % 128 != 0 or
+        experts.n > 1280 or f.kv_width != 512 or f.rotary == 0 or f.rotary % 2 != 0 or f.rotary > f.kv_width or
+        f.rotary % 32 != 0 or kernel.maxThreads() < 32 * @max(8, experts.n / 128)) return error.InvalidExl3Chain;
+    const a = try enc.indexedArgs(experts, x, y, scratch, r);
+    // The rotated latent lands at the scratch base, below the sums this dispatch reads.
+    if (@as(usize, experts.n) * 2 > try core.rotatedBytes(a.k, a.rows)) return error.InvalidExl3Chain;
+    var plain = r;
+    plain.no_epilogue = true;
+    swi.stages(p, e, a, scratch, scratch, scratch, scratch, experts.descriptors, x, y, scratch, plain);
+    const sums = View{ .buffer = scratch.buffer, .offset = scratch.offset + try core.rotatedBytes(a.k, a.rows) };
+    e.setPipeline(kernel);
+    bind(e, sums, 0);
+    bind(e, y, 1);
+    e.setValue(a, 2);
+    bind(e, r.output_ids orelse scratch, 3);
+    bind(e, r.routes.?.ids, 4);
+    bind(e, experts.descriptors, 5);
+    bind(e, f.q_weight, 6);
+    bind(e, f.q_su, 7);
+    bind(e, scratch, 8);
+    bind(e, f.kv_weight, 9);
+    bind(e, f.factors, 10);
+    bind(e, f.packed_view, 11);
+    e.setValue(QkvArgs{ .q_width = @intCast(experts.n), .q_su_signs = @intFromBool(f.q_su_signs), .q_weight_f32 = @intFromBool(f.q_weight_f32), .kv_width = f.kv_width, .position = f.position, .rotary = f.rotary, .packed_stride = f.packed_stride, .block = 32, .eps = f.eps }, 12);
+    e.dispatchGroups(.{ .width = a.rows }, .{ .width = 32 * @max(8, experts.n / 128) });
     e.barrier();
 }

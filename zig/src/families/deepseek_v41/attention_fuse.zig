@@ -10,6 +10,7 @@ const View = common.View;
 const Workspace = common.Workspace;
 const core = common.core;
 const tensor = common.tensor;
+const kv = @import("kv.zig");
 
 /// The fusion kill switches, read once: a process does not toggle them.
 pub const Switches = struct {
@@ -21,6 +22,8 @@ pub const Switches = struct {
     qrope: bool,
     /// The output's inverse RoPE and wo_a's rotate_in in one dispatch.
     orope: bool,
+    /// The merged query/key call's epilogue with the query latent's norm, wq_b's rotate_in and the key's window glue.
+    qkv_tail: bool,
 };
 
 var cached: ?Switches = null;
@@ -32,6 +35,7 @@ pub fn switches() Switches {
         .qnorm = std.c.getenv("TF_DSV41_NO_FUSE_QNORM") == null,
         .qrope = std.c.getenv("TF_DSV41_NO_FUSE_QROPE") == null,
         .orope = std.c.getenv("TF_DSV41_NO_FUSE_OROPE") == null,
+        .qkv_tail = std.c.getenv("TF_DSV41_NO_FUSE_QKV_TAIL") == null,
     };
     cached = s;
     return s;
@@ -113,5 +117,46 @@ pub fn encodeQb(ep: *const exl3.Pipelines, ap: *const common.Pipelines, e: mtl.C
         .width = c.head_dim,
         .rotary = c.rope_dim,
         .position = r.position,
+    });
+}
+
+/// Whether the merged call's epilogue can carry the query norm, wq_b's rotate_in and the key's window glue (one decode
+/// row, no capture): the three fusions it replaces must all be on, and none of their doubling arms.
+pub fn qkvTailReady(ep: *const exl3.Pipelines, ap: *const common.Pipelines, w: *const weights.Attention, c: config.Config, position: u32) bool {
+    const sw = switches();
+    return sw.qkv_tail and sw.qnorm and std.c.getenv("TF_DSV41_NO_FUSE_KVGLUE") == null and
+        exl3.chain.qkvEpilogueReady(ep) and w.kv_norm.dtype == .bf16 and c.head_dim == 512 and c.q_lora % 128 == 0 and
+        c.q_lora <= 1280 and w.wq_b.k == c.q_lora and ap.rotary.rotary == c.rope_dim and position < ap.rotary.capacity and
+        c.rope_dim % 32 == 0 and std.c.getenv("TF_DSV41_DOUBLE_ATTN_NORM") == null and
+        std.c.getenv("TF_DSV41_DOUBLE_ROPE") == null and std.c.getenv("TF_DSV41_DOUBLE_ATTN_PACK") == null;
+}
+
+/// The merged wq_a + wkv call (see `Stage.queryStage`) with its epilogue and the tail `qkvTailReady` names as one
+/// dispatch: `fused` ends with the normalized latent and the raw key, the scratch base holds wq_b's rotated input, and
+/// the key's window row is in `chunk`. The caller runs wq_b `prerotated` and skips the window glue.
+pub fn encodeQkvTail(ep: *const exl3.Pipelines, ap: *const common.Pipelines, e: mtl.ComputeEncoder, w: *const weights.Attention, work: *const Workspace, x: View, fused: View, chunk: View, scratch: exl3.View, c: config.Config, ratio: u32, position: u32) !void {
+    try exl3.chain.encodeQkvEpilogue(ep, e, .{ .descriptors = .{ .buffer = w.qkv_descriptors.?, .offset = 0 }, .count = 2, .k = c.hidden, .n = c.q_lora }, core(x), core(fused), scratch, .{
+        .count = 2,
+        .x_stride = c.hidden,
+        .y_stride = c.q_lora,
+        .output = .bf16,
+        .input_ids = .{ .buffer = work.pair_in, .offset = 0 },
+        .input_rows = 1,
+        .output_ids = .{ .buffer = work.ids, .offset = 0 },
+        .output_rows = 2,
+        .routes = .{ .ids = .{ .buffer = work.ids, .offset = 0 }, .repeat = 1 },
+    }, .{
+        .q_weight = core(tensor(w.q_norm)),
+        .q_weight_f32 = w.q_norm.dtype == .f32,
+        .q_su = w.wq_b.suh,
+        .q_su_signs = w.wq_b.suh_format == .packed_signs,
+        .kv_width = c.head_dim,
+        .kv_weight = core(tensor(w.kv_norm)),
+        .factors = ropeFactors(ap, ratio),
+        .packed_view = core(chunk),
+        .packed_stride = kv.cache.ring_stride,
+        .position = position,
+        .rotary = c.rope_dim,
+        .eps = c.eps,
     });
 }
