@@ -1,10 +1,6 @@
 // The register-only decode, T column tiles and R rows a threadgroup, the mul1 value by one exact half FMA (no table).
 
-// The value of a state: the byte sum of state * 0x83DCD12D through one half FMA, equal to the table entry.
-// The table entry is fma(half(1024 + sum), 0x1EEE, 0xC931). Two sums a state give the same product in
-// subnormal-and-small halves: the bit pattern 2 * sum is the half sum * 2^-23, the factor 0x1EEE * 2^23 is 0x7AEE and
-// the addend 1024 * 0x1EEE + 0xC931 is exact as 0xC2E8, so the exact result (hence its single rounding) is unchanged
-// and the +1024 bias add is gone. The doubled lanes are free: the even bytes enter the lane add shifted by one.
+// A state's value: the table entry fma(half(1024 + sum), 0x1EEE, 0xC931), by 2 * sum as subnormal half bits, exactly.
 inline float tf_exl3_t_value(ushort s) {
   const uint x = uint(s) * 0x83DCD12Du;
   const ushort2 u = as_type<ushort2>(((x >> 7u) & 0x01FE01FEu) + ((x & 0x00FF00FFu) << 1u));
@@ -61,7 +57,6 @@ inline void tf_exl3_t_block(thread float (*acc)[8], uint c0, uint c1, const devi
 }
 
 // A lane's run in one tile: the stream words it spans, then the two 32-bit windows its eight states are cut from.
-// The windows are 64-bit funnel shifts by 32 - first_bit (the one runtime shift, no select for first_bit = 0).
 template <bool Two>
 inline void tf_exl3_t_read(const device ushort* tile, const TfExl3RowWalk walk, thread uint* p) {
   p[0] = tf_exl3_word(tile, walk.first_word);
@@ -76,12 +71,7 @@ inline uint2 tf_exl3_t_funnel(const thread uint* p, uint first_bit) {
   return uint2(c0, Two ? (p[1] << first_bit) : uint(((ulong(p[1]) << 32) | p[2]) >> down));
 }
 
-// One threadgroup: T tiles of sixteen columns of up to R rows, the rows sharing one weight decode. k is cut into
-// sixteen ranges whatever the warp count, so the summation order (a range's eight accumulators in a tree, the ranges
-// in order, the lanes of a column) and the result do not depend on TF_FMA_WARPS; a warp walks 16 / TF_FMA_WARPS ranges
-// one after the other. Widths are multiples of 16. A row past the last one is read as the last row and not stored.
-// The range loop carries the windows, not the words: a block's words are read before its products and cut after them,
-// so the read latency hides behind the products and no register is copied around the back edge.
+// One threadgroup: T tiles of sixteen columns of up to R rows; k is cut into sixteen ranges whatever the warp count.
 constant constexpr uint TF_EXL3_T_RANGES = 16u;
 
 template <uint S, uint T, uint R, bool Mul1>
