@@ -26,7 +26,15 @@ __device__ __forceinline__ bool better(float a, int ia, float b, int ib) {
     return a > b || (a == b && ia < ib);
 }
 
-extern "C" __global__ void tf_argmax(const uint16_t* logits, int kind, int n, int* out) {
+// A pick also goes to the host word array `*mirror_at` names (`mirror_at` is a device word holding that address, 0: none): the host reads the pick from
+// pinned memory the round's fence already covers, with no device-to-host copy behind the round.
+__device__ __forceinline__ void mirror_pick(int* const* mirror_at, int row, int pick) {
+    if (mirror_at == nullptr) return;
+    int* host = *mirror_at;
+    if (host != nullptr) host[row] = pick;
+}
+
+extern "C" __global__ void tf_argmax(const uint16_t* logits, int kind, int n, int* out, int* const* mirror_at) {
     const uint16_t* row = logits + static_cast<long long>(blockIdx.x) * n;
     float top = 0.0f;
     int at = -1;
@@ -85,7 +93,10 @@ extern "C" __global__ void tf_argmax(const uint16_t* logits, int kind, int n, in
         }
         __syncthreads();
     }
-    if (threadIdx.x == 0) out[blockIdx.x] = si[0];
+    if (threadIdx.x == 0) {
+        out[blockIdx.x] = si[0];
+        mirror_pick(mirror_at, blockIdx.x, si[0]);
+    }
 }
 
 constexpr int kPartThreads = 256;
@@ -127,7 +138,7 @@ extern "C" __global__ void __launch_bounds__(kPartThreads)
 
 // The best of a row's `parts` candidates (tf_argmax_part's): the row's tf_argmax.
 extern "C" __global__ void __launch_bounds__(kPartThreads)
-    tf_argmax_join(const float* part_v, const int* part_i, int parts, int* out) {
+    tf_argmax_join(const float* part_v, const int* part_i, int parts, int* out, int* const* mirror_at) {
     float top = 0.0f;
     int at = -1;
     for (int p = threadIdx.x; p < parts; p += kPartThreads) {
@@ -153,7 +164,10 @@ extern "C" __global__ void __launch_bounds__(kPartThreads)
         }
         __syncthreads();
     }
-    if (threadIdx.x == 0) out[blockIdx.x] = si[0];
+    if (threadIdx.x == 0) {
+        out[blockIdx.x] = si[0];
+        mirror_pick(mirror_at, blockIdx.x, si[0]);
+    }
 }
 
 // A monotone 16-bit key of a value's bits (-0 and +0 share one), so equal keys are equal values.

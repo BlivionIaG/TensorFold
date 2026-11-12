@@ -46,6 +46,47 @@ fn view(comptime T: type, bytes: []u8) []T {
     return std.mem.bytesAsSlice(T, @as([]align(@alignOf(T)) u8, @alignCast(bytes)));
 }
 
+/// Slots of the host mirror the argmax launch stores its picks to: slot 0 for rounds the host waits for at once, the others in turn for
+/// the rounds queued ahead (the host reads a round's slot long before the ring comes round to it again).
+pub const mirror_slots = 8;
+
+/// What a round's rows ask the device for: whether any row is a plain greedy draw, and the widest row's candidate count.
+pub const Asks = struct { greedy: bool, widest: usize };
+
+/// What `reqs` ask the device for, each row's candidate count (0 for a greedy, a whole or a padding row) in `ks`.
+pub fn asksOf(vocab: usize, reqs: []const Request, ks: []i32) Asks {
+    var a: Asks = .{ .greedy = false, .widest = 0 };
+    for (reqs, ks[0..reqs.len]) |r, *k| {
+        k.* = 0;
+        if (whole(r)) continue;
+        if (greedy(r.sampling)) {
+            a.greedy = true;
+            continue;
+        }
+        const n = candidates(r.sampling.?, vocab);
+        k.* = @intCast(n);
+        a.widest = @max(a.widest, n);
+    }
+    return a;
+}
+
+/// What the drawing launches of a round did, which `draw` then reads: the argmax ran (`argmax`) and stored its picks to mirror slot
+/// `mirror` (null: the picks are at `argmaxAt`, downloaded), the top-k launch ran with `stride` candidates a row over `rows` rows (0: it did not).
+pub const Done = struct { argmax: bool = false, mirror: ?usize = null, stride: u16 = 0, rows: usize = 0 };
+
+/// The drawing launches of one round's forward: the argmax (where its picks go on the device and, through the plan word at `mirror_at`,
+/// to the host) and the top-k over `rows` rows with `stride` candidates a row, its counts, ids and values.
+pub const Launches = struct {
+    argmax: bool = true,
+    argmax_at: u64 = 0,
+    mirror_at: u64 = 0,
+    rows: usize = 0,
+    stride: usize = 0,
+    ks: u64 = 0,
+    ids: u64 = 0,
+    vals: u64 = 0,
+};
+
 pub const Drawer = struct {
     gpa: std.mem.Allocator,
     d: *const hip.Runtime,
@@ -56,6 +97,9 @@ pub const Drawer = struct {
     host: hip.HostBuffer,
     dev: hip.DeviceBuffer,
     row: hip.HostBuffer,
+    /// The picks of argmax launches as the host reads them: `mirror_slots` slots of `rows` words, mapped into the device.
+    mirror: hip.HostBuffer,
+    mirror_dev: u64,
 
     /// Device bytes a drawer of `rows` rows holds: each row's argmax and its sampling candidates.
     pub fn deviceBytes(rows: usize) usize {
@@ -68,56 +112,85 @@ pub const Drawer = struct {
         errdefer host.free();
         var dev = try hip.DeviceBuffer.alloc(d, bytes);
         errdefer dev.free();
-        return .{ .gpa = gpa, .d = d, .dtype = dtype, .vocab = vocab, .rows = rows, .host = host, .dev = dev, .row = try hip.HostBuffer.alloc(d, vocab * 2) };
+        var row = try hip.HostBuffer.alloc(d, vocab * 2);
+        errdefer row.free();
+        var mirror = try hip.HostBuffer.allocMapped(d, mirror_slots * rows * 4);
+        errdefer mirror.free();
+        const mirror_dev = try mirror.device();
+        @memset(mirror.bytes, 0);
+        return .{ .gpa = gpa, .d = d, .dtype = dtype, .vocab = vocab, .rows = rows, .host = host, .dev = dev, .row = row, .mirror = mirror, .mirror_dev = mirror_dev };
     }
 
     pub fn deinit(w: *Drawer) void {
+        w.mirror.free();
         w.row.free();
         w.dev.free();
         w.host.free();
     }
 
-    /// Row r's offsets into the scratch of `stride` candidates a row, as byte counts: ks, argmax, ids, values.
-    fn layout(w: *const Drawer, stride: usize) struct { arg: usize, ids: usize, vals: usize, total: usize } {
+    /// Offsets into the scratch of a round of `rows` rows of `stride` candidates each, as byte counts: argmax, ids, values (ks come first,
+    /// as a plan's words for a graph and as an upload for the eager top-k). The candidates are contiguous: one copy brings them down.
+    fn layout(w: *const Drawer, rows: usize, stride: usize) struct { arg: usize, ids: usize, vals: usize, total: usize } {
         const arg = w.rows * 4;
         const ids = arg + w.rows * 4;
-        const vals = ids + w.rows * stride * 4;
-        return .{ .arg = arg, .ids = ids, .vals = vals, .total = vals + w.rows * stride * 2 };
+        const vals = ids + rows * stride * 4;
+        return .{ .arg = arg, .ids = ids, .vals = vals, .total = vals + rows * stride * 2 };
     }
 
     /// Where the argmax of a logits block's first rows goes on the device (a graph can hold the launch).
     pub fn argmaxAt(w: *const Drawer) u64 {
-        return w.dev.base() + w.layout(0).arg;
+        return w.dev.base() + w.layout(0, 0).arg;
     }
 
-    /// `out[r]` the token of row r of `logits` per `reqs[r]`, stream synchronized; `argmaxed`: argmax is at `argmaxAt`.
+    /// The host address mirror slot `slot` starts at, as an argmax launch stores to it (a device address, the host pointer's).
+    pub fn mirrorAddr(w: *const Drawer, slot: usize) u64 {
+        return w.mirror_dev + 4 * slot * w.rows;
+    }
+
+    /// Row `r`'s pick in mirror slot `slot`; valid once the fence behind the launch that stored it has been waited on.
+    pub fn mirrored(w: *const Drawer, slot: usize, r: usize) i32 {
+        const words = view(i32, w.mirror.bytes);
+        return @atomicLoad(i32, &words[slot * w.rows + r], .acquire);
+    }
+
+    /// What `reqs` ask the device for, each row's candidate count (0 for a greedy, a whole or a padding row) in `ks`.
+    pub fn asks(w: *const Drawer, reqs: []const Request, ks: []i32) Asks {
+        return asksOf(w.vocab, reqs, ks);
+    }
+
+    /// The drawing launches of a graph's forward over `rows` rows with `stride` candidates a row (0: no top-k); the argmax stores its picks
+    /// to `out`, and through the plan word at `mirror_at` to the host; the candidate counts are the plan words at `ks`.
+    pub fn launches(w: *const Drawer, rows: usize, stride: usize, argmax: bool, out: u64, mirror_at: u64, ks: u64) Launches {
+        const at = w.layout(rows, stride);
+        const base = w.dev.base();
+        return .{ .argmax = argmax, .argmax_at = out, .mirror_at = mirror_at, .rows = rows, .stride = stride, .ks = ks, .ids = base + at.ids, .vals = base + at.vals };
+    }
+
+    /// `out[r]` the token of row r of `logits` per `reqs[r]`, stream synchronized; `argmaxed`: the greedy rows are drawn already.
     pub fn draw(w: *Drawer, o: hip.ops.Ops, stream: hip.Stream, logits: hip.ops.Tensor, reqs: []const Request, out: []u32, argmaxed: bool) !void {
+        return w.drawWith(o, stream, logits, reqs, out, .{ .argmax = argmaxed });
+    }
+
+    /// `draw` after a graph's own drawing launches: `done` names what they drew (the greedy rows to the device, or also the host).
+    pub fn drawWith(w: *Drawer, o: hip.ops.Ops, stream: hip.Stream, logits: hip.ops.Tensor, reqs: []const Request, out: []u32, done: Done) !void {
         const rows = reqs.len;
         if (rows > w.rows) return error.WindowTooWide;
         const ks = w.host.slice(i32)[0..rows];
-        var stride: usize = 0;
-        var any_greedy = false;
-        for (reqs, ks) |r, *k| {
-            k.* = 0;
-            if (whole(r)) continue;
-            if (greedy(r.sampling)) {
-                any_greedy = true;
-            } else {
-                const n = candidates(r.sampling.?, w.vocab);
-                k.* = @intCast(n);
-                stride = @max(stride, n);
-            }
-        }
-        const at = w.layout(stride);
+        const a = w.asks(reqs, ks);
+        // a round's top-k launch had its stride's room for each of its rows; an eager one takes the widest row's
+        if (done.stride > 0 and (a.widest > done.stride or done.rows < rows or done.rows > w.rows)) return error.Invalid;
+        const stride: usize = if (done.stride > 0) done.stride else a.widest;
+        const at = w.layout(if (done.stride > 0) done.rows else rows, stride);
         const base = w.dev.base();
-        if (any_greedy and !argmaxed) try o.argmaxRows(logits, rows, w.vocab, base + at.arg);
-        if (stride > 0) {
+        if (a.greedy and !done.argmax) try o.argmaxRows(logits, rows, w.vocab, base + at.arg);
+        if (a.widest > 0 and done.stride == 0) {
             try hip.raw.upload(w.dev, 0, std.mem.sliceAsBytes(ks), stream.handle);
             try o.topkRows(logits, rows, w.vocab, base, stride, base + at.ids, base + at.vals);
         }
         const host = w.host.bytes;
-        if (any_greedy) try hip.raw.download(w.dev, at.arg, host[at.arg..][0 .. rows * 4], stream.handle);
-        if (stride > 0) try hip.raw.download(w.dev, at.ids, host[at.ids..at.total], stream.handle);
+        const from_mirror = a.greedy and done.mirror != null;
+        if (a.greedy and !from_mirror) try hip.raw.download(w.dev, at.arg, host[at.arg..][0 .. rows * 4], stream.handle);
+        if (a.widest > 0) try hip.raw.download(w.dev, at.ids, host[at.ids..at.total], stream.handle);
         try stream.synchronize();
         const arg = view(i32, host[at.arg..][0 .. rows * 4]);
         for (reqs, 0..) |r, i| {
@@ -126,7 +199,7 @@ pub const Drawer = struct {
                 continue;
             }
             if (greedy(r.sampling)) {
-                out[i] = @intCast(arg[i]);
+                out[i] = @intCast(if (done.mirror) |slot| w.mirrored(slot, i) else arg[i]);
                 continue;
             }
             const s = r.sampling.?;
@@ -212,4 +285,28 @@ test "repetition keeps FP32 ranking and counts prompt tokens once, OpenAI penalt
     try std.testing.expectEqual(@as(f32, 2), values[3]);
     try std.testing.expectEqual(@as(u32, 1), try sample.drawWide(std.testing.allocator, values[0..2], null, 0));
     try std.testing.expectError(error.BadHistoryToken, process(std.testing.allocator, &values, .{ .sampling = null, .position = 0, .repetition = 1.1, .history = &.{4} }));
+}
+
+test "a round asks the device for what its rows need: argmax for greedy rows, candidates for sampled ones, nothing for whole rows" {
+    const sampled: lanes.Sampling = .{ .seed = 1, .temperature = 0.7, .top_k = 20 };
+    var ks: [5]i32 = @splat(-1);
+    const reqs = [_]Request{
+        .{ .sampling = null, .position = 4 },
+        .{ .sampling = sampled, .position = 4 },
+        .{ .sampling = .{ .seed = 1, .temperature = 0.7, .top_k = 0 }, .position = 4 },
+        .{ .sampling = sampled, .position = 4, .mask = &.{1} },
+        .{ .sampling = .{ .seed = 1, .temperature = 0.0 }, .position = 4 },
+    };
+    const all = asksOf(1000, &reqs, &ks);
+    try std.testing.expect(all.greedy);
+    // top_k 20 and the margin, the same for every sampled row that has candidates
+    try std.testing.expectEqual(@as(usize, 20 + sample.MARGIN), all.widest);
+    try std.testing.expectEqualSlices(i32, &.{ 0, 28, 0, 0, 0 }, &ks);
+    const only = asksOf(1000, reqs[1..2], &ks);
+    try std.testing.expect(!only.greedy);
+    try std.testing.expectEqual(@as(usize, 28), only.widest);
+    // no row asks for candidates when the row is whole or the request is wider than a round downloads
+    const wide = asksOf(1000, &.{.{ .sampling = .{ .seed = 1, .temperature = 0.7, .top_k = 600 }, .position = 4 }}, &ks);
+    try std.testing.expect(!wide.greedy and wide.widest == 0);
+    try std.testing.expectEqual(@as(i32, 0), ks[0]);
 }
