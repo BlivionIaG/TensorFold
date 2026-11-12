@@ -139,9 +139,10 @@ test "GPU router descriptors select mixed-width experts with gather and scatter 
     defer p.deinit();
     const queue = try device.queue();
     defer queue.deinit();
-    const w0 = try Owned.init(device, 3, .mul1, 11);
+    // Widths the routed decode bodies carry (even halves, 2 to 12): the register-only body skips any other.
+    const w0 = try Owned.init(device, 4, .mul1, 11);
     defer w0.deinit();
-    const w1 = try Owned.init(device, 16, .mcg, 12);
+    const w1 = try Owned.init(device, 12, .mcg, 12);
     defer w1.deinit();
     const descriptors = try device.buffer(2 * @sizeOf(ex.ExpertDescriptor), mtl.ResourceOptions.shared);
     defer descriptors.deinit();
@@ -160,6 +161,8 @@ test "GPU router descriptors select mixed-width experts with gather and scatter 
     defer x.deinit();
     const indexed = try device.buffer(6 * n * 4, mtl.ResourceOptions.shared);
     defer indexed.deinit();
+    const single = try device.buffer(6 * n * 4, mtl.ResourceOptions.shared);
+    defer single.deinit();
     const plain = try device.buffer(6 * n * 4, mtl.ResourceOptions.shared);
     defer plain.deinit();
     const scratch = try device.buffer(try ex.scratchBytes(k, n, 6), mtl.ResourceOptions.shared);
@@ -168,7 +171,13 @@ test "GPU router descriptors select mixed-width experts with gather and scatter 
     const e = cb.compute(.concurrent);
     ex.useMatrix(e, w0.matrix);
     ex.useMatrix(e, w1.matrix);
-    try ex.encodeIndexed(&p, e, .{ .descriptors = .{ .buffer = descriptors }, .count = 2, .k = k, .n = n }, .{ .buffer = x, .offset = 32 }, .{ .buffer = indexed }, .{ .buffer = scratch }, .{ .count = 6, .x_stride = k + 16, .y_stride = n, .output = .f32, .routes = .{ .ids = .{ .buffer = ids }, .repeat = 2 }, .input_rows = 3, .output_rows = 6, .input_ids = .{ .buffer = gather }, .output_ids = .{ .buffer = scatter } });
+    const experts = ex.Experts{ .descriptors = .{ .buffer = descriptors }, .count = 2, .k = k, .n = n };
+    try ex.encodeIndexed(&p, e, experts, .{ .buffer = x, .offset = 32 }, .{ .buffer = indexed }, .{ .buffer = scratch }, .{ .count = 6, .x_stride = k + 16, .y_stride = n, .output = .f32, .routes = .{ .ids = .{ .buffer = ids }, .repeat = 2 }, .input_rows = 3, .output_rows = 6, .input_ids = .{ .buffer = gather }, .output_ids = .{ .buffer = scatter } });
+    // The same slots one call each through the same bodies: a slot's bits do not depend on the rows beside it.
+    for (0..6) |slot| {
+        const at = slot * 4;
+        try ex.encodeIndexed(&p, e, experts, .{ .buffer = x, .offset = 32 }, .{ .buffer = single }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = k + 16, .y_stride = n, .output = .f32, .routes = .{ .ids = .{ .buffer = ids, .offset = at } }, .input_rows = 3, .output_rows = 6, .input_ids = .{ .buffer = gather, .offset = at }, .output_ids = .{ .buffer = scatter, .offset = at } });
+    }
     for (0..6) |slot| {
         const w = if (ids.slice(u32, 6)[slot] == 0) w0 else w1;
         const source = gather.slice(u32, 6)[slot];
@@ -176,7 +185,9 @@ test "GPU router descriptors select mixed-width experts with gather and scatter 
         try ex.encode(&p, e, w.matrix, .{ .buffer = x, .offset = 32 + source * (k + 16) * 2 }, .{ .buffer = plain, .offset = dest * n * 4 }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = k + 16, .y_stride = n, .output = .f32 });
     }
     try complete(cb, e);
-    try std.testing.expectEqualSlices(u32, plain.slice(u32, 6 * n), indexed.slice(u32, 6 * n));
+    try std.testing.expectEqualSlices(u32, single.slice(u32, 6 * n), indexed.slice(u32, 6 * n));
+    // The dense one-row call splits k its own way, so the expert's weights are checked to f32 rounding.
+    for (0..6) |row| try support.expectRowClose(.f32, std.mem.sliceAsBytes(plain.slice(f32, 6 * n))[row * n * 4 ..][0 .. n * 4], std.mem.sliceAsBytes(indexed.slice(f32, 6 * n))[row * n * 4 ..][0 .. n * 4], n);
 }
 
 test "packed signs and GPU expert filtering preserve untouched output slots" {
@@ -217,6 +228,10 @@ test "packed signs and GPU expert filtering preserve untouched output slots" {
     const cb = queue.commandBuffer();
     const e = cb.compute(.concurrent);
     try ex.encode(&p, e, signed, .{ .buffer = x, .offset = 32 }, .{ .buffer = filtered }, .{ .buffer = scratch }, .{ .count = 6, .x_stride = k + 16, .y_stride = n, .routes = .{ .ids = .{ .buffer = ids }, .expert_id = 1, .repeat = 2 } });
+    // A filtered window sums k in one sequence, so the one-row reference takes one split instead of its default 16.
+    const saved_splits = ex.knobs.splits_override;
+    defer ex.knobs.splits_override = saved_splits;
+    ex.knobs.splits_override = 1;
     for (0..6) |slot| {
         if (ids.slice(u32, 6)[slot] != 1) continue;
         try ex.encode(&p, e, w.matrix, .{ .buffer = x, .offset = 32 + (slot / 2) * (k + 16) * 2 }, .{ .buffer = plain, .offset = slot * n * 2 }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = k + 16, .y_stride = n });
@@ -314,6 +329,13 @@ test "caller-prepared grouped expert tiles preserve scatter slots and ignore pad
     @memset(plain.slice(u32, 16 * n), 0x7fbebebe);
     const scratch = try device.buffer(try ex.scratchBytes(k, n, 16), mtl.ResourceOptions.shared);
     defer scratch.deinit();
+    // The eight-row grouped body: the 64-row tensor tile is off, and one split matches its sequential sum.
+    const saved = ex.knobs.*;
+    defer ex.knobs.* = saved;
+    ex.knobs.skip_pad = false;
+    ex.knobs.funnel_only = false;
+    ex.knobs.funnel_prefill = false;
+    ex.knobs.splits_override = 1;
     const cb = queue.commandBuffer();
     const e = cb.compute(.concurrent);
     ex.useMatrix(e, w0.matrix);
