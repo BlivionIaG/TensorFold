@@ -168,6 +168,48 @@ pub fn sliceStack(a: Allocator, p: Host, r: slice.Rank, part: usize) slice.Error
     return .{ .words = try slice.takeExperts(a, p.words, r, part), .scales = try slice.takeExperts(a, p.scales, r, part), .biases = try slice.takeExperts(a, p.biases, r, part), .bits = p.bits, .group = p.group };
 }
 
+fn joinTensors(a: Allocator, x: Tensor, y: Tensor) Allocator.Error!Tensor {
+    const joined = try a.alloc(u8, x.bytes.len + y.bytes.len);
+    @memcpy(joined[0..x.bytes.len], x.bytes);
+    @memcpy(joined[x.bytes.len..], y.bytes);
+    var out = x;
+    out.shape[0] = x.shape[0] + y.shape[0];
+    out.bytes = joined;
+    return out;
+}
+
+/// The rows of `p` then the rows of `q` as one projection (a gate and its up, stacked); null when they do not share K, width, group and tables.
+pub fn concatRows(a: Allocator, p: Host, q: Host) Allocator.Error!?Host {
+    const same = p.bits == q.bits and p.group == q.group and p.words.rank == 2 and q.words.rank == 2 and
+        p.words.shape[1] == q.words.shape[1] and p.scales.shape[1] == q.scales.shape[1] and
+        p.words.dtype == q.words.dtype and p.scales.dtype == q.scales.dtype and p.biases.dtype == q.biases.dtype and
+        p.scales.rank == 2 and p.biases.rank == 2 and q.scales.rank == 2 and q.biases.rank == 2 and
+        p.words.shape[0] == q.words.shape[0] and p.scales.shape[0] == p.words.shape[0] and q.scales.shape[0] == q.words.shape[0];
+    if (!same) return null;
+    return .{
+        .words = try joinTensors(a, p.words, q.words),
+        .scales = try joinTensors(a, p.scales, q.scales),
+        .biases = try joinTensors(a, p.biases, q.biases),
+        .bits = p.bits,
+        .group = p.group,
+    };
+}
+
+fn halfBuf(b: types.Buf, second: bool) types.Buf {
+    var out = b;
+    out.shape[0] = b.shape[0] / 2;
+    out.len = b.len / 2;
+    if (second) out.ptr += out.len;
+    return out;
+}
+
+/// The two halves along the rows of an uploaded `concatRows`: the same device bytes, no copy.
+pub fn splitRows(d: Device) [2]Device {
+    var out: [2]Device = undefined;
+    for (&out, 0..) |*o, i| o.* = .{ .words = halfBuf(d.words, i == 1), .scales = halfBuf(d.scales, i == 1), .biases = halfBuf(d.biases, i == 1), .bits = d.bits, .group = d.group };
+    return out;
+}
+
 /// An uploaded projection (or stack of them): the same tensors on the device.
 pub const Device = struct { words: types.Buf, scales: types.Buf, biases: types.Buf, bits: u8, group: u16 };
 

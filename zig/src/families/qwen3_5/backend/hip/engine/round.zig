@@ -29,6 +29,44 @@ const Last = struct { plan: hip.plan_ops.Plan, keep_at: usize, hidden: u64 };
 /// Keep lists in flight: a flush's pinned words stay until its copy has run, which a later round's sync guarantees.
 const keep_ring = 4;
 
+/// Switches that turn the latency work off one piece at a time, to find which piece a card run pays for: `TF_LATENCY_OFF` is a
+/// comma list of `pipe` (one-token rounds wait for their token, as before), `mirror` (the token comes back by a device-to-host
+/// copy; implies `pipe`) and `topk` (sampled rows' top-k runs eagerly after the round). Unset: all of them are on.
+pub const Off = struct {
+    pipe: bool = false,
+    mirror: bool = false,
+    topk: bool = false,
+
+    pub fn read() Off {
+        const list = platform.getenv("TF_LATENCY_OFF") orelse return .{};
+        return parse(list);
+    }
+
+    fn parse(list: []const u8) Off {
+        var off: Off = .{};
+        var it = std.mem.tokenizeScalar(u8, list, ',');
+        while (it.next()) |name| {
+            if (std.mem.eql(u8, name, "pipe")) off.pipe = true;
+            if (std.mem.eql(u8, name, "mirror")) off.mirror = true;
+            if (std.mem.eql(u8, name, "topk")) off.topk = true;
+        }
+        return off;
+    }
+
+    /// Whether queued rounds run: their token comes by the host word, so `mirror` off turns them off too.
+    pub fn pipelined(off: Off) bool {
+        return !off.pipe and !off.mirror;
+    }
+};
+
+test "latency switches name one piece each" {
+    try std.testing.expect(Off.parse("").pipelined());
+    try std.testing.expect(!Off.parse("pipe").pipelined());
+    try std.testing.expect(!Off.parse("mirror").pipelined());
+    const topk = Off.parse("topk,x");
+    try std.testing.expect(topk.topk and topk.pipelined() and !topk.mirror);
+}
+
 pub const State = struct {
     buffer: plan.Buffer,
     /// The caches the padding rows run in.
@@ -40,6 +78,11 @@ pub const State = struct {
     staging: []i32,
     keeps: hip.HostBuffer,
     ring: usize = 0,
+    /// The candidate count of each row of the round being planned: its top-k launch's words in the plan.
+    ks: []i32,
+    /// The mirror slot the next queued round stores its pick to (1 up, round to 1): slot 0 serves the rounds waited for at once.
+    mirror_next: usize = 1,
+    off: Off,
     /// For checks: a layer-by-layer trace of the forward (graphs off), and a least bucket of rows.
     trace: ?fwd.Trace = null,
     pad_to: usize = 0,
@@ -64,6 +107,8 @@ pub const State = struct {
         const staging = try e.gpa.alloc(i32, rows + 1);
         errdefer e.gpa.free(staging);
         @memset(staging, -1);
+        const ks = try e.gpa.alloc(i32, rows);
+        errdefer e.gpa.free(ks);
         var votes: ?hip.Votes = if (e.o.world > 1) try hip.Votes.init(&e.driver, e.o.world) else null;
         errdefer if (votes) |*v| v.deinit();
         const keeps = try hip.HostBuffer.alloc(&e.driver, keep_ring * 4 * (rows + 1));
@@ -74,6 +119,8 @@ pub const State = struct {
             .wins = wins,
             .staging = staging,
             .keeps = keeps,
+            .ks = ks,
+            .off = Off.read(),
             .votes = votes,
         };
     }
@@ -81,6 +128,7 @@ pub const State = struct {
     pub fn deinit(s: *State, e: *Engine) void {
         if (s.votes) |*v| v.deinit();
         s.keeps.free();
+        e.gpa.free(s.ks);
         e.gpa.free(s.staging);
         e.gpa.free(s.wins);
         e.gpa.free(s.snaps);
@@ -104,10 +152,26 @@ pub fn shapeOf(e: *Engine, rows: []const Rows) !plan.Shape {
     return .{ .rows = @intCast(bucket), .slots = @intCast(slots), .span = @intCast(@min(plan.spanOf(visible), cap)) };
 }
 
-/// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys).
-pub fn choose(e: *Engine, rows: []const Rows, forced: ?Pick) !Pick {
+/// `shape` with what the round's rows draw on the device: the stride of its top-k launch and whether its argmax runs (a
+/// tensor-parallel group draws from the joined rows afterwards, so its shape has neither). `reqs` are the rows' draws.
+fn withDraws(e: *Engine, shape: *plan.Shape, reqs: []const draw.Request) !void {
+    if (e.model().tp != null) return;
+    if (reqs.len > e.round.ks.len) return error.WindowTooWide;
+    const a = e.drawer.asks(reqs, e.round.ks);
+    shape.stride = if (e.round.off.topk) 0 else plan.strideOf(a.widest);
+    // the argmax serves greedy rows; with none and a top-k launch it is left out, with neither it stays as it was
+    shape.argmax = a.greedy or shape.stride == 0;
+}
+
+/// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys); `reqs` the rows' draws.
+pub fn choose(e: *Engine, rows: []const Rows, reqs: []const draw.Request, forced: ?Pick) !Pick {
+    var shape = try shapeOf(e, rows);
+    try withDraws(e, &shape, reqs);
+    return pick(e, shape, forced);
+}
+
+fn pick(e: *Engine, shape: plan.Shape, forced: ?Pick) !Pick {
     const st = &e.round;
-    const shape = try shapeOf(e, rows);
     st.chosen = .{ .pick = .eager, .entry = null, .shape = shape };
     if (!e.o.graphs) {
         if ((forced orelse .eager) != .eager) return error.GraphsDisagree;
@@ -119,10 +183,10 @@ pub fn choose(e: *Engine, rows: []const Rows, forced: ?Pick) !Pick {
         .ready => .replay,
         .seen => .capture,
     };
-    const pick = forced orelse mine;
-    if (pick == .replay and entry.state != .ready) return error.GraphsDisagree;
-    st.chosen = .{ .pick = pick, .entry = entry, .shape = shape };
-    return pick;
+    const chosen = forced orelse mine;
+    if (chosen == .replay and entry.state != .ready) return error.GraphsDisagree;
+    st.chosen = .{ .pick = chosen, .entry = entry, .shape = shape };
+    return chosen;
 }
 
 fn nowNs() u64 {
@@ -136,7 +200,7 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     const st = &e.round;
     const m = e.model();
     const began = nowNs();
-    if (st.chosen == null) _ = try choose(e, rows, null);
+    if (st.chosen == null) _ = try choose(e, rows, reqs, null);
     const c = st.chosen.?;
     defer st.chosen = null;
     var total: usize = 0;
@@ -149,33 +213,92 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     const o = e.ops(&e.rounds);
     try win.kept(o, m, c.shape.rows, st.snaps);
     const l = plan.Layout.of(c.shape.rows, c.shape.slots, m.spec.n_layers);
-    st.buffer.fill(l, c.shape, st.wins[0..rows.len], st.scratch.desc.base(), st.snaps);
+    // the draws the shape names: its rows' candidate counts, and the host words the argmax also stores to (slot 0: waited for at once)
+    var draws: plan.Draws = .{};
+    var done_draws: draw.Done = .{};
+    if (m.tp == null) {
+        _ = e.drawer.asks(reqs[0..total], st.ks);
+        const mirrored = c.shape.argmax and !st.off.mirror;
+        draws = .{ .ks = st.ks[0..total], .mirror = if (mirrored) e.drawer.mirrorAddr(0) else 0 };
+        done_draws = .{ .argmax = c.shape.argmax, .mirror = if (mirrored) 0 else null, .stride = c.shape.stride, .rows = c.shape.rows };
+    }
+    st.buffer.fill(l, c.shape, st.wins[0..rows.len], st.scratch.desc.base(), st.snaps, draws);
     st.layout = l;
     const p: hip.plan_ops.Plan = .{ .args = st.buffer.args(l), .rows = c.shape.rows, .slots = c.shape.slots };
     const r: win.Round = .{ .plan = p, .tokens = st.buffer.dev.base() + 4 * l.tokens, .span = c.shape.span, .inputs = st.snaps, .positions3 = st.buffer.dev.base() + 4 * l.rope, .rotary = st.buffer.dev.base() + 4 * l.rotary };
     const done = try run(e, c, r);
     e.graphs.rounds += 1;
     e.graphs.submit_ns += nowNs() - began;
-    try e.drawRows(o, done.y, total, reqs, out, m.tp == null);
+    try e.drawRows(o, done.y, total, reqs, out, done_draws);
     st.last = .{ .plan = p, .keep_at = 4 * l.keep, .hidden = done.hidden.ptr };
     return .{ .hidden = done.hidden };
 }
 
-/// The forward and its logits projection, and the greedy draw of every row when this rank holds the whole head.
+/// Whether a one-token round can be queued ahead: one rank holds the head, and a lone row is the round's whole bucket.
+pub fn canQueue(e: *Engine) bool {
+    return e.model().tp == null and e.round.pad_to <= 1;
+}
+
+/// Launches the one-token greedy round of `row` and returns before it has run: its pick is stored to mirror slot `slot` of the drawer
+/// (to be read once an event recorded behind the round has completed) and stays on the device as the plan's first word, the token
+/// of the round queued after it. `fed`: this round's token is that word, the pick of the round launched before it (the plan's copy
+/// leaves it in place); otherwise it is `row.tokens[0]`. The keep of the round before goes first, from the caller's `flush`.
+pub fn queued(e: *Engine, row: Rows, fed: bool) !usize {
+    const st = &e.round;
+    const m = e.model();
+    if (!canQueue(e) or row.tokens.len != 1) return error.NotPipelined;
+    const began = nowNs();
+    const one = [1]Rows{row};
+    var shape = try shapeOf(e, &one);
+    shape.piped = true;
+    _ = try pick(e, shape, null);
+    const c = st.chosen.?;
+    defer st.chosen = null;
+    if (row.pos + 1 > row.caches.covered()) return error.ContextFull;
+    st.wins[0] = .{ .desc = row.caches.desc.base(), .pos = row.pos, .tokens = row.tokens, .shift = row.shift };
+    e.rounds.reset();
+    const o = e.ops(&e.rounds);
+    try win.kept(o, m, c.shape.rows, st.snaps);
+    const l = plan.Layout.of(c.shape.rows, c.shape.slots, m.spec.n_layers);
+    const slot = st.mirror_next;
+    st.mirror_next = if (slot + 1 == draw.mirror_slots) 1 else slot + 1;
+    const words = st.buffer.nextSlot();
+    plan.fillInto(words, l, c.shape, st.wins[0..1], st.scratch.desc.base(), st.snaps, .{ .mirror = e.drawer.mirrorAddr(slot) });
+    st.layout = l;
+    try st.buffer.sendQueued(e.stream.handle, l, words, fed);
+    const p: hip.plan_ops.Plan = .{ .args = st.buffer.args(l), .rows = c.shape.rows, .slots = c.shape.slots };
+    const r: win.Round = .{ .plan = p, .tokens = st.buffer.dev.base() + 4 * l.tokens, .span = c.shape.span, .inputs = st.snaps, .positions3 = st.buffer.dev.base() + 4 * l.rope, .rotary = st.buffer.dev.base() + 4 * l.rotary };
+    const done = try run(e, c, r);
+    e.graphs.rounds += 1;
+    e.graphs.submit_ns += nowNs() - began;
+    st.last = .{ .plan = p, .keep_at = 4 * l.keep, .hidden = done.hidden.ptr };
+    return slot;
+}
+
+/// The forward and its logits projection, and the draws its shape names (the argmax and top-k of every row when this rank holds the whole head).
 fn body(e: *Engine, r: win.Round) !round_graphs.Out {
-    // the plan goes up first, inside the graph
-    try e.round.buffer.send(e.stream.handle, e.round.layout);
-    return forwardOn(e.ops(&e.rounds), e.model(), r, e.round.trace, e.drawer.argmaxAt());
+    const st = &e.round;
+    const shape = st.chosen.?.shape;
+    const l = st.layout;
+    const at = st.buffer.dev.base();
+    // the plan goes up first, inside the graph; a queued round's went up ahead of it, and its pick replaces the plan's first word, its token
+    if (!shape.piped) try st.buffer.send(e.stream.handle, l);
+    const out = if (shape.piped) at + 4 * l.tokens else e.drawer.argmaxAt();
+    const dl = e.drawer.launches(shape.rows, shape.stride, shape.argmax, out, at + 4 * l.mirror, at + 4 * l.ks);
+    return forwardOn(e.ops(&e.rounds), e.model(), r, st.trace, dl);
 }
 
 /// `body` after the plan's copy, on `o`: on the counting stream it measures what a round takes.
-pub fn forwardOn(ops: hip.ops.Ops, m: *const view.Model, r: win.Round, trace: ?fwd.Trace, argmax_at: u64) !round_graphs.Out {
+pub fn forwardOn(ops: hip.ops.Ops, m: *const view.Model, r: win.Round, trace: ?fwd.Trace, dl: draw.Launches) !round_graphs.Out {
     var o = ops;
     // a round's rows keep their decode kernels however many share it
     o.window = true;
     const hidden = try win.forward(o, m, r, trace);
     const y = try o.project(hidden, m.head, r.plan.rows, false);
-    if (m.tp == null) try o.argmaxRows(y, r.plan.rows, m.head.n, argmax_at);
+    if (m.tp == null) {
+        if (dl.argmax) try o.argmaxRowsTo(y, r.plan.rows, m.head.n, dl.argmax_at, dl.mirror_at);
+        if (dl.stride > 0) try o.topkRows(y, dl.rows, m.head.n, dl.ks, dl.stride, dl.ids, dl.vals);
+    }
     return .{ .hidden = hidden, .y = y, .used = o.arena.used };
 }
 

@@ -6,8 +6,13 @@
 
 namespace {
 
+#ifndef TF_WAVE
+#error "TF_WAVE (the caps table's wavefront width) comes from the build"
+#endif
+
 constexpr int kThreads = 1024;
-constexpr int kWaves = kThreads / 32;
+constexpr int kWaveSize = TF_WAVE;  // the ballots below see a whole wavefront: 32 lanes on RDNA, 64 on gfx900
+constexpr int kWaves = kThreads / kWaveSize;
 
 __device__ __forceinline__ float widen(uint16_t bits, int kind) {
     if (kind == 1) return __half2float(__ushort_as_half(bits));
@@ -21,10 +26,51 @@ __device__ __forceinline__ bool better(float a, int ia, float b, int ib) {
     return a > b || (a == b && ia < ib);
 }
 
-extern "C" __global__ void tf_argmax(const uint16_t* logits, int kind, int n, int* out) {
+// A pick also goes to the host word array `*mirror_at` names (`mirror_at` is a device word holding that address, 0: none): the host reads the pick from
+// pinned memory the round's fence already covers, with no device-to-host copy behind the round.
+__device__ __forceinline__ void mirror_pick(int* const* mirror_at, int row, int pick) {
+    if (mirror_at == nullptr) return;
+    int* host = *mirror_at;
+    if (host != nullptr) host[row] = pick;
+}
+
+extern "C" __global__ void tf_argmax(const uint16_t* logits, int kind, int n, int* out, int* const* mirror_at) {
     const uint16_t* row = logits + static_cast<long long>(blockIdx.x) * n;
     float top = 0.0f;
     int at = -1;
+#if defined(__gfx900__)
+    // gfx900: 16-byte loads (8 values), four in flight a thread, for rows that allow them. The order a thread visits its values in does not matter:
+    // `better` is a strict total order on (value, index), so the largest is the same one whichever way it is looked for.
+    const bool wide = (n & 7) == 0 && (reinterpret_cast<uintptr_t>(row) & 15) == 0;
+    if (wide) {
+        constexpr int kU = 4;
+        const int nv = n >> 3;
+        const uint4* rv = reinterpret_cast<const uint4*>(row);
+        for (int base = threadIdx.x; base < nv; base += kU * kThreads) {
+            uint4 v[kU];
+#pragma unroll
+            for (int u = 0; u < kU; ++u) {
+                const int idx = base + u * kThreads;
+                v[u] = rv[idx < nv ? idx : nv - 1];
+            }
+#pragma unroll
+            for (int u = 0; u < kU; ++u) {
+                const int idx = base + u * kThreads;
+                if (idx >= nv) continue;
+                const uint32_t words[4] = {v[u].x, v[u].y, v[u].z, v[u].w};
+#pragma unroll
+                for (int w = 0; w < 8; ++w) {
+                    const int i = idx * 8 + w;
+                    const float x = widen(static_cast<uint16_t>((words[w >> 1] >> (16 * (w & 1))) & 0xffffu), kind);
+                    if (at < 0 || better(x, i, top, at)) {
+                        top = x;
+                        at = i;
+                    }
+                }
+            }
+        }
+    } else
+#endif
     for (int i = threadIdx.x; i < n; i += kThreads) {
         float v = widen(row[i], kind);
         if (at < 0 || better(v, i, top, at)) {
@@ -47,7 +93,10 @@ extern "C" __global__ void tf_argmax(const uint16_t* logits, int kind, int n, in
         }
         __syncthreads();
     }
-    if (threadIdx.x == 0) out[blockIdx.x] = si[0];
+    if (threadIdx.x == 0) {
+        out[blockIdx.x] = si[0];
+        mirror_pick(mirror_at, blockIdx.x, si[0]);
+    }
 }
 
 constexpr int kPartThreads = 256;
@@ -89,7 +138,7 @@ extern "C" __global__ void __launch_bounds__(kPartThreads)
 
 // The best of a row's `parts` candidates (tf_argmax_part's): the row's tf_argmax.
 extern "C" __global__ void __launch_bounds__(kPartThreads)
-    tf_argmax_join(const float* part_v, const int* part_i, int parts, int* out) {
+    tf_argmax_join(const float* part_v, const int* part_i, int parts, int* out, int* const* mirror_at) {
     float top = 0.0f;
     int at = -1;
     for (int p = threadIdx.x; p < parts; p += kPartThreads) {
@@ -115,7 +164,10 @@ extern "C" __global__ void __launch_bounds__(kPartThreads)
         }
         __syncthreads();
     }
-    if (threadIdx.x == 0) out[blockIdx.x] = si[0];
+    if (threadIdx.x == 0) {
+        out[blockIdx.x] = si[0];
+        mirror_pick(mirror_at, blockIdx.x, si[0]);
+    }
 }
 
 // A monotone 16-bit key of a value's bits (-0 and +0 share one), so equal keys are equal values.
@@ -162,7 +214,7 @@ extern "C" __global__ void tf_topk(const uint16_t* logits, int n, const int* ks,
     const uint32_t kth = (high << 8) | static_cast<uint32_t>(pick[1]);
     const int above = pick[2], take = pick[3];
     int seen_gt = 0, seen_eq = 0;
-    const int lane = threadIdx.x & 31, wave = threadIdx.x >> 5;
+    const int lane = threadIdx.x & (kWaveSize - 1), wave = threadIdx.x / kWaveSize;
     for (int base = 0; base < n; base += kThreads) {
         int i = base + threadIdx.x;
         uint16_t bits = i < n ? row[i] : 0;

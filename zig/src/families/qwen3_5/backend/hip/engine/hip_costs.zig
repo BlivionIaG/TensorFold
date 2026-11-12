@@ -56,6 +56,12 @@ const Rig = struct {
         r.out = try gpa.alloc(u32, most);
         // a bucket's rows over the streams can outgrow a lone window when `most` passes 16 rows a stream
         const share = most / streams + @intFromBool(most % streams != 0);
+        // the positions below `at` of those caches were never written: a runtime that hands out device memory unzeroed (hipmac's hipMalloc)
+        // leaves what the card held, NaNs included, and the attention layers read it
+        for (e.pool.keys, e.pool.values) |k, v| {
+            try k.fill8(0);
+            try v.fill8(0);
+        }
         // the rig runs before any request, on the caches of streams the memory plan holds and none uses yet
         while (r.made < streams) : (r.made += 1) r.caches[r.made] = try e.newCaches(at + @max(2 * shared.window * 4, share));
         return r;

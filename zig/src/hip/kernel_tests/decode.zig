@@ -378,3 +378,58 @@ test "the routed gate and up with its activation in one launch is no further fro
     try pair(t, &rng, 1, 768, 2048, 6, 64);
     try pair(t, &rng, 1, 512, 2048, 4, 128);
 }
+
+/// gfx900's dense MLP: gate and up stacked in one matrix, silu(gate) * up as the stream tile's epilogue (limit -1: `silu_mul`'s rounding of its
+/// two fp16 inputs) against the two products of the group launch and `tf_silu_mul`: the same bytes.
+fn gateUp(t: *Rig, rng: *rig.Rng, width: usize, k: usize, bits: usize, group_size: usize) !void {
+    var m = try Matrix.init(t, rng, 2 * width, k, bits, group_size, 1);
+    defer m.deinit();
+    const hx = try gpa.alloc(u16, k);
+    defer gpa.free(hx);
+    for (hx) |*v| v.* = t.bits(rng.unit());
+    var x = try t.upload(hx);
+    defer x.free();
+    var gate = try t.alloc(width * 2);
+    defer gate.free();
+    var up = try t.alloc(width * 2);
+    defer up.free();
+    var want = try t.alloc(width * 2);
+    defer want.free();
+    var got = try t.alloc(width * 2);
+    defer got.free();
+    const kernels = &t.on.affine;
+    // the halves of the stacked matrix: rows 0 to width are the gate, the rest the up
+    const words_half = width * (k * bits / 32) * 4;
+    const tables_half = width * (k / group_size) * 2;
+    const sides = [2]affine.Side{
+        .{ .words = at(m.dev[0]), .scale = at(m.dev[1]), .bias = at(m.dev[2]), .n = @intCast(width), .out = at(gate) },
+        .{ .words = at(m.dev[0]) + words_half, .scale = at(m.dev[1]) + tables_half, .bias = at(m.dev[2]) + tables_half, .n = @intCast(width), .out = at(up) },
+    };
+    try kernels.groupGo(&t.r, m.arg(t, at(x), 1, 0), &sides, true, t.stream.handle);
+    try t.on.tf_silu_mul(@ptrFromInt(at(gate)), @ptrFromInt(at(up)), p(want), t.kind(), @intCast(width), t.stream.handle);
+    var a = m.arg(t, at(x), 1, 0);
+    a.out16 = at(got);
+    try std.testing.expect(try kernels.pairRun(&t.r, a, -1, 1, t.stream.handle));
+    try t.stream.synchronize();
+    const w = try rig.download(u16, want);
+    defer gpa.free(w);
+    const g = try rig.download(u16, got);
+    defer gpa.free(g);
+    var differ: usize = 0;
+    for (w, g) |a_, b_| differ += @intFromBool(a_ != b_);
+    if (differ != 0) std.debug.print("  gate/up n{d} k{d} b{d} g{d}: {d} of {d} outputs differ from the two products and silu_mul\n", .{ width, k, bits, group_size, differ, width });
+    try std.testing.expectEqual(@as(usize, 0), differ);
+}
+
+test "the stacked gate and up with silu_mul's rounding as the epilogue write the bytes of the two products and silu_mul" {
+    const t = try Rig.open(1 << 20);
+    defer t.close();
+    // the epilogue of limit -1 is gfx900's (the fp16 stream tile's pair mode there)
+    if (t.bf16 or !std.mem.startsWith(u8, @import("../kernels.zig").arch, "gfx900")) return error.SkipZigTest;
+    var rng: rig.Rng = .{ .state = 0x9E3779B97F4A7C15 };
+    try gateUp(t, &rng, 9216, 2560, 4, 64);
+    try gateUp(t, &rng, 4608, 2560, 4, 64);
+    try gateUp(t, &rng, 1000, 4096, 4, 64);
+    try gateUp(t, &rng, 576, 2048, 4, 128);
+    try gateUp(t, &rng, 768, 2048, 6, 64);
+}

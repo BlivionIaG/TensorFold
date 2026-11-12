@@ -57,17 +57,34 @@ struct SiluPairOut {
 template <typename T>
 __device__ inline typename T::elem narrow_product(float a, float b) {
     if constexpr (std::is_same_v<typename T::elem, __half>) {
+#if defined(__gfx900__)
+        // gfx900 has v_mad_mixlo_f16 but no v_fma_mixlo_f16: the product of two floats is exact in double, and the compiler's
+        // double -> half narrowing rounds once to nearest even.
+        return __builtin_bit_cast(typename T::elem, static_cast<_Float16>(static_cast<double>(a) * static_cast<double>(b)));
+#else
         uint32_t bits;
         asm("v_fma_mixlo_f16 %0, %1, %2, 0" : "=v"(bits) : "v"(a), "v"(b));
         return __builtin_bit_cast(typename T::elem, static_cast<unsigned short>(bits));
+#endif
     } else {
         return narrow<T>(a * b);
     }
 }
 
 // silu(gate) * up in the activation type, both clamped by limit first when it is above 0 (moe_act_kernel's arithmetic).
+// A limit below 0 (gfx900, the dense MLP's gate and up stacked in one matrix) is the arithmetic of `silu_mul` on two fp16 products: gate and
+// up are rounded to T first, then silu(gate) is rounded to T and multiplied by up, one more rounding (two halves multiply exactly in fp32).
+// A limit of -2 keeps the fp32 sums (one rounding at the end: not the bytes of the two products and silu_mul).
 template <typename T>
 __device__ inline typename T::elem swiglu(float g, float u, float limit) {
+#if defined(__gfx900__)
+    if (limit < 0.f && limit > -1.5f) {
+        const float g16 = static_cast<float>(narrow<T>(g));
+        const float u16 = static_cast<float>(narrow<T>(u));
+        const float s = static_cast<float>(narrow<T>(g16 / (1.f + expf(-g16))));
+        return narrow<T>(s * u16);
+    }
+#endif
     if (limit > 0.f) {
         g = fminf(g, limit);
         u = fminf(fmaxf(u, -limit), limit);

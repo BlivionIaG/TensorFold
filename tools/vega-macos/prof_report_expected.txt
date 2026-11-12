@@ -1,0 +1,5 @@
+400 decode tokens, 5 launches a token; sum of kernel times (replayed, else synced) 0.16 ms a token, mean gaps between kernels 0.01 ms a token (1.3 us a launch)
+kernel                                   grid   blk      n     k  /tok      us    min  rep_us   gap     MB   GB/s  ms/tok     %
+affine_stream<4,64>                    32,1,1   256 248320  2560   1.0    90.5  100.0    90.5   2.5  318.0   3514   0.090  55.5
+affine_dot<8>                          64,1,1   128   8192  2560   2.0    30.2   28.0     0.0   1.2   11.8    390   0.060  37.1
+rms_norm_f16                            1,1,1  1024      0     0   2.0     6.0    5.0     0.0   0.8    0.0      0   0.012   7.4

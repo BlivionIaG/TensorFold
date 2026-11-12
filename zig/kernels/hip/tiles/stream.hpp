@@ -14,6 +14,16 @@ namespace rocm {
 
 constexpr int kStreamWaves = 4;
 
+// A block's most threads. gfx900: a several-row tile of at most 8 accumulators a lane (under 128 VGPRs, 2 waves a SIMD) runs 16 wave groups a block, so
+// the block's x stage is read by 4 times the columns; the launch (launches/affine.zig streamGroups) names the groups it wants, up to this.
+constexpr int stream_threads(int rows, int cb) {
+#if defined(__gfx900__)
+    if (rows > 1 && rows * cb <= 8) return 32 * 16;
+#endif
+    return 32 * kStreamWaves;
+}
+
+
 // Tile shapes that exist: CB columns a lane times R rows at most 16 accumulators.
 constexpr bool stream_shape(int rows, int cb) { return cb * rows <= 16; }
 constexpr int kStreamRows = 16;  // the most rows a launch takes
@@ -21,6 +31,30 @@ constexpr int kStreamRows = 16;  // the most rows a launch takes
 // The pair (half `parity` of a, half `parity` of b).
 __device__ inline uint32_t stream_pick(uint32_t a, uint32_t b, int parity) {
     return __builtin_amdgcn_perm(b, a, parity ? 0x07060302u : 0x05040100u);
+}
+
+// What the stream tile keeps of an x pair: the pair, or (a Dot with kStreamWideX: gfx900's v_mad_mix_f32 flushes the denormal fp16 halves
+// of its operands, an fp32 operand it does not) the two halves widened.
+struct StreamWideX {
+    float lo, hi;
+};
+template <typename T>
+inline constexpr bool kWideX = requires { requires T::kStreamWideX; };
+template <typename T>
+using xval_t = std::conditional_t<kWideX<T>, StreamWideX, typename T::pair>;
+
+template <typename T>
+__device__ __forceinline__ xval_t<T> stream_xval(typename T::pair p) {
+    if constexpr (kWideX<T>) return {T::lo(p), T::hi(p)};
+    else return p;
+}
+
+// The stream tile's dot: a Dot may have its own form of it (gfx900 fp16: v_mad_mix_f32), else its dot.
+template <typename T>
+__device__ __forceinline__ float stream_dot(xval_t<T> x, typename T::pair q, float acc) {
+    if constexpr (kWideX<T>) return T::dot_stream_wide(x.lo, x.hi, q, acc);
+    else if constexpr (requires { T::dot_stream(x, q, acc); }) return T::dot_stream(x, q, acc);
+    else return T::dot(x, q, acc);
 }
 
 // x of one row in the order of the code pairs: pair I takes the halves of the codes it is multiplied with.
@@ -39,23 +73,56 @@ __device__ inline void stream_x_pairs(const uint32_t (&xn)[16], typename T::pair
      ...);
 }
 
-// RDNA2's 2x8 tiles at 2, 4 and 8 bits make a column's code pairs per row group: a chunk's at once spill there.
+// RDNA2's 2x8 tiles at 2, 4 and 8 bits make a column's code pairs per row group: a chunk's at once spill there. gfx900's one-row tile keeps its code
+// pairs made where they are dotted (the registers the hoisted pairs take cost it a wave a SIMD).
 template <class Dec, int R, int CB>
 constexpr bool stream_pairs_per_group() {
-    return kGen == Gen::rdna2 && R == 2 && CB == 8 && Dec::kGapPairs;
+    return (kGen == Gen::rdna2 && R == 2 && CB == 8 && Dec::kGapPairs) || (kGen == Gen::gcn5 && R == 1);
 }
 
 // One column's chunk against RG rows: each code pair is made once and dotted with every row's x.
 template <class Dec, typename T, int RG, int... I>
-__device__ inline void stream_dots(const typename T::pair (&xp)[RG][16], const uint32_t (&w)[Dec::kWords], float (&d)[RG],
+__device__ inline void stream_dots(const xval_t<T> (&xp)[RG][16], const uint32_t (&w)[Dec::kWords], float (&d)[RG],
                                    std::integer_sequence<int, I...>) {
     (([&] {
          const typename T::pair q = Dec::template stream_pair<T, I>(w);
 #pragma unroll
-         for (int r = 0; r < RG; ++r) d[r] = T::dot(xp[r][I], q, d[r]);
+         for (int r = 0; r < RG; ++r) d[r] = stream_dot<T>(xp[r][I], q, d[r]);
      }()),
      ...);
 }
+
+#if defined(__gfx900__)
+// gfx900: the block's R rows of x into LDS (R * (2k + k / 8) bytes): chunk q of row r as pairs at [r][v][q][4], sums after.
+template <class Dec, class Act, class T, int R>
+__device__ inline void stream_stage(const typename Dec::Args& a, int row0, uint32_t* pairs, float* sums) {
+    using pair = typename T::pair;
+    const int nch = a.k >> 5;
+    for (int at = threadIdx.x; at < R * nch; at += blockDim.x) {
+        const int r = at / nch;
+        const int q = at - r * nch;
+        const u32x4* src = reinterpret_cast<const u32x4*>(Act::row(a, row0 + r < a.m ? row0 + r : 0) + q * 32LL);
+        uint32_t xn[16];
+#pragma unroll
+        for (int v = 0; v < 4; ++v) {
+            const u32x4 t = src[v];
+            xn[4 * v] = t.x;
+            xn[4 * v + 1] = t.y;
+            xn[4 * v + 2] = t.z;
+            xn[4 * v + 3] = t.w;
+        }
+        float s = 0.f;
+#pragma unroll
+        for (int i = 0; i < 16; ++i) s = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(pair, xn[i])), __builtin_bit_cast(pair, T::ones), s);
+        sums[at] = s;
+        pair xp[16];
+        stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
+#pragma unroll
+        for (int i = 0; i < 16; ++i) pairs[((r * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)] = __builtin_bit_cast(uint32_t, xp[i]);
+    }
+    __syncthreads();
+}
+#endif
 
 // One column's 16 code pairs of a chunk, made once for every row of the block.
 template <class Dec, typename T, int... I>
@@ -97,7 +164,7 @@ __device__ inline void stream_codes(const uint32_t (&w)[Dec::kWords], typename T
 }
 
 // Epi::kPair: a lane's CB columns are CB / 2 gate columns and the same up columns; out is silu(gate) * up.
-template <class Dec, class Act, class T, class Epi, int R, int CB, bool WIDE>
+template <class Dec, class Act, class T, class Epi, int R, int CB, bool WIDE, bool SHARED>
 __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, int gshift, int bx, int by, int pair_cols,
                                    float limit) {
     using pair = typename T::pair;
@@ -111,7 +178,11 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
     constexpr int CH = PAIR ? CB / 2 : CB;  // output columns a lane
     const int cols = PAIR ? pair_cols : a.n;
     const int per_wave = (32 >> lpc_log2) * CH;
+#if defined(__gfx900__)
+    const int col0 = (bx * (blockDim.x >> 5) + (threadIdx.x >> 5)) * per_wave + slot * CH;  // the block's wave groups: the launch's, 4 to 16
+#else
     const int col0 = (bx * kStreamWaves + (threadIdx.x >> 5)) * per_wave + slot * CH;
+#endif
     const int nch = a.k >> 5;
     const long long words_row = Dec::template row_words<long long>(a);
     const long long groups = a.k / a.group;
@@ -133,7 +204,15 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
 #pragma unroll
         for (int c = 0; c < CB; ++c) acc[r][c] = 0.f;
     }
-
+    // SHARED (gfx900, one row): the lanes read x pairs and sums of x from the block's stage instead of loading x (same values, same bits)
+#if defined(__gfx900__)
+    extern __shared__ uint32_t stage[];
+    const uint32_t* xs = stage;
+    const float* sums = reinterpret_cast<const float*>(stage + R * (a.k >> 5) * 16);
+#else
+    [[maybe_unused]] const uint32_t* xs = nullptr;
+    [[maybe_unused]] const float* sums = nullptr;
+#endif
     const typename Dec::StreamTerms terms(a);
 
     // The loads of one round: every column's chunk and its scale and bias, none waited for before the dots.
@@ -158,6 +237,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         for (int c = 0; c < CB; ++c) {
             sc[c] = live ? terms.widen(sr[c]) : 0.f;
             bi[c] = live ? terms.widen(br[c]) : 0.f;
+            if constexpr (Dec::kDeferSub) bi[c] = fmaf(-Dec::kStreamMark, sc[c], bi[c]);
         }
         if constexpr (stream_pairs_per_group<Dec, R, CB>()) {
             constexpr int RG = R < 4 ? R : 4;  // rows a pass keeps in registers
@@ -165,10 +245,17 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
 #pragma unroll
             for (int g = 0; g < NG; ++g) {
                 if (row0 + g * RG >= a.m) break;
-                pair xp[RG][16];
+                xval_t<T> xp[RG][16];
                 float sx[RG];
 #pragma unroll
                 for (int r = 0; r < RG; ++r) {
+                    if constexpr (SHARED) {
+                        const int row = g * RG + r;
+#pragma unroll
+                        for (int i = 0; i < 16; ++i) xp[r][i] = stream_xval<T>(__builtin_bit_cast(pair, xs[((row * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)]));
+                        sx[r] = sums[row * nch + q];
+                        continue;
+                    }
                     uint32_t xn[16];
                     const u32x4* src =
                         reinterpret_cast<const u32x4*>(xr[g * RG + r] + static_cast<long long>(q) * 32);
@@ -183,10 +270,17 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                     float s = 0.f;
 #pragma unroll
                     for (int i = 0; i < 16; ++i) {
-                        s = T::dot(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, kOne), s);
+                        s = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(pair, xn[i])), __builtin_bit_cast(pair, kOne), s);
                     }
                     sx[r] = s;
-                    stream_x_pairs<Dec, T>(xn, xp[r], std::make_integer_sequence<int, 16>{});
+                    if constexpr (kWideX<T>) {
+                        pair xq[16];
+                        stream_x_pairs<Dec, T>(xn, xq, std::make_integer_sequence<int, 16>{});
+#pragma unroll
+                        for (int i = 0; i < 16; ++i) xp[r][i] = stream_xval<T>(xq[i]);
+                    } else {
+                        stream_x_pairs<Dec, T>(xn, xp[r], std::make_integer_sequence<int, 16>{});
+                    }
                 }
 #pragma unroll
                 for (int c = 0; c < CB; ++c) {
@@ -210,28 +304,41 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
 #pragma unroll
         for (int r = 0; r < R; ++r) {
             if (row0 + r >= a.m) break;
-            pair xp[16];
-            uint32_t xn[16];
-            const u32x4* src = reinterpret_cast<const u32x4*>(xr[r] + static_cast<long long>(q) * 32);
-#pragma unroll
-            for (int v = 0; v < 4; ++v) {
-                const u32x4 t = src[v];
-                xn[4 * v] = t.x;
-                xn[4 * v + 1] = t.y;
-                xn[4 * v + 2] = t.z;
-                xn[4 * v + 3] = t.w;
-            }
+            xval_t<T> xp[16];
             float sx = 0.f;
+            if constexpr (SHARED) {
 #pragma unroll
-            for (int i = 0; i < 16; ++i) {
-                sx = T::dot(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, kOne), sx);
+                for (int i = 0; i < 16; ++i) xp[i] = stream_xval<T>(__builtin_bit_cast(pair, xs[((r * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)]));
+                sx = sums[r * nch + q];
+            } else {
+                uint32_t xn[16];
+                const u32x4* src = reinterpret_cast<const u32x4*>(xr[r] + static_cast<long long>(q) * 32);
+#pragma unroll
+                for (int v = 0; v < 4; ++v) {
+                    const u32x4 t = src[v];
+                    xn[4 * v] = t.x;
+                    xn[4 * v + 1] = t.y;
+                    xn[4 * v + 2] = t.z;
+                    xn[4 * v + 3] = t.w;
+                }
+#pragma unroll
+                for (int i = 0; i < 16; ++i) {
+                    sx = stream_dot<T>(stream_xval<T>(__builtin_bit_cast(pair, xn[i])), __builtin_bit_cast(pair, kOne), sx);
+                }
+                if constexpr (kWideX<T>) {
+                    pair xq[16];
+                    stream_x_pairs<Dec, T>(xn, xq, std::make_integer_sequence<int, 16>{});
+#pragma unroll
+                    for (int i = 0; i < 16; ++i) xp[i] = stream_xval<T>(xq[i]);
+                } else {
+                    stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
+                }
             }
-            stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
 #pragma unroll
             for (int c = 0; c < CB; ++c) {
                 float d = 0.f;
 #pragma unroll
-                for (int i = 0; i < 16; ++i) d = T::dot(xp[i], qp[c][i], d);
+                for (int i = 0; i < 16; ++i) d = stream_dot<T>(xp[i], qp[c][i], d);
                 acc[r][c] = Dec::fold_scale(acc[r][c], d, sc[c]);
                 acc[r][c] = Dec::fold_bias(acc[r][c], sx, bi[c]);
             }
@@ -251,6 +358,10 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         uint32_t wb[CB][Dec::kWords];
         unsigned short sbb[CB], bbb[CB];
         fetch(at(0), wa, sa, ba);
+        // gfx900: the stage is written after the first round's weights are requested, so their latency runs under the stage's
+#if defined(__gfx900__)
+        if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
+#endif
         for (int r = 0; r < rounds; r += 2) {
             if (r + 1 < rounds) fetch(at(r + 1), wb, sbb, bbb);
             work(at(r), wa, sa, ba);
@@ -259,7 +370,10 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
             work(at(r + 1), wb, sbb, bbb);
         }
     } else {
-        // several rows: the dots cover the loads' latency, and registers go to the rows' x
+        // several rows: the dots cover the loads' latency, and registers go to the rows' x. gfx900: the rows' x staged in LDS first
+#if defined(__gfx900__)
+        if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
+#endif
         for (int r = 0; r < rounds; ++r) {
             fetch(at(r), wa, sa, ba);
             work(at(r), wa, sa, ba);
@@ -275,6 +389,24 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
             for (int d = lpc >> 1; d > 0; d >>= 1) v[c] += __shfl_xor(v[c], d, 32);
         }
         if (j != 0 || row0 + r >= a.m) continue;
+#if defined(__gfx900__) && TF_G9_REPAIR == 0
+        // measurement only (no repair of a non-finite sum): what the repair's fp64 code costs the loop
+#elif defined(__gfx900__) && TF_G9_REPAIR == 2
+        // one cold site for every column (the unrolled form below copies the fp64 replay CB times into the kernel)
+        bool bad = false;
+#pragma unroll
+        for (int c = 0; c < CB; ++c) bad |= col0 + c % CH < cols && !__builtin_isfinite(v[c]);
+        if (__builtin_expect(bad, 0)) {
+#pragma nounroll
+            for (int c = 0; c < CB; ++c) {
+                const int col = col0 + c % CH;
+                if (col < cols && !__builtin_isfinite(v[c])) {
+                    const int wc = col + (PAIR && c >= CH ? pair_cols : 0);
+                    v[c] = Dec::template repair_stream<T>(a, xr[r], wc, v[c]);
+                }
+            }
+        }
+#else
 #pragma unroll
         for (int c = 0; c < CB; ++c) {
             const int col = col0 + c % CH;
@@ -283,6 +415,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
                 v[c] = Dec::template repair_stream<T>(a, xr[r], wc, v[c]);
             }
         }
+#endif
 #pragma unroll
         for (int c = 0; c < CH; ++c) {
             const int col = col0 + c;
@@ -293,8 +426,13 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
 }
 
 // Item z of the plan (or plain product, or a group's side) at CB columns a lane, R rows; chunk group is q >> gshift.
+// gfx900: bit 8 of lpc_log2 asks a one-row launch to stage x in LDS (the launch's dynamic shared bytes).
 template <class Dec, class Act, class T, class Epi, int R, int CB, class Sides>
 __device__ inline void stream_tile(typename Dec::Args& a, const Sides& sides, int lpc_log2, int gshift) {
+#if defined(__gfx900__)
+    const bool shared = (lpc_log2 & 0x100) != 0;
+    lpc_log2 &= 0xff;
+#endif
     // a one-row grid over more than R rows interleaves (launches/stream_layout.zig grid): row blocks neighbour on x
     // the row-group tiles run 2 rows (stream_pick.zig rowTile), one row block, so they skip the interleave's index math
     const int nby = (a.m + R - 1) / R;
@@ -314,14 +452,24 @@ __device__ inline void stream_tile(typename Dec::Args& a, const Sides& sides, in
         }
     }
     if (!Dec::take_item(a, blockIdx.z) || by * R >= a.m) return;
+#if defined(__gfx900__)
+    if constexpr (R <= 4) {
+        if (shared) {
+            if constexpr (Dec::kWideBytes != 4) {
+                if (Dec::wide_aligned(a)) return stream_body<Dec, Act, T, Epi, R, CB, true, true>(a, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
+            }
+            return stream_body<Dec, Act, T, Epi, R, CB, false, true>(a, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
+        }
+    }
+#endif
     if constexpr (Dec::kWideBytes == 4) {
-        stream_body<Dec, Act, T, Epi, R, CB, false>(a, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
+        stream_body<Dec, Act, T, Epi, R, CB, false, false>(a, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
     } else {
         // every chunk is wide-aligned when the words and the row stride are
         if (Dec::wide_aligned(a)) {
-            stream_body<Dec, Act, T, Epi, R, CB, true>(a, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
+            stream_body<Dec, Act, T, Epi, R, CB, true, false>(a, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
         } else {
-            stream_body<Dec, Act, T, Epi, R, CB, false>(a, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
+            stream_body<Dec, Act, T, Epi, R, CB, false, false>(a, lpc_log2, gshift, bx, by, sides.pair_cols, sides.limit);
         }
     }
 }

@@ -1,0 +1,20 @@
+#!/bin/bash
+# xcrun shim for Macs where Xcode's `xcrun metal` fails with "missing Metal Toolchain" (the Metal Toolchain component is not downloaded
+# into Xcode) but macOS carries the Metal toolchain as a MobileAsset mounted under /var/run/com.apple.security.cryptexd/mnt.
+# Put the directory of this file FIRST on PATH for the build, e.g. (TensorFold: zig build test-split / tf-offload-metal / test-qwen27-split):
+#   PATH=$PWD/tools/vega-macos/xcrun-metal-shim:$PATH zig build ... -Dmetal-std=metal4.0
+# Behaviour: metal / metallib / metal-ar run from the MobileAsset toolchain; `--show-sdk-path` and `-sdk X` are answered with the Command Line Tools
+# MacOSX26.sdk (the SDK the documented numbers were built with; override with TF_SDKROOT); every other tool goes to /usr/bin/xcrun.
+# History: originally /tmp/up_shim/xcrun of the vega-macos-up rebase (see docs/recipes/vega-macos.md; copy of ut4g-usbgpu tools/macos/xcrun-metal-shim/xcrun); same logic, but the asset mount
+# (its directory name carries a random suffix and the asset version) is found by glob instead of being hard-coded.
+set -u
+M=$(ls -d /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-*/Metal.xctoolchain/usr/bin 2>/dev/null | tail -1)
+SDK=${TF_SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk}
+while [ $# -gt 0 ]; do case "$1" in -sdk|--sdk) shift 2 ;; --show-sdk-path) echo "$SDK"; exit 0 ;; *) break ;; esac; done
+tool=${1:-}; [ $# -gt 0 ] && shift
+case "$tool" in
+  metal|metallib|metal-ar)
+    [ -n "$M" ] || { echo "xcrun-metal-shim: no Metal toolchain MobileAsset mounted under /var/run/com.apple.security.cryptexd/mnt (run: xcodebuild -downloadComponent MetalToolchain)" >&2; exit 1; }
+    exec "$M/$tool" "$@" ;;
+  *) exec /usr/bin/xcrun "$tool" "$@" ;;
+esac

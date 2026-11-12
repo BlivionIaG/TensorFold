@@ -154,12 +154,24 @@ pub fn sliceStack(a: Allocator, h: Host, r: Rank, part: usize) slice.Error!Host 
     }
 }
 
+/// `gate` and `up` as one projection of their rows stacked, when the format can (same K, width and tables); null otherwise.
+pub fn fuseRows(a: Allocator, gate: Host, up: Host) Allocator.Error!?Host {
+    if (gate != .mlx or up != .mlx) return null;
+    return if (try mlx.concatRows(a, gate.mlx, up.mlx)) |h| .{ .mlx = h } else null;
+}
+
 /// A projection on the device, as its format uploaded it.
 pub const Device = union(Format) {
     mlx: mlx.Device,
     dense: dense.Device,
     bf16: bf16.Device,
 };
+
+/// The two halves along the rows of an uploaded `fuseRows`, sharing its device bytes.
+pub fn splitRows(d: Device) [2]Device {
+    const halves_ = mlx.splitRows(d.mlx);
+    return .{ .{ .mlx = halves_[0] }, .{ .mlx = halves_[1] } };
+}
 
 pub fn upload(u: Uploader, h: Host) !Device {
     switch (h) {

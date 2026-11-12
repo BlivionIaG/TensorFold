@@ -52,6 +52,8 @@ pub const Env = struct {
     stream_on: bool,
     /// The GEMM tile (else the reference one) takes the products.
     gemm_on: bool,
+    /// The GEMM tile on 64 and 32 rows a block exists in this GPU's objects (gfx900 only).
+    gemm_rows: bool = false,
 };
 
 /// Whether an entry writes the activation type itself instead of fp32.

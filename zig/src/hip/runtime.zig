@@ -5,9 +5,12 @@ const platform = @import("sys");
 const abi = @import("abi.zig");
 pub const Error = error{ DriverUnavailable, MissingSymbol, HipFailed, Invalid };
 
-/// The runtime's file names, most specific first: Windows' unversioned DLL, then the SDK's versioned copies.
+/// The runtime's file names, most specific first: Windows' unversioned DLL, then the SDK's versioned copies; macOS' is the
+/// libamdhip64.dylib of the out-of-tree hipmac runtime, found by the loader's search path (TENSORFOLD_HIP names a file outside it).
 const names: []const []const u8 = if (builtin.os.tag == .windows)
     &.{ "amdhip64.dll", "amdhip64_7.dll", "amdhip64_6.dll" }
+else if (builtin.os.tag == .macos)
+    &.{"libamdhip64.dylib"}
 else
     &.{"libamdhip64.so"};
 

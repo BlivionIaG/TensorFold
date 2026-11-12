@@ -36,7 +36,7 @@ pub fn rounds(e: *Engine, rows: usize, capacity: usize) !usize {
     try win.kept(o, m, rows, table);
     const p: hip.plan_ops.Plan = .{ .args = std.mem.zeroes(@FieldType(hip.plan_ops.Plan, "args")), .rows = rows, .slots = rows + 1 };
     const r: win.Round = .{ .plan = p, .tokens = 0, .span = std.mem.alignForward(usize, capacity, plan.min_span), .inputs = table };
-    const out = try round.forwardOn(o, m, r, null, 0);
+    const out = try round.forwardOn(o, m, r, null, .{});
     _ = try e.wholeRows(o, out.y, rows);
     return arena.peak;
 }

@@ -22,6 +22,12 @@ const glue = serve.backend;
 /// Most chains one draft request runs (the head batches as many as the engine has rows, up to this).
 const max_jobs = mtp.max_chains;
 
+/// Rounds queued ahead that stay named: a round is landed before the one after next is queued.
+const pend_len = 4;
+
+/// A draw queued ahead: its handle, the mirror slot of its pick, the event behind its round, and whether it is waiting.
+const Pend = struct { handle: u64 = 0, slot: usize = 0, event: usize = 0, live: bool = false };
+
 /// A readout's family side (C3: the joint schema head): a state per stream, fed each prompt piece's final-norm rows.
 pub const Readout = struct {
     ctx: *anyopaque,
@@ -103,6 +109,12 @@ pub const Hip = struct {
     readout: ?Readout = null,
     /// Test only: every piece end `reach` gives, in order.
     cuts: ?*std.ArrayList(u32) = null,
+    /// The rounds queued ahead and not landed yet, by handle (the last `pend_len`), the events behind them (in turn) and how many were queued.
+    pend: [pend_len]Pend = @splat(.{}),
+    events: [pend_len]?hip.Event = @splat(null),
+    queued: usize = 0,
+    /// The handle of the round launched last while its pick is still the plan's first word, the next round's token.
+    on_device: ?u64 = null,
 
     const Shared = glue.Backend(Hip);
     pub const backend = Shared.backend;
@@ -159,6 +171,7 @@ pub const Hip = struct {
         h.marked.deinit(h.gpa);
         h.tp.deinit();
         h.e.stream.synchronize() catch {};
+        for (&h.events) |*ev| if (ev.*) |*x| x.deinit();
         h.matched.deinit(h.gpa);
         h.copied.deinit(h.gpa);
         var it = h.streams.map.valueIterator();
@@ -183,7 +196,9 @@ pub const Hip = struct {
         const plain_guard = drafting and h.costs.windows > 0;
         return .{
             .exact_width = max_window,
-            .gpu_tokens = false,
+            // one-token rounds of greedy streams run a step ahead (`queueRound`) on one rank; sampled streams take windows
+            .gpu_tokens = !drafting and h.e.o.world == 1 and h.e.round.off.pipelined(),
+            .pipe_sampled = false,
             .mtp = drafting,
             .speculate = drafting,
             .speculate_early = false,
@@ -384,6 +399,8 @@ pub const Hip = struct {
     /// Each stream's window from its kept length: the pending token, then the host's drafts; one forward for all.
     pub fn verify(h: *Hip, windows: []const be.Window, out: []be.Verified) !void {
         if (windows.len > h.order.len) return error.WindowTooWide;
+        // a plain round takes the plan's first word, where a queued round's pick waits for the round after it
+        h.on_device = null;
         // windows the round loop did not trim keep every row before this round's plan replaces theirs
         for (windows) |w| try glue.settle(h, try h.streams.get(w.stream));
         try h.flush();
@@ -409,7 +426,7 @@ pub const Hip = struct {
             total += w.positions.len;
         }
         // the graph choice is rank 0's, and goes with the round
-        const pick = try h.e.choose(rows[0..windows.len], null);
+        const pick = try h.e.choose(rows[0..windows.len], reqs[0..total], null);
         try h.tp.begin(.verify, &.{ @backingInt(pick), @intCast(windows.len) });
         for (windows, rows[0..windows.len]) |w, r| {
             try h.tp.add(&.{ h.streams.map.get(w.stream).?.id, @intCast(r.tokens.len) });
@@ -426,6 +443,69 @@ pub const Hip = struct {
             lane.pending = .{ .slot = i, .rows = w.rows() };
             at += w.rows();
         }
+    }
+
+    fn eventAt(h: *Hip, i: usize) !hip.Event {
+        if (h.events[i]) |ev| return ev;
+        const ev = try hip.Event.init(&h.e.driver, false);
+        h.events[i] = ev;
+        return ev;
+    }
+
+    /// Lands the draw `handle` names when it was queued ahead and not landed yet: waits for its round, takes its token from the host
+    /// mirror the argmax stored it to (the fence behind the round covers that store), and gives the handle that value.
+    pub fn land(h: *Hip, handle: u64) !void {
+        const p = &h.pend[handle % pend_len];
+        if (!p.live or p.handle != handle) return;
+        try (h.events[p.event] orelse return error.NoSuchToken).synchronize();
+        h.streams.drawn.fill(handle, @intCast(h.e.drawer.mirrored(p.slot, 0)));
+        p.live = false;
+    }
+
+    /// One token fed and the draw of the next queued ahead (`Backend.queue`): the previous queued round's row is kept and its keep launched,
+    /// then this round is launched with its token on the device (the pick of the round launched last) or from the host, and the call returns
+    /// before it has run. Its draw is a handle that `land` resolves when the round has completed. A round that cannot run queued runs at once.
+    pub fn queueRound(h: *Hip, s: *lanes.Stream, feed: be.Feed, position: u64) !u64 {
+        const lane = try h.streams.get(s);
+        try glue.settle(h, lane);
+        try h.flush();
+        if (position != lane.len + 1) {
+            std.log.err("queued draw at {d}, the stream holds {d} slots", .{ position, lane.len });
+            return error.PositionMismatch;
+        }
+        try h.ensure(lane, lane.len + 1);
+        const queueable = h.e.canQueue();
+        var fed = false;
+        var token: u32 = 0;
+        switch (feed) {
+            .value => |v| token = v,
+            .handle => |at| if (queueable and h.on_device == at) {
+                fed = true;
+            } else {
+                try h.land(at);
+                token = try h.streams.drawn.read(at);
+            },
+        }
+        const row: Engine.Rows = .{ .caches = &lane.caches, .pos = lane.len, .tokens = (&token)[0..1], .shift = if (lane.vision) |v| v.layout.shift else 0 };
+        lane.held_n = 0;
+        lane.pending = .{ .slot = 0, .rows = 1 };
+        if (!queueable) {
+            h.on_device = null;
+            const reqs = [1]draw.Request{.{ .sampling = glue.sampling(s), .position = position }};
+            var drawn: [1]u32 = undefined;
+            const one = [1]Engine.Rows{row};
+            _ = try h.e.verify(&one, &reqs, &drawn);
+            return h.streams.drawn.take(drawn[0]);
+        }
+        const slot = try h.e.queue(row, fed);
+        // an event behind the round, which also rings the doorbell for what was queued
+        const i = h.queued % pend_len;
+        h.queued += 1;
+        try (try h.eventAt(i)).record(h.e.stream);
+        const handle = h.streams.drawn.reserve();
+        h.pend[handle % pend_len] = .{ .handle = handle, .slot = slot, .event = i, .live = true };
+        h.on_device = handle;
+        return handle;
     }
 
     /// The head drafts `depth` from each stream's last kept row and its pending token, one head forward a step for all.

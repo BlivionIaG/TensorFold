@@ -11,16 +11,25 @@ __device__ __forceinline__ float wave_sum(float x) {
     return __shfl(x, 0, 32);
 }
 
-// x from lane ^ M of its 16-lane row (M < 16): a DPP row_xmask move, all lanes active.
+// x from lane ^ M of its 16-lane row (M < 16): a DPP row_xmask move, all lanes active. gfx900's DPP has no row_xmask (gfx10+): a
+// width-16 shuffle gives the same value.
 template <int M>
 __device__ __forceinline__ float row_xor(float x) {
+#if defined(__gfx900__)
+    return __shfl_xor(x, M, 16);
+#else
     return __builtin_bit_cast(float, __builtin_amdgcn_mov_dpp(__builtin_bit_cast(int, x), 0x160 + M, 0xf, 0xf, false));
+#endif
 }
 
 // wave_sum's folds, own value then partner's at xor 16, 8, 4, 2, 1, without LDS: every lane ends with the sum.
 __device__ __forceinline__ float wave_sum_dpp(float x) {
+#if defined(__gfx900__)
+    x += __shfl_xor(x, 16, 32);  // v_permlanex16 is gfx10+: the partner row's lane i by a shuffle
+#else
     const int w = __builtin_bit_cast(int, x);
     x += __builtin_bit_cast(float, __builtin_amdgcn_permlanex16(w, w, 0x76543210u, 0xfedcba98u, false, false));
+#endif
     x += row_xor<8>(x);
     x += row_xor<4>(x);
     x += row_xor<2>(x);
@@ -146,6 +155,13 @@ __device__ void plan_apply_body(const float* __restrict__ scores, const float* _
         return;
     }
     const int stop = min(key0 + 128, visible);
+#if defined(__gfx900__)
+    // gfx900: the descriptor, its value pointer, page table and the first page's entry are loaded before the weights' exponentials.
+    const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
+    const void* values = reinterpret_cast<const void*>(desc[plan_second(layer)]);
+    const unsigned* table = plan_pages(plan, desc);
+    const unsigned first_page = table[key0 / kPageTokens];
+#endif
     for (int i = threadIdx.x; i < group * 128; i += blockDim.x) {
         const long long h = first + i / 128;
         const int key = key0 + i % 128;
@@ -153,15 +169,21 @@ __device__ void plan_apply_body(const float* __restrict__ scores, const float* _
     }
     __syncthreads();
     if (lane >= d) return;
+#if !defined(__gfx900__)
     const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
     const void* values = reinterpret_cast<const void*>(desc[plan_second(layer)]);
     const unsigned* table = plan_pages(plan, desc);
+#endif
     const int kv = head0 / (heads / kv_heads);
     float acc[kMaxGroup] = {};
     // a page at a time: its table entry is read once, and the keys are summed in order
     for (int key = key0; key < stop;) {
         const int edge = min((key / kPageTokens + 1) * kPageTokens, stop);
+#if defined(__gfx900__)
+        const long long slot0 = page_row(key == key0 ? first_page : table[key / kPageTokens], plan.pool, kv, 0, d) + lane;
+#else
         const long long slot0 = page_row(table[key / kPageTokens], plan.pool, kv, 0, d) + lane;
+#endif
         // eight values loaded ahead, then summed in key order: the loads overlap, the sums are the same
         for (; key + 8 <= edge; key += 8) {
             float ahead[8];

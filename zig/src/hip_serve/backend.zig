@@ -64,6 +64,15 @@ pub const Drawn = struct {
     pub fn last(d: *const Drawn) u64 {
         return d.next - 1;
     }
+
+    /// The handle of a token not drawn yet: `fill` gives it its value once the device has it.
+    pub fn reserve(d: *Drawn) u64 {
+        return d.take(0);
+    }
+
+    pub fn fill(d: *Drawn, handle: u64, token: u32) void {
+        d.tokens[handle % ring] = token;
+    }
 };
 
 pub fn nowNs() u64 {
@@ -301,12 +310,17 @@ pub fn Backend(comptime F: type) type {
             @memcpy(out, lane.held[0..out.len]);
         }
 
-        fn queueFn(_: *anyopaque, _: *lanes.Stream, _: be.Feed, _: u64) anyerror!u64 {
-            return error.NotPipelined;
+        /// One token fed and the draw of the next queued ahead, for a family that runs one-token rounds without waiting (`queueRound`).
+        fn queueFn(ptr: *anyopaque, s: *lanes.Stream, feed: be.Feed, position: u64) anyerror!u64 {
+            if (comptime !@hasDecl(F, "queueRound")) return error.NotPipelined;
+            return of(ptr).queueRound(s, feed, position);
         }
 
         fn readFn(ptr: *anyopaque, handle: u64) anyerror!u32 {
-            return of(ptr).streams.drawn.read(handle);
+            const h = of(ptr);
+            // a draw queued ahead is waited for here, and its token joins the drawn ones
+            if (comptime @hasDecl(F, "land")) try h.land(handle);
+            return h.streams.drawn.read(handle);
         }
 
         fn verifyFn(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) anyerror!void {
@@ -387,4 +401,16 @@ test "drawn tokens are read back by handle while the ring holds them" {
     try std.testing.expectError(error.NoSuchToken, d.read(2));
     for (0..ring) |_| _ = d.take(1);
     try std.testing.expectError(error.NoSuchToken, d.read(0));
+}
+
+test "a reserved handle reads back what the device gave it, and the handles around it keep theirs" {
+    var d: Drawn = .{};
+    const before = d.take(5);
+    const queued = d.reserve();
+    const after = d.take(6);
+    try std.testing.expectEqual(@as(u32, 0), try d.read(queued));
+    d.fill(queued, 99);
+    try std.testing.expectEqual(@as(u32, 99), try d.read(queued));
+    try std.testing.expectEqual(@as(u32, 5), try d.read(before));
+    try std.testing.expectEqual(@as(u32, 6), try d.read(after));
 }

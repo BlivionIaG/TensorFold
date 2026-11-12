@@ -155,6 +155,51 @@ constexpr int kTailWidth = 8192;
 constexpr int kTailAhead = 4;  // a thread's elements loaded before any is used, so their latencies overlap
 constexpr int kTailSlots = 8;  // the slots whose rows are loaded before any is summed
 
+#if defined(__gfx900__)
+// gfx900, no slots, a row of at most 8 * kTailThreads values: x, y and the norm weight of the row in registers, all loads in one batch and ahead of
+// the sum (the generic path loads the weight after the reduction: one more round trip to memory), the row never goes through LDS, and the kind is a
+// template argument (no branch between loads). The arithmetic and the order of the sums are the generic path's.
+template <int KIND>
+__device__ void tail_dense(void* x, const void* y, const float* weight, void* normed, int width, float eps) {
+    constexpr int kU = 8;
+    __shared__ float part[kTailThreads / 32];
+    const long long at = static_cast<long long>(blockIdx.x) * width;
+    float xv[kU], tv[kU], wv[kU];
+#pragma unroll
+    for (int u = 0; u < kU; ++u) {
+        const int i = threadIdx.x + u * kTailThreads;
+        const int c = i < width ? i : width - 1;
+        xv[u] = load_kind(x, KIND, at + c);
+        tv[u] = load_kind(y, KIND, at + c);
+        wv[u] = weight != nullptr ? weight[c] : 1.f;
+    }
+    float sum = 0.f;
+#pragma unroll
+    for (int u = 0; u < kU; ++u) {
+        const int i = threadIdx.x + u * kTailThreads;
+        const float v = round_kind(xv[u] + tv[u], KIND);
+        xv[u] = v;
+        if (i < width) {
+            store_kind(x, KIND, at + i, v);
+            sum += v * v;
+        }
+    }
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+    if ((threadIdx.x & 31) == 0) part[threadIdx.x >> 5] = sum;
+    __syncthreads();
+    float total = 0.f;
+#pragma unroll
+    for (int w = 0; w < kTailThreads / 32; ++w) total += part[w];
+    const float inv = rsqrtf(total / static_cast<float>(width) + eps);
+#pragma unroll
+    for (int u = 0; u < kU; ++u) {
+        const int i = threadIdx.x + u * kTailThreads;
+        if (i < width) store_kind(normed, KIND, at + i, xv[u] * inv * wv[u]);
+    }
+}
+#endif
+
 // A thread's elements of the row: x = round(x + t), t = y or (SLOTS) the slots' sum in slot order; its sum of v * v.
 template <bool SLOTS>
 __device__ __forceinline__ float tail_add(void* x, const void* y, const float* wts, float* row_v, int kind, int slots,
@@ -241,6 +286,16 @@ __device__ __forceinline__ void tail_kind(void* x, const void* y, const float* w
 // One row a block, one launch: x = round(x + t), t = y or the slot-ordered weighted sum; normed = rms(x) * weight.
 __device__ void tail_body(void* x, const void* y, const float* wts, const float* weight, void* normed, int kind,
                           int slots, int width, float eps) {
+#if defined(__gfx900__)
+    if (slots == 0 && width <= 8 * kTailThreads) {
+        if (kind == 1) {
+            tail_dense<1>(x, y, weight, normed, width, eps);
+        } else {
+            tail_dense<2>(x, y, weight, normed, width, eps);
+        }
+        return;
+    }
+#endif
     __shared__ float row_v[kTailWidth];
     __shared__ float part[kTailThreads / 32];
     if (kind == 1) {
@@ -277,8 +332,112 @@ struct ConvArgs {
     int layer;
 };
 
+#if defined(__gfx900__)
+// gfx900, a round's plan and a conv of 4 taps: conv_split_body's arithmetic with the loads reordered. The slot's count, first row and descriptor
+// address go out together; then the taps, the first row's sample and the norm weight (which do not wait for the state pointer) with the state pointer
+// load, then the history; the generic body loads each of them after the one before it, and the norm weight after the norm.
+template <int KIND>
+__device__ void conv_split_plan(const ConvArgs& c) {
+    __shared__ float sq[128];
+    __shared__ float inv_s;
+    constexpr int kept = 3;
+    const int conv_blocks = (c.channels + 127) / 128;
+    const int slot = blockIdx.y;
+    if (blockIdx.x >= conv_blocks) {
+        // the gates are one pass over every row of the round, from the first slot's blocks
+        if (slot != 0) return;
+        const int i = (blockIdx.x - conv_blocks) * 128 + threadIdx.x;
+        if (c.ga == nullptr || i >= c.gcount) return;
+        const int h = i % c.heads;
+        c.beta[i] = 1.f / (1.f + expf(-load_kind(c.gb, KIND, i)));
+        const float xg = load_kind(c.ga, KIND, i) + c.dt_bias[h];
+        const float soft = xg > 20.f ? xg : log1pf(expf(xg));
+        c.gate[i] = expf(-expf(c.a_log[h]) * soft);
+        return;
+    }
+    const int rows = c.plan.count[slot];
+    const long long row0 = c.plan.first[slot];
+    const unsigned long long desc_at = c.plan.desc[slot];
+    // the loads above stay above the return (the padding slot's descriptor is only an address: not read)
+    asm volatile("" ::: "memory");
+    if (rows == 0) return;
+    float* state = reinterpret_cast<float*>(reinterpret_cast<const unsigned long long*>(desc_at)[plan_first(c.layer)]);
+    const int channel = blockIdx.x * 128 + threadIdx.x;
+    const bool live = channel < c.channels;
+    const int cc = live ? channel : 0;
+    const bool head = c.norm == 128 && static_cast<int>(blockIdx.x) * 128 < 2 * c.kw;
+    const char* xin = static_cast<const char*>(c.x) + row0 * c.channels * 2;
+    const float* taps = c.weight + static_cast<long long>(cc) * c.kernel;
+    float tp[4];
+#pragma unroll
+    for (int t = 0; t < 4; ++t) tp[t] = taps[t];
+    float sample = load_kind(xin, KIND, cc);
+    // a head's norm weight (any valid address for a channel that has none)
+    const float nw = (head ? (channel < c.kw ? c.qw : c.kw_w) : c.weight)[threadIdx.x];
+    // a window of rows keeps its input rows and leaves the window as the round found it, for its keep
+    const bool replayed = rows > 1 && slot + 1 < static_cast<int>(gridDim.y);
+    float* samples = replayed ? reinterpret_cast<float*>(c.plan.snaps[2 * c.layer]) + row0 * c.channels : nullptr;
+    float history[kept];
+#pragma unroll
+    for (int t = 0; t < kept; ++t) history[t] = state[static_cast<long long>(t) * c.channels + cc];
+    float* qn = c.qn + row0 * c.kw;
+    float* kn = c.kn + row0 * c.kw;
+    float* vn = c.v + row0 * c.vw;
+    for (int r = 0; r < rows; ++r) {
+        if (r > 0) sample = load_kind(xin, KIND, static_cast<long long>(r) * c.channels + cc);
+        float acc = 0.f;
+#pragma unroll
+        for (int t = 0; t < kept; ++t) acc += history[t] * tp[t];
+        acc += sample * tp[kept];
+        float y = live ? acc * (1.f / (1.f + expf(-acc))) : 0.f;
+        if (head) {
+            // the norm of the head's 128 values, then the scale by its weight
+            __syncthreads();
+            sq[threadIdx.x] = y * y;
+            __syncthreads();
+            if (threadIdx.x < 32) {
+                float sum = 0.f;
+                for (int j = 0; j < 4; ++j) sum += sq[threadIdx.x + 32 * j];
+#pragma unroll
+                for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+                if (threadIdx.x == 0) inv_s = rsqrtf(sum / 128.f + c.eps);
+            }
+            __syncthreads();
+            y = y * inv_s * nw;
+        }
+        if (live) {
+            if (channel < c.kw) {
+                qn[static_cast<long long>(r) * c.kw + channel] = y;
+            } else if (channel < 2 * c.kw) {
+                kn[static_cast<long long>(r) * c.kw + channel - c.kw] = y;
+            } else {
+                vn[static_cast<long long>(r) * c.vw + channel - 2 * c.kw] = y;
+            }
+            history[0] = history[1];
+            history[1] = history[2];
+            history[2] = sample;
+            if (samples != nullptr) samples[static_cast<long long>(r) * c.channels + channel] = sample;
+        }
+    }
+    if (live && samples == nullptr) {
+#pragma unroll
+        for (int t = 0; t < kept; ++t) state[static_cast<long long>(t) * c.channels + channel] = history[t];
+    }
+}
+#endif
+
 // The conv for a window's rows split into q, k, v: taps in order, then silu; q, k heads rms-normed; gate and beta last.
 __device__ void conv_split_body(const ConvArgs& launch) {
+#if defined(__gfx900__)
+    if (launch.plan.count != nullptr && launch.kernel == 4) {
+        if (launch.kind == 1) {
+            conv_split_plan<1>(launch);
+        } else {
+            conv_split_plan<2>(launch);
+        }
+        return;
+    }
+#endif
     __shared__ float sq[128];
     __shared__ float inv_s;
     ConvArgs c = launch;
@@ -405,10 +564,57 @@ __device__ void
     }
 }
 
+#if defined(__gfx900__)
+// gfx900, rows of at most 128 values (a lane holds four): y, the weight and z for the row go out in one batch before the sum (the generic loop loads
+// the weight and z after the reduction), the kind is a template argument. Same arithmetic and sums as gnorm_out_body.
+template <int KIND>
+__device__ void gnorm_out_small(const float* y, const float* weight, const void* z, void* out, int rows, int width, float eps,
+                                int sigmoid_gate) {
+    const int lane = threadIdx.x & 31;
+    const int row = blockIdx.x * 8 + (threadIdx.x >> 5);
+    if (row >= rows) return;
+    const long long at = static_cast<long long>(row) * width;
+    float v[4], wv[4], zv[4];
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        const int i = lane + 32 * j;
+        const int c = i < width ? i : width - 1;
+        v[j] = y[at + c];
+        wv[j] = weight != nullptr ? weight[c] : 1.f;
+        zv[j] = load_kind(z, KIND, at + c);
+    }
+    float sum = 0.f;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        if (lane + 32 * j < width) sum += v[j] * v[j];
+    }
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+    const float inv = rsqrtf(__shfl(sum, 0, 32) / static_cast<float>(width) + eps);
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        const int i = lane + 32 * j;
+        if (i >= width) continue;
+        const float gate = sigmoid_gate ? 1.f / (1.f + expf(-zv[j])) : zv[j] / (1.f + expf(-zv[j]));
+        store_kind(out, KIND, at + i, v[j] * inv * wv[j] * round_kind(gate, KIND));
+    }
+}
+#endif
+
 // The gated norm out = rms(y) * weight * round(silu(z) or sigmoid(z)) in the kind, a wave a (row, head).
 __device__ void
     gnorm_out_body(const float* y, const float* weight, const void* z, void* out, int kind, int rows, int width,
                      float eps, int sigmoid_gate) {
+#if defined(__gfx900__)
+    if (width <= 128) {
+        if (kind == 1) {
+            gnorm_out_small<1>(y, weight, z, out, rows, width, eps, sigmoid_gate);
+        } else {
+            gnorm_out_small<2>(y, weight, z, out, rows, width, eps, sigmoid_gate);
+        }
+        return;
+    }
+#endif
     constexpr int kMost = 1024 / 32;
     const int lane = threadIdx.x & 31;
     const int row = blockIdx.x * 8 + (threadIdx.x >> 5);
