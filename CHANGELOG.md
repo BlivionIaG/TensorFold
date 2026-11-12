@@ -6,6 +6,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - HIP: `gfx900` (Vega 10: wave64, no dot2, no matrix cores) is a `-Dhip-arch` target. It has its own caps row and registry cost table, and the fp16 families run on it through a fused-pair `TF_FDOT2`; the gfx1030, gfx1100, gfx1151 and gfx1201 kernels are the same code. No card run yet; see [the gfx900 recipe](docs/recipes/gfx900.md).
 
+- HIP: a Qwen3.5/3.6 MoE MLX checkpoint whose weights do not fit the device serves with its routed experts in host memory and a device cache of the hot ones (`--ssd-experts GIB` sizes the cache, `TF_EXPERT_OFFLOAD`, `TF_EXPERT_COPIES`, `TF_EXPERT_PROTECT` and `TF_EXPERT_WINDOW_MIB` tune it), on chips whose caps set `expert_ptrs` (gfx900) and runtimes with stream value operations; every other path launches the same tiles ([recipe](docs/recipes/hip-moe-expert-offload.md)). No card run yet.
+
 - Tests: main's nightly is green again. The Flash Next learn, prompt and compare tools build again on Linux (#2585 had put one file in two modules), and the dense serving and serving-identity pins take the changes #2579, #2585, #2285, #2205 and #2789 made, each named beside its pin. Serving is unchanged (#3002).
 
 - Cortheon (`--cortheon`): DuckDuckGo results are kept, and its ads still skipped, when only the spelling differs (either quote style, a `class` attribute in any letter case, an unquoted `href`, spaces around its `=`, or a line break before it); a duplicate whose scheme or host differs only in letter case is dropped while paths and queries keep their case, and the PyPI, npm and crates.io allow-list takes the host in any case with the path exact (#2750). Thanks to @ppardus.
