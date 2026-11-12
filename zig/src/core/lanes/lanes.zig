@@ -88,6 +88,7 @@ test {
     _ = @import("copied_rate_test.zig");
     _ = @import("granted_reservation_test.zig");
     _ = @import("rollback_test.zig");
+    _ = @import("pipe_sampled_test.zig");
 }
 
 pub const learned_disk = @import("learned_disk.zig");

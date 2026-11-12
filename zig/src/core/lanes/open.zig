@@ -118,7 +118,7 @@ fn openedCommitted(e: *Engine, s: *Stream, reach: Reach, hook: ?be.Committed) !v
         if (d > 0) if (e.backend.vtable.tree) |tree| if (try tree(e.backend.ptr, s, e.gpa)) |held| {
             s.next = held; // a tree head's first drafts as host tokens, as every later round's
         };
-    } else if (e.cfg.pipelined and s.logprobs == null and s.grammar == null) {
+    } else if (e.pipes(s) and s.logprobs == null and s.grammar == null) {
         try e.queueNext(s, feed);
     }
     const value = try e.readFeed(feed);
