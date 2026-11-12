@@ -58,7 +58,7 @@ pub const Export = struct {
         return x;
     }
 
-    /// TF_DSV41_EXPORT_STREAM (default on) on a link of one replicated pool: exports are built while the prompt prefills.
+    /// TF_DSV41_EXPORT_STREAM (default on), one replicated pool: exports are built while the prompt prefills.
     fn streamOn(link: ?[]const u8, shards: u32, problem: *[]const u8) !bool {
         const set = @import("sys").environment.read(?bool, "TF_DSV41_EXPORT_STREAM", null) catch {
             problem.* = "TF_DSV41_EXPORT_STREAM is malformed: it must be 0 or 1";

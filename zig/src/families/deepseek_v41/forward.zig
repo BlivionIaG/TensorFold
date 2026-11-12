@@ -83,7 +83,7 @@ pub const Forward = struct {
     planned_rows: u32 = 0,
     graphed: ?*Graphed = null, // decode windows through CUDA graphs (TF_DSV41_GRAPHS=1); null until the knob is read
     graphs_read: bool = false,
-    /// the graphs' default when TF_DSV41_GRAPHS is unset (cuda_model.zig sets it for the served model; the gates' drivers: off)
+    /// the graphs' default when TF_DSV41_GRAPHS is unset (cuda_model.zig sets it for the served model)
     graphs_default: bool = false,
     /// Engram's local shards (TF_DSV41_ENGRAM_DIR, engram_rows.zig), opened on first use; unset: synthetic index rows
     engram_rows: ?*er.Rows = null,

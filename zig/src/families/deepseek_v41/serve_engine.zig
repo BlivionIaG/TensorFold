@@ -177,7 +177,7 @@ pub const Served = struct {
             if (round_graph.current()) |rg| rg.split or rg.gate else |_| false,
             std.c.getenv("TF_DSV41_ROUND_GRAPH") != null,
             if (graphs_mod.Settings.fromEnvOr(m.f.graphs_default)) |gs| gs.on else |_| false,
-            std.c.getenv("TF_DSV41_GRAPHS") != null,
+            if (@import("sys").environment.read(?bool, "TF_DSV41_GRAPHS", null) catch null) |_| true else false,
             m.f.opts.branches,
             std.c.getenv("TF_DSV41_BRANCHES") != null,
         );
