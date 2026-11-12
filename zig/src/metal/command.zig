@@ -8,6 +8,7 @@ const SharedEvent = @import("sync.zig").SharedEvent;
 const Event = @import("sync.zig").Event;
 const IndirectCommandBuffer = @import("icb.zig").IndirectCommandBuffer;
 const ResidencySet = @import("residency.zig").ResidencySet;
+const diag = @import("dispatch_diag.zig");
 
 const Id = objc.Id;
 const Size = types.Size;
@@ -168,6 +169,7 @@ pub const ComputeEncoder = struct {
     }
 
     pub fn setPipeline(self: ComputeEncoder, pipeline: Pipeline) void {
+        diag.setCurrent(@intFromPtr(pipeline.id));
         objc.msg(void, self.id, "setComputePipelineState:", .{pipeline.id});
     }
 
@@ -190,8 +192,10 @@ pub const ComputeEncoder = struct {
 
     /// Whole threadgroups: `groups` of `threads` each.
     pub fn dispatchGroups(self: ComputeEncoder, groups: Size, threads: Size) void {
-        countDispatch(@as(usize, groups.width) * @as(usize, groups.height) * @as(usize, groups.depth));
-        objc.msg(void, self.id, "dispatchThreadgroups:threadsPerThreadgroup:", .{ groups, threads });
+        const n = @as(usize, groups.width) * @as(usize, groups.height) * @as(usize, groups.depth);
+        countDispatch(n);
+        const times = if (diag.armed) diag.dispatch(n) else 1;
+        for (0..times) |_| objc.msg(void, self.id, "dispatchThreadgroups:threadsPerThreadgroup:", .{ groups, threads });
     }
 
     /// Whole threadgroups of `threads` each, their counts (3 u32) read from `args` at `offset` when the dispatch runs.
@@ -200,7 +204,8 @@ pub const ComputeEncoder = struct {
             _ = dispatch_indirect.fetchAdd(1, .monotonic);
             _ = dispatch_count.fetchAdd(1, .monotonic);
         }
-        objc.msg(void, self.id, "dispatchThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerThreadgroup:", .{ args.id, offset, threads });
+        const times = if (diag.armed) diag.dispatch(1) else 1;
+        for (0..times) |_| objc.msg(void, self.id, "dispatchThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerThreadgroup:", .{ args.id, offset, threads });
     }
 
     /// A grid of `grid` threads in groups of `threads` (edge groups may be partial), as MLX dispatches.
@@ -212,11 +217,13 @@ pub const ComputeEncoder = struct {
         const gh = (@as(usize, grid.height) + th - 1) / th;
         const gd = (@as(usize, grid.depth) + td - 1) / td;
         countDispatch(@max(gw * gh * gd, 1));
-        objc.msg(void, self.id, "dispatchThreads:threadsPerThreadgroup:", .{ grid, threads });
+        const times = if (diag.armed) diag.dispatch(gw * gh * gd) else 1;
+        for (0..times) |_| objc.msg(void, self.id, "dispatchThreads:threadsPerThreadgroup:", .{ grid, threads });
     }
 
     /// Later dispatches see every buffer write before this point (concurrent encoders).
     pub fn barrier(self: ComputeEncoder) void {
+        if (diag.no_barrier) return;
         objc.msg(void, self.id, "memoryBarrierWithScope:", .{types.BarrierScope.buffers});
     }
 

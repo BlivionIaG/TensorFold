@@ -44,6 +44,7 @@ pub const Export = struct {
             problem.* = "--mcdma-produce: TF_PRODUCE_HELD_GIB is malformed; the line above names its forms";
             return error.InvalidEnvironment;
         };
+        const sp = try split.spillOf(problem);
         const http = if (link) |l| std.mem.eql(u8, l, api.LaneHost.Remote.http_link) else false;
         const x = try gpa.create(Export);
         errdefer gpa.destroy(x);
@@ -53,7 +54,7 @@ pub const Export = struct {
             return null;
         }
         x.* = .{ .gpa = gpa, .source = .{ .ss = m.sessions.? }, .produce = undefined, .f = &m.f, .split = shards > 1 };
-        x.produce = try serve.Produce.open(gpa, io, x.source.source(), .{ .link = if (http) null else link, .http = http, .dump = if (dump.len > 0) dump else null, .model = checkpoint, .held_bytes = cap << 30, .shard = 0, .shards = shards, .stream = streamOn(link, shards, problem) catch return error.InvalidEnvironment }, problem);
+        x.produce = try serve.Produce.open(gpa, io, x.source.source(), .{ .link = if (http) null else link, .http = http, .dump = if (dump.len > 0) dump else null, .model = checkpoint, .held_bytes = cap << 30, .shard = 0, .shards = shards, .spill_dir = sp.dir, .spill_min_bytes = sp.min_bytes, .stream = streamOn(link, shards, problem) catch return error.InvalidEnvironment }, problem);
         log.info("dsv41 handoff export: {s}{s}{s}", .{ if (link) |l| l else "no link", if (dump.len > 0) ", files under " else "", dump });
         return x;
     }

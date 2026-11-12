@@ -37,7 +37,12 @@ pub fn step(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
     const b = Backend.self(ptr);
     const prompt = s.prompt();
     if (prompt.len == 0) return error.EmptyPrompt;
-    const i = b.by.get(s) orelse try begin(b, s, prompt);
+    const i = b.by.get(s) orelse blk: {
+        const slot = try begin(b, s, prompt);
+        // a landed remote prefix the store marked is kept here, before the first chunk moves the slot
+        if (s.cached > 0) if (s.reuse.hook) |hook| if (std.mem.indexOfScalar(u32, s.reuse.marks, s.cached) != null) hook.at(hook.ptr, s, s.cached);
+        break :blk slot;
+    };
     if (s.isCancelled()) return error.Cancelled;
     const at: u32 = b.model.caches[i].position;
     const plan_rows = b.model.workspace.plan.rows;

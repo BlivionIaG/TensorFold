@@ -115,14 +115,23 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     const nax_cols: usize = if (a.indexed != 0 and nax_tile >= 256) 64 else if (moe_cols != 0) moe_cols else (knobs.nax_cols orelse 64);
     const tile_id: usize = ((nax_tile / 64) - 1) * 2 + (nax_cols / 64 - 1);
     const nax_pick: ?mtl.Pipeline = p.prefill_nax_tiles[tile_id];
+    // (THE LEVER, default off): THE DENSE TILE AT EIGHT ROWS, so a wrapped conditioning piece stays on the tile.
+    const dense8 = knobs.nax_dense8;
+    // The gate is the CALLER's hint and the flag together: the hint alone moves nothing.
+    const dense8_on = dense8 and r.dense8;
+    const nax_min_rows: u32 = knobs.nax_min_rows;
+    // The tile bodies decode whole-bit widths; a half-bit (odd) width takes the shared or plain body.
+    const nax = nax_pick != null and a.k % 64 == 0 and a.halves % 2 == 0 and
+        a.rows >= (if (dense8_on and a.indexed == 0 and a.routed == 0) @min(nax_min_rows, 8) else nax_min_rows) and
+        ((a.indexed == 0 and a.routed == 0) or grouped_nax);
     // The funnel read in the routed prompt tile: halves = 6 is the packed width; another width takes the shipped path.
-    const nax_funnel_pick: ?mtl.Pipeline = if (funnelPrefillOn() and a.indexed != 0 and tile_id == 0)
+    const nax_funnel_pick: ?mtl.Pipeline = if (nax and funnelPrefillOn() and a.indexed != 0 and tile_id == 0)
         p.prefill_nax_funnel
     else
         null;
     const nax_funnel = nax_funnel_pick != null;
     // The same tile with the grouping's padded rows skipped.
-    const nax_skip_pad_pick: ?mtl.Pipeline = if (skipPadOn() and a.indexed != 0)
+    const nax_skip_pad_pick: ?mtl.Pipeline = if (nax and skipPadOn() and a.indexed != 0)
         (if (tile_id == 0)
             p.prefill_nax_skip_pad
         else if (tile_id == 2)
@@ -139,14 +148,6 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     else
         null;
     const nax_funnel_only = nax_funnel_only_pick != null;
-    // (THE LEVER, default off): THE DENSE TILE AT EIGHT ROWS, so a wrapped conditioning piece stays on the tile.
-    const dense8 = knobs.nax_dense8;
-    // The gate is the CALLER's hint and the flag together: the hint alone moves nothing.
-    const dense8_on = dense8 and r.dense8;
-    const nax_min_rows: u32 = knobs.nax_min_rows;
-    const nax = nax_pick != null and a.k % 64 == 0 and
-        a.rows >= (if (dense8_on and a.indexed == 0 and a.routed == 0) @min(nax_min_rows, 8) else nax_min_rows) and
-        ((a.indexed == 0 and a.routed == 0) or grouped_nax);
     // The dense 128x64 tile's double-buffered twin: one barrier a block.
     const nax_dense_db = p.prefill_nax_dense_db != null and nax and a.indexed == 0 and tile_id == 2 and denseDb();
     if (nax_dense_db and !pipe.nax_db_logged) {
@@ -206,13 +207,17 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     };
 }
 
+/// Where a call leaves its f32 sums (`Rows.no_epilogue` stops there): past the call's rotated input rows.
+pub fn sumsView(scratch: View, rows: usize, k: usize) View {
+    return .{ .buffer = scratch.buffer, .offset = scratch.offset + ((rows * k * 2 + 15) & ~@as(usize, 15)) };
+}
+
 pub fn stages(p: *const Pipelines, e: mtl.ComputeEncoder, args: Args, trellis: View, su: View, sv: View, bias: View, descriptors: View, x: View, y: View, scratch: View, r: Rows) void {
     var a = args;
     const plan = planBody(p, a, r);
     a.splits = @intCast(plan.splits);
-    const sums_off = (@as(usize, a.rows) * a.k * 2 + 15) & ~@as(usize, 15);
-    const sums = View{ .buffer = scratch.buffer, .offset = scratch.offset + sums_off };
-    const partials = View{ .buffer = scratch.buffer, .offset = scratch.offset + sums_off + ((@as(usize, a.rows) * a.n * 4 + 15) & ~@as(usize, 15)) };
+    const sums = sumsView(scratch, a.rows, a.k);
+    const partials = View{ .buffer = scratch.buffer, .offset = sums.offset + ((@as(usize, a.rows) * a.n * 4 + 15) & ~@as(usize, 15)) };
     const routes = if (r.routes) |v| v.ids else scratch;
     const rotate_passes: usize = if (knobs.double_rotate) 2 else 1;
     if (!r.prerotated) {
@@ -305,6 +310,79 @@ pub fn encodeSwiGLUPreRotate(p: *const Pipelines, e: mtl.ComputeEncoder, gate: V
     bind(e, rotated, 6);
     e.setValue(args, 7);
     e.dispatchGroups(.{ .width = (d.k / 128 + 3) / 4, .height = d.rows }, .{ .width = 128 });
+}
+
+/// The gate+up call's rotate_out and the routed and shared SwiGLU plus the down rotate_in in one pass.
+pub const GateUpRot = struct {
+    /// Routed rows: tokens times picks; the call's gate rows lead, its up rows follow, the shared pair comes last.
+    rows: usize,
+    shared_rows: usize,
+    k: usize,
+    experts: usize,
+    fused_experts: usize,
+    shared_dst: usize,
+    weighted: bool = true,
+    /// Written to the id row after the routed picks for each shared row, for the down call's table: none leaves them.
+    shared_id: ?u32 = null,
+};
+
+pub fn encodeGateUpSwiGLU(p: *const Pipelines, e: mtl.ComputeEncoder, sums: View, fused_ids: View, weights: View, routes: View, fused: View, down: View, shared_down: View, rotated: View, d: GateUpRot) void {
+    const A = extern struct { rows: u32, shared_rows: u32, k: u32, sums_stride: u32, experts: u32, fused_experts: u32, shared_dst: u32, weighted: u32, shared_id: u32 };
+    const args = A{
+        .rows = @intCast(d.rows),
+        .shared_rows = @intCast(d.shared_rows),
+        .k = @intCast(d.k),
+        .sums_stride = @intCast(d.k),
+        .experts = @intCast(d.experts),
+        .fused_experts = @intCast(d.fused_experts),
+        .shared_dst = @intCast(d.shared_dst),
+        .weighted = @intFromBool(d.weighted),
+        .shared_id = d.shared_id orelse std.math.maxInt(u32),
+    };
+    e.setPipeline(p.gateup_swiglu_prerotate);
+    bind(e, sums, 0);
+    bind(e, fused_ids, 1);
+    bind(e, weights, 2);
+    bind(e, routes, 3);
+    bind(e, fused, 4);
+    bind(e, down, 5);
+    bind(e, shared_down, 6);
+    bind(e, rotated, 7);
+    e.setValue(args, 8);
+    e.dispatchGroups(.{ .width = (d.k / 128 + 3) / 4, .height = d.rows + d.shared_rows }, .{ .width = 128 });
+}
+
+/// The routed picks' and the shared expert's down rows combined: the call's rotate_out and the weighted-sum's end.
+pub const DownCombine = struct {
+    tokens: usize,
+    picks: usize,
+    width: usize,
+    /// The table entry of the shared row (the routed count): its descriptor carries that row's scales and bias.
+    experts: usize,
+    y_stride: usize,
+    /// The sums row of token 0's shared output; the routed rows are token * picks + slot from row 0.
+    shared_row: usize,
+};
+
+pub fn encodeDownCombine(p: *const Pipelines, e: mtl.ComputeEncoder, sums: View, ids: View, descriptors: View, y: View, d: DownCombine) void {
+    const A = extern struct { rows: u32, picks: u32, width: u32, sums_stride: u32, experts: u32, y_stride: u32, shared_row: u32, reserved: u32 };
+    const args = A{
+        .rows = @intCast(d.tokens),
+        .picks = @intCast(d.picks),
+        .width = @intCast(d.width),
+        .sums_stride = @intCast(d.width),
+        .experts = @intCast(d.experts),
+        .y_stride = @intCast(d.y_stride),
+        .shared_row = @intCast(d.shared_row),
+        .reserved = 0,
+    };
+    e.setPipeline(p.down_combine);
+    bind(e, sums, 0);
+    bind(e, ids, 1);
+    bind(e, descriptors, 2);
+    bind(e, y, 3);
+    e.setValue(args, 4);
+    e.dispatchGroups(.{ .width = d.width / 128, .height = d.tokens }, .{ .width = 256 });
 }
 
 test "EXL3 scratch is row compact and bounded independently of full matrices" {

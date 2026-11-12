@@ -19,6 +19,7 @@ pub const CommandBuffer = @import("command.zig").CommandBuffer;
 pub const ComputeEncoder = @import("command.zig").ComputeEncoder;
 pub const BlitEncoder = @import("command.zig").BlitEncoder;
 pub const command = @import("command.zig");
+pub const dispatch_diag = @import("dispatch_diag.zig");
 pub const SharedEvent = @import("sync.zig").SharedEvent;
 pub const Event = @import("sync.zig").Event;
 pub const IndirectCommandBuffer = @import("icb.zig").IndirectCommandBuffer;
