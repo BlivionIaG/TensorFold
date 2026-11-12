@@ -14,11 +14,13 @@ table, starts our runtime, or models our offload, it is ours.
 |---|---|---|---|
 | `serve_bench.py` | generic | Python | Measures any OpenAI-compatible streaming server (`tensorfold-native` on any backend, `mlx_lm.server`, a vLLM); knows nothing of hipmac, Vega or TB4; the exact-token prompts need the model's `tokenizer.json` through the `tokenizers` package. Upstream's `tools/bench_*.py` receipts are the same kind of tool. The serving-report numbers of the recipe were produced with it. |
 | `cosine.py` | generic | Python | Cosine and argmax agreement of two `[rows, vocab]` logits `.npy` files from any pair of engines. |
-| `mlx_ref.py` | generic reference | Python | The mlx_lm references the gates compare with; they call `mlx_lm`, which exists only in Python. |
+| `mlx_ref.py`, `moe_ref.py` | generic reference | Python | The mlx_lm references the gates compare with (Qwen3.5-4B, Qwen3.6-35B-A3B); they call `mlx_lm`, which exists only in Python. |
 | `setup-mlx-env.sh`, `requirements-mlx.txt` | generic reference environment | shell | A `uv venv` with the pinned mlx / mlx-lm; nothing to port. |
 | `xcrun-metal-shim/xcrun` | generic macOS glue | shell | A `PATH` shim for any Mac whose Xcode lacks the Metal toolchain (it serves the Metal targets of `zig build`, not the HIP stack). |
 | `vega_gate.py` -> `vega_gate.zig` | stack | Zig, `zig build tf-vega-gate` | Starts `tensorfold-native serve` on hipmac's `libamdhip64.dylib` (`HIPMAC_BACKEND`, `TENSORFOLD_HIP`), runs it behind hipprof, gates gfx900 tokens and logits; it is the acceptance test of the Vega backend. |
 | `prof_report.py` -> `prof_report.zig` | stack | Zig, `zig build tf-prof-report` | Reads the table of `hipprof`, our HIP shim (the format is `hipprof_table.zig`'s, the kernel names are our `tf::rocm` templates, the GB/s are Vega's HBM2 bandwidth). |
+| `moe_gate.py` -> `moe_gate.zig` | stack | Zig, `zig build tf-moe-gate` | The gate of the HIP expert-offload server (`expert_offload.zig` is used only by the HIP backend): the greedy tokens of a running 35B-A3B server against `moe_ref.py`'s references, and cache on against `TF_EXPERT_COPIES=0` (`--against`). |
+| `expert_cache_sim.py` -> `expert_cache_sim.zig` | stack | Zig, `zig build tf-expert-cache-sim` | Replays decode routing traces against the policies of `zig/src/hip/expert_store.zig` (LRU, SLRU, LFU, 2Q, ARC, TinyLFU ...): it models our offload tier, and the report is what picked SLRU. |
 | `hipcc` -> `hipcc.zig` | stack | Zig, `zig build tf-hipcc` | The `hipcc --genco` wrapper over Homebrew LLVM that builds the gfx900 code objects on a Mac without a ROCm install. |
 | `fetch-rocm.sh` -> `fetch_rocm.zig` | stack | Zig, `zig build tf-fetch-rocm` | Installs the HIP headers and device libraries of the pinned ROCm wheel for that wrapper (`pins.env` is its data). |
 | `hipprof.c` -> `hipprof.zig` (+ `hipprof_table.zig`, `hipprof_fwd.zig`) | stack | Zig, `zig build tf-hipprof` | A HIP runtime shim that loads into the engine's process, so it is native code. |
@@ -32,7 +34,10 @@ table, starts our runtime, or models our offload, it is ours.
 | `hipcc.zig`, `fetch_rocm.zig` | The macOS `hipcc` wrapper and the ROCm headers / device libraries installer (`pins.env` is embedded in the second) | `zig build tf-hipcc tf-fetch-rocm` |
 | `gate_lib.zig`, `cli.zig`, `npy.zig`, `pyfmt.zig`, `pyjson.zig` | What the gates share: one chat request, the server process and its log, the logits comparison, the command line, the `.npy` reader, Python-style number and JSON text | `zig build test-vega-tools` |
 | `gate_fake.zig`, `gate_check.zig` | A stand-in for `tensorfold-native serve` / `tf-qwen35-test logits` and the driver that runs the gate against it, passing and failing | `zig build test-vega-tools` |
-| `serve_bench.py`, `cosine.py`, `mlx_ref.py` | Generic Python tools and the references (above) | `uv run --with tokenizers serve_bench.py ...` |
+| `moe_gate.zig` | Greedy gate of a running Qwen3.6-35B-A3B server against `moe_ref.py`'s mlx_lm references; `--against` compares two runs | `zig build tf-moe-gate` (tested with the gate: `test-vega-tools`) |
+| `expert_cache_sim.zig` + `expert_cache_sim_{list,policy,freq,config,data,run,report,rng,fmt}.zig`, `npz.zig` | Offline replay of decode routing traces (`.npz`) against expert-cache policies; NumPy's `RandomState` and CPython's `Random` are reproduced for the seeded runs | `zig build tf-expert-cache-sim` |
+| `expert_cache_sim_test.zig`, `expert_cache_sim_expected.zig` | Its tests, and the Python-generated expected text | `zig build test-expert-cache-sim` |
+| `serve_bench.py`, `cosine.py`, `mlx_ref.py`, `moe_ref.py` | Generic Python tools and the references (above) | `uv run --with tokenizers serve_bench.py ...` |
 | `pins.env`, `setup-mlx-env.sh`, `requirements-mlx.txt`, `xcrun-metal-shim/` | Pins and shell glue (above) | |
 | `experiments/` | Kernel experiments and their patches | |
 
@@ -72,9 +77,10 @@ before the port): the same checks passed, the exported symbols were identical, a
 
 ## Tests, and what the Zig ports were compared with
 
-`zig build test-vega-tools` (offline, no card, no Homebrew) runs the unit tests of the tools and of the modules they share, and `gate_check`: `tf-vega-gate` as a process
-against `gate_fake` (a stand-in for `tensorfold-native serve` that logs `done <id> ... sha=` like the real server, and for `tf-qwen35-test logits`), passing, with other
-token ids (the sha gate fails), with other logits (the cosine / argmax gate fails), with a failing logits program and with a server that dies on start.
+`zig build test-vega-tools` (offline, no card, no Homebrew) runs the unit tests of the tools and of the modules they share, and `gate_check`: `tf-vega-gate` and `tf-moe-gate` as processes
+against `gate_fake` (a stand-in for `tensorfold-native serve` that logs `done <id> ... sha=` like the real server, and for `tf-qwen35-test logits`). `tf-vega-gate` runs passing, with other
+token ids (the sha gate fails), with other logits (the cosine / argmax gate fails), with a failing logits program and with a server that dies on start; `tf-moe-gate` against matching and
+diverging references, and with `--against`.
 
 The ports keep the command line, the console text and the result files of the Python they replaced (the gate's sha lines and its `results.jsonl` line are what the recipe's numbers
 are compared by). That was checked against the Python originals, which were run before deletion (`git log -- tools/vega-macos` has them):
@@ -96,8 +102,19 @@ are compared by). That was checked against the Python originals, which were run 
   reinstall on a stale `.pinned`, the sha mismatch (exit 1, root untouched), a bad CRC, a missing wheel. `diff -r` of the roots made by the shell script and by the Zig tool is empty for the synthetic wheel
   and, for the real pinned wheel (416,591,253 bytes, downloaded in about 12 s, sha256 verified), differs from the script-made `~/.cache/tensorfold-vega/rocm-10.1.0a20260822` only in the
   target of the `bin/hipcc` link (165 files in each); a compile through the downloaded root gives an identical `.hsaco`. A refused connection retries at 1, 2, 4 s; an HTTP error fails at once.
+- `moe_gate`: the Python and the Zig gate against the fake server, matching and diverging replies (two rounds), and `--against` a recorded run: stdout equal but for the timings and the result `.json` files
+  byte for byte equal, exit status equal (0 and 1).
+- `expert_cache_sim`: `zig build test-expert-cache-sim` (number formats against CPython's text, mean / std against NumPy, `RandomState` and `Random(0).shuffle` vectors, a real `np.savez_compressed`
+  archive and stored / zip64 / CRC / truncated cases of the `.npz` reader, each of the nine policies on a short sequence of hits and evictions, and the whole report on synthetic traces, equal to the
+  Python's, with 1, 3 and 5 workers equal). On the study's real traces (`tf-study-moe-cache/docs/proposals/metal-tb4-split-moe-probe/traces` 34 short and `traces_long` 6 long generations) the Python
+  (`uv run --with numpy`, `--jobs 8`) and the Zig stdout were identical, but for the timing lines, for the default run (Python 54 s, Zig 1.4 s), `--cap 1500`, `--long none --cap 4000 --only LRU`, and
+  `--only` of each policy group (LRU, SLRU, LFU, 2Q, TinyLFU, W-TinyLFU, ARC, `K=8`, warm, seeded, `prefill replayed`, `own prefill`). The `--only` groups without the LRU baseline crash the Python
+  in table 4 (KeyError); the Zig exits 1 as well, with the same stdout up to there.
 
 Differences: the HTTP request of the gate has no client timeout (the Python had 900 s); `--help` and usage errors print the tool's own text (exit 0 / 2); a missing reference file or an HTTP error
 ends the run with a one-line message and exit 1 instead of a Python traceback. `tf-hipcc` named without a directory in argv[0] and without `TF_VEGA_ROOT` cannot tell the ROCm root and says so (exit 1; the shell
 script used `$0`'s directory). `tf-fetch-rocm` takes `--hipcc PATH` (the wrapper to link, default `tf-hipcc` beside itself; it must exist), `--pins FILE`, `--keep`, prints progress every 32 MiB, and reports a
 missing wheel, a non-zip file or a bad CRC in one line. Not covered: Windows (the steps are skipped) and hosts other than macOS.
+
+`tf-expert-cache-sim` ends with a one-line `expert_cache_sim: ...` message and exit 1 instead of a Python traceback (a missing meta entry, a bad archive, a cache smaller than one call's keys, `--jobs 0`),
+does not reproduce NumPy's runtime warnings, and expands `~` and `~/...` in the traces path but not `~user`. `tf-moe-gate` ends with a one-line message and exit 1 where the Python gave a traceback.

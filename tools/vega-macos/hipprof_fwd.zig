@@ -1,5 +1,5 @@
 //! The runtime symbols hipprof forwards unchanged: zig/src/hip/abi.zig's table less the five it interposes, plus the
-//! device properties lookup that the HIP loader makes beside it.
+//! lookups made beside it (the device properties; the stream value ops of the expert offload, expert_store.zig).
 const std = @import("std");
 
 /// Forwarded as they are, with up to 11 integer or pointer arguments.
@@ -61,6 +61,8 @@ pub const names = [_][:0]const u8{
     "hipEventSynchronize",
     "hipStreamQuery",
     "hipStreamWaitEvent",
+    "hipStreamWaitValue32",
+    "hipStreamWriteValue32",
 };
 
 /// Entry points hipprof defines itself; each calls the runtime's own after its bookkeeping.

@@ -16,6 +16,9 @@ pub const Caps = struct {
     /// dot2 rounds a sum with a -0 lane apart from the same sum with +0, so masked lanes must enter as +0.
     dot2_signed_zero: bool,
     generation: Generation,
+    /// The routed tiles take a pointer a (projection, expert) instead of a stack's slice (kernels/hip/tiles/plan.hpp TF_EXPERT_PTRS): offloaded experts.
+    /// Plain integer loads and 64-bit addresses, so any part may switch it on; only the parts with a measured run list it.
+    expert_ptrs: bool = false,
 
     /// The caps of `name` ("gfx1030", "gfx1151:xnack-" ...), or null for a GPU outside the table.
     pub fn of(name: []const u8) ?Caps {
@@ -39,7 +42,7 @@ const Row = struct { names: []const []const u8, caps: Caps };
 const table = [_]Row{
     // Vega 10 (RX Vega 56/64): wave64 only, no dot2/dot4 (those start at gfx906), no matrix cores, packed fp16 but no bf16 hardware.
     // Its dot2 is two IEEE fused FMAs (common/fdot2.hpp), not the instruction whose rounding sees a -0 lane: dot2_signed_zero is false.
-    .{ .names = &.{"gfx900"}, .caps = .{ .wave = 64, .dot2_f16 = false, .dot2_bf16 = false, .sdot4 = false, .sdot8 = false, .matrix = .none, .act = .f16, .dot2_signed_zero = false, .generation = .gcn5 } },
+    .{ .names = &.{"gfx900"}, .caps = .{ .wave = 64, .dot2_f16 = false, .dot2_bf16 = false, .sdot4 = false, .sdot8 = false, .matrix = .none, .act = .f16, .dot2_signed_zero = false, .generation = .gcn5, .expert_ptrs = true } },
     .{ .names = &.{ "gfx1030", "gfx1031", "gfx1032", "gfx1033", "gfx1034", "gfx1035", "gfx1036" }, .caps = .{ .wave = 32, .dot2_f16 = true, .dot2_bf16 = false, .sdot4 = true, .sdot8 = true, .matrix = .none, .act = .f16, .dot2_signed_zero = false, .generation = .rdna2 } },
     .{ .names = &.{ "gfx1100", "gfx1101", "gfx1102", "gfx1103" }, .caps = .{ .wave = 32, .dot2_f16 = true, .dot2_bf16 = true, .sdot4 = true, .sdot8 = true, .matrix = .wmma11, .act = .bf16, .dot2_signed_zero = false, .generation = .rdna3 } },
     .{ .names = &.{ "gfx1150", "gfx1151", "gfx1152", "gfx1153" }, .caps = .{ .wave = 32, .dot2_f16 = true, .dot2_bf16 = true, .sdot4 = true, .sdot8 = true, .matrix = .wmma11, .act = .bf16, .dot2_signed_zero = true, .generation = .rdna3_5 } },

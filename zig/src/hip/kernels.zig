@@ -19,6 +19,8 @@ pub const Group = enum {
     lighton_ocr,
     qwen_vision,
     draft,
+    /// affine_tiles again, built with the expert-offload code (caps `expert_ptrs`); a code object without kernels on a chip without it.
+    affine_tiles_ptr,
 };
 pub const group_count = @typeInfo(Group).@"enum".field_names.len;
 
@@ -27,6 +29,10 @@ pub const arch: []const u8 = objects.arch;
 
 /// TF_G9_MIX the gfx900 objects were built with (common/fdot2.hpp; 2 unless -Dhip-cflags says otherwise): the kernel tests' bound follows it.
 pub const g9_mix: u8 = objects.g9_mix;
+
+/// The objects' routed tiles can take expert pointers (caps `expert_ptrs`, -DTF_EXPERT_PTRS_ARGS): the kernel arguments carry the table's address, and the
+/// `affine_tiles_ptr` group's tiles read it; the other groups' tiles do not.
+pub const expert_ptrs: bool = objects.expert_ptrs;
 
 /// The objects in `Group` order; empty in a build without hipcc.
 pub const images: [group_count][]align(8) const u8 = objects.images;

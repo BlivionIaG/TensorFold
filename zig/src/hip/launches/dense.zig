@@ -139,7 +139,7 @@ pub const Kernels = struct {
         const a: affine.Arg = .{ .x = x, .words = w, .scale = .{ .p = 0, .kind = 0 }, .bias = .{ .p = 0, .kind = 0 }, .out = 0, .m = m, .n = n, .k = kk, .bits = 16, .group = group, .fp16 = 0, .out16 = act };
         if (s == util.counting) return;
         var args: hl.Args = .{};
-        try args.add(a);
+        try args.add(affine.plainArg(a));
         const g = pairGeometry(shape);
         try hl.launch(f, .{ .grid = .{ .x = cdiv(n, g.cols), .y = cdiv(m, g.rows) }, .block = .{ .x = g.threads } }, .{ .r = r, .handle = s }, &args);
     }
@@ -177,7 +177,7 @@ pub const Kernels = struct {
         };
         if (s == util.counting) return;
         var args: hl.Args = .{};
-        try args.add(a);
+        try args.add(affine.plainArg(a));
         const g = geometry(shape);
         try hl.launch(f, .{ .grid = .{ .x = cdiv(n, g.cols), .y = cdiv(m, g.rows) }, .block = .{ .x = g.threads } }, .{ .r = r, .handle = s }, &args);
     }

@@ -65,6 +65,8 @@ pub const attention_range = @import("attention_range.zig");
 pub const gdn_prep_ref = @import("gdn_prep_ref.zig");
 pub const qk_ref = @import("qk_ref.zig");
 pub const moe_ref = @import("moe_ref.zig");
+/// The expert-offload policy every backend with a host expert tier shares (the CUDA EXL3 host cache's rules): which experts hold the device's lines.
+pub const expert_offload = @import("expert_offload.zig");
 pub const dense_ref = @import("dense_ref.zig");
 
 pub const checkpoint_weights = @import("checkpoint_weights.zig");
@@ -105,6 +107,7 @@ test {
     _ = gdn_prep_ref;
     _ = qk_ref;
     _ = moe_ref;
+    _ = expert_offload;
     _ = dense_ref;
     _ = exl3_format;
     _ = exlr8;

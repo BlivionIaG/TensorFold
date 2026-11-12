@@ -380,4 +380,5 @@ test "memory info sees a new allocation" {
 
 test {
     _ = @import("engine_runtime_tests.zig");
+    _ = @import("expert_store.zig");
 }

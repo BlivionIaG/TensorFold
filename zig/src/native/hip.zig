@@ -136,6 +136,7 @@ fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open
             .rank = o.rank,
             .world = o.tp,
             .cache_gib = o.prompt_cache_gib,
+            .experts_gib = o.ssd_experts_gib,
             .cache_over_cap = o.prompt_cache_over_cap,
             .vision = o.vision,
         },

@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const abi = @import("../abi.zig");
+const kernels = @import("../kernels.zig");
 const runtime = @import("../runtime.zig");
 const hl = @import("../launch.zig");
 const Module = @import("../module.zig").Module;
@@ -26,8 +27,39 @@ pub const Choices = struct { matrix: Matrix = .auto, stream: bool = true, gemm: 
 
 /// quant/mlx.hpp's GroupTable, Routing and Affine as the kernels take them by value.
 pub const GroupTable = extern struct { p: u64, kind: c_int };
+/// The expert pointer table of an offloaded stack (kernels/hip/tiles/plan.hpp ExpertPtrs): the last member of the arguments of the tiles built with
+/// TF_EXPERT_PTRS (the `affine_tiles_ptr` group, caps `expert_ptrs`). Every other tile takes `ArgBase`, the arguments without it (`Kernels.addArg`):
+/// a dense stack's launches keep the arguments and the code they had.
+pub const ExpertPtrs = if (kernels.expert_ptrs) extern struct { ptab: u64 = 0, off: i64 = 0, delta: i64 = 0 } else extern struct {};
 pub const Routing = extern struct { items: u64 = 0, members: u64 = 0, x_div: c_int = 1, first: c_int = 0 };
+
+/// `ptab` (device address of two u64 a expert: the blob's address, and the cache line the stream tile writes it into or 0; 0: the stack's own slices) and the byte offset of this projection in an expert's blob, as the Arg field.
+pub fn expertPtrs(ptab: u64, off: u64) ExpertPtrs {
+    if (comptime !kernels.expert_ptrs) {
+        std.debug.assert(ptab == 0);
+        return .{};
+    }
+    return .{ .ptab = ptab, .off = @intCast(off) };
+}
 pub const Arg = extern struct {
+    x: u64,
+    words: u64,
+    scale: GroupTable,
+    bias: GroupTable,
+    out: u64,
+    m: c_int,
+    n: c_int,
+    k: c_int,
+    bits: c_int,
+    group: c_int,
+    fp16: c_int,
+    route: Routing = .{},
+    out16: u64 = 0,
+    ptrs: ExpertPtrs = .{},
+};
+
+/// `Arg` without `ptrs`: what the tiles of every code object but `affine_tiles_ptr` take.
+pub const ArgBase = extern struct {
     x: u64,
     words: u64,
     scale: GroupTable,
@@ -43,13 +75,20 @@ pub const Arg = extern struct {
     out16: u64 = 0,
 };
 
+/// `a` as the tiles without expert pointers take it: `ptrs` is the last member, so the bytes are a prefix.
+pub fn plainArg(a: Arg) ArgBase {
+    return @as(*const ArgBase, @ptrCast(&a)).*;
+}
+
 pub const StreamSides = stream_layout.StreamSides;
 
 /// One side of a group: its matrix and where its (rows, n) output goes.
 pub const Side = struct { words: u64, scale: u64, bias: u64, n: c_int, out: u64 };
 
 comptime {
-    std.debug.assert(@sizeOf(GroupTable) == 16 and @sizeOf(Routing) == 24 and @sizeOf(Arg) == 112 and @sizeOf(StreamSides) == 184);
+    const ptrs: usize = if (kernels.expert_ptrs) 24 else 0;
+    std.debug.assert(@sizeOf(GroupTable) == 16 and @sizeOf(Routing) == 24 and @sizeOf(ArgBase) == 112 and @sizeOf(Arg) == 112 + ptrs and @sizeOf(StreamSides) == 184);
+    std.debug.assert(@offsetOf(Arg, "out16") == @offsetOf(ArgBase, "out16") and @offsetOf(Arg, "ptrs") == @sizeOf(ArgBase));
 }
 
 /// Everything a launch needs beside the kernels.
@@ -168,11 +207,14 @@ pub const Kernels = struct {
     tiled: Function,
     reference: Function,
     fill: Function,
+    /// The code objects are the expert-pointer tiles' (caps `expert_ptrs`): their arguments end with `Arg.ptrs`.
+    ptrs: bool,
     reg: Registry,
 
     /// `tiles` holds dot2_tiles.hip's kernels, `dot2` dot2.hip's; bf16 on the WMMA build, fp16 on RDNA2.
-    pub fn load(tiles_obj: Module, dot2_obj: Module, caps: Caps, choices: Choices) Error!Kernels {
+    pub fn load(tiles_obj: Module, dot2_obj: Module, caps: Caps, choices: Choices, ptrs: bool) Error!Kernels {
         var k: Kernels = undefined;
+        k.ptrs = ptrs;
         const wmma = caps.act == .bf16;
         k.caps = caps;
         k.wmma = wmma;
@@ -195,6 +237,14 @@ pub const Kernels = struct {
         k.reference = try dot2_obj.function(r ++ "18affine_dot2_kernelENS0_6AffineE");
         k.fill = try dot2_obj.function(r ++ "13fill_byte_lutEP6__half");
         return k;
+    }
+
+    /// `a` as this instance's tiles take their `Affine` parameter.
+    pub fn addArg(k: *const Kernels, args: *hl.Args, a: Arg) Error!void {
+        if (comptime kernels.expert_ptrs) {
+            if (k.ptrs) return args.add(a);
+        }
+        return args.add(plainArg(a));
     }
 
     fn resolve(k: *Kernels, comptime dot: []const u8, comptime shape: []const u8, m: Module) Error!void {
@@ -418,7 +468,7 @@ pub const Kernels = struct {
             sides.first[@intCast(sides.count)] = @intCast(blocks);
         }
         var args: hl.Args = .{};
-        try args.add(a);
+        try k.addArg(&args, a);
         try args.add(sides);
         try args.add(@as(c_int, lpc_log2) | if (stage > 0) stage_flag else 0);
         try args.add(@as(c_int, switch (a.group) {
@@ -437,7 +487,7 @@ pub const Kernels = struct {
     pub fn rowGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream, items: c_int) Error!void {
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
-        try args.add(a);
+        try k.addArg(&args, a);
         try args.add(rowLanes(@divExact(a.k, a.group)));
         try go(r, k.row[b][pieceIndex(a.group)], .{ .x = cdiv(a.n, 128), .z = @intCast(items) }, .{ .x = 128 }, s, &args);
     }
@@ -446,7 +496,7 @@ pub const Kernels = struct {
     pub fn lanesGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream, items: c_int) Error!void {
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
-        try args.add(a);
+        try k.addArg(&args, a);
         const ri: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else if (a.m <= 4) 2 else 3;
         try go(r, k.lanes[b][ri][pieceIndex(a.group)], .{ .x = cdiv(a.n, 32), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
     }
@@ -454,21 +504,21 @@ pub const Kernels = struct {
     /// The wide tile of the RDNA2 decode products of 9 rows and more.
     pub fn wideGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream) Error!void {
         var args: hl.Args = .{};
-        try args.add(a);
+        try k.addArg(&args, a);
         try go(r, k.wide, .{ .x = cdiv(a.n, 32), .y = cdiv(a.m, 128) }, .{ .x = 512 }, s, &args);
     }
 
     /// Any group width up to 128 that the others do not take, 16 columns by 16 rows a block.
     pub fn tiledGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream) Error!void {
         var args: hl.Args = .{};
-        try args.add(a);
+        try k.addArg(&args, a);
         try go(r, k.tiled, .{ .x = cdiv(a.n, 16), .y = cdiv(a.m, 16) }, .{ .x = 256 }, s, &args);
     }
 
     /// The one-thread tile every product has: the reference of the others.
     pub fn referenceGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream) Error!void {
         var args: hl.Args = .{};
-        try args.add(a);
+        try k.addArg(&args, a);
         try go(r, k.reference, .{ .x = cdiv(a.n, 32), .y = @intCast(a.m) }, .{ .x = 32 }, s, &args);
     }
 
@@ -476,7 +526,7 @@ pub const Kernels = struct {
     pub fn splitGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, partial: u64, parts: c_int, s: abi.Stream) Error!void {
         const groups = @divTrunc(a.k, a.group);
         var args: hl.Args = .{};
-        try args.add(a);
+        try k.addArg(&args, a);
         try args.add(partial);
         try args.add(@divExact(groups, parts));
         try go(r, k.span[if (a.m == 1) 0 else 1], .{ .x = cdiv(a.n, fast_n), .y = cdiv(a.m, 8), .z = @intCast(parts) }, .{ .x = fast_n }, s, &args);
@@ -495,7 +545,7 @@ pub const Kernels = struct {
     pub fn blockGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream, items: c_int, kind: BlockKind) Error!void {
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
-        try args.add(a);
+        try k.addArg(&args, a);
         const f = switch (kind) {
             .matrix => k.wmma_gemm[b],
             .skew => k.wmma_skew[b],
@@ -516,7 +566,7 @@ pub const Kernels = struct {
     pub fn kpGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream, items: c_int, tier: usize) Error!void {
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
-        try args.add(a);
+        try k.addArg(&args, a);
         const t = kp_tiles[tier];
         const sets = @divExact(32, kpLanes(@divExact(a.k, a.group)));
         const blocks = @min(cdiv(a.m, t.r), @as(c_uint, @intCast(t.rb)));

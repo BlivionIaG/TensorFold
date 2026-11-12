@@ -48,6 +48,8 @@ pub const registry = @import("core").registry;
 pub const collective = @import("collective.zig");
 pub const moe = @import("moe.zig");
 pub const moe_nemotron = @import("moe_nemotron.zig");
+/// Routed experts in a host tier with a device cache (caps `expert_ptrs`); the policy is core/expert_offload.zig.
+pub const expert_store = @import("expert_store.zig");
 pub const reduce = @import("reduce.zig");
 /// Joins this rank's tensor-parallel group: RCCL's (comm/), behind collective.zig.
 pub const joinGroup = @import("comm/group.zig").join;
