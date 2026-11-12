@@ -67,34 +67,49 @@ fn sourceOf(cuda: Cuda, layer: u32) ?SourceState {
     return null;
 }
 
+/// The plan's parts with their bytes allocated and not yet converted (a streamed export fills them as its pages land).
+pub fn alloc(arena: std.mem.Allocator, shape: plan.Shape) Error![]Part {
+    const list = try plan.specs(arena, shape);
+    const parts = try arena.alloc(Part, list.len);
+    for (list, parts) |spec, *p| p.* = .{ .spec = spec, .bytes = try arena.alloc(u8, @intCast(spec.bytes())) };
+    return parts;
+}
+
+/// The ring rows a state must hold for `shape`: the window's, and the drafter's valid rows.
+pub fn checkRings(shape: plan.Shape, cuda: Cuda) Error!void {
+    if (cuda.rings.rows < shape.geo.window or !std.math.isPowerOfTwo(cuda.rings.rows) or !std.math.isPowerOfTwo(cuda.rings.drafter_rows)) return error.BadRingRows;
+    if (cuda.rings.drafter_rows < shape.ds_rows) return error.BadRingRows;
+}
+
+/// One part converted from `cuda`: a comp / ixk part needs only its source's pages, the others the snapshot's rings.
+pub fn fill(p: *Part, shape: plan.Shape, cuda: Cuda) Error!void {
+    const geo = shape.geo;
+    const spec = p.spec;
+    switch (spec.kind) {
+        .swa => {
+            const ring = if (spec.layer < cuda.swa.len) cuda.swa[spec.layer] else null;
+            try ringPart(p.bytes, ring orelse return error.MissingRing, shape.upto, spec.rows, cuda.rings.rows);
+        },
+        .ring => {
+            const i = spec.layer - geo.layers;
+            if (i >= cuda.drafter.len) return error.MissingRing;
+            try ringPart(p.bytes, cuda.drafter[i], shape.upto, spec.rows, cuda.rings.drafter_rows);
+        },
+        .carry => {
+            const s = geo.sourceIndex(spec.layer).?;
+            if (s >= cuda.carries.len) return error.MissingCarry;
+            if (cuda.carries[s].len != p.bytes.len) return error.BadCarry;
+            @memcpy(p.bytes, cuda.carries[s]);
+        },
+        .comp, .ixk => try pages(p, shape, cuda, sourceOf(cuda, spec.layer) orelse return error.MissingSource),
+    }
+}
+
 /// All of a shard's parts, converted, in plan order. `shape` says which producer this is (shard, split, drafter rows).
 pub fn build(arena: std.mem.Allocator, shape: plan.Shape, cuda: Cuda) Error![]Part {
-    const list = try plan.specs(arena, shape);
-    const geo = shape.geo;
-    if (cuda.rings.rows < geo.window or !std.math.isPowerOfTwo(cuda.rings.rows) or !std.math.isPowerOfTwo(cuda.rings.drafter_rows)) return error.BadRingRows;
-    if (cuda.rings.drafter_rows < shape.ds_rows) return error.BadRingRows;
-    const parts = try arena.alloc(Part, list.len);
-    for (list, parts) |spec, *p| {
-        p.* = .{ .spec = spec, .bytes = try arena.alloc(u8, @intCast(spec.bytes())) };
-        switch (spec.kind) {
-            .swa => {
-                const ring = if (spec.layer < cuda.swa.len) cuda.swa[spec.layer] else null;
-                try ringPart(p.bytes, ring orelse return error.MissingRing, shape.upto, spec.rows, cuda.rings.rows);
-            },
-            .ring => {
-                const i = spec.layer - geo.layers;
-                if (i >= cuda.drafter.len) return error.MissingRing;
-                try ringPart(p.bytes, cuda.drafter[i], shape.upto, spec.rows, cuda.rings.drafter_rows);
-            },
-            .carry => {
-                const s = geo.sourceIndex(spec.layer).?;
-                if (s >= cuda.carries.len) return error.MissingCarry;
-                if (cuda.carries[s].len != p.bytes.len) return error.BadCarry;
-                @memcpy(p.bytes, cuda.carries[s]);
-            },
-            .comp, .ixk => try pages(p, shape, cuda, sourceOf(cuda, spec.layer) orelse return error.MissingSource),
-        }
-    }
+    try checkRings(shape, cuda);
+    const parts = try alloc(arena, shape);
+    for (parts) |*p| try fill(p, shape, cuda);
     return parts;
 }
 

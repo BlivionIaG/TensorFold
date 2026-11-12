@@ -3,6 +3,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const fabric = @import("fabric");
 const cx = @import("cuda_export.zig");
+const stream_mod = @import("cuda_export_stream.zig");
+const plan = @import("handoff/plan.zig");
 const file = @import("handoff_file.zig");
 const producer = fabric.producer;
 const log = std.log.scoped(.dsv41);
@@ -23,13 +25,15 @@ pub const Options = struct {
     shards: u32 = 1,
     /// serve held exports over the server's own HTTP port (`--mcdma-produce http`), same cap and expiry as a link
     http: bool = false,
+    /// a hand-off's export is built while its prompt prefills, and pulled as its parts are ready (needs a link)
+    stream: bool = false,
     /// TF_PRODUCE_SPILL_DIR: buffers of `spill_min_bytes` and more live in unlinked files there (page cache, not RAM)
     spill_dir: ?[]const u8 = null,
     spill_min_bytes: usize = @as(usize, spill_mod.default_min_mib) << 20,
 };
 
-/// What `save` hands `exported`: the engine's state, read back.
-pub const Saved = struct { cap: cx.Captured, read_ns: u64 = 0 };
+/// What `save` hands `exported`: the engine's state, read back (a streamed export's: without its pool pages).
+pub const Saved = struct { cap: cx.Captured, read_ns: u64 = 0, stream: ?*stream_mod.Stream = null, owner: ?*Produce = null };
 
 /// One export the producer holds; a reading stream pins it, so expiry or release only marks it `gone` until it closes.
 pub const Held = struct { built: *cx.Built, name: [32]u8, pins: u32 = 0, gone: bool = false };
@@ -49,6 +53,7 @@ pub const Produce = struct {
     streams: std.atomic.Value(u32) = .init(0), // reads under way (HTTP): the producer stops after them
     building: std.atomic.Value(u32) = .init(0), // exports converting on their own threads (`exportedBg`)
     pending: std.AutoHashMapUnmanaged([16]u8, void) = .empty, // their ids, under `lock`: a reader waits for them
+    active: std.AutoHashMapUnmanaged([16]u8, *stream_mod.Stream) = .empty, // streamed exports not yet cut, under `lock`
     spill: ?*spill_mod.Spill = null, // `Options.spill_dir`: the allocator of every buffer a held export is made of
 
     /// The most exports converting at once; one more converts on the caller's thread.
@@ -108,6 +113,11 @@ pub const Produce = struct {
             p.serving.stop.store(true, .release);
             t.join();
         }
+        while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+        var open_streams = p.active.valueIterator();
+        while (open_streams.next()) |st| st.*.abort();
+        p.active.deinit(p.gpa);
+        p.lock.unlock();
         while (p.streams.load(.acquire) > 0 or p.building.load(.acquire) > 0) std.Io.sleep(p.io, .fromMilliseconds(1), .awake) catch {};
         p.pending.deinit(p.gpa);
         var it = p.held.valueIterator();
@@ -281,14 +291,137 @@ pub const Produce = struct {
         p.gpa.destroy(saved);
     }
 
+    fn dropSaved(ctx: *anyopaque) void {
+        const saved: *Saved = @ptrCast(@alignCast(ctx));
+        saved.owner.?.drop(saved);
+    }
+
+    /// Engine thread, a hand-off admitted for `tokens` (up to its cut): its export builds as the prompt prefills.
+    pub fn begin(p: *Produce, id: [16]u8, tokens: []const u32) void {
+        if (!p.opts.stream or p.opts.link == null or tokens.len == 0) return;
+        if (p.spill != null) return log.info("handoff {x}: built at the cut (TF_PRODUCE_SPILL_DIR holds the buffers)", .{&id});
+        const open_feed = p.source.open_feed orelse return;
+        var pl: cx.Plan = undefined;
+        const feed = open_feed(p.source.ptr, p.gpa, tokens.len, &pl) catch |err| return log.info("handoff {x}: built at the cut ({s})", .{ &id, @errorName(err) });
+        const shape: plan.Shape = .{ .upto = tokens.len, .ds_rows = pl.ds_rows, .shard = pl.shard, .shards = pl.shards, .split = pl.shards > 1 };
+        const st = stream_mod.Stream.open(p.gpa, id, tokens, shape, feed, pl.index_format, .{ .ptr = p, .touch = touchStream, .ended = streamEnded }) catch |err| {
+            feed.close(feed.ptr);
+            return log.info("handoff {x}: built at the cut ({s})", .{ &id, @errorName(err) });
+        };
+        const held = p.gpa.create(Held) catch return st.discard();
+        held.* = .{ .built = st.built, .name = undefined, .pins = 1 }; // the worker's pin
+        _ = std.fmt.bufPrint(&held.name, "{x}", .{&id}) catch unreachable;
+        st.user = held;
+        while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+        var placed = false;
+        if (p.active.ensureUnusedCapacity(p.gpa, 1)) |_| {
+            if (p.held.getOrPut(p.gpa, id)) |sl| {
+                if (!sl.found_existing) {
+                    sl.value_ptr.* = held;
+                    p.active.putAssumeCapacity(id, st);
+                    placed = true;
+                }
+            } else |_| {}
+        } else |_| {}
+        p.lock.unlock();
+        if (!placed) {
+            p.gpa.destroy(held);
+            return st.discard(); // a reused id keeps the export it holds
+        }
+        p.table.addSized(id, &held.name, .{ .ready = &st.built.exp }, st.built.bytes) catch |err| {
+            while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+            _ = p.held.remove(id);
+            _ = p.active.remove(id);
+            p.lock.unlock();
+            p.gpa.destroy(held);
+            log.info("handoff {x}: built at the cut ({s})", .{ &id, @errorName(err) });
+            return st.discard();
+        };
+        _ = p.building.fetchAdd(1, .acq_rel);
+        st.start();
+    }
+
+    /// Engine thread: the slot of `id`'s prompt stands at `at` tokens, its chunk done; the pages that are whole go on.
+    pub fn progress(p: *Produce, id: [16]u8, at: u64) void {
+        while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+        const st = p.active.get(id);
+        p.lock.unlock();
+        if (st) |x| x.progress(at);
+    }
+
+    /// The engine thread ends `id`'s stream: nothing more comes from the engine (the cut took it, or the pass ended).
+    fn endStream(p: *Produce, id: [16]u8) void {
+        while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+        const got = p.active.fetchRemove(id);
+        p.lock.unlock();
+        const st = (got orelse return).value;
+        const broken = st.failedAlready();
+        st.abort();
+        if (!broken) p.table.finish(id) catch {}; // a pass that ended: the decoder hears "no export" below, not a stale gate
+    }
+
+    fn touchStream(ptr: *anyopaque, id: [16]u8) void {
+        const p: *Produce = @ptrCast(@alignCast(ptr));
+        p.table.touch(id);
+    }
+
+    /// The worker's last word (on its thread): the export is complete, or failed and its gate says why.
+    fn streamEnded(ptr: *anyopaque, st: *stream_mod.Stream, end: stream_mod.End) void {
+        const p: *Produce = @ptrCast(@alignCast(ptr));
+        const id = st.built.exp.handoff;
+        if (end.ok) {
+            p.table.touch(id);
+            log.info("handoff {x}: {d} tokens, {d} parts, {d} MiB of bf16 rows; {d} parts built while prefilling, {d} ms after the cut", .{ &id, st.built.exp.tokens.len, end.parts, end.bytes >> 20, end.streamed, end.cut_ns / std.time.ns_per_ms });
+            if (p.opts.dump != null) p.dump(st.built, st.built.exp.tokens) catch |err| log.warn("handoff {x}: not written ({s})", .{ &id, @errorName(err) });
+        } else log.warn("handoff {x}: the streamed export failed ({s})", .{ &id, st.reason() });
+        const held: *Held = @ptrCast(@alignCast(st.user.?));
+        p.unpin(held);
+        _ = p.building.fetchSub(1, .acq_rel);
+    }
+
+    fn unpin(p: *Produce, h: *Held) void {
+        while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+        h.pins -= 1;
+        const last = h.pins == 0 and h.gone;
+        p.lock.unlock();
+        if (last) release(p, h);
+    }
+
+    /// `save` at the cut: a streamed export's state has no pool pages (the stream has them); else the plain `save`.
+    pub fn saveFor(p: *Produce, id: [16]u8, at: u64) !*Saved {
+        while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+        const got = p.active.fetchRemove(id);
+        p.lock.unlock();
+        const st = (got orelse return p.save(at)).value;
+        if (st.failedAlready()) {
+            log.warn("mcdma handoff {x}: the streamed export failed ({s})", .{ &id, st.reason() });
+            st.abort();
+            return error.StreamFailed;
+        }
+        const t0 = fabric.words.nowNs();
+        const cap = p.source.take_state.?(p.source.ptr, p.gpa, at, st.feed) catch |err| {
+            st.abort();
+            return err;
+        };
+        const saved = p.gpa.create(Saved) catch |err| {
+            p.source.release(cap.ctx);
+            st.abort();
+            return err;
+        };
+        saved.* = .{ .cap = cap, .read_ns = fabric.words.nowNs() - t0, .stream = st, .owner = p };
+        return saved;
+    }
+
     /// `saved` (now the producer's) is the state after `tokens`, the prompt but its last token: exported under `id`.
     pub fn exported(p: *Produce, id: [16]u8, tokens: []const u32, saved: *Saved) void {
+        if (saved.stream) |st| return st.cut(saved.cap.state, saved, dropSaved); // the worker finishes the export
         defer p.drop(saved);
         p.record(id, tokens, saved.cap.state, saved.read_ns) catch |err| p.failed(id, @errorName(err));
     }
 
     /// `exported` with the conversion on its own thread (a file-only producer or a full set of converters: inline).
     pub fn exportedBg(p: *Produce, id: [16]u8, tokens: []const u32, saved: *Saved) void {
+        if (saved.stream != null) return p.exported(id, tokens, saved);
         if ((p.opts.link == null and !p.opts.http) or p.building.load(.acquire) >= max_building) return p.exported(id, tokens, saved);
         const own = p.gpa.dupe(u32, tokens) catch return p.exported(id, tokens, saved);
         while (!p.lock.tryLock()) std.atomic.spinLoopHint();
@@ -384,6 +517,7 @@ pub const Produce = struct {
 
     /// No state will come for `id`: the decoder is told why (a link), and the reason lands in `<id>.error` (a dump).
     pub fn failed(p: *Produce, id: [16]u8, reason: []const u8) void {
+        p.endStream(id);
         const why = if (std.mem.eql(u8, reason, "HeldExportsFull")) "the producer already holds TF_PRODUCE_HELD_GIB of exports; it refuses more until the decoder closes some" else reason;
         log.warn("mcdma handoff {x}: no export ({s})", .{ &id, why });
         if (p.opts.dump) |dir| {

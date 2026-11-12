@@ -146,13 +146,9 @@ pub const Table = struct {
     }
 };
 
-/// TF_DSV41_GRAPH_LOG=1: every row-graph capture logged with its key and host ms (else the powers of two).
+/// TF_DSV41_GRAPH_LOG=1: every row-graph capture logged with its key and host ms (the cache logs each key's first).
 pub fn graphLog() !bool {
     return @import("sys").environment.read(bool, "TF_DSV41_GRAPH_LOG", false);
-}
-
-pub fn outcomeLog(out: graphs.gc.Outcome, g: *const Graphs) bool {
-    return out == .captured and (g.cache.stats.captured & (g.cache.stats.captured - 1)) == 0;
 }
 
 /// Row graphs' state: the cache over the runner's stream, keyed (bucket rows, context bucket), every rank agreeing.
@@ -174,8 +170,7 @@ pub const Graphs = struct {
     }
 
     pub fn deinit(g: *Graphs) void {
-        const cs = g.cache.stats;
-        std.log.scoped(.dsv41).info("row graphs: {d} captured, {d} replayed, {d} eager, {d} keys held, {d} evicted, {d} dropped{s}", .{ cs.captured, cs.replayed, cs.eager, g.cache.count(), cs.evicted, cs.dropped, if (g.cache.failed) " (off after a failed capture)" else "" });
+        std.log.scoped(.dsv41).info("row graphs: {f}", .{g.cache.summary()});
         g.cache.deinit();
         g.agreement.deinit();
     }

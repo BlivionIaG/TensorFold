@@ -22,57 +22,9 @@ var spare_limits: SpareLimits = if (builtin.is_test) .{ .count = 0, .bytes = 0 }
 var spares: ?*Node = null;
 var spare_count: usize = 0;
 var spare_bytes: usize = 0;
-const Node = struct {
-    charge: usize = @sizeOf(Node),
-    next: ?*Node = null,
-    work_next: ?*Node = null,
-    busy: bool = false,
-    ticket: u64 = 0,
-    driver: usize = 0,
-    context: abi.Context = null,
-    stream: abi.Stream = null,
-    failed: bool = false,
-    reusable: bool = false, // a temporary upload's stage: completion returns it to the spares
-    data: union(enum) {
-        none,
-        cpu: []align(16) u8,
-        pinned: struct {
-            bytes: []align(16) u8,
-            free: @FieldType(abi.Api, "cuMemFreeHost"),
-            event: ?abi.Event,
-            destroy: ?@FieldType(abi.Api, "cuEventDestroy_v2"),
-            query: ?@FieldType(abi.Api, "cuEventQuery"),
-        },
-    } = .none,
-    fn releaseData(n: *Node) void {
-        const a = durable;
-        switch (n.data) {
-            .none => {},
-            .cpu => |bytes| a.free(bytes),
-            .pinned => |p| {
-                if (p.destroy) |drop| _ = drop(p.event.?);
-                _ = p.free(p.bytes.ptr);
-                memory.releaseRetainedHost(p.bytes.len);
-            },
-        }
-    }
-    fn destroy(n: *Node) void {
-        const charge = n.charge;
-        durable.destroy(n);
-        budget.release(charge, 1);
-    }
-    fn release(n: *Node) void {
-        n.releaseData();
-        n.destroy();
-    }
-};
-fn newNode() !*Node {
-    try budget.acquire(@sizeOf(Node), 1);
-    errdefer budget.release(@sizeOf(Node), 1);
-    const n = try durable.create(Node);
-    n.* = .{};
-    return n;
-}
+const node_mod = @import("copy_source_node.zig");
+const Node = node_mod.Node;
+const newNode = node_mod.newNode;
 fn lock() void {
     mutex.lock();
 }
@@ -210,15 +162,56 @@ fn completed(d: *const Driver, context: abi.Context, stream: abi.Stream, all: bo
         releaseTracked(n);
     }
 }
-fn hasRetained(d: *const Driver, context: abi.Context) bool {
+/// Failed (quarantined) copies in `context`, of driver `d` or of any driver when null.
+fn failedIn(d: ?*const Driver, context: abi.Context) usize {
     lock();
     defer unlock();
+    var count: usize = 0;
+    var at = head;
+    while (at) |n| : (at = n.next) {
+        count += @intFromBool((d == null or n.driver == @intFromPtr(d.?)) and n.context == context and n.failed);
+    }
+    return count;
+}
+pub fn failedCount() usize {
+    return failedIn(null, current_context);
+}
+/// Waits for each failed copy of this driver and context on its own event or stream, never the whole context.
+fn drainRetained(d: *const Driver) @import("driver.zig").Error!void {
+    var pending: ?*Node = null;
+    lock();
     var at = head;
     while (at) |n| {
-        if (n.driver == @intFromPtr(d) and n.context == context and n.failed) return true;
+        if (n.failed and !n.busy and n.driver == @intFromPtr(d) and n.context == current_context) {
+            n.busy = true;
+            n.work_next = pending;
+            pending = n;
+        }
         at = n.next;
     }
-    return false;
+    unlock();
+    var first: ?@import("driver.zig").Error = null;
+    while (pending) |n| {
+        pending = n.work_next;
+        const result = scopedWait(d, n);
+        if (result == 0) {
+            releaseTracked(n);
+            continue;
+        }
+        if (d.check(result, "copy source drain")) |_| {} else |e| first = first orelse e;
+        lock();
+        n.busy = false;
+        changed.broadcast();
+        unlock();
+    }
+    if (first) |e| return e;
+}
+fn scopedWait(d: *const Driver, n: *Node) abi.Result {
+    if (n.data == .pinned) {
+        const p = n.data.pinned;
+        if (p.query != null and p.wait != null) return p.wait.?(p.event.?);
+    }
+    return d.api.cuStreamSynchronize(n.stream);
 }
 pub fn captureBegin(stream: streams.Stream, mode: abi.CaptureMode) !void {
     try capture_scope.begin(stream, current_context, mode);
@@ -265,6 +258,7 @@ pub fn retainPinned(d: *const Driver, host: memory.HostBuffer, stream: streams.S
         .event = null,
         .destroy = null,
         .query = null,
+        .wait = null,
     } } };
     publish(n);
 }
@@ -319,7 +313,7 @@ pub fn synchronousCopy(d: *const Driver, dst: u64, bytes: []const u8, gpa: std.m
 }
 fn syncChunk(d: *const Driver, dst: u64, bytes: []const u8, _: std.mem.Allocator) @import("driver.zig").Error!void {
     if (bytes.len == 0) return;
-    if (hasRetained(d, current_context)) try synchronizeContext(d);
+    if (failedIn(d, current_context) > 0) try drainRetained(d);
     const n = try newNode();
     var transferred = false;
     defer if (!transferred) n.release();
@@ -437,6 +431,7 @@ pub const Stage = struct {
             .event = if (s.ev) |e| e.handle else null,
             .destroy = if (s.ev) |e| e.d.api.cuEventDestroy_v2 else null,
             .query = if (s.event_valid) s.ev.?.d.api.cuEventQuery else null,
+            .wait = if (s.event_valid) s.ev.?.d.api.cuEventSynchronize else null,
         } } };
         publish(n);
         s.* = .{};
@@ -505,7 +500,7 @@ fn asyncChunk(d: *const Driver, dst: u64, bytes: []const u8, stream: streams.Str
     if (bytes.len == 0) return;
     if (capture_scope.active(d, current_context)) return error.UnownedCaptureSource;
     reap(d);
-    if (hasRetained(d, current_context)) try synchronizeContext(d);
+    if (failedIn(d, current_context) > 0) try drainRetained(d);
     if (takeSpare(d, bytes.len)) |n| return reissue(n, d, dst, bytes, stream);
     var s: Stage = .{};
     defer s.deinit();
@@ -529,6 +524,7 @@ fn reissue(n: *Node, d: *const Driver, dst: u64, bytes: []const u8, stream: stre
     @memcpy(p.bytes[0..bytes.len], bytes);
     n.stream = stream.handle;
     p.query = null;
+    p.wait = null;
     errdefer {
         n.failed = true;
         publish(n);
@@ -536,6 +532,7 @@ fn reissue(n: *Node, d: *const Driver, dst: u64, bytes: []const u8, stream: stre
     try d.check(d.api.cuMemcpyHtoDAsync_v2(dst, p.bytes.ptr, bytes.len, stream.handle), "cuMemcpyHtoDAsync");
     try d.check(d.api.cuEventRecord(p.event.?, stream.handle), "cuEventRecord");
     p.query = d.api.cuEventQuery;
+    p.wait = d.api.cuEventSynchronize;
     publish(n);
 }
 fn failed(d: *const Driver, context: abi.Context, stream: abi.Stream, all: bool, before: u64) void {
@@ -582,6 +579,7 @@ test {
     _ = @import("copy_source_limits_test.zig");
     _ = @import("copy_source_capture_test.zig");
     _ = @import("copy_source_spare_test.zig");
+    _ = @import("copy_source_scope_test.zig");
 }
 
 test "driver close waits through reaper query, event destruction and host release" {

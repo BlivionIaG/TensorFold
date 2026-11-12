@@ -19,6 +19,7 @@ const serve_knobs = @import("serve_knobs.zig");
 const pf_k4 = @import("forward_prefill_k4.zig");
 const pf_finish = @import("forward_prefill_finish.zig");
 const pf_cone = @import("forward_prefill_cone.zig");
+const replay_fence = @import("replay_fence.zig");
 const pf_glue = @import("forward_prefill_glue.zig");
 const Forward = fwd.Forward;
 
@@ -70,8 +71,14 @@ pub const State = struct {
     cone_id: u64 = 0,
     /// the last prompt's decoder replay was the exact one (the export keeps every ring row)
     replay_exact: bool = false,
+    /// called after each prompt segment, the slot standing at its position (a streamed hand-off export's page reads)
+    on_segment: ?struct { ptr: *anyopaque, run: *const fn (ptr: *anyopaque, pos: u64) void } = null,
+    /// TF_DSV41_REPLAY_OVERLAP: the exact replay leaves its end to the first reader (`fence`), not the host's wait
+    cone_overlap: bool = true,
+    fence: replay_fence.Fence = .{},
 
     pub fn deinit(s: *State, gpa: std.mem.Allocator) void {
+        s.fence.deinit();
         s.long.deinit(gpa);
         s.long_b.deinit(gpa);
         if (s.k4ws.buf) |*b| b.free();
@@ -296,6 +303,7 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
     const st = state(f);
     if (f.slot.pending != null) return error.BadWindow;
     if (ids_in.len == 0) return;
+    try pf_cone.settle(f, false);
     if (f.slot.pos + ids_in.len > @as(u64, @intCast(f.opts.limit))) return error.BadWindow;
     if (ids_in.ptr != st.ids.items.ptr) {
         st.ids.clearRetainingCapacity();
@@ -319,6 +327,7 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
             if (st.ahead) ahead(f, ids, at, n, seg);
             if (try segmentPair(f, ids[at .. at + pr[0]], ids[at + pr[0] .. at + n])) {
                 at += n;
+                if (st.on_segment) |h| h.run(h.ptr, f.slot.pos);
                 continue;
             }
         }
@@ -326,6 +335,7 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
         if (st.ahead) ahead(f, ids, at, n, seg);
         try segment(f, ids[at .. at + n], at + n == ids.len and st.mode == .full);
         at += n;
+        if (st.on_segment) |h| h.run(h.ptr, f.slot.pos);
     }
 }
 
@@ -488,6 +498,7 @@ pub const promptMulti = pf_finish.promptMulti;
 pub const runnable = pf_finish.runnable;
 pub const Replayed = pf_finish.Replayed;
 pub const replayRunnable = pf_finish.replayRunnable;
+pub const settleReplay = pf_cone.settle;
 pub const finishMulti = pf_finish.finishMulti;
 const enterRun = pf_finish.enterRun;
 const segGlue = pf_glue.segGlue;

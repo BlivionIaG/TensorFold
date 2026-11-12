@@ -89,6 +89,19 @@ const Hook = struct {
 const Exports = struct {
     target: *lanes.fake.Fake,
     tokens: ?usize = null,
+    begun: ?usize = null, // the tokens `begin` was told (a streamed export's admission), and how often
+    begins: u32 = 0,
+    saved_for: u32 = 0, // the cut's state taken through `save_for` rather than `snapshots.save`
+    fn begin(ptr: *anyopaque, _: LaneHost.Export.Handoff, tokens: []const u32) void {
+        const x: *Exports = @ptrCast(@alignCast(ptr));
+        x.begun = tokens.len;
+        x.begins += 1;
+    }
+    fn saveFor(ptr: *anyopaque, _: LaneHost.Export.Handoff, s: *lanes.Stream, at: u32) anyerror!pc.Saved {
+        const x: *Exports = @ptrCast(@alignCast(ptr));
+        x.saved_for += 1;
+        return x.target.save(s, at);
+    }
     fn exported(ptr: *anyopaque, _: LaneHost.Export.Handoff, tokens: []const u32, saved: pc.Saved) void {
         const x: *Exports = @ptrCast(@alignCast(ptr));
         x.tokens = tokens.len;
@@ -106,6 +119,7 @@ const Setup = struct {
     prefill_chunks: usize = 13, // fake prompt chunks: 1 means one call would fill the whole prompt
     decode_share: ?f64 = null, // --decode-share: on a fake that opts in, it caps fill chunks at 512 rows
     handoff: ?usize = null, // this request is a handoff, exported at its prompt's last token
+    streamed: bool = false, // its exporter builds as the prompt fills: `begin` at admission, `save_for` at the cut
     handoff_len: usize = prompt_len, // the handoff's prompt length
     twin: ?usize = null, // this request repeats request 0's prompt
     twin_chunks: []const u32 = &.{}, // the twin's own chunk starts
@@ -121,6 +135,9 @@ const Run = struct {
     timeouts: u64 = 0,
     queued_after: usize = 0,
     exported: ?usize = null, // the tokens the handoff exported
+    begun: ?usize = null,
+    begins: u32 = 0,
+    saved_for: u32 = 0,
 
     fn deinit(r: *Run) void {
         for (&r.boxes) |*b| b.tokens.deinit(gpa);
@@ -164,7 +181,7 @@ fn fanout(su: Setup, out: *Run) !void {
     host.cache = &store;
     if (su.wait_ms) |ms| host.prefix.ns = @as(i96, ms) * std.time.ns_per_ms;
     var exports: Exports = .{ .target = &target };
-    if (su.handoff != null) host.exporter = .{ .ptr = &exports, .snapshots = store.family, .exported = Exports.exported, .failed = Exports.failed };
+    if (su.handoff != null) host.exporter = .{ .ptr = &exports, .snapshots = store.family, .exported = Exports.exported, .failed = Exports.failed, .begin = if (su.streamed) Exports.begin else null, .save_for = if (su.streamed) Exports.saveFor else null };
     if (su.remote_at > 0) try keepRemote(&target, &store, su.remote_at);
     host.keep_remote = su.remote_at > 0;
     const e = host.engine();
@@ -200,6 +217,9 @@ fn fanout(su: Setup, out: *Run) !void {
     out.waits = host.prefix.waits;
     out.timeouts = host.prefix.timeouts;
     out.exported = exports.tokens;
+    out.begun = exports.begun;
+    out.begins = exports.begins;
+    out.saved_for = exports.saved_for;
 }
 
 test "prefix wait: requests on a system prompt another prompt is filling wait for its cut and resume it" {
@@ -282,6 +302,22 @@ test "prefix wait: a request whose own chunks start at a handoff's off-grid cut 
     for (0..2) |i| try std.testing.expectEqual(Reason.length, r.reasons[i]);
     try std.testing.expectEqual(@as(u64, 0), r.waits);
     try std.testing.expectEqual(@as(?usize, prompt_len - 1), r.exported);
+}
+
+test "a streamed handoff's exporter hears of it once at admission, up to its cut, and saves its cut through save_for" {
+    var r: Run = .{};
+    defer r.deinit();
+    try fanout(.{ .requests = 1, .handoff = 0, .streamed = true }, &r);
+    try std.testing.expectEqual(Reason.length, r.reasons[0]);
+    try std.testing.expectEqual(@as(?usize, prompt_len - 1), r.begun);
+    try std.testing.expectEqual(@as(u32, 1), r.begins);
+    try std.testing.expectEqual(@as(u32, 1), r.saved_for);
+    try std.testing.expectEqual(@as(?usize, prompt_len - 1), r.exported);
+    var plain: Run = .{};
+    defer plain.deinit();
+    try fanout(.{ .requests = 1, .handoff = 0 }, &plain); // no begin or save_for: the snapshot store's save, as before
+    try std.testing.expectEqual(@as(u32, 0), plain.begins + plain.saved_for);
+    try std.testing.expectEqual(@as(?usize, prompt_len - 1), plain.exported);
 }
 
 test "prefix wait: a handoff waits for no cut at or past its own, which it could not resume and still export" {

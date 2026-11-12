@@ -54,8 +54,10 @@ const Probe = struct {
         return .{};
     }
 
-    fn piece(ptr: *anyopaque, _: u32, _: []const u32, _: u64, _: u64, _: bool) anyerror!void {
-        self(ptr).pieces_run += 1;
+    fn piece(ptr: *anyopaque, slot: u32, _: []const u32, _: u64, end: u64, _: bool) anyerror!void {
+        const p = self(ptr);
+        p.pieces_run += 1;
+        if (p.armed[slot]) |c| if (c.progress) |f| f(c.ptr, @intCast(end)); // a target that sees its chunks end
     }
 
     fn finish(ptr: *anyopaque, slot: u32, ids: []const u32, smp: ?lanes.Sampling, draw: u64) anyerror!u32 {
@@ -74,6 +76,14 @@ const Hook = struct {
     calls: u32 = 0,
     at: u32 = 0,
     finished_first: bool = false,
+    progress_calls: u32 = 0,
+    progress_at: u32 = 0,
+
+    fn progress_(ptr: *anyopaque, _: *lanes.Stream, at: u32) void {
+        const h: *Hook = @ptrCast(@alignCast(ptr));
+        h.progress_calls += 1;
+        h.progress_at = at;
+    }
 
     fn at_(ptr: *anyopaque, _: *lanes.Stream, at: u32) void {
         const h: *Hook = @ptrCast(@alignCast(ptr));
@@ -86,7 +96,7 @@ const Hook = struct {
 const prompt = [_]u32{ 3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3 };
 
 fn open(handoff: bool, hook: *Hook, marks: []const u32) !lanes.Stream {
-    return lanes.Stream.init(gpa, .{ .id = "s", .prompt = &prompt, .max_new = 1, .drafts = false, .reuse = .{ .marks = if (handoff) marks else &.{}, .hook = if (handoff) .{ .ptr = hook, .at = Hook.at_ } else null } });
+    return lanes.Stream.init(gpa, .{ .id = "s", .prompt = &prompt, .max_new = 1, .drafts = false, .reuse = .{ .marks = if (handoff) marks else &.{}, .hook = if (handoff) .{ .ptr = hook, .at = Hook.at_, .progress = Hook.progress_ } else null } });
 }
 
 fn runOne(handoff: bool) !Hook {
@@ -127,6 +137,14 @@ test "a hand-off stream in pieces exports once at its cut, before the last token
     try std.testing.expectEqual(@as(u32, 1), h.calls);
     try std.testing.expectEqual(@as(u32, prompt.len - 1), h.at);
     try std.testing.expect(!h.finished_first); // the hook ran inside `finish`, before it appended its log line
+}
+
+test "a hand-off's chunks reach the mark hook's progress before its cut, a stream that is not one gets none" {
+    const h = try runOne(true);
+    try std.testing.expectEqual(@as(u32, 2), h.progress_calls);
+    try std.testing.expectEqual(@as(u32, prompt.len - 1), h.progress_at);
+    const none = try runOne(false);
+    try std.testing.expectEqual(@as(u32, 0), none.progress_calls);
 }
 
 test "a stream that is not a hand-off arms nothing" {

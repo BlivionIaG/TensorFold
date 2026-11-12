@@ -35,13 +35,13 @@ fn check(name: []const u8, raw: []const u8, valid: bool) !void {
     try t.expect(std.mem.endsWith(u8, why.?, e.rule(name).forms));
 }
 
-test "DeepSeek strict env: the shared table holds all 86 settings: 50 switches, 17 integers, 16 reals and 3 structured" {
+test "DeepSeek strict env: the shared table holds all 89 settings: 52 switches, 18 integers, 16 reals and 3 structured" {
     var counts: [4]usize = @splat(0);
     for (e.rules) |r| if (r.scope == .dsv41) {
         try t.expect(std.mem.startsWith(u8, r.name, "TF_DSV41_"));
         counts[@backingInt(group(r))] += 1;
     };
-    try t.expectEqual([4]usize{ 50, 17, 16, 3 }, counts);
+    try t.expectEqual([4]usize{ 52, 18, 16, 3 }, counts);
 }
 
 test "DeepSeek strict env: unset and blank settings both read as the caller's default" {
@@ -106,6 +106,9 @@ test "DeepSeek strict env: every numeric refusal is named, not defaulted or clam
     try check("TF_DSV41_GRAPH_FLOOR_GIB", "3.25", true);
     try check("TF_DSV41_PREFILL_SHARE", "1.1", false);
     try check("TF_DSV41_EXPERT_TOPP", "-0.5", true);
+    try check("TF_DSV41_SAVE_QUEUE_MIB", "0", true);
+    try check("TF_DSV41_SAVE_QUEUE_MIB", "1048576", true);
+    try check("TF_DSV41_SAVE_QUEUE_MIB", "1048577", false);
 }
 
 test "DeepSeek strict env: layer ranges, row buckets and image modes refuse ignored tails" {

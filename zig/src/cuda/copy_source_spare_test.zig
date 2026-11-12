@@ -67,6 +67,9 @@ const Fake = struct {
     fn eventDestroy(_: abi.Event) callconv(.c) abi.Result {
         return 0;
     }
+    fn eventSync(_: abi.Event) callconv(.c) abi.Result {
+        return contextSync();
+    }
     fn streamSync(_: abi.Stream) callconv(.c) abi.Result {
         return contextSync();
     }
@@ -93,6 +96,7 @@ const Fake = struct {
         d.api.cuEventRecord = record;
         d.api.cuEventQuery = query;
         d.api.cuEventDestroy_v2 = eventDestroy;
+        d.api.cuEventSynchronize = eventSync;
         d.api.cuStreamSynchronize = streamSync;
         d.api.cuCtxSynchronize = contextSync;
         d.api.cuDevicePrimaryCtxRelease_v2 = release;

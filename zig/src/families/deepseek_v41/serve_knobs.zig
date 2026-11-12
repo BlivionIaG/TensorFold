@@ -178,6 +178,11 @@ pub fn replayGroup(get: Get) !u32 {
     return @import("sys").environment.value(u32, "TF_DSV41_REPLAY_GROUP", get("TF_DSV41_REPLAY_GROUP"), 4);
 }
 
+/// TF_DSV41_REPLAY_OVERLAP (0 / 1, default 1): the exact replay's end is a fence the host waits on at the first reader.
+pub fn replayOverlap(get: Get) !bool {
+    return @import("sys").environment.value(bool, "TF_DSV41_REPLAY_OVERLAP", get("TF_DSV41_REPLAY_OVERLAP"), true);
+}
+
 /// TF_DSV41_KV_NORM_STORE=1: KV-only RMS + SWA RoPE/FP8 store, default off.
 pub fn kvNormStore(get: Get) !bool {
     return @import("sys").environment.value(bool, "TF_DSV41_KV_NORM_STORE", get("TF_DSV41_KV_NORM_STORE"), false);

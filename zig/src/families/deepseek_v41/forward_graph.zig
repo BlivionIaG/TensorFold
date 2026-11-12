@@ -53,7 +53,7 @@ pub fn graphedWindow(f: *Forward, ids: []const u32) !bool {
     const n: u32 = @intCast(ids.len);
     const limit: u64 = @intCast(f.opts.limit);
     if (n > g.rows_max or f.slot.pos + n > limit) return false;
-    const key: graphs.Key = .{ .rows = n, .ctx = graphs.bucketOf(f.slot.pos + n - 1, g.settings.bucket, g.settings.grow) };
+    const key = graphs.keyFor(n, f.slot.pos + n - 1, g.settings);
     const cs = try g.program(f, key);
     if (graphs.audit(cs) != null) return false;
     const r = f.runner;
@@ -78,21 +78,15 @@ pub fn graphedWindow(f: *Forward, ids: []const u32) !bool {
     const t0 = ph.nowNs();
     const fp = f.fingerprint(g);
     // TF_DSV41_ROUND_GRAPH=split: the head's graph, then the tail's, launched while the GPU runs the head
-    const at = if (g.split) |rg| hooks.set.round_graph.?.splitAt(cs, rg.head) else null;
+    const parts = graphs.Parts.of(cs, g.split orelse .{});
     var outcome: graphs.gc.Outcome = .replayed;
-    if (at) |i| {
-        g.span = .{ 0, i };
-        const o1 = try g.cache.run(.{ .rows = key.rows, .ctx = key.ctx, .part = 1 }, r.stream, fp, .{ .ctx = f, .run = graphBody });
-        g.span = .{ i, cs.len };
-        outcome = try g.cache.run(.{ .rows = key.rows, .ctx = key.ctx, .part = 2 }, r.stream, fp, .{ .ctx = f, .run = graphBody });
-        if (o1 == .captured) outcome = .captured;
-    } else {
-        g.span = .{ 0, cs.len };
-        outcome = try g.cache.run(key, r.stream, fp, .{ .ctx = f, .run = graphBody });
+    for (parts.spans, 0..) |sp, pi| {
+        if (sp[0] == sp[1]) continue;
+        g.span = sp;
+        const o = try g.cache.run(parts.key(key, pi), r.stream, fp, .{ .ctx = f, .run = graphBody });
+        if (o == .captured or outcome != .captured) outcome = o;
     }
     if (f.phases) |x| x.add(if (outcome == .captured) .@"graph.capture" else .@"graph.replay", ph.nowNs() - t0);
-    if (outcome == .captured and g.cache.stats.captured == 1)
-        std.log.scoped(.dsv41).info("graphs: first capture ({d} rows, context bucket {d})", .{ key.rows, key.ctx });
     return true;
 }
 
@@ -197,8 +191,7 @@ pub const Graphed = struct {
         g.deinitAfterDrain();
     }
     pub fn deinitAfterDrain(g: *Graphed) void {
-        const cs = g.cache.stats;
-        std.log.scoped(.dsv41).info("graphs: {d} captured, {d} replayed, {d} eager, {d} keys held, {d} evicted, {d} dropped{s}", .{ cs.captured, cs.replayed, cs.eager, g.cache.count(), cs.evicted, cs.dropped, if (g.cache.failed) " (off after a failed capture)" else "" });
+        std.log.scoped(.dsv41).info("graphs: {f}", .{g.cache.summary()});
         g.cache.deinit();
         for (g.stages.items) |*st| st.deinit();
         g.stages.deinit(g.gpa);
@@ -213,7 +206,7 @@ pub const Graphed = struct {
     }
 
     /// The key's calls, emitted once (forward's arena) at the start that puts the window's end at its bucket's end.
-    fn program(g: *Graphed, f: *Forward, key: graphs.Key) ![]const calls.Call {
+    pub fn program(g: *Graphed, f: *Forward, key: graphs.Key) ![]const calls.Call {
         if (g.programs.get(key)) |cs| return cs;
         const a = f.arena.allocator();
         const start = graphs.emitStart(key.rows, key.ctx, g.settings, @intCast(f.opts.limit));

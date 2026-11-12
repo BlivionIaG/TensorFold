@@ -95,6 +95,8 @@ pub const Reuse = struct {
 pub const MarkHook = struct {
     ptr: *anyopaque,
     at: *const fn (ptr: *anyopaque, s: *Stream, at: u32) void,
+    /// A chunk of the pass done at `at` before the mark (the family's call, where it can see one); null: none.
+    progress: ?*const fn (ptr: *anyopaque, s: *Stream, at: u32) void = null,
 };
 
 /// Drafts the backend holds for the stream's next round; a tree keeps its tokens and parents on the host.

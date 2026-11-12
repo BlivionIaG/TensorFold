@@ -101,6 +101,14 @@ pub fn armEngram(f: *Forward, items: []const ft.Item, fill: u32) !bool {
     return true;
 }
 
+/// Whether a window of `fill` rows goes through the gate (`armEngram` without arming), for a graph's capture.
+pub fn gatesRows(f: *Forward, fill: u32) !bool {
+    const h = f.engram orelse return false;
+    _ = try f.engramSource(h);
+    const g = f.gate orelse return false;
+    return hooks.set.gate.?.eligible(g, fill);
+}
+
 /// After a window's launches (one-slot or row): a gated window's end recorded for the next arm (`syncGatedEnd`).
 pub fn gatedEnd(f: *Forward) !void {
     if (!f.gated or f.gate == null or !(try (try hooks.roundGraph()).current()).gate) return;

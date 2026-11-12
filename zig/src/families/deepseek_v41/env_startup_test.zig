@@ -55,6 +55,7 @@ test "DeepSeek strict env: actual flag readers keep defaults, zero, one and name
         .{ .name = "TF_DSV41_EX_STACKS", .default = false, .read = @import("ex_stacks.zig").enabled },
         .{ .name = "TF_DSV41_STREAM_LAZY", .default = false, .read = @import("longpf.zig").lazyEnv },
         .{ .name = "TF_DSV41_GRAPH_LOG", .default = false, .read = @import("batch_graph.zig").graphLog },
+        .{ .name = "TF_DSV41_GRAPH_PRECAPTURE", .default = true, .read = @import("graph_precapture.zig").enabled },
         .{ .name = "TF_DSV41_MHC_DEFER", .default = false, .read = @import("branches.zig").mhcDefer },
         .{ .name = "TF_DSV41_COEF_LATE", .default = false, .read = @import("branches.zig").coefLate },
         .{ .name = "TF_DSV41_ENGRAM_POLL", .default = false, .read = @import("engram_io.zig").pollEnv },

@@ -311,6 +311,7 @@ pub const Model = struct {
         // TF_DSV41_R1=1, or the eight separate R1 knobs (the knob reader's r1)
         const r1 = try @import("serve_knobs.zig").r1(&@import("serve_knobs.zig").env);
         m.f = fwd.Forward.init(gpa, &m.cfg, &m.widths, .{ .world = world, .rank = m.tcfg.rank, .expert_topp = topp, .r1 = r1, .taps = o.drafts }, &m.runner, comm);
+        m.f.graphs_default = true; // the served model decodes through CUDA graphs unless TF_DSV41_GRAPHS=0
         try @import("engine_hooks.zig").open(&m.f); // the forward's later-layer hooks and prefill state
         m.f.layers = backbone;
         // the rope tables cover the limit + a prefill segment (the assets' rope.bin)

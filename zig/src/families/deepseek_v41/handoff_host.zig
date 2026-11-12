@@ -3,6 +3,7 @@ pub const handoff = @import("handoff/handoff.zig");
 pub const p2 = @import("handoff/p2.zig");
 pub const cuda_export = @import("cuda_export.zig");
 pub const cuda_export_serve = @import("cuda_export_serve.zig");
+pub const cuda_export_stream = @import("cuda_export_stream.zig");
 pub const file = @import("handoff_file.zig");
 
 test {
@@ -13,6 +14,7 @@ test {
     _ = @import("kv_prefix_test.zig");
     _ = @import("kv_image_test.zig");
     _ = @import("cuda_export_serve_test.zig");
+    _ = @import("cuda_export_stream_test.zig");
     _ = @import("cuda_export_spill.zig");
     _ = @import("metal_plan_test.zig");
 }

@@ -37,6 +37,8 @@ pub const DevicePool = struct {
     compute: cuda.Stream,
     next_fence: u64 = 0,
     staging: ?cuda.copy_source.Buffer = null,
+    /// the staging buffer's users: the engine thread's restores and the save queue worker's reads, one at a time
+    guard: std.atomic.Mutex = .unlocked,
 
     /// Allocates every family's tensor (zeroed) and the tables for `slots` slots of up to `max_pages` pages.
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, ctx: *const cuda.Context, pool: *Pool, compute: cuda.Stream, slots: u32, max_pages: u32) !DevicePool {
@@ -151,9 +153,15 @@ pub const DevicePool = struct {
         return p.staging.?.bytes[0..len];
     }
 
+    fn lock(p: *DevicePool) void {
+        while (!p.guard.tryLock()) std.Thread.yield() catch {};
+    }
+
     fn read(ptr: *anyopaque, fam: u32, pages: []const u32, dst: []u8) anyerror!void {
         const p: *DevicePool = @ptrCast(@alignCast(ptr));
         try p.ctx.makeCurrent();
+        p.lock();
+        defer p.guard.unlock();
         const pb: usize = @intCast(p.pool.layout.families[fam].pageBytes(p.pool.page));
         if (dst.len != pages.len * pb) return error.BadLength;
         const staged = try p.stage(dst.len);
@@ -171,6 +179,8 @@ pub const DevicePool = struct {
     fn write(ptr: *anyopaque, fam: u32, pages: []const u32, src: []const u8) anyerror!void {
         const p: *DevicePool = @ptrCast(@alignCast(ptr));
         try p.ctx.makeCurrent();
+        p.lock();
+        defer p.guard.unlock();
         const pb: usize = @intCast(p.pool.layout.families[fam].pageBytes(p.pool.page));
         if (src.len != pages.len * pb) return error.BadLength;
         const staged = try p.stage(src.len);

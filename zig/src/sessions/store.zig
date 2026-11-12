@@ -12,6 +12,8 @@ const disk_mod = @import("disk.zig");
 const Disk = disk_mod.Disk;
 const jobs = @import("jobs.zig");
 const Job = jobs.Job;
+/// The write-through saves' functions (`finished`, `settleOldest`, `settleEvery`, `counters`): the settle points.
+pub const through = @import("store_writes.zig");
 
 pub const none = prefix.none;
 
@@ -46,6 +48,8 @@ pub const Policy = struct {
     async_io: bool = false,
     /// a saved entry's file is written at once and the entry stays in RAM, so a restart finds it on the tier
     write_through: bool = false,
+    /// write-through saves queue up to this many bytes for a worker to write; 0: written inline (store_writes.zig)
+    save_queue_bytes: u64 = 0,
 };
 
 pub const Extra = struct {
@@ -94,6 +98,8 @@ pub const Store = struct {
     disk: ?*Disk,
     /// heap-held: the tier thread keeps its address
     runner: ?*jobs.Runner = null,
+    /// write-through saves behind the engine thread (heap-held: the worker keeps its address; null: inline)
+    writes: ?*@import("save_queue.zig").SaveQueue = null,
     policy: Policy,
     clock: u64 = 0,
     bounded_total: u64 = 0,
@@ -107,6 +113,8 @@ pub const Store = struct {
 
     pub fn init(gpa: std.mem.Allocator, io: Io, pool: *Pool, pages: PageStore, d: ?*Disk, policy: Policy) !Store {
         var s: Store = .{ .gpa = gpa, .io = io, .pool = pool, .pages = pages, .index = Index.init(gpa, pool.page), .disk = d, .policy = policy };
+        if (d != null and policy.write_through and policy.save_queue_bytes > 0) s.writes = try through.open(gpa, io, policy);
+        errdefer if (s.writes) |q| q.destroy();
         if (d) |dd| {
             const r = try gpa.create(jobs.Runner);
             r.* = jobs.Runner.init(gpa, io, dd);
@@ -120,6 +128,7 @@ pub const Store = struct {
     }
 
     pub fn deinit(s: *Store) void {
+        through.close(s);
         if (s.runner) |r| {
             for (s.pending.items) |j| r.wait(j);
             r.deinit();
@@ -257,29 +266,18 @@ pub const Store = struct {
 
     /// Starts a park of a RAM entry (null: nothing to write, the entry is already settled out of RAM).
     pub fn beginPark(s: *Store, id: u32) !?*Job {
-        return s.beginFile(id, false);
+        return s.beginFile(id, false, false);
     }
 
     /// Starts the same file write but the entry stays in RAM (null: a file already holds it).
     pub fn beginWrite(s: *Store, id: u32) !?*Job {
-        return s.beginFile(id, true);
+        return s.beginFile(id, true, false);
     }
 
-    /// A saved entry's file now, the entry kept in RAM; a failed write leaves it RAM-only (counted, never an error).
-    pub fn writeThrough(s: *Store, id: u32) void {
-        const d = s.disk orelse return;
-        const e = s.index.get(id);
-        if (!e.live or !e.ram or e.extra.job != null or !d.accepts(e.pos)) return;
-        const j = (s.beginWrite(id) catch return s.writeFailed()) orelse return;
-        s.stats.write_throughs += 1;
-        if (!s.policy.async_io) _ = s.settle(j) catch s.writeFailed();
-    }
+    pub const writeThrough = through.writeThrough;
 
-    fn writeFailed(s: *Store) void {
-        s.stats.write_fails += 1;
-    }
-
-    fn beginFile(s: *Store, id: u32, keep: bool) !?*Job {
+    /// `queued`: the write runs on the save queue's worker and is settled at a point every rank agrees on.
+    pub fn beginFile(s: *Store, id: u32, keep: bool, queued: bool) !?*Job {
         const d = s.disk orelse return error.NoDisk;
         const e = s.index.get(id);
         if (!e.ram or e.extra.job != null) return error.NotParkable;
@@ -303,22 +301,24 @@ pub const Store = struct {
             };
         };
         const j = try s.gpa.create(Job);
-        j.* = .{ .kind = .park, .entry = id, .keep_ram = keep };
+        j.* = .{ .kind = .park, .entry = id, .keep_ram = keep, .queued = queued };
         errdefer j.deinit(s.gpa);
         j.ids = try s.gpa.alloc(i32, e.pos);
         try s.index.idsOf(id, j.ids);
         j.lists = try s.familyLists(e.extra.pages, first, true);
         j.blobs = try e.extra.bounded.?.vtable.blobs(e.extra.bounded.?.ptr, s.gpa);
         j.src = .{ .key = e.key, .base = base, .tag = e.tag, .kind = e.extra.kind, .page = page, .pos = e.pos, .first_page = first, .npages = npages, .ids = j.ids[first * page ..], .store = s.pages, .fence = try s.pages.fence(), .families = s.pool.layout.families, .pages = j.lists, .blobs = j.blobs, .measure = e.extra.bounded.?.logical_bytes orelse e.extra.bounded.?.vtable.nbytes(e.extra.bounded.?.ptr) };
-        try s.pending.append(s.gpa, j);
-        errdefer _ = s.pending.pop(); // a job the tier never queued must not stay where settle and deinit wait on it
+        if (!queued) try s.pending.append(s.gpa, j);
+        errdefer if (!queued) {
+            _ = s.pending.pop(); // a job the tier never queued must not stay where settle and deinit wait on it
+        };
         if (base) |b| d.get(b).?.refs += 1; // held while the job runs: a trim cannot take the base
         errdefer if (base) |b| {
             d.get(b).?.refs -= 1;
         };
         e.extra.job = j;
         errdefer e.extra.job = null;
-        try s.runner.?.submit(j);
+        if (queued) try through.submit(s, j, id) else try s.runner.?.submit(j);
         return j;
     }
 
@@ -391,6 +391,7 @@ pub const Store = struct {
     pub fn leaveRam(s: *Store, id: u32) !void {
         const e = s.index.get(id);
         if (!e.ram) return;
+        if (e.extra.job) |j| if (j.queued) through.settleThrough(s, j);
         try s.pool.drop(e.extra.pages);
         s.gpa.free(e.extra.pages);
         e.extra.pages = &.{};

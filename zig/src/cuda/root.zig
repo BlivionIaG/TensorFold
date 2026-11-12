@@ -168,6 +168,8 @@ test {
     _ = pack;
     _ = graph_cache;
     _ = @import("graph_registry.zig");
+    _ = @import("graph_cache_misses.zig");
+    _ = @import("graph_cache_policy_test.zig");
     _ = @import("graph_cache_regression_test.zig");
     _ = @import("graph_cache_ranks_test.zig");
     _ = @import("graph_cache_shapes_test.zig");

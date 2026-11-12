@@ -21,6 +21,12 @@ pub const Exporter = struct {
     failed: *const fn (ptr: *anyopaque, h: Handoff, why: []const u8) void,
     /// Held exports as `GET /v1/handoff/<id>` on the server's own port, for decoders with no fabric link (null: off).
     serve: ?Serve = null,
+    /// A handoff admitted for a prompt of `tokens` (up to its cut): the export may start building (null: at the cut).
+    begin: ?*const fn (ptr: *anyopaque, h: Handoff, tokens: []const u32) void = null,
+    /// The stream's pass stands at `at` tokens, its chunk done (null: nothing built before the cut).
+    progress: ?*const fn (ptr: *anyopaque, h: Handoff, at: u64) void = null,
+    /// `snapshots.save` for `h` at its cut: the state that goes with `begin`'s export (null: `snapshots.save`).
+    save_for: ?*const fn (ptr: *anyopaque, h: Handoff, s: *lanes.Stream, at: u32) anyerror!pc.Saved = null,
 };
 
 /// The host's held exports, when it serves them over HTTP (the engine's `handoff` hook).
@@ -70,7 +76,8 @@ pub fn exporting(h: *const LaneHost, job: *Job, reuse: *lanes.stream.Reuse) bool
     job.cut = .{@intCast(job.request.prompt.len - 1)};
     if (reuse.at >= job.cut[0]) below(h, job, reuse); // a restore at the cut leaves no chunk ending there, so no export
     reuse.marks = handoffMarks(h, job, reuse.marks, reuse.at);
-    reuse.hook = .{ .ptr = job, .at = exportAt };
+    reuse.hook = .{ .ptr = job, .at = exportAt, .progress = progressAt };
+    if (h.exporter) |x| if (x.begin) |begin| begin(x.ptr, job.request.handoff.?, job.request.prompt[0..job.cut[0]]);
     return true;
 }
 
@@ -114,6 +121,15 @@ fn handoffMarks(h: *const LaneHost, job: *Job, planned: []const u32, from: u32) 
     return marks;
 }
 
+/// A chunk of the prompt is done at `at`, before the cut: the export may convert what is whole.
+fn progressAt(ptr: *anyopaque, _: *lanes.Stream, at: u32) void {
+    const job: *Job = @ptrCast(@alignCast(ptr));
+    const x = job.host.exporter orelse return;
+    const h = job.request.handoff orelse return;
+    if (job.exported) return;
+    if (x.progress) |f| f(x.ptr, h, at);
+}
+
 fn exportAt(ptr: *anyopaque, s: *lanes.Stream, at: u32) void {
     const job: *Job = @ptrCast(@alignCast(ptr));
     if (at != job.cut[0]) return Job.kept(ptr, s, at); // one of the store's marks: kept as for any request
@@ -121,7 +137,8 @@ fn exportAt(ptr: *anyopaque, s: *lanes.Stream, at: u32) void {
     const h = job.request.handoff orelse return;
     if (job.exported or s.isCancelled()) return; // a decoder that went away leaves nothing to hold; `unexported` tells the rest
     job.exported = true;
-    const saved = x.snapshots.vtable.save(x.snapshots.ptr, s, at) catch |err| return x.failed(x.ptr, h, @errorName(err));
+    const taken = if (x.save_for) |f| f(x.ptr, h, s, at) else x.snapshots.vtable.save(x.snapshots.ptr, s, at);
+    const saved = taken catch |err| return x.failed(x.ptr, h, @errorName(err));
     x.exported(x.ptr, h, job.request.prompt[0..at], saved);
     if (keeps(job, at)) Job.kept(ptr, s, at);
 }

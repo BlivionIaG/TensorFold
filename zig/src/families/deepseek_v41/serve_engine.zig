@@ -5,6 +5,7 @@ const quiet = @import("builtin").is_test; // a test's stderr is the build runner
 const api = @import("engine_api");
 const lanes = @import("lanes");
 const model = @import("cuda_model.zig");
+const graphs_mod = @import("graphs.zig");
 const ln = @import("draft/lanes.zig");
 const drive = @import("draft/drive.zig");
 const costs_mod = @import("draft/costs.zig");
@@ -175,6 +176,8 @@ pub const Served = struct {
             std.c.getenv("TF_ROCE") != null,
             if (round_graph.current()) |rg| rg.split or rg.gate else |_| false,
             std.c.getenv("TF_DSV41_ROUND_GRAPH") != null,
+            if (graphs_mod.Settings.fromEnvOr(m.f.graphs_default)) |gs| gs.on else |_| false,
+            if (@import("sys").environment.read(?bool, "TF_DSV41_GRAPHS", null) catch null) |_| true else false,
             m.f.opts.branches,
             std.c.getenv("TF_DSV41_BRANCHES") != null,
         );
@@ -196,6 +199,7 @@ pub const Served = struct {
             s.host.exporter = x.exporter();
         }
         errdefer if (s.exporting) |x| x.stop();
+        try @import("serve_precapture.zig").run(m, window);
         try s.host.start();
         s.rec = Recorder.init(gpa, io, s.host.engine());
         return s;
@@ -243,6 +247,19 @@ pub const Served = struct {
             const st = b.stats;
             try w.print(", \"rowgraphs\": {{\"windows\": {d}, \"rows\": {d}, \"padded\": {d}, \"builds\": {d}, \"build_ms\": {d:.2}, \"captures\": {d}, \"capture_ms\": {d:.2}, \"eager\": {d}, \"prep_ms\": {d:.2}, \"stage_ms\": {d:.2}, \"launch_ms\": {d:.2}, \"keep_ms\": {d:.2}}}", .{ st.windows, st.rows, st.padded, st.builds, @as(f64, @floatFromInt(st.build_ns)) / 1e6, st.captures, @as(f64, @floatFromInt(st.capture_ns)) / 1e6, st.eager, @as(f64, @floatFromInt(st.prep_ns)) / 1e6, @as(f64, @floatFromInt(st.stage_ns)) / 1e6, @as(f64, @floatFromInt(st.launch_ns)) / 1e6, @as(f64, @floatFromInt(st.keep_ns)) / 1e6 });
         }
+        if (m.rows) |b| {
+            if (b.g) |*g| try writeCache(w, "row_graph_cache", g.cache.stats);
+        } else if (m.f.graphed) |g| try writeCache(w, "graph_cache", g.cache.stats);
+    }
+
+    /// A graph cache's counts: hits, misses, what the request path spent capturing and what the boot pre-captured.
+    fn writeCache(w: *std.Io.Writer, name: []const u8, st: @import("graphs.zig").gc.Stats) !void {
+        const ms = struct {
+            fn of(ns: u64) f64 {
+                return @as(f64, @floatFromInt(ns)) / 1e6;
+            }
+        }.of;
+        try w.print(", \"{s}\": {{\"hits\": {d}, \"misses\": {d}, \"captured\": {d}, \"precaptured\": {d}, \"request_capture_ms\": {d:.2}, \"precapture_ms\": {d:.2}, \"eager\": {d}, \"evicted\": {d}, \"dropped\": {d}}}", .{ name, st.replayed, st.misses, st.captured, st.precaptured, ms(st.request_capture_ns), ms(st.precapture_ns), st.eager, st.evicted, st.dropped });
     }
 
     fn makeLookup(ctx: *anyopaque, gpa: Allocator, prompt: []const u32, eos: []const u32) anyerror!lanes.proposer.Proposer {

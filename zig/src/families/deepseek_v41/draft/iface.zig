@@ -51,7 +51,12 @@ pub const Target = struct {
     };
 
     /// A call at a prompt's cut: the slot stands after the prompt's tokens but the last, which is still pending.
-    pub const Cut = struct { ptr: *anyopaque, run: *const fn (ptr: *anyopaque) void };
+    pub const Cut = struct {
+        ptr: *anyopaque,
+        run: *const fn (ptr: *anyopaque) void,
+        /// Before the cut, the prompt's pass stands at `at` tokens with its chunk done (a streamed export's pages).
+        progress: ?*const fn (ptr: *anyopaque, at: u32) void = null,
+    };
 
     pub fn arm(t: Target, slot: u32, cut: ?Cut) void {
         if (t.vtable.arm) |f| f(t.ptr, slot, cut);

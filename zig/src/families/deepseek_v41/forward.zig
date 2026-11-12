@@ -22,6 +22,7 @@ const fwd_follow = @import("forward_follow.zig");
 const fwd_glue = @import("forward_glue.zig");
 const fwd_engram = @import("forward_engram.zig");
 const fwd_graph = @import("forward_graph.zig");
+const fwd_graph_warm = @import("forward_graph_warm.zig");
 
 pub const Error = error{ GlueNotBuilt, BadWindow };
 
@@ -82,7 +83,7 @@ pub const Forward = struct {
     planned_rows: u32 = 0,
     graphed: ?*Graphed = null, // decode windows through CUDA graphs (TF_DSV41_GRAPHS=1); null until the knob is read
     graphs_read: bool = false,
-    /// the graphs' default when TF_DSV41_GRAPHS is unset (model.zig: on for the served model; the gates' drivers: off)
+    /// the graphs' default when TF_DSV41_GRAPHS is unset (cuda_model.zig sets it for the served model)
     graphs_default: bool = false,
     /// Engram's local shards (TF_DSV41_ENGRAM_DIR, engram_rows.zig), opened on first use; unset: synthetic index rows
     engram_rows: ?*er.Rows = null,
@@ -421,6 +422,8 @@ pub const Forward = struct {
         reset: *const fn (ptr: *anyopaque) anyerror!void,
         /// a request's pool admission (op_sess_admit's message): the leader's spills evicted, its pages reserved
         admit: ?*const fn (ptr: *anyopaque, msg: []const i64) anyerror!void = null,
+        /// the leader's count of finished write-through saves (op_sess_settle): this rank settles its oldest n
+        settle: ?*const fn (ptr: *anyopaque, n: u32) anyerror!void = null,
     };
 
     pub const op_calib_mark = fwd_follow.op_calib_mark;
@@ -433,6 +436,7 @@ pub const Forward = struct {
     pub const sendRestore = fwd_follow.sendRestore;
     pub const sendSess = fwd_follow.sendSess;
     pub const sendSessAdmit = fwd_follow.sendSessAdmit;
+    pub const sendSessSettle = fwd_follow.sendSessSettle;
 
     /// The drafter's operations a follower runs (dspark_gpu.zig): its collectives pair up with the leader's.
     pub const Drafter = struct {
@@ -464,6 +468,7 @@ pub const Forward = struct {
     pub const fillEngramRows = fwd_engram.fillEngramRows;
     pub const engramSource = fwd_engram.engramSource;
     pub const armEngram = fwd_engram.armEngram;
+    pub const gatesRows = fwd_engram.gatesRows;
     pub const gatedEnd = fwd_engram.gatedEnd;
     pub const engramCheck = fwd_engram.engramCheck;
     pub const gateCopy = fwd_engram.gateCopy;
@@ -475,6 +480,9 @@ pub const Forward = struct {
     const graphedWindow = fwd_graph.graphedWindow;
     const graphBody = fwd_graph.graphBody;
     pub const fingerprint = fwd_graph.fingerprint;
+    /// TF_DSV41_GRAPH_PRECAPTURE: the planned decode windows' graphs captured before the first request.
+    pub const precaptureGraphs = fwd_graph_warm.precapture;
+    pub const followWarmGraphs = fwd_graph_warm.follow;
 };
 
 pub const Graphed = fwd_graph.Graphed;
