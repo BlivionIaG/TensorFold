@@ -24,6 +24,18 @@ pub fn modeFromEnv() !Mode {
 
 pub const check_passes = 8;
 
+/// The stride of the statics regions: region g > 0's int64 view must start on 8 bytes, whatever the int32 count.
+pub fn regionStride(need_bytes: usize) usize {
+    return std.mem.alignForward(usize, need_bytes, 8);
+}
+
+/// Region `g` of `stage` (regions `stride` apart) as int64 [n64] and int32 [n32] views.
+pub fn regionViews(stage: []u8, stride: usize, g: usize, n64: usize, n32: usize) !struct { []i64, []i32 } {
+    if (8 * n64 + 4 * n32 > stride or (g + 1) * stride > stage.len) return error.Statics;
+    const b = stage[g * stride ..][0..stride];
+    return .{ @alignCast(std.mem.bytesAsSlice(i64, b[0 .. 8 * n64])), @alignCast(std.mem.bytesAsSlice(i32, b[8 * n64 ..][0 .. 4 * n32])) };
+}
+
 pub const Dev = struct {
     gpa: std.mem.Allocator,
     d: *const cuda.Driver,
@@ -57,7 +69,9 @@ pub const Dev = struct {
     /// TF_DSV41_DRAFT_CHAIN=1: the chain on the device (Chain); null: the host's
     chain: ?*Chain = null,
 
-    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, comm: tp.collective.Collective, stream: cuda.Stream, want: Mode, k: usize, hidden: usize, rows_max: usize, conf: bool, region_bytes: usize, regions: usize, vocab_lo: u32) !*Dev {
+    /// `need_bytes`: the most one region's statics take (8 n64 + 4 n32); the regions sit on that rounded up to 8.
+    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, comm: tp.collective.Collective, stream: cuda.Stream, want: Mode, k: usize, hidden: usize, rows_max: usize, conf: bool, need_bytes: usize, regions: usize, vocab_lo: u32) !*Dev {
+        const region_bytes = regionStride(need_bytes);
         const x = try gpa.create(Dev);
         errdefer gpa.destroy(x);
         const W: usize = comm.world();
@@ -131,9 +145,8 @@ pub const Dev = struct {
 
     /// Region `g`'s statics staging (int64 [n64], int32 [n32]), no sync: uploadAsync clones it before returning.
     pub fn statics(x: *Dev, g: usize, n64: usize, n32: usize) !struct { []i64, []i32 } {
-        if (g >= x.regions or 8 * n64 + 4 * n32 > x.region_bytes) return error.Statics;
-        const b = x.stage.bytes[g * x.region_bytes ..][0..x.region_bytes];
-        return .{ @alignCast(std.mem.bytesAsSlice(i64, b[0 .. 8 * n64])), @alignCast(std.mem.bytesAsSlice(i32, b[8 * n64 ..][0 .. 4 * n32])) };
+        if (g >= x.regions) return error.Statics;
+        return regionViews(x.stage.bytes, x.region_bytes, g, n64, n32);
     }
 
     /// ds_out on the device for `rows` rows at offset `at` (no sync or alloc; graphable): candidates, gather, copies.
@@ -456,4 +469,22 @@ pub fn fingerprint(r: *const run.Runner, x: *const Dev, extra: []const u64) u64 
 
 test "draft graphs: the knob" {
     try std.testing.expectEqual(Mode.host, try modeFromEnv());
+}
+
+test "draft graphs: statics regions stay 8-aligned for an odd int32 count" {
+    const n64 = 37;
+    const n32 = 1001; // 8 n64 + 4 n32 = 4300 bytes: not a multiple of 8
+    try std.testing.expect((8 * n64 + 4 * n32) % 8 != 0);
+    const stride = regionStride(8 * n64 + 4 * n32);
+    try std.testing.expectEqual(@as(usize, 0), stride % 8);
+    try std.testing.expect(stride >= 8 * n64 + 4 * n32);
+    var stage: [16 * 4304]u8 align(8) = undefined;
+    for (0..16) |g| {
+        const v = try regionViews(&stage, stride, g, n64, n32);
+        try std.testing.expectEqual(@as(usize, 0), @intFromPtr(v[0].ptr) % 8);
+        try std.testing.expectEqual(@as(usize, n64), v[0].len);
+        try std.testing.expectEqual(@as(usize, n32), v[1].len);
+    }
+    try std.testing.expectError(error.Statics, regionViews(&stage, stride, 16, n64, n32));
+    try std.testing.expectError(error.Statics, regionViews(&stage, stride, 0, n64, n32 + 2));
 }
