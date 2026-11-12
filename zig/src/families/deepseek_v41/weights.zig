@@ -44,6 +44,8 @@ pub const Moe = struct {
     /// The shared down projection's one-descriptor table and a zero pick map, so the shared SwiGLU's prerotate.
     shared_down: ?mtl.Buffer = null,
     shared_down_ids: ?mtl.Buffer = null,
+    /// The routed down descriptors with the shared down's after them: one indexed call's table for both.
+    down_shared: ?mtl.Buffer = null,
     gate_bf16: ?Tensor = null,
 };
 
@@ -110,6 +112,7 @@ pub const Model = struct {
         for (&self.layers) |*layer| if (layer.moe.shared_fused) |buffer| buffer.deinit();
         for (&self.layers) |*layer| if (layer.moe.shared_down) |buffer| buffer.deinit();
         for (&self.layers) |*layer| if (layer.moe.shared_down_ids) |buffer| buffer.deinit();
+        for (&self.layers) |*layer| if (layer.moe.down_shared) |buffer| buffer.deinit();
         for (&self.layers) |*layer| if (layer.attn.wo_a_descriptors) |buffer| buffer.deinit();
         for (&self.layers) |*layer| if (layer.attn.qkv_descriptors) |buffer| buffer.deinit();
         for (&self.layers) |*layer| {
@@ -122,6 +125,7 @@ pub const Model = struct {
         if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.moe.shared_fused) |buffer| buffer.deinit();
         if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.moe.shared_down) |buffer| buffer.deinit();
         if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.moe.shared_down_ids) |buffer| buffer.deinit();
+        if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.moe.down_shared) |buffer| buffer.deinit();
         if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.attn.wo_a_descriptors) |buffer| buffer.deinit();
         if (self.dspark) |*d| if (d.cond_wkv_descriptors) |buffer| buffer.deinit();
         self.* = undefined;
@@ -132,6 +136,7 @@ pub const Model = struct {
         for (&self.layers) |*layer| if (layer.moe.shared_fused) |buffer| set.add(buffer);
         for (&self.layers) |*layer| if (layer.moe.shared_down) |buffer| set.add(buffer);
         for (&self.layers) |*layer| if (layer.moe.shared_down_ids) |buffer| set.add(buffer);
+        for (&self.layers) |*layer| if (layer.moe.down_shared) |buffer| set.add(buffer);
         for (&self.layers) |*layer| if (layer.attn.wo_a_descriptors) |buffer| set.add(buffer);
         for (&self.layers) |*layer| if (layer.attn.qkv_descriptors) |buffer| set.add(buffer);
         for (&self.layers) |*layer| {
@@ -153,6 +158,7 @@ pub const Model = struct {
         if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.moe.shared_fused) |buffer| set.add(buffer);
         if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.moe.shared_down) |buffer| set.add(buffer);
         if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.moe.shared_down_ids) |buffer| set.add(buffer);
+        if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.moe.down_shared) |buffer| set.add(buffer);
         if (self.dspark) |*d| for (&d.blocks) |*layer| if (layer.attn.wo_a_descriptors) |buffer| set.add(buffer);
         if (self.dspark) |*d| if (d.cond_wkv_descriptors) |buffer| set.add(buffer);
     }
@@ -166,7 +172,8 @@ pub fn sizeofDescriptors() usize {
     return 40 * 3 * 384 * @sizeOf(exl3.ExpertDescriptor) + 3 * 3 * 128 * @sizeOf(exl3.ExpertDescriptor) + 40 * 8 * @sizeOf(exl3.ExpertDescriptor) +
         40 * 2 * 384 * @sizeOf(exl3.ExpertDescriptor) + 3 * 2 * 128 * @sizeOf(exl3.ExpertDescriptor) +
         40 * @sizeOf(exl3.ExpertDescriptor) + 3 * @sizeOf(exl3.ExpertDescriptor) +
-        40 * 2 * @sizeOf(exl3.ExpertDescriptor) + 3 * @sizeOf(exl3.ExpertDescriptor);
+        40 * 2 * @sizeOf(exl3.ExpertDescriptor) + 3 * @sizeOf(exl3.ExpertDescriptor) +
+        40 * 385 * @sizeOf(exl3.ExpertDescriptor) + 3 * 129 * @sizeOf(exl3.ExpertDescriptor);
 }
 
 /// One table the fused gate+up dispatch indexes: the gate experts then the up experts, descriptor copies only.
@@ -194,6 +201,15 @@ fn bindSharedDown(device: mtl.Device, moe: *Moe) !void {
     @memset(ids.contents()[0 .. 8 * 4], 0);
     moe.shared_down = table;
     moe.shared_down_ids = ids;
+    // The routed down table with the shared down appended, so one indexed call runs both.
+    const count = moe.descriptors[2].length() / @sizeOf(exl3.ExpertDescriptor);
+    const joined = try device.buffer((count + 1) * @sizeOf(exl3.ExpertDescriptor), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+    errdefer joined.deinit();
+    const dst: [*]exl3.ExpertDescriptor = @ptrCast(@alignCast(joined.contents()));
+    const routed: [*]const exl3.ExpertDescriptor = @ptrCast(@alignCast(moe.descriptors[2].contents()));
+    @memcpy(dst[0..count], routed[0..count]);
+    dst[count] = out[0];
+    moe.down_shared = joined;
 }
 
 /// The attention's wq_a and wkv as one indexed call's two-entry table.
