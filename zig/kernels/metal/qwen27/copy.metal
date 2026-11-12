@@ -39,3 +39,36 @@ struct Take { uint rows, width; };
   if (t.x >= p.width || t.y >= p.rows || take[t.y] < 0) return;
   X[t.y * p.width + t.x] = R[ulong(take[t.y]) * p.width + t.x];
 }
+
+struct Row { uint rows, width, stamp; };
+
+// A layer range's hand-off row: bf16 H + R rounded to bf16, widened to f32; stamp 0 is plain, else stamped groups.
+[[max_total_threads_per_threadgroup(256)]] kernel void q27_row_store(device const bfloat* H [[buffer(0)]], device const bfloat* R [[buffer(1)]],
+                     constant Row& p [[buffer(2)]], device uchar* out [[buffer(3)]],
+                     uint2 t [[thread_position_in_grid]]) {
+  if (t.y >= p.rows) return;
+  if (p.stamp == 0) {
+    if (t.x < p.width) {
+      const uint i = t.y * p.width + t.x;
+      ((device float*)out)[i] = float(bfloat(float(H[i]) + float(R[i])));
+    }
+    return;
+  }
+  const uint groups = (p.width + 2) / 3;
+  if (t.x >= groups) return;
+  uint4 g = uint4(0, 0, 0, p.stamp);
+  for (uint k = 0; k < 3; ++k) {
+    const uint c = 3 * t.x + k;
+    if (c < p.width) {
+      const uint i = t.y * p.width + c;
+      g[k] = as_type<uint>(float(bfloat(float(H[i]) + float(R[i]))));
+    }
+  }
+  ((device uint4*)out)[t.y * groups + t.x] = g;
+}
+
+// The inverse for plain rows: bf16 bits from f32 words, exact for words that were bf16; stamped rows read elsewhere.
+[[max_total_threads_per_threadgroup(256)]] kernel void q27_row_load(device const float* in [[buffer(0)]], constant Take& p [[buffer(1)]],
+                     device bfloat* X [[buffer(2)]], uint2 t [[thread_position_in_grid]]) {
+  if (t.x < p.width && t.y < p.rows) X[t.y * p.width + t.x] = bfloat(in[t.y * p.width + t.x]);
+}

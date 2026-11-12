@@ -25,6 +25,14 @@ Two levels protect the hidden row the host hands to the device:
 
 `pipeline.Pipeline` runs two stages over one window of two slots (host to device, device to host). The device stream waits on its input slot, runs its stage (`ExternalStage`) and writes its output slot's word; the host waits on that, runs its stage (`Peer`) and publishes the next input. `Order` says which side owns the embedding and the first layers (`external_first`, `metal_first`) or that the device runs everything (`external_only`). Every wait is bounded; a timeout or a lost device releases the other side with an abort and is a named error, and `reset` drains the stream for the next request.
 
+## Rows, sequences and lanes
+
+A step carries `rows` positions (`Config.max_rows`, at most 256). With one slot they are consecutive positions of one sequence (a prompt chunk, or one decode position); with several slots (`submitSlots`, at most `max_slots` = 8) row i is the next position of sequence `slots[i]`, no sequence twice, so a decode batch reads the stage's weights once for every sequence in it. The stage keeps the state of its layers for each slot. A stage that embeds reads `rows` u32 tokens; any other reads `rows` hidden rows, plain or each row on its own stamped groups (`packStampedRows`, `readStampedRows`). A stage that ends the model writes one token (the greedy pick after the last row) for a single slot and one token a row for a batch; any other writes `rows` hidden rows.
+
+A step is `submit` then `collect` (`collectAll` for a batch), so another pipeline on the same device can submit in between. `Config.window_offset` places a pipeline's two slots in the window (`windowBytes` sizes it for n pipelines). `streams.zig` runs a `Lane` per pipeline: a lane serves up to eight sequences, takes their prompts in chunks one sequence at a time, then decodes every live sequence in one batch. The device's stream runs steps in the order they were queued, so while the host works on one lane's step the device works on another's. The schedule per round is collect lane A, submit A's next step, collect lane B, submit B's next step. After a failed step `generate` and `generateLanes` release every pipeline so the stream drains; the caller resets the pipelines and the stages' state.
+
+The toy model's tests give each sequence its unsplit tokens in every order and level, for chunked prompts, three sequences on one device, eight sequences of different lengths in one, two and three lanes, and a decode batch whose rows leave the same tokens and layer state as the same positions one at a time.
+
 ## The toy model
 
 `toy.zig` is a small dense model in exact integer arithmetic (an embedding, twelve layers with per-layer recurrent state, a head, a greedy draw). Its tests split it at several layers in both orders, at both levels (level B with the row landing late and out of order), and with the device alone, and require the tokens of the unsplit run; a stuck device and a pulled cable end in `Timeout` and `DeviceLost`, and the next run is clean.
@@ -46,6 +54,12 @@ tf-offload demo --order metal_first --level b --split 7
 
 `plan` loads no weights and runs no model. `demo` splits the toy model between the mock device and the CPU and exits 1 if its tokens differ from the unsplit run.
 
+## The Metal half
+
+`metal.HostWindow` (`zig/src/metal/window.zig`) wraps the window's pinned, 16 KiB aligned memory as a zero-copy shared Metal buffer; `createShm` makes an unlinked POSIX shared mapping for tests. A resident Metal kernel does not reliably see CPU or DMA stores and GPU stores reach the CPU only when the command buffer completes, so `metal.Relay` makes each step one command buffer, committed ahead and parked on a shared event: the host stores its data, opens the gate and waits for the done signal. `split/metal_toy.zig` is the toy model's host stage over a `Relay` and a `HostWindow`; `zig build test-split-metal` splits the toy model at several layers with Metal on either side of the mock device and requires the unsplit run's tokens, and `zig build test-metal-relay` runs the window and relay tests.
+
+`split/metal_probe.zig` is the probe's Mac side on Metal: the GPU's name, working set and OS build, a streaming read by a kernel over a 512 MiB buffer, the wake of a parked command buffer (`metal.wake_probe`) and the cost of wrapping a 64 MiB window. On a Mac `zig build tf-offload` builds `tf-offload` with that host (`offload_metal_main.zig`), so `tf-offload probe --device mock` reports this Mac and `tf-offload demo` splits the toy model between the mock device and Metal; elsewhere it keeps the CPU stand-in host.
+
 ## Not here
 
-The Metal window and relay, the Metal probe host, the HIP device and the model families' layer ranges are separate changes.
+The HIP device and the model families' layer ranges are separate changes.

@@ -10,6 +10,8 @@ pub const layers = 12;
 pub const x_limit: i32 = 1 << 20;
 pub const s_limit: i32 = 1 << 28;
 pub const hidden_bytes = hidden * 4;
+/// The most positions a toy step carries.
+pub const max_rows = 16;
 
 pub const Params = struct {
     embed: [vocab][hidden]i32,
@@ -43,48 +45,65 @@ pub const Stage = struct {
     last: usize,
     embed: bool,
     head: bool,
-    state: [layers][hidden]i32 = @splat(@splat(0)),
+    /// The layers' state, one set a sequence slot.
+    state: [pipeline.max_slots][layers][hidden]i32 = @splat(@splat(@splat(0))),
 
     pub fn external(self: *Stage) pipeline.ExternalStage {
         return .{ .ptr = self, .run = runFn };
     }
 
-    /// The device side on the CPU: refuse an aborted step, validate a stamped row, run, leave the result in `out`.
+    /// The device side on the CPU: refuse an aborted step, validate stamped rows, run, leave the result in `out`.
     fn runFn(ptr: *anyopaque, io: pipeline.StepIo) anyerror!void {
         const self: *Stage = @ptrCast(@alignCast(ptr));
         const h = io.in.header().*;
         if (h.status != 0 or h.kind == @backingInt(wire.Kind.abort)) return error.PeerLost;
         const input = if (io.stamped) blk: {
-            const row = io.scratch[0..io.hidden_bytes];
-            _ = try wire.readStamped(row, io.in.data(), io.seq, io.retries);
-            break :blk row;
+            const rows = io.scratch[0 .. io.rows * io.hidden_bytes];
+            _ = try wire.readStampedRows(rows, io.in.data(), io.rows, io.hidden_bytes, io.seq, io.retries);
+            break :blk rows;
         } else io.in.data()[0..h.bytes];
-        _ = try self.run(input, io.out.data());
+        _ = try self.runSlots(io.slots, io.rows, input, io.out.data());
     }
 
-    /// `input` is a token when the stage embeds, else a hidden row of i32; the output is a token when it has the head.
+    /// One position: `input` is a token when the stage embeds, else a hidden row of i32; the head's output is a token.
     pub fn run(self: *Stage, input: []const u8, out: []u8) !usize {
-        var x: [hidden]i32 = undefined;
-        if (self.embed) {
-            const t = std.mem.readInt(u32, input[0..4], .little);
-            if (t >= vocab) return error.BadToken;
-            for (&x, self.params.embed[t]) |*d, e| d.* = e * 1024;
-        } else {
-            if (input.len != hidden_bytes) return error.BadHidden;
-            for (&x, 0..) |*d, i| d.* = std.mem.readInt(i32, input[i * 4 ..][0..4], .little);
+        return self.runRows(1, input, out);
+    }
+
+    /// `rows` consecutive positions of sequence 0, in order; the head's output is the last row's token.
+    pub fn runRows(self: *Stage, rows: usize, input: []const u8, out: []u8) !usize {
+        return self.runSlots(&.{0}, rows, input, out);
+    }
+
+    /// One slot: `rows` consecutive positions of it. Several: row r is slot r's next position, with a token a row.
+    pub fn runSlots(self: *Stage, slots: []const u8, rows: usize, input: []const u8, out: []u8) !usize {
+        if (rows == 0 or input.len != rows * (if (self.embed) @as(usize, 4) else hidden_bytes)) return error.BadHidden;
+        if (slots.len != 1 and slots.len != rows) return error.BadHidden;
+        for (slots) |sl| if (sl >= pipeline.max_slots) return error.BadHidden;
+        const batch = slots.len > 1;
+        for (0..rows) |r| {
+            const slot: usize = slots[if (batch) r else 0];
+            var x: [hidden]i32 = undefined;
+            if (self.embed) {
+                const t = std.mem.readInt(u32, input[4 * r ..][0..4], .little);
+                if (t >= vocab) return error.BadToken;
+                for (&x, self.params.embed[t]) |*d, e| d.* = e * 1024;
+            } else {
+                const row = input[r * hidden_bytes ..][0..hidden_bytes];
+                for (&x, 0..) |*d, i| d.* = std.mem.readInt(i32, row[i * 4 ..][0..4], .little);
+            }
+            for (self.first..self.last) |l| layer(self, slot, l, &x);
+            if (self.head) {
+                const at: usize = if (batch) 4 * r else 0;
+                if (batch or r + 1 == rows) std.mem.writeInt(u32, out[at..][0..4], draw(self.params, &x), .little);
+            } else for (x, 0..) |v, i| std.mem.writeInt(i32, out[r * hidden_bytes + i * 4 ..][0..4], v, .little);
         }
-        for (self.first..self.last) |l| layer(self, l, &x);
-        if (self.head) {
-            std.mem.writeInt(u32, out[0..4], draw(self.params, &x), .little);
-            return 4;
-        }
-        for (x, 0..) |v, i| std.mem.writeInt(i32, out[i * 4 ..][0..4], v, .little);
-        return hidden_bytes;
+        return if (self.head) (if (batch) 4 * rows else 4) else rows * hidden_bytes;
     }
 
     /// y = W_l x; a = (y + s_l) >> 3; s_l = clamp(s_l + y); x = clamp(x + a).
-    fn layer(self: *Stage, l: usize, x: *[hidden]i32) void {
-        const s = &self.state[l];
+    fn layer(self: *Stage, slot: usize, l: usize, x: *[hidden]i32) void {
+        const s = &self.state[slot][l];
         var y: [hidden]i32 = undefined;
         for (&y, self.params.w[l]) |*d, row| {
             var acc: i32 = 0;
@@ -136,8 +155,18 @@ pub fn reference(params: *const Params, prompt: []const u32, out: []u32) !void {
 
 /// Drive a pipeline over `prompt`, then take `out.len` greedy tokens, the same sequence `reference` makes.
 pub fn generate(p: *pipeline.Pipeline, prompt: []const u32, out: []u32) pipeline.Error!void {
+    return generateChunked(p, prompt, out, 1);
+}
+
+/// `generate` with the prompt going through in steps of up to `chunk` positions.
+pub fn generateChunked(p: *pipeline.Pipeline, prompt: []const u32, out: []u32, chunk: usize) pipeline.Error!void {
     var token: u32 = 0;
-    for (prompt) |t| token = try p.step(t);
+    var at: usize = 0;
+    while (at < prompt.len) {
+        const n = @min(chunk, prompt.len - at);
+        token = try p.stepRows(prompt[at..][0..n]);
+        at += n;
+    }
     for (out) |*o| {
         o.* = token;
         token = try p.step(token);
@@ -154,23 +183,23 @@ pub const CpuPeer = struct {
         return .{ .ptr = self, .step = stepFn, .finish = finishFn };
     }
 
-    fn stepFn(ptr: *anyopaque, seq: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+    fn stepFn(ptr: *anyopaque, seq: u32, slots: []const u8, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
         const self: *CpuPeer = @ptrCast(@alignCast(ptr));
-        var plain: [hidden_bytes]u8 = undefined;
-        const n = try self.stage.run(input, &plain);
+        var plain: [max_rows * hidden_bytes]u8 = undefined;
+        const n = try self.stage.runSlots(slots, rows, input, &plain);
         if (self.stage.head) {
             @memcpy(out[0..n], plain[0..n]);
             return n;
         }
         if (level == .a or !self.late) {
-            wire.packStamped(out, plain[0..n], seq);
+            wire.packStampedRows(out, plain[0..n], rows, hidden_bytes, seq);
             return n;
         }
         const Late = struct {
-            fn go(dst: []u8, row: [hidden_bytes]u8, stamp: u32) void {
-                var all: [wire.stampedLen(hidden_bytes)]u8 = undefined;
-                wire.packStamped(&all, &row, stamp);
-                var g = all.len / wire.group_bytes;
+            fn go(dst: []u8, all_rows: [max_rows * hidden_bytes]u8, count: u32, stamp: u32) void {
+                var all: [max_rows * wire.stampedLen(hidden_bytes)]u8 = undefined;
+                wire.packStampedRows(&all, &all_rows, count, hidden_bytes, stamp);
+                var g = wire.stampedRowsLen(count, hidden_bytes) / wire.group_bytes;
                 while (g > 0) {
                     g -= 1;
                     device.pause(20_000);
@@ -178,7 +207,7 @@ pub const CpuPeer = struct {
                 }
             }
         };
-        self.thread = try std.Thread.spawn(.{}, Late.go, .{ out, plain, seq });
+        self.thread = try std.Thread.spawn(.{}, Late.go, .{ out, plain, rows, seq });
         return n;
     }
 
@@ -190,32 +219,118 @@ pub const CpuPeer = struct {
 };
 
 const mock = @import("mock.zig");
+const streams = @import("streams.zig");
+
+/// The device stage of a sequence, held back `ns` before it runs: a stand-in for a layer range that takes that long.
+const SlowStage = struct {
+    inner: *Stage,
+    ns: u64,
+
+    fn external(self: *SlowStage) pipeline.ExternalStage {
+        return .{ .ptr = self, .run = runFn };
+    }
+
+    fn runFn(ptr: *anyopaque, io: pipeline.StepIo) anyerror!void {
+        const self: *SlowStage = @ptrCast(@alignCast(ptr));
+        device.pause(self.ns);
+        return Stage.runFn(self.inner, io);
+    }
+};
+
+/// The host stage of a sequence, held back `ns` per step.
+const SlowPeer = struct {
+    inner: *CpuPeer,
+    ns: u64,
+
+    fn peer(self: *SlowPeer) pipeline.Peer {
+        return .{ .ptr = self, .step = stepFn, .finish = finishFn };
+    }
+
+    fn stepFn(ptr: *anyopaque, seq: u32, slots: []const u8, rows: u32, input: []const u8, out: []u8, level: pipeline.Level) anyerror!usize {
+        const self: *SlowPeer = @ptrCast(@alignCast(ptr));
+        device.pause(self.ns);
+        return CpuPeer.stepFn(self.inner, seq, slots, rows, input, out, level);
+    }
+
+    fn finishFn(ptr: *anyopaque, seq: u32) anyerror!void {
+        return CpuPeer.finishFn(@as(*SlowPeer, @ptrCast(@alignCast(ptr))).inner, seq);
+    }
+};
+
+/// A split of the toy model for `n` sequences: the stages of each side, one pair a sequence, over one mock device.
+pub const Rig = struct {
+    gpa: std.mem.Allocator,
+    params: *Params,
+    mock: *mock.Mock,
+    window: device.Window,
+    ext: [streams.max_streams]Stage = undefined,
+    host: [streams.max_streams]Stage = undefined,
+    cpu: [streams.max_streams]CpuPeer = undefined,
+    slow_ext: [streams.max_streams]SlowStage = undefined,
+    slow_host: [streams.max_streams]SlowPeer = undefined,
+    scratch: [streams.max_streams][max_rows * hidden_bytes]u8 = undefined,
+    pipes: [streams.max_streams]pipeline.Pipeline = undefined,
+
+    pub fn create(gpa: std.mem.Allocator, order: pipeline.Order, level: pipeline.Level, late: bool, k: usize, n: usize, delay_ns: u64) !*Rig {
+        const r = try gpa.create(Rig);
+        errdefer gpa.destroy(r);
+        r.gpa = gpa;
+        r.params = try gpa.create(Params);
+        errdefer gpa.destroy(r.params);
+        r.params.* = .init(42);
+        r.mock = try mock.Mock.create(gpa, .{ .wait_delay_ns = 1_000, .write_delay_ns = 1_000 });
+        const dev = r.mock.external();
+        errdefer dev.deinit();
+        const cfg: pipeline.Config = .{ .order = order, .level = level, .hidden_bytes = hidden_bytes, .max_rows = max_rows, .timeout_ns = 5_000_000_000 };
+        r.window = try dev.allocWindow(pipeline.Pipeline.windowBytes(cfg, n));
+        for (0..n) |i| {
+            r.ext[i] = switch (order) {
+                .external_first => .{ .params = r.params, .first = 0, .last = k, .embed = true, .head = false },
+                .metal_first => .{ .params = r.params, .first = k, .last = layers, .embed = false, .head = true },
+                .external_only => .{ .params = r.params, .first = 0, .last = layers, .embed = true, .head = true },
+            };
+            r.host[i] = switch (order) {
+                .external_first => .{ .params = r.params, .first = k, .last = layers, .embed = false, .head = true },
+                else => .{ .params = r.params, .first = 0, .last = k, .embed = true, .head = false },
+            };
+            r.cpu[i] = .{ .stage = &r.host[i], .late = late };
+            r.slow_ext[i] = .{ .inner = &r.ext[i], .ns = delay_ns };
+            r.slow_host[i] = .{ .inner = &r.cpu[i], .ns = delay_ns };
+            var c = cfg;
+            c.window_offset = i * 2 * pipeline.Pipeline.slotBytes(cfg);
+            const peer: ?pipeline.Peer = if (order == .external_only) null else r.slow_host[i].peer();
+            r.pipes[i] = .init(dev, r.window, c, r.slow_ext[i].external(), peer, &r.scratch[i]);
+        }
+        return r;
+    }
+
+    pub fn destroy(r: *Rig) void {
+        const dev = r.mock.external();
+        dev.sync(1_000_000_000) catch {};
+        dev.freeWindow(r.window);
+        dev.deinit();
+        r.gpa.destroy(r.params);
+        r.gpa.destroy(r);
+    }
+};
 
 /// The toy model split at layer `k` between a mock device and the CPU in `order`; `out` gets the generated tokens.
 pub fn runSplit(gpa: std.mem.Allocator, order: pipeline.Order, level: pipeline.Level, late: bool, k: usize, prompt: []const u32, out: []u32) !void {
-    const params = try gpa.create(Params);
-    defer gpa.destroy(params);
-    params.* = .init(42);
-    const m = try mock.Mock.create(gpa, .{ .wait_delay_ns = 1_000, .write_delay_ns = 1_000 });
-    const dev = m.external();
-    defer dev.deinit();
-    const cfg: pipeline.Config = .{ .order = order, .level = level, .hidden_bytes = hidden_bytes, .timeout_ns = 5_000_000_000 };
-    const window = try dev.allocWindow(pipeline.Pipeline.slotBytes(cfg) * 2);
-    defer dev.freeWindow(window);
-    var ext: Stage = switch (order) {
-        .external_first => .{ .params = params, .first = 0, .last = k, .embed = true, .head = false },
-        .metal_first => .{ .params = params, .first = k, .last = layers, .embed = false, .head = true },
-        .external_only => .{ .params = params, .first = 0, .last = layers, .embed = true, .head = true },
-    };
-    var host: Stage = switch (order) {
-        .external_first => .{ .params = params, .first = k, .last = layers, .embed = false, .head = true },
-        else => .{ .params = params, .first = 0, .last = k, .embed = true, .head = false },
-    };
-    var cpu: CpuPeer = .{ .stage = &host, .late = late };
-    var scratch: [hidden_bytes]u8 = undefined;
-    var p: pipeline.Pipeline = .init(dev, window, cfg, ext.external(), if (order == .external_only) null else cpu.peer(), &scratch);
-    try generate(&p, prompt, out);
-    try dev.sync(1_000_000_000);
+    _ = try runChunked(gpa, order, level, late, k, 1, prompt, out);
+}
+
+/// `runSplit`, returning where the pipeline's steps spent their time.
+pub fn runPhases(gpa: std.mem.Allocator, order: pipeline.Order, level: pipeline.Level, late: bool, k: usize, prompt: []const u32, out: []u32) !pipeline.Phases {
+    return runChunked(gpa, order, level, late, k, 1, prompt, out);
+}
+
+/// `runSplit` with the prompt going through in steps of up to `chunk` positions; returns the phases like `runPhases`.
+pub fn runChunked(gpa: std.mem.Allocator, order: pipeline.Order, level: pipeline.Level, late: bool, k: usize, chunk: usize, prompt: []const u32, out: []u32) !pipeline.Phases {
+    const r = try Rig.create(gpa, order, level, late, k, 1, 0);
+    defer r.destroy();
+    try generateChunked(&r.pipes[0], prompt, out, chunk);
+    try r.mock.external().sync(1_000_000_000);
+    return r.pipes[0].phases;
 }
 
 test "every split of the toy model generates the unsplit reference's tokens" {
@@ -253,6 +368,56 @@ test "level B accepts a hidden row whose flag outran its data" {
     var got: [12]u32 = undefined;
     try runSplit(std.testing.allocator, .metal_first, .b, true, 4, &prompt, &got);
     try std.testing.expectEqualSlices(u32, &want, &got);
+}
+
+test "a pipeline's phases count the device's wait, and the finish only where the host stage runs first" {
+    const prompt = [_]u32{ 8, 8, 61 };
+    var got: [6]u32 = undefined;
+    const first = try runPhases(std.testing.allocator, .external_first, .a, false, 5, &prompt, &got);
+    try std.testing.expect(first.wait_ns > 0 and first.finish_ns == 0);
+    const host_first = try runPhases(std.testing.allocator, .metal_first, .b, false, 5, &prompt, &got);
+    try std.testing.expect(host_first.wait_ns > 0);
+}
+
+test "a prompt in chunks gives the tokens of the prompt a position at a time, in every order and level" {
+    const params = try std.testing.allocator.create(Params);
+    defer std.testing.allocator.destroy(params);
+    params.* = .init(42);
+    const prompt = [_]u32{ 5, 17, 3, 90, 12, 44, 8, 8, 61, 2, 70, 33, 19 };
+    var want: [10]u32 = undefined;
+    try reference(params, &prompt, &want);
+    for ([_]usize{ 2, 5, 13, 16 }) |chunk| {
+        for ([_]pipeline.Order{ .external_first, .metal_first, .external_only }) |order| {
+            for ([_]pipeline.Level{ .a, .b }) |level| {
+                if (order != .metal_first and level == .b) continue;
+                var got: [10]u32 = undefined;
+                _ = try runChunked(std.testing.allocator, order, level, level == .b, if (order == .external_only) layers else 7, chunk, &prompt, &got);
+                try std.testing.expectEqualSlices(u32, &want, &got);
+            }
+        }
+    }
+}
+
+test "a step of more rows than the pipeline carries, or none, is refused" {
+    const m = try mock.Mock.create(std.testing.allocator, .{});
+    const dev = m.external();
+    defer dev.deinit();
+    const cfg: pipeline.Config = .{ .order = .external_only, .hidden_bytes = hidden_bytes, .max_rows = 4 };
+    const window = try dev.allocWindow(pipeline.Pipeline.windowBytes(cfg, 1));
+    defer dev.freeWindow(window);
+    const params = try std.testing.allocator.create(Params);
+    defer std.testing.allocator.destroy(params);
+    params.* = .init(42);
+    var st: Stage = .{ .params = params, .first = 0, .last = layers, .embed = true, .head = true };
+    var scratch: [4 * hidden_bytes]u8 = undefined;
+    var p: pipeline.Pipeline = .init(dev, window, cfg, st.external(), null, &scratch);
+    try std.testing.expectError(error.BadStep, p.submit(&.{ 1, 2, 3, 4, 5 }));
+    try std.testing.expectError(error.BadStep, p.submit(&.{}));
+    try std.testing.expectError(error.BadStep, p.collect());
+    try p.submit(&.{ 1, 2, 3, 4 });
+    try std.testing.expectError(error.BadStep, p.submit(&.{1}));
+    _ = try p.collect();
+    try dev.sync(1_000_000_000);
 }
 
 test "a cut link or a stuck device is a named error inside the timeout and the next run is valid" {
