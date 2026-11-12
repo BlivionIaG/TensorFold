@@ -166,6 +166,42 @@ extern "C" __global__ void __launch_bounds__(256) tf_expert_rows(const int* pick
     }
 }
 
+// TF_EXPERT_VERIFY (hip/expert_store.zig): after a checked stage's table row is final, what its GEMVs are about to read, per pick, into a slot of a host-mapped ring so the
+// host can compare it after the fact. Slot: 64 bytes of header (u32 tag, u32 pairs; the tag is written last, to `n`), then 64 bytes a pick: the id, the residency word as
+// this kernel loads it, the table entry (two u64), and the first and last 16 bytes of the blob at the entry's address (`blob` bytes long). One block.
+extern "C" __global__ void __launch_bounds__(64) tf_expert_snap(const int* picks, int pairs, int experts,
+                                                                const unsigned long long* resident,
+                                                                const unsigned long long* row, unsigned long long* out,
+                                                                unsigned n, int blob) {
+    for (int i = threadIdx.x; i < pairs; i += blockDim.x) {
+        const int id = picks[i];
+        unsigned long long* rec = out + 8 + 8LL * i;
+        unsigned long long v[8] = {static_cast<unsigned long long>(static_cast<long long>(id)), 0, 0, 0, 0, 0, 0, 0};
+        if (id >= 0 && id < experts) {
+            v[1] = __hip_atomic_load(resident + id, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+            v[2] = row[2 * static_cast<long long>(id)];
+            v[3] = row[2 * static_cast<long long>(id) + 1];
+            if (v[2] != 0) {
+                const unsigned long long* head = reinterpret_cast<const unsigned long long*>(v[2]);
+                const unsigned long long* tail = reinterpret_cast<const unsigned long long*>(v[2] + static_cast<unsigned long long>(blob) - 16);
+                v[4] = head[0];
+                v[5] = head[1];
+                v[6] = tail[0];
+                v[7] = tail[1];
+            }
+        }
+        for (int k = 0; k < 8; ++k) __hip_atomic_store(rec + k, v[k], __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    }
+    __syncthreads();
+    __threadfence_system();
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        unsigned* header = reinterpret_cast<unsigned*>(out);
+        __hip_atomic_store(header + 1, static_cast<unsigned>(pairs), __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        __hip_atomic_store(header, n, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
+    }
+}
+
 // A prompt span's progressive staging (docs/LATENCY.md F1): after the host's first answer, `chunk[e]` (host memory) names the chunk the expert e of this layer arrives in
 // (0: already in a cache line; the shared expert, an id past `experts`, is chunk 0 too). The plan's `items` (`count` entries of expert, first pair, pairs) are
 // written `nchunks` times, array k at `out + k * stride` (ints), each keeping the pair counts of chunk k's experts and zeroing the others', so a GEMM

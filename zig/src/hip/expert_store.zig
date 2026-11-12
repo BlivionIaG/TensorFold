@@ -132,6 +132,9 @@ const ring: u32 = 4096;
 /// The most rows of a decode stage that the card checks itself: each layer keeps a trace slot of this many rows. Past it a stage keeps the plain handshake.
 pub const split_rows: usize = 16;
 
+/// Job slots of TF_EXPERT_VERIFY's snapshot ring (a slot is 64 bytes and 64 a pick of `split_rows` rows).
+const vring: u32 = 256;
+
 /// One of the two arrays the hit-first check writes: an entry (expert, first pair, pairs) of three i32 for the most items a stage of `split_rows` rows plans
 /// (at most 9/8 of its pairs for each, bounded by twice them).
 fn itemBytes(shape: Shape) usize {
@@ -269,11 +272,12 @@ pub const Store = struct {
     /// Hit-first (M2): the card's check splits the plan's items into two arrays in `items_dev` (TF_EXPERT_HITFIRST=1), and the stream runs the hit items' GEMVs before its wait.
     hitfirst: bool = false,
     items_dev: ?DeviceBuffer = null,
-    /// TF_EXPERT_VERIFY=1 (with the split): the worker checks every pick of a stage the card passed by itself against the device (the table entry, the head and tail
-    /// of the line's blob against the host tier) through a pinned buffer and the copy stream, and counts what differs. A diagnostic: it costs several small copies a pick.
+    /// TF_EXPERT_VERIFY=1 (with the split, without hit-first): after each checked stage's table row is final the stream runs `tf_expert_snap`, which records per pick what the
+    /// GEMVs will read (the card's residency word, the table entry, the blob's ends at its address) in the host-mapped ring `vsnap`; the worker compares a hit stage's record with its own state.
     verify: bool = false,
-    vbuf: ?HostBuffer = null,
-    vfy: struct { picks: u64 = 0, bad_rows: u64 = 0, bad_data: u64 = 0, logged: u32 = 0 } = .{},
+    vsnap: ?HostBuffer = null,
+    vsnap_dev: u64 = 0,
+    vfy: struct { picks: u64 = 0, bad_resident: u64 = 0, bad_rows: u64 = 0, bad_data: u64 = 0, late: u64 = 0, miss_picks: u64 = 0, miss_bad_rows: u64 = 0, logged: u32 = 0 } = .{},
     /// Chunked staging of a prompt span (F1, TF_EXPERT_PREFILL_CHUNKS=K, 2 to `max_chunks`): the plan's items in `nchunks` = K + 1 arrays of `chunk_stride` bytes (array 0 the
     /// experts already in a line), in `chunk_items`; 0 chunks: a span's stage answers once, after every copy.
     chunk_items: ?DeviceBuffer = null,
@@ -408,9 +412,21 @@ pub const Store = struct {
             } else |_| std.log.warn("experts: no device memory for the chunked staging's item arrays: prompt spans answer once", .{});
         }
         errdefer if (chunk_items) |*b| b.free();
-        var vbuf: ?HostBuffer = null;
-        if (rows_dev != null and envOn("TF_EXPERT_VERIFY")) vbuf = HostBuffer.alloc(r, 4096) catch null;
-        errdefer if (vbuf) |*b| b.free();
+        var vsnap: ?HostBuffer = null;
+        var vsnap_dev: u64 = 0;
+        if (rows_dev != null and items_dev == null and envOn("TF_EXPERT_VERIFY")) {
+            if (HostBuffer.allocMapped(r, vring * (64 + split_rows * shape.picks * 64))) |b| {
+                if (b.device()) |d| {
+                    @memset(b.bytes, 0);
+                    vsnap = b;
+                    vsnap_dev = d;
+                } else |_| {
+                    var f = b;
+                    f.free();
+                }
+            } else |_| {}
+        }
+        errdefer if (vsnap) |*b| b.free();
         var ack: Ack = .{ .host = @ptrCast(@alignCast(win.bytes[ack_at..].ptr)), .host_dev = win_dev + ack_at, .base = win.bytes.ptr };
         // the ack is a host word in the window; a VRAM signal word (docs/LATENCY.md C3) only with TF_EXPERT_ACK=vram, which needs hipmac 07b7e35 or later (its first
         // signal pages hung the card); validated on the card for the release leg, so opt-in until it is measured on the 35B
@@ -440,8 +456,9 @@ pub const Store = struct {
             .early = envOn("TF_EXPERT_FLAGS"),
             .hitfirst = items_dev != null,
             .items_dev = items_dev,
-            .verify = vbuf != null,
-            .vbuf = vbuf,
+            .verify = vsnap != null,
+            .vsnap = vsnap,
+            .vsnap_dev = vsnap_dev,
             .chunk_items = chunk_items,
             .nchunks = if (chunk_items != null) chunk_k + 1 else 0,
             .chunk_stride = chunkItemBytes(shape),
@@ -514,7 +531,7 @@ pub const Store = struct {
         if (s.rows_dev) |*b| b.free();
         if (s.items_dev) |*b| b.free();
         if (s.chunk_items) |*b| b.free();
-        if (s.vbuf) |*b| b.free();
+        if (s.vsnap) |*b| b.free();
         s.gpa.free(s.jobs);
         s.gpa.free(s.fills);
         s.gpa.free(s.slot_of);
@@ -742,6 +759,7 @@ pub const Store = struct {
             try s.queueCheck(o, layer, picks, pairs, n, .{});
             try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
             try o.l.tf_expert_rows(picks_ptr, @intCast(pairs), @intCast(e), host_table, table, need, false, o.stream);
+            if (s.verify) try o.l.tf_expert_snap(picks_ptr, @intCast(pairs), @intCast(e), s.win_dev + s.resident_off + layer * e * 8, table, s.vsnap_dev + @as(u64, n % vring) * (64 + split_rows * s.shape.picks * 64), n, @intCast(s.shape.blobBytes()), o.stream);
             return;
         }
         try o.expertTrace(picks, pairs, s.win_dev + s.trace_off);
@@ -846,7 +864,7 @@ pub const Store = struct {
             const began = nowNs();
             const job = s.jobs[n % ring];
             if (how == .hit) {
-                s.replay(job);
+                s.replay(job, n);
                 const ended = nowNs();
                 s.stats.hit_stages += 1;
                 s.stats.replay_ns += ended - began;
@@ -864,6 +882,7 @@ pub const Store = struct {
                 s.span.stage_ns += ended - began;
                 if (job.layer + 1 == s.shape.layers) s.reportSpan(job.rows, ended);
             }
+            if (s.verify and job.split) s.verifyMiss(job, n);
             s.done.store(n, .release);
             waited = nowNs();
         }
@@ -981,7 +1000,7 @@ pub const Store = struct {
     }
 
     /// A hit job, late: the card passed the stage by itself, so the pool only needs the touches of its picks (from the stage's trace slot).
-    fn replay(s: *Store, job: Job) void {
+    fn replay(s: *Store, job: Job, n_job: u32) void {
         if (!job.split) return s.failed.store(true, .release);
         const p = &(s.pool orelse return s.failed.store(true, .release));
         const e = s.shape.experts;
@@ -994,49 +1013,90 @@ pub const Store = struct {
             p.cache.ids[n] = base + @as(policy.Id, @intCast(id));
             n += 1;
         };
-        if (s.verify) s.verifyHit(job, p, words);
+        if (s.verify) s.verifyHit(job, n_job, p);
         p.cache.replay(p.cache.ids[0..n]) catch return s.failed.store(true, .release);
         s.stats.accesses += n;
         s.stats.hits += n;
     }
 
-    /// TF_EXPERT_VERIFY: what the card used for a stage it passed: per routed pick the VRAM table entry (must name the cache line the residency word held, with no admission
-    /// line) and the first and last 128 bytes of the line (must be the host tier's blob). Both are read back through the copy stream, which does not wait for the compute stream.
-    fn verifyHit(s: *Store, job: Job, p: *Pool, words: []const i32) void {
-        const vb = (s.vbuf orelse return).bytes;
+    /// TF_EXPERT_VERIFY: what the card's GEMVs read for a stage it passed. `tf_expert_snap` ran after the stage's table row was final and left, per pick, the residency word it
+    /// loaded, the VRAM table entry, and the ends of the blob at the entry's address, in the host-mapped ring slot of job `n`. Compared with the host's state, which is the state
+    /// the card saw (the host only changes the pool at the next miss, after this replay): the card's residency word (a stale one is the card reading host memory late), the entry
+    /// (must be the line, with no admission line) and the blob's ends (must be the host tier's).
+    fn verifyHit(s: *Store, job: Job, n: u32, p: *Pool) void {
+        const slot = s.snapSlot(n) orelse return;
         const layer: usize = job.layer;
         const e = s.shape.experts;
-        const picks = s.shape.picks;
         const blob = s.shape.blobBytes();
         const host = s.host[layer] orelse return;
-        const row_dev = s.rows_dev.?.base() + layer * s.shape.rowStride() + header_bytes;
-        const api = s.r.api;
-        for (0..job.rows) |r| for (words[r * picks ..][0 .. picks - 1]) |id| {
-            if (id < 0 or id >= e) continue;
+        const pairs = std.mem.readInt(u32, slot[4..8], .little);
+        for (0..pairs) |i| {
+            const rec = slot[64 + 64 * i ..][0..64];
+            const id: i64 = @bitCast(std.mem.readInt(u64, rec[0..8], .little));
+            if (id < 0 or id >= @as(i64, @intCast(e))) continue;
             const x: usize = @intCast(id);
             const line = p.cache.resident[layer * e + x];
+            const seen = std.mem.readInt(u64, rec[8..16], .little);
+            const e0 = std.mem.readInt(u64, rec[16..24], .little);
+            const e1 = std.mem.readInt(u64, rec[24..32], .little);
+            const head_ok = std.mem.eql(u8, rec[32..48], host[x * blob ..][0..16]);
+            const tail_ok = std.mem.eql(u8, rec[48..64], host[x * blob + blob - 16 ..][0..16]);
             s.vfy.picks += 1;
-            var bad_row = false;
-            var bad_data = false;
-            if (line == 0) {
-                bad_row = true;
-            } else {
-                const ok = api.hipMemcpyDtoHAsync(vb.ptr, @ptrFromInt(row_dev + 16 * x), 16, p.copy.handle) == 0 and
-                    api.hipMemcpyDtoHAsync(vb.ptr + 16, @ptrFromInt(line), 128, p.copy.handle) == 0 and
-                    api.hipMemcpyDtoHAsync(vb.ptr + 144, @ptrFromInt(line + blob - 128), 128, p.copy.handle) == 0;
-                if (!ok) return s.failed.store(true, .release);
-                p.copy.synchronize() catch return s.failed.store(true, .release);
-                const entry: [2]u64 = .{ std.mem.readInt(u64, vb[0..8], .little), std.mem.readInt(u64, vb[8..16], .little) };
-                bad_row = entry[0] != line or entry[1] != 0;
-                bad_data = !std.mem.eql(u8, vb[16..144], host[x * blob ..][0..128]) or !std.mem.eql(u8, vb[144..272], host[x * blob + blob - 128 ..][0..128]);
-                if ((bad_row or bad_data) and s.vfy.logged < 16) {
+            const stale = seen != line;
+            const bad_row = e0 != line or e1 != 0;
+            const bad_data = !head_ok or !tail_ok;
+            s.vfy.bad_resident += @intFromBool(stale);
+            s.vfy.bad_rows += @intFromBool(bad_row);
+            s.vfy.bad_data += @intFromBool(bad_data);
+            if ((stale or bad_row or bad_data) and s.vfy.logged < 32) {
+                s.vfy.logged += 1;
+                std.log.err("experts verify: job {d} layer {d} expert {d}: host line 0x{x}, card's residency word 0x{x}, table entry 0x{x} 0x{x}, head {s}, tail {s}", .{ n, layer, x, line, seen, e0, e1, if (head_ok) "ok" else "WRONG", if (tail_ok) "ok" else "WRONG" });
+            }
+        }
+    }
+
+    /// TF_EXPERT_VERIFY, a stage the card asked about: after the host's answer the card's table entries for the stage's picks (the rows kernel's copy of the host's row, read
+    /// over the link) must be the host's row's.
+    fn verifyMiss(s: *Store, job: Job, n: u32) void {
+        const slot = s.snapSlot(n) orelse return;
+        const e = s.shape.experts;
+        const row = s.hostRow(job.layer);
+        const pairs = std.mem.readInt(u32, slot[4..8], .little);
+        for (0..pairs) |i| {
+            const rec = slot[64 + 64 * i ..][0..64];
+            const id: i64 = @bitCast(std.mem.readInt(u64, rec[0..8], .little));
+            if (id < 0 or id >= @as(i64, @intCast(e))) continue;
+            const x: usize = @intCast(id);
+            const e0 = std.mem.readInt(u64, rec[16..24], .little);
+            const e1 = std.mem.readInt(u64, rec[24..32], .little);
+            s.vfy.miss_picks += 1;
+            if (e0 != row[2 * x] or e1 != row[2 * x + 1]) {
+                s.vfy.miss_bad_rows += 1;
+                if (s.vfy.logged < 32) {
                     s.vfy.logged += 1;
-                    std.log.err("experts verify: layer {d} expert {d} line 0x{x}: table entry 0x{x} 0x{x}, head {s}, tail {s}", .{ layer, x, line, entry[0], entry[1], if (std.mem.eql(u8, vb[16..144], host[x * blob ..][0..128])) "ok" else "WRONG", if (std.mem.eql(u8, vb[144..272], host[x * blob + blob - 128 ..][0..128])) "ok" else "WRONG" });
+                    std.log.err("experts verify: miss job {d} layer {d} expert {d}: host row 0x{x} 0x{x}, card's table entry 0x{x} 0x{x}", .{ n, job.layer, x, row[2 * x], row[2 * x + 1], e0, e1 });
                 }
             }
-            if (bad_row) s.vfy.bad_rows += 1;
-            if (bad_data) s.vfy.bad_data += 1;
-        };
+        }
+    }
+
+    /// The snapshot slot of job `n` once the card has written it (null: it did not within 200 ms, or the ring has wrapped over it).
+    fn snapSlot(s: *Store, n: u32) ?[]const u8 {
+        const snap = s.vsnap orelse return null;
+        const slot_bytes = 64 + split_rows * s.shape.picks * 64;
+        const slot = snap.bytes[(n % vring) * slot_bytes ..][0..slot_bytes];
+        const tag: *const u32 = @ptrCast(@alignCast(slot.ptr));
+        // the card writes the slot right after its wait on the answer is released
+        const deadline = nowNs() + 200 * std.time.ns_per_ms;
+        while (@atomicLoad(u32, tag, .acquire) != n) {
+            if (nowNs() > deadline) break;
+            std.atomic.spinLoopHint();
+        }
+        if (@atomicLoad(u32, tag, .acquire) != n) {
+            s.vfy.late += 1;
+            return null;
+        }
+        return slot;
     }
 
     /// One log line for a prompt span: its wall time from the first stage to the last answer, the time in stages, the experts copied to the scratch.
@@ -1232,7 +1292,7 @@ pub const Store = struct {
             "experts {s}: {d} rounds {d} tokens, hit {d:.1}% miss {d:.1}/token ({d:.1} MiB/token over the link), window fill {d:.1} MiB/token, admissions {d:.1}/round, stage {d:.2} ms/token (card compute+wait {d:.2}; fill after the answer {d:.2}), card passed {d:.1}% of the stages itself ({d:.2} ms/token replaying), round {d:.2} ms ({d:.2} ms/token), {d} lines",
             .{ label, d.rounds, d.tokens, 100.0 * @as(f64, @floatFromInt(d.hits)) / a, miss / t, miss / t * blob / mib, @as(f64, @floatFromInt(d.window_bytes)) / t / mib, @as(f64, @floatFromInt(d.admissions)) / r, @as(f64, @floatFromInt(d.stage_ns)) / t / 1e6, @as(f64, @floatFromInt(d.idle_ns)) / t / 1e6, @as(f64, @floatFromInt(d.fill_ns)) / t / 1e6, 100.0 * @as(f64, @floatFromInt(d.hit_stages)) / @max(asked, 1), @as(f64, @floatFromInt(d.replay_ns)) / t / 1e6, @as(f64, @floatFromInt(d.round_ns)) / r / 1e6, @as(f64, @floatFromInt(d.round_ns)) / t / 1e6, s.lineCount() },
         );
-        if (s.verify) std.log.info("experts verify: {d} picks of passed stages checked, {d} with a wrong table entry, {d} with wrong line bytes", .{ s.vfy.picks, s.vfy.bad_rows, s.vfy.bad_data });
+        if (s.verify) std.log.info("experts verify: {d} hit picks checked, {d} with a residency word the card read differing from the host's, {d} with a wrong table entry, {d} with wrong blob ends; {d} miss picks checked, {d} whose table entry is not the host row's; {d} stages whose snapshot was missing", .{ s.vfy.picks, s.vfy.bad_resident, s.vfy.bad_rows, s.vfy.bad_data, s.vfy.miss_picks, s.vfy.miss_bad_rows, s.vfy.late });
     }
 };
 

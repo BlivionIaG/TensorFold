@@ -186,6 +186,8 @@ pub const Launcher = struct {
         expert_rows: if (kernels.expert_ptrs) Function else void,
         /// The prompt span's chunk split of a plan's items (docs/LATENCY.md F1).
         expert_chunks: if (kernels.expert_ptrs) Function else void,
+        /// TF_EXPERT_VERIFY's per-pick record of the table entries a stage's GEMVs are about to read.
+        expert_snap: if (kernels.expert_ptrs) Function else void,
     };
 
     /// The prompt tile keeps main's sums and needs the edge pass after it: dot2 here ignores a zero's sign.
@@ -277,6 +279,7 @@ pub const Launcher = struct {
             .expert_check = if (kernels.expert_ptrs) try ops.function("tf_expert_check") else {},
             .expert_rows = if (kernels.expert_ptrs) try ops.function("tf_expert_rows") else {},
             .expert_chunks = if (kernels.expert_ptrs) try ops.function("tf_expert_chunks") else {},
+            .expert_snap = if (kernels.expert_ptrs) try ops.function("tf_expert_snap") else {},
         };
         const ns = "_ZN2tf4rocm";
         l.rms = .{
@@ -394,6 +397,7 @@ pub const Launcher = struct {
     pub const tf_expert_check = moe.tf_expert_check;
     pub const tf_expert_rows = moe.tf_expert_rows;
     pub const tf_expert_chunks = moe.tf_expert_chunks;
+    pub const tf_expert_snap = moe.tf_expert_snap;
     pub const tf_causal = attention.tf_causal;
     pub const tf_attn_gate = attention.tf_attn_gate;
     pub const tf_heads_rows = attention.tf_heads_rows;

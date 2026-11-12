@@ -228,3 +228,18 @@ pub fn tf_expert_rows(l: *const Launcher, picks: CI, pairs: c_int, experts: c_in
     try a.add(@as(c_int, @intFromBool(all)));
     try l.go(l.op.expert_rows, dim(1, 1, 1), dim(64, 1, 1), 0, s, &a);
 }
+
+/// TF_EXPERT_VERIFY: the record of the `pairs` picks' table entries, the residency words and the blobs' ends into the host-mapped ring slot `out` as job `n`'s.
+pub fn tf_expert_snap(l: *const Launcher, picks: CI, pairs: c_int, experts: c_int, resident: u64, row: u64, out: u64, n: u32, blob: c_int, s: S) Error!void {
+    if (comptime !@import("../kernels.zig").expert_ptrs) return invalid("expert_snap");
+    var a: Args = .{};
+    try a.add(ad(picks));
+    try a.add(pairs);
+    try a.add(experts);
+    try a.add(resident);
+    try a.add(row);
+    try a.add(out);
+    try a.add(n);
+    try a.add(blob);
+    try l.go(l.op.expert_snap, dim(1, 1, 1), dim(64, 1, 1), 0, s, &a);
+}
