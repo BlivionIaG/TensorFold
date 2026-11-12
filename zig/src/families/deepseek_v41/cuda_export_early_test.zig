@@ -132,7 +132,7 @@ fn produce(p: *serve.Produce, run: *serve.Produce.Early, pause_ms: u32, fail_at:
     var chunks: split.Chunks = .{ .n = upto, .max = 128 };
     while (chunks.next()) |c| {
         if (pause_ms > 0) try std.Io.sleep(io, .fromMilliseconds(pause_ms), .awake);
-        if (fail_at) |f| if (c.row0 >= f) return run.fail("DeviceLost");
+        if (fail_at) |f| if (c.row0 >= f) return run.fail();
         const dst = run.rows(c.row0, c.rows);
         for (0..c.rows) |i| @memcpy(dst[i * split.row_bytes ..][0..split.row_bytes], &rowOf(c.row0 + i));
         try run.publish(c.row0 + c.rows);
@@ -186,7 +186,7 @@ test "the early entry is held before any compute, counts the stage and the parts
     try std.testing.expectEqual(plan_bytes, state_bytes);
     // the held bytes are the stage's and the parts': what the table's cap counts
     try std.testing.expectEqual(upto * split.row_bytes + state_bytes, p.table.held_bytes);
-    run.fail("test over");
+    run.fail();
 }
 
 test "an export whose rows and state do not fit the cap is refused by name, and nothing is held" {
@@ -295,7 +295,7 @@ test "a decoder that releases the export mid-split ends the run, and the produce
     try run.publish(4);
     var why: []const u8 = "";
     try std.testing.expectError(error.NotHeld, p.read(id, &why));
-    run.fail("Released");
+    run.fail();
     run.close(); // the last lease: the export is freed here (the leak check proves it)
     p.stop();
 }

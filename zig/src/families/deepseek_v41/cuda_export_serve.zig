@@ -396,10 +396,9 @@ pub const Produce = struct {
             return e.held.gone;
         }
 
-        /// No rows or state will come: readers are told by the stage and latch, and the decoder by `failed` as usual.
-        pub fn fail(e: Early, why: []const u8) void {
+        /// No rows or state will come: readers are told by the stage and latch (the lane host reports `failed` once).
+        pub fn fail(e: Early) void {
             e.early.fail();
-            e.p.failed(e.id, why);
         }
 
         /// The run ends without handing the state over (`fail` first when it failed): the lease goes back.
@@ -433,7 +432,10 @@ pub const Produce = struct {
         defer p.unlease(e.held);
         defer p.source.release(cap.ctx);
         const t0 = fabric.words.nowNs();
-        cx.land(p.gpa, e.held.built, cap.state) catch |err| return e.fail(@errorName(err));
+        cx.land(p.gpa, e.held.built, cap.state) catch |err| { // the run already returned: nobody else tells the decoder
+            e.fail();
+            return p.failed(e.id, @errorName(err));
+        };
         p.table.touch(e.id); // the clock starts now: the decoder has the TTL to pull what is held
         log.info("handoff {x}: layer-split state landed in {d} ms", .{ &e.id, (fabric.words.nowNs() - t0) / std.time.ns_per_ms });
     }

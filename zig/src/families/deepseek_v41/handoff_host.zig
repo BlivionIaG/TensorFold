@@ -16,6 +16,7 @@ test {
     _ = @import("entry_slots.zig");
     _ = @import("cuda_export_early_test.zig");
     _ = @import("split_ring.zig");
+    _ = @import("split_land_test.zig");
     _ = @import("kv_prefix_test.zig");
     _ = @import("kv_image_test.zig");
     _ = @import("cuda_export_serve_test.zig");

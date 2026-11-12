@@ -24,6 +24,7 @@ fn lookup(h: *LaneHost, store: *pc.Store, job: *Job, landed: u32) !pc.Lookup {
 
 /// An admitted job's stream (its kept prefix looked up, its drafter): false when it failed (the job is finished).
 pub fn open(h: *LaneHost, job: *Job) bool {
+    if (@import("lane_export.zig").runSplit(h, job)) return false; // a layer split: run by the exporter, the job is finished
     const r = job.request;
     var reuse: lanes.stream.Reuse = .{};
     // the entry stays alive until the backend restores it: nothing keeps between here and this stream's own pass
