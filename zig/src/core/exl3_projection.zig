@@ -63,6 +63,7 @@ pub const encodePrefillInt8 = enc.encodePrefillInt8;
 pub const encodeIndexed = enc.encodeIndexed;
 pub const matrixWrites = enc.matrixWrites;
 pub const indexedArgs = enc.indexedArgs;
+pub const matrixArgs = enc.matrixArgs;
 pub const chain = chain_mod;
 pub const ReduceArgs = swi.ReduceArgs;
 pub const Plan = swi.Plan;

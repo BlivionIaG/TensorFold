@@ -28,6 +28,12 @@ const disjoint = core.disjoint;
 const readonly = core.readonly;
 
 pub fn encode(p: *const Pipelines, e: mtl.ComputeEncoder, m: Matrix, x: View, y: View, scratch: View, r: Rows) !void {
+    const a = try matrixArgs(m, x, y, scratch, r);
+    stages(p, e, a, m.trellis, m.suh, m.svh, m.bias orelse m.svh, scratch, x, y, scratch, r);
+}
+
+/// The validated kernel arguments of a dense call (`encode` and the chain entries share them).
+pub fn matrixArgs(m: Matrix, x: View, y: View, scratch: View, r: Rows) !Args {
     const storage_bytes = try m.checkStorage();
     var a = try rowsArgs(m.k, m.n, r, x, y, scratch);
     if (r.grouped) return error.InvalidExl3GroupedRows;
@@ -39,7 +45,7 @@ pub fn encode(p: *const Pipelines, e: mtl.ComputeEncoder, m: Matrix, x: View, y:
     a.has_bias = @intFromBool(m.bias != null);
     a.tile_k_stride = try m.kStride();
     a.tile_n_stride = m.nStride();
-    stages(p, e, a, m.trellis, m.suh, m.svh, m.bias orelse m.svh, scratch, x, y, scratch, r);
+    return a;
 }
 
 /// A kept-dense EXL3 matrix: a bf16 weight beside the input/output rotation scales, no trellis.

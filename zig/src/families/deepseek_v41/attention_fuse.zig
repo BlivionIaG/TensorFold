@@ -17,6 +17,8 @@ pub const Switches = struct {
     wo_chain: bool,
     /// The query latent's RMS norm and wq_b's rotate_in in one dispatch.
     qnorm: bool,
+    /// wq_b's epilogue and the query's RoPE in one dispatch.
+    qrope: bool,
 };
 
 var cached: ?Switches = null;
@@ -26,6 +28,7 @@ pub fn switches() Switches {
     const s: Switches = .{
         .wo_chain = std.c.getenv("TF_DSV41_NO_FUSE_WO_CHAIN") == null,
         .qnorm = std.c.getenv("TF_DSV41_NO_FUSE_QNORM") == null,
+        .qrope = std.c.getenv("TF_DSV41_NO_FUSE_QROPE") == null,
     };
     cached = s;
     return s;
@@ -70,7 +73,24 @@ pub fn encodeQNorm(ep: *const exl3.Pipelines, e: mtl.ComputeEncoder, w: *const w
     });
 }
 
-/// wq_b over the rotated input `encodeQNorm` left in the scratch base.
-pub fn encodeQb(ep: *const exl3.Pipelines, e: mtl.ComputeEncoder, w: *const weights.Attention, q: View, scratch: exl3.View, c: config.Config) !void {
-    try exl3.encode(ep, e, w.wq_b, scratch, core(q), scratch, .{ .count = 1, .x_stride = c.q_lora, .y_stride = c.heads * c.head_dim, .prerotated = true });
+/// Whether wq_b's epilogue and the query's RoPE of one decode row can run as one dispatch.
+pub fn qRopeReady(ep: *const exl3.Pipelines, ap: *const common.Pipelines, c: config.Config, position: u32) bool {
+    return switches().qrope and ep.chain.rotate_out_rope != null and ap.rotary.rotary == c.rope_dim and
+        position < ap.rotary.capacity and c.head_dim % 128 == 0 and c.rope_dim % 32 == 0 and c.rope_dim <= 128 and
+        std.c.getenv("TF_DSV41_DOUBLE_ROPE") == null;
+}
+
+/// wq_b into `q`. `rotated`: the input is already rotated in the scratch base (`encodeQNorm` left it there), else it is
+/// `qr`. `rope` (the layer's compress ratio and position) fuses the query's RoPE into the epilogue.
+pub fn encodeQb(ep: *const exl3.Pipelines, ap: *const common.Pipelines, e: mtl.ComputeEncoder, w: *const weights.Attention, qr: View, q: View, scratch: exl3.View, c: config.Config, rotated: bool, rope: ?struct { ratio: u32, position: u32 }) !void {
+    const rows: exl3.Rows = .{ .count = 1, .x_stride = c.q_lora, .y_stride = c.heads * c.head_dim, .prerotated = rotated };
+    const x = if (rotated) scratch else core(qr);
+    const r = rope orelse return exl3.encode(ep, e, w.wq_b, x, core(q), scratch, rows);
+    // The compressed layers' rotation factors follow the plain ones in the resident table.
+    const offset: usize = if (r.ratio == 0) 0 else @as(usize, ap.rotary.capacity) * ap.rotary.rotary * @sizeOf(f32);
+    try exl3.chain.encodeRotateOutRope(ep, e, w.wq_b, x, core(q), scratch, rows, .{ .buffer = ap.rotary.factors, .offset = offset }, .{
+        .width = c.head_dim,
+        .rotary = c.rope_dim,
+        .position = r.position,
+    });
 }

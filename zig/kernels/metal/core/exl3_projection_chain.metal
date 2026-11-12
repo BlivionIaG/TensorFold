@@ -121,3 +121,59 @@ kernel void tf_exl3_rms_rotate_in(const device ushort* x [[buffer(0)]],
   }
 }
 #pragma clang fp contract(on)
+
+struct TfExl3Rope {
+  uint width, rotary, position, step, inverse, reserved0, reserved1, reserved2;
+};
+
+// rotate_out of a projection whose output rows are heads of `width` columns, then dsv41_rope over each head's last
+// `rotary` columns, on the bf16 values the rotate_out stores: one dispatch where there were two. The rotary columns
+// are a multiple of 32 and fill the end of a head's last 128-column block, so the adjacent pair a rope rotates sits in
+// two lanes of one SIMDgroup. The row is rotated at position + row * step, as dsv41_rope's absolute-position grid.
+kernel void tf_exl3_rotate_out_rope(const device float* sums [[buffer(0)]],
+                                    const device ushort* sv [[buffer(1)]],
+                                    const device half* bias [[buffer(2)]],
+                                    device uchar* y [[buffer(3)]],
+                                    constant TfExl3Args& a [[buffer(4)]],
+                                    const device uint* output_ids [[buffer(5)]],
+                                    const device uint* routes [[buffer(6)]],
+                                    const device TfExl3Expert* descriptors [[buffer(7)]],
+                                    const device float2* factors [[buffer(8)]],
+                                    constant TfExl3Rope& rp [[buffer(9)]],
+                                    uint lane [[thread_index_in_simdgroup]],
+                                    uint sg [[simdgroup_index_in_threadgroup]],
+                                    uint3 tptg [[threads_per_threadgroup]],
+                                    uint3 tg [[threadgroup_position_in_grid]]) {
+  const uint row = tg.y, base = (tg.x * (tptg.x / 32u) + sg) * 128;
+  const bool active = tf_exl3_active(routes, a, row);
+  const uint id = a.indexed ? routes[row] : 0;
+  const uint width = (a.indexed && active && descriptors[id].reserved != 0) ? descriptors[id].reserved : a.n;
+  if (base >= width || !active) return;
+  const device ushort* scales = a.indexed ? descriptors[id].sv : sv;
+  const device half* biases = a.indexed ? descriptors[id].bias : bias;
+  const uint signs = a.indexed ? descriptors[id].sv_signs : a.sv_signs;
+  const uint has_bias = a.indexed ? descriptors[id].has_bias : a.has_bias;
+  float v[4];
+  for (uint j = 0; j < 4; ++j) v[j] = sums[ulong(row) * a.n + base + lane + 32 * j];
+  tf_exl3_hadamard(v, lane);
+  const uint dest = a.output_ids ? output_ids[row] : row;
+  for (uint j = 0; j < 4; ++j) {
+    const uint n = base + lane + 32 * j;
+    float out = (v[j] * 0.08838834764831845f) * tf_exl3_scale(scales, n, signs);
+    if (has_bias) out += float(biases[n]);
+    ushort bits = as_type<ushort>(bfloat(out));
+    // The pair's other element, fetched by every lane (the rotary columns are SIMDgroup uniform).
+    const float other = tf_exl3_chain_bf(ushort(simd_shuffle_xor(uint(bits), 1)));
+    const uint d = n % rp.width;
+    if (d >= rp.width - rp.rotary) {
+      const float2 rotation = factors[(ulong(rp.position) + ulong(dest) * rp.step) * (rp.rotary / 2) + (d - (rp.width - rp.rotary)) / 2];
+      const float c = rotation.x, s = rp.inverse ? -rotation.y : rotation.y;
+      const float own = tf_exl3_chain_bf(bits);
+      uint u;
+      if ((n & 1u) == 0u) u = as_type<uint>(own * c - other * s);
+      else u = as_type<uint>(other * s + own * c);
+      bits = ushort((u + 0x7fff + ((u >> 16) & 1)) >> 16);
+    }
+    reinterpret_cast<device ushort*>(y)[ulong(dest) * a.y_stride + n] = bits;
+  }
+}
