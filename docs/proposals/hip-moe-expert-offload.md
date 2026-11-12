@@ -18,6 +18,11 @@ missing experts' blobs into window slots (two halves alternate by layer), writes
 GEMV/GEMM reads (gfx900 only, `TF_EXPERT_PTRS`) take a VRAM line (hit) or a window slot (miss). The first version admitted by SDMA copies window -> line (`TF_EXPERT_COPIES` a round);
 see "Update 2" for what replaced it. `TF_EXPERT_OFFLOAD=0|1|auto`, `--ssd-experts GIB`, `TF_EXPERT_WINDOW_MIB`.
 
+The pointer-table code is built into its own code object (group `affine_tiles_ptr`, `tiles/dot2_tiles_ptr.hip`, `-DTF_EXPERT_PTRS`) and only the routed launches of
+a projection with a table (`Launcher.affineFor(ptab)`) take it. Built into every tile it cost a dense stack 5 %: Qwen3.5-4B decode 81.4 -> 77.0 tok/s on the Vega
+(`tf-vega-gate`): 3.2 tok/s from the code (more VGPRs and lower occupancy in 150 of 347 dot2 tiles), 1.2 tok/s from the 24 bytes more of `Affine` argument every
+launch carried. Raw data: ut4g-usbgpu `artifacts/zig-stack/regress4b/`.
+
 ## Results (Vega 56, DPM auto, hipmac 16dde97+f656643)
 
 * Correctness: greedy tokens vs mlx_lm (6 prompts, 8-96 tokens, `tools/vega-macos/moe_ref.py` / `moe_gate.py`, now `tf-moe-gate`): 3 of 6 identical (incl. a 96-token one);

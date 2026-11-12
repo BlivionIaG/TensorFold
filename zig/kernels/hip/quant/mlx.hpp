@@ -36,6 +36,9 @@ struct Affine {
     int fp16;  // 0 is bf16, 1 is fp16
     Routing route = {};
     __half* out16 = nullptr;  // set: the tile rounds each output to the activation type here instead of writing out
+#if defined(TF_EXPERT_PTRS)
+    ExpertPtrs ptrs = {};
+#endif
 };
 
 // A routed block takes item ``z``: its expert's weights and its rows. False when the item has no rows.
@@ -48,11 +51,11 @@ __device__ inline bool take_item(Affine& a, int z) {
     const long long groups = a.k / a.group;
     const int table = a.scale.kind == kScaleF32 ? 4 : 2;
 #if defined(TF_EXPERT_PTRS)
-    if (a.route.ptab) {
-        const unsigned long long src = a.route.ptab[2 * expert];
-        const unsigned long long dst = a.route.ptab[2 * expert + 1];
-        a.route.dst_delta = dst ? static_cast<long long>(dst - src) : 0;
-        const char* blob = reinterpret_cast<const char*>(src) + a.route.ptab_off;
+    if (a.ptrs.ptab) {
+        const unsigned long long src = a.ptrs.ptab[2 * expert];
+        const unsigned long long dst = a.ptrs.ptab[2 * expert + 1];
+        a.ptrs.dst_delta = dst ? static_cast<long long>(dst - src) : 0;
+        const char* blob = reinterpret_cast<const char*>(src) + a.ptrs.ptab_off;
         const long long words_bytes = static_cast<long long>(a.n) * (static_cast<long long>(a.k) * a.bits / 32) * 4;
         const long long table_bytes = static_cast<long long>(a.n) * groups * table;
         a.words = reinterpret_cast<const uint32_t*>(blob);

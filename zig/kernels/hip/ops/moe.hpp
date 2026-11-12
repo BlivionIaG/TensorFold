@@ -86,7 +86,7 @@ extern "C" __global__ void tf_moe_route(const int* picks, int pairs, int experts
     }
 }
 
-#if defined(TF_EXPERT_PTRS)
+#if defined(TF_EXPERT_TRACE)
 // Offloaded experts: a layer's picks (pairs ids, row-major, the shared expert's last in each row) into the round's trace, host memory the Mac reads
 // once the round has finished. One block; the trace is the only way the host learns which experts a round used.
 extern "C" __global__ void tf_expert_trace(const int* picks, int pairs, int* trace) {

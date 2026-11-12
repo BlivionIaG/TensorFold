@@ -499,7 +499,8 @@ fn exactTool(b: *std.Build, target: std.Build.ResolvedTarget, e: Engine, family_
     }) });
 }
 /// A group's source and whether it compiles with IEEE arithmetic (`strict`: -O2 -fno-fast-math, IEEE denormals).
-const Source = struct { path: []const u8, strict: bool = false };
+/// `ptrs`: built with the expert-offload code (-DTF_EXPERT_PTRS=1, tiles/plan.hpp) where the chip's caps `expert_ptrs` allow it.
+const Source = struct { path: []const u8, strict: bool = false, ptrs: bool = false };
 /// The model-free kernels' source groups, in zig/src/hip/kernels.zig's Group order.
 const groups = [_]Source{
     .{ .path = "ops/ops.hip" },
@@ -518,6 +519,7 @@ const groups = [_]Source{
     .{ .path = "lighton_ocr.hip", .strict = true },
     .{ .path = "qwen_vision.hip", .strict = true },
     .{ .path = "draft/draft.hip" },
+    .{ .path = "tiles/dot2_tiles_ptr.hip", .ptrs = true },
 };
 /// What the group sources include, so an edit to one rebuilds them.
 const headers = [_][]const u8{
@@ -564,18 +566,18 @@ pub fn objectFiles(b: *std.Build, cc: Hipcc, arch: []const u8) *std.Build.Step.W
     for (groups, 0..) |g, i| {
         const name = b.fmt("group{d}.hsaco", .{i});
         const source = b.path(b.fmt("zig/kernels/hip/{s}", .{g.path}));
-        _ = files.addCopyFile(compileSource(b, cc, arch, source, name, g.strict), name);
+        _ = files.addCopyFile(compileSource(b, cc, arch, source, name, g.strict, g.ptrs), name);
     }
     return files;
 }
 
 /// One source's code object for `arch`, with the kernels' flags and the caps table's instruction switches.
 pub fn compile(b: *std.Build, cc: Hipcc, arch: []const u8, source: std.Build.LazyPath, out: []const u8) LazyPath {
-    return compileSource(b, cc, arch, source, out, false);
+    return compileSource(b, cc, arch, source, out, false, false);
 }
 
 /// `compile`, with `-O2 -fno-fast-math -fdenormal-fp-math=ieee` after the common flags when `strict`.
-fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, out: []const u8, strict: bool) LazyPath {
+fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, out: []const u8, strict: bool, ptrs: bool) LazyPath {
     const c = caps.Caps.of(arch).?;
     const root = std.fs.path.dirname(std.fs.path.dirname(cc.resolved) orelse ".") orelse ".";
     const run = hipccRun(b, cc.name, &.{"--genco"});
@@ -589,7 +591,8 @@ fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, o
     run.addArg(b.fmt("-DTF_SDOT8={d}", .{@intFromBool(c.sdot8)}));
     run.addArg(b.fmt("-DTF_MATRIX={d}", .{@intFromBool(c.matrix != .none)}));
     run.addArg(b.fmt("-DTF_DOT2_SIGNED_ZERO={d}", .{@intFromBool(c.dot2_signed_zero)}));
-    if (c.expert_ptrs) run.addArg("-DTF_EXPERT_PTRS=1");
+    if (c.expert_ptrs) run.addArg("-DTF_EXPERT_TRACE=1");
+    if (c.expert_ptrs and ptrs) run.addArg("-DTF_EXPERT_PTRS=1");
     run.addArgs(extra_flags);
     run.addArg(b.fmt("--rocm-path={s}", .{root}));
     const lib = cc.device_lib orelse b.fmt("{s}/lib/llvm/amdgcn/bitcode", .{root});
