@@ -4,6 +4,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- DeepSeek V4.1 on Metal: the batched one-row attention windows (`TF_DSV41_BATCH_ATTN`) are on by default now, `0` keeps the per-slot chain: greedy streams are equal to the per-slot ones at 1, 2 and 4 streams, and on an M5 Ultra two streams step in 28.3 ms instead of 30.1 and four in 43.0 ms instead of 48.0.
 - DeepSeek V4.1 on Metal: the EXL3 decode matvec's mul1 value drops its `+0x6400` add (the half FMA takes twice the byte sum as subnormal half bits, same value for all 65536 states), the T-tile body carries two 32-bit trellis windows with one funnel shift each and cuts k into 16 fixed ranges whatever the warp count (`TF_DSV41_FMA_WARPS` 8 or 4 is now a pure occupancy knob), and the multi-row dense bodies (2 to 8 rows) run on the same body instead of the lookup-table bodies. Every output bit is unchanged (greedy streams equal at 1, 2 and 4 streams); on an M5 Ultra a single stream decodes 10 % faster and four streams 17 % faster.
 - DeepSeek V4.1 on Metal: `TF_DSV41_DIAG_FILE=<path>` names a control file, re-read at each forward when it changes, whose lines `dump`, `skip NAME`, `double NAME`, `nobarrier` and `clear` print the dispatches of the last forward by kernel, drop a kernel, run it twice (timing only) or drop the memory barriers; unset, a dispatch pays one branch.
 
