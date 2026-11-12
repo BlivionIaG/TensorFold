@@ -175,8 +175,7 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
     return glueOne(ctx, r, c);
 }
 
-/// glue.sel_gather(sel int32 [2 h, K], mine [h, K], all [2 h, K], h) (TF_DSV41_INDEX_SPLIT): each rank's half of the
-/// selection rows (rank r: rows [r h, (r + 1) h)) all-gathered; the other rank's half lands in `sel` beside its own.
+/// glue.sel_gather(sel [2 h, K], mine [h, K], all [2 h, K], h): rank r's rows [r h, (r + 1) h) all-gathered into `sel`.
 fn selGather(f: *Forward, r: *run.Runner, c: *const calls.Call) !void {
     const x = c.args;
     const half: usize = @intCast(x[3].arg.i);

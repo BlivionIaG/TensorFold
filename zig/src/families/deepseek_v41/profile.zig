@@ -27,7 +27,7 @@ pub const Profile = struct {
     cur: std.StringArrayHashMapUnmanaged(Total) = .empty,
     cur_wall_ns: u64 = 0,
     cur_gpu_ns: u64 = 0,
-    /// one JSON line a prefill window (TF_DSV41_PROFILE's `<file>.windows.jsonl`): rows before it, its rows, times, calls
+    /// one JSON line a prefill window (`<file>.windows.jsonl`): rows before it, its rows, times, calls
     lines: std.ArrayList(u8) = .empty,
     lines_n: u64 = 0,
 
@@ -123,7 +123,7 @@ pub const Profile = struct {
         if (tail) p.pf.tail_rows += rows else p.pf.rows += rows;
     }
 
-    /// One JSON line for the window `end` just summed: {"i", "at" (rows before it), "rows", "tail", wall/gpu ms, "calls": {name: [n, ms]}}.
+    /// One JSON line for the window just summed: i, at (rows before it), rows, tail, wall/gpu ms, calls {name: [n, ms]}.
     fn windowLine(p: *Profile, rows: u64, tail: bool) !void {
         if (p.cur.count() == 0) return;
         var w: std.Io.Writer.Allocating = .init(p.gpa);

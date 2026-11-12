@@ -1,4 +1,4 @@
-//! Host test of TF_DSV41_INDEX_SPLIT: the reader, and the long-prefill program with each rank streaming half of the rows.
+//! Host test of TF_DSV41_INDEX_SPLIT: the reader, and the long-prefill program with half of the rows a rank.
 const std = @import("std");
 const testing = std.testing;
 const calls = @import("block_calls.zig");
