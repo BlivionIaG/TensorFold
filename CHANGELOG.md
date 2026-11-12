@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- DeepSeek V4.1 on Metal: a decode layer's attention output rotation (the inverse RoPE of each head's last 64 columns) is folded into wo_a's input rotation: one dispatch applies the rope in place and rotates the result, so the output is bit-identical (`TF_DSV41_NO_FUSE_OROPE=1` keeps the two dispatches).
+
 - DeepSeek V4.1 on Metal: a decode layer's wq_b epilogue and the query's RoPE are one dispatch: the rotated pair of each head's last 64 columns is read from the neighbouring lane of the same SIMD group after the BF16 rounding, with the rope kernel's own expressions, so the query is bit-identical (`TF_DSV41_NO_FUSE_QROPE=1` keeps the two dispatches; a diagnostic capture of the pre-RoPE query also does).
 
 - DeepSeek V4.1 on Metal: a decode layer's query latent norm and wq_b's input rotation are one dispatch: one threadgroup normalizes the row in the norm kernel's own summation order, rounds to BF16, and rotates it, so the output is bit-identical and the normalized row is still written for the indexer (`TF_DSV41_NO_FUSE_QNORM=1` keeps the two dispatches).

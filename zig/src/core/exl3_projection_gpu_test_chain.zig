@@ -76,7 +76,7 @@ fn woChain(first: ex.Matrix, second: ex.Matrix, next: ex.Matrix) !void {
     try ex.encodeIndexed(&p, e, experts, .{ .buffer = x, .offset = 32 }, .{ .buffer = grouped_ref }, .{ .buffer = scratch }, rows);
     try ex.encode(&p, e, next, .{ .buffer = grouped_ref }, .{ .buffer = y_ref }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = groups * n, .y_stride = n });
     // The fused chain.
-    try ex.chain.encodeIndexedRotateNext(&p, e, experts, .{ .buffer = x, .offset = 32 }, .{ .buffer = grouped }, .{ .buffer = scratch }, rows, .{ .su = next.suh, .su_signs = next.suh_format == .packed_signs, .k = groups * n });
+    try ex.chain.encodeIndexed(&p, e, experts, .{ .buffer = x, .offset = 32 }, .{ .buffer = grouped }, .{ .buffer = scratch }, rows, .{ .next = .{ .su = next.suh, .su_signs = next.suh_format == .packed_signs, .k = groups * n } });
     try ex.encode(&p, e, next, .{ .buffer = scratch }, .{ .buffer = y }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = groups * n, .y_stride = n, .prerotated = true });
     try complete(cb, e);
     try std.testing.expectEqualSlices(u16, grouped_ref.slice(u16, groups * n), grouped.slice(u16, groups * n));
@@ -268,4 +268,98 @@ test "wq_b epilogue fused with the query rope keeps every bit (packed sign scale
     defer s.deinit();
     try qRope(s.matrix, 1, 32, 5, false, false);
     try qRope(s.matrix, 2, 64, 9, true, true);
+}
+
+/// The output's inverse rope then wo_a (indexed over two groups of one 256-column head each) and wo_b, against the
+/// rope folded into wo_a's rotate_in (and, `chained`, wo_a's epilogue folded into wo_b's rotate_in).
+fn oRope(first: ex.Matrix, second: ex.Matrix, next: ex.Matrix, rotary: u32, position: u32, chained: bool) !void {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    var p = try ex.Pipelines.load(device);
+    defer p.deinit();
+    if (!ex.chain.ropeRotateInReady(&p) or !ex.chain.rotateOutInReady(&p)) return error.SkipZigTest;
+    const queue = try device.queue();
+    defer queue.deinit();
+    var opts = mtl.CompileOptions.mlx();
+    opts.math_functions = .precise;
+    const lib = try mtl.Library.fromSource(device, sources.deepseek_v41_rope, opts);
+    defer lib.deinit();
+    const rope = try mtl.Pipeline.init(device, lib, "dsv41_rope", false);
+    defer rope.deinit();
+    const groups = 2;
+    const capacity = 64;
+    const factors = try device.buffer(capacity * rotary / 2 * 8, mtl.ResourceOptions.shared);
+    defer factors.deinit();
+    var prng = std.Random.DefaultPrng.init(0xbeef);
+    for (factors.slice(f32, capacity * rotary)) |*v| v.* = prng.random().float(f32) * 2 - 1;
+    const descriptors = try device.buffer(groups * @sizeOf(ex.ExpertDescriptor), mtl.ResourceOptions.shared);
+    defer descriptors.deinit();
+    descriptors.slice(ex.ExpertDescriptor, groups)[0] = try ex.descriptor(first);
+    descriptors.slice(ex.ExpertDescriptor, groups)[1] = try ex.descriptor(second);
+    const ids = try device.buffer(groups * 4, mtl.ResourceOptions.shared);
+    defer ids.deinit();
+    @memcpy(ids.slice(u32, groups), &[_]u32{ 0, 1 });
+    const q_ref = try device.buffer(groups * k * 2, mtl.ResourceOptions.shared);
+    defer q_ref.deinit();
+    const q = try device.buffer(groups * k * 2, mtl.ResourceOptions.shared);
+    defer q.deinit();
+    for (q_ref.slice(u16, groups * k), 0..) |*v, i| v.* = support.bf16(@as(f32, @floatFromInt(@as(i32, @intCast(i * 7 % 29)) - 14)) / 8);
+    @memcpy(q.slice(u16, groups * k), q_ref.slice(u16, groups * k));
+    const grouped_ref = try device.buffer(groups * n * 2, mtl.ResourceOptions.shared);
+    defer grouped_ref.deinit();
+    const grouped = try device.buffer(groups * n * 2, mtl.ResourceOptions.shared);
+    defer grouped.deinit();
+    const y_ref = try device.buffer(n * 2, mtl.ResourceOptions.shared);
+    defer y_ref.deinit();
+    const y = try device.buffer(n * 2, mtl.ResourceOptions.shared);
+    defer y.deinit();
+    const scratch = try device.buffer(try ex.scratchBytes(k, n, groups) + try ex.scratchBytes(groups * n, n, 1), mtl.ResourceOptions.shared);
+    defer scratch.deinit();
+    const experts: ex.Experts = .{ .descriptors = .{ .buffer = descriptors }, .count = groups, .k = k, .n = n };
+    const rows: ex.Rows = .{ .count = groups, .x_stride = k, .y_stride = n, .routes = .{ .ids = .{ .buffer = ids }, .repeat = 1 }, .output_rows = groups };
+    const cb = queue.commandBuffer();
+    const e = cb.compute(.concurrent);
+    ex.useMatrix(e, first);
+    ex.useMatrix(e, second);
+    e.setPipeline(rope);
+    e.setBuffer(q_ref, 0, 0);
+    e.setValue(extern struct { rows: u32, heads: u32, width: u32, rotary: u32, stride: u32, position: u32, step: u32, inverse: u32, spectrum: u32 }{ .rows = 1, .heads = groups, .width = k, .rotary = rotary, .stride = groups * k, .position = position, .step = 1, .inverse = 1, .spectrum = 0 }, 1);
+    e.setBuffer(factors, 0, 2);
+    e.dispatchThreads(.{ .width = rotary / 2, .height = groups, .depth = 1 }, .{ .width = 128 });
+    e.barrier();
+    try ex.encodeIndexed(&p, e, experts, .{ .buffer = q_ref }, .{ .buffer = grouped_ref }, .{ .buffer = scratch }, rows);
+    try ex.encode(&p, e, next, .{ .buffer = grouped_ref }, .{ .buffer = y_ref }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = groups * n, .y_stride = n });
+    const rope_in: ex.chain.RopeIn = .{ .factors = .{ .buffer = factors }, .width = k, .rotary = rotary, .stride = groups * k, .position = position, .inverse = true };
+    if (chained) {
+        try ex.chain.encodeIndexed(&p, e, experts, .{ .buffer = q }, .{ .buffer = grouped }, .{ .buffer = scratch }, rows, .{ .rope_in = rope_in, .next = .{ .su = next.suh, .su_signs = next.suh_format == .packed_signs, .k = groups * n } });
+        try ex.encode(&p, e, next, .{ .buffer = scratch }, .{ .buffer = y }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = groups * n, .y_stride = n, .prerotated = true });
+    } else {
+        try ex.chain.encodeIndexed(&p, e, experts, .{ .buffer = q }, .{ .buffer = grouped }, .{ .buffer = scratch }, rows, .{ .rope_in = rope_in });
+        try ex.encode(&p, e, next, .{ .buffer = grouped }, .{ .buffer = y }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = groups * n, .y_stride = n });
+    }
+    try complete(cb, e);
+    try std.testing.expectEqualSlices(u16, q_ref.slice(u16, groups * k), q.slice(u16, groups * k));
+    try std.testing.expectEqualSlices(u16, grouped_ref.slice(u16, groups * n), grouped.slice(u16, groups * n));
+    try std.testing.expectEqualSlices(u16, y_ref.slice(u16, n), y.slice(u16, n));
+}
+
+test "the output rope fused into wo_a's rotate_in keeps every bit (alone and chained to wo_b)" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    const w0 = try Owned.init(device, 6, .mul1, 61);
+    defer w0.deinit();
+    const w1 = try Owned.init(device, 6, .mul1, 62);
+    defer w1.deinit();
+    const wb = try Owned.init(device, 6, .mul1, 63);
+    defer wb.deinit();
+    const s0 = try Signed.init(device, w0, 0x2b71, 0xd405);
+    defer s0.deinit();
+    const s1 = try Signed.init(device, w1, 0x91c3, 0x0f5e);
+    defer s1.deinit();
+    const sb = try Signed.init(device, wb, 0x6e22, 0xa917);
+    defer sb.deinit();
+    for ([_]u32{ 32, 64, 128 }) |rotary| for ([_]bool{ false, true }) |chained| {
+        try oRope(w0.matrix, w1.matrix, wb.matrix, rotary, 11, chained);
+        try oRope(s0.matrix, s1.matrix, sb.matrix, rotary, 3, chained);
+    };
 }
