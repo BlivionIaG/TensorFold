@@ -26,6 +26,12 @@ implementation exists, and no draft, long-context or concurrency qualification w
 `last == layers`, and no Neural Engine share. A range is checked against the layer count and a tensor-parallel rank
 refuses one.
 
+`split_peer.zig` runs a range as a stage of the split pipeline in `zig/src/split`. The two halves of the Qwen3.5-4B on one
+Mac, joined through the mock device's window, produced the unsplit run's greedy tokens at every cut tried (measured: cuts
+1, 8, 16, 31; both orders, both levels; 32 tokens). Decode only: every position, the prompt's included, crosses the window
+as one token. `zig build test-qwen27-split` runs it, on generated weights always and on `TF_SPLIT_QWEN_DIR` when that
+names a dense checkpoint directory.
+
 ```bash
 tensorfold pull TensorFold/Qwen3.8-27B-MLX-4bit
 tensorfold pull z-lab/Qwen3.8-27B-DFlash2
