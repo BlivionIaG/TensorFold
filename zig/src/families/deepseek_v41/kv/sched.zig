@@ -167,11 +167,15 @@ pub const Floor = struct {
     }
 };
 
+/// Prompt rows a piece runs while a stream decodes (a piece is the longest a decoder waits): the live engine's chunk.
+pub const default_decode_rows: u64 = 2048;
+
 pub const Settings = struct {
     rows: u64 = 2048, // TF_DSV41_PREFILL_ROWS: rows of prompt a round (the forward's segment)
     short: u64 = 512, // TF_DSV41_BATCH_SHORT: prompts with at most this many tokens left go every round
     share: f64 = 0.5, // TF_DSV41_PREFILL_SHARE
     interleave_ms: u64 = 0, // TF_DSV41_PREFILL_INTERLEAVE_MS: decode ms after each piece, not the share
+    decode_rows: u64 = 0, // TF_DSV41_PREFILL_DECODE_ROWS: a piece's rows while a stream decodes (0: `rows`)
     long_prompt: u64 = 32768, // TF_DSV41_LONG_PROMPT / TF_DSV41_PREFILL_CONCURRENT (0: no limit)
     concurrent: u64 = 1,
     session_min: u64 = 64, // shorter prompts are not snapshotted
@@ -186,6 +190,7 @@ pub const Settings = struct {
         if (try envInt("TF_DSV41_BATCH_SHORT")) |v| s.short = v;
         if (try envFloat("TF_DSV41_PREFILL_SHARE")) |v| s.share = v;
         if (try envInt("TF_DSV41_PREFILL_INTERLEAVE_MS")) |v| s.interleave_ms = v;
+        s.decode_rows = try envInt("TF_DSV41_PREFILL_DECODE_ROWS") orelse default_decode_rows;
         if (try envInt("TF_DSV41_LONG_PROMPT")) |v| s.long_prompt = v;
         if (try envInt("TF_DSV41_PREFILL_CONCURRENT")) |v| s.concurrent = v;
         if (!(s.share > 0.0 and s.share <= 1.0) or s.long_prompt < 1) return error.BadSettings;
@@ -459,6 +464,7 @@ pub const Planner = struct {
         defer waiting.deinit(p.gpa);
         for (p.seqs.items) |*x| if (!x.decoding and x.done < x.n - 1) try waiting.append(p.gpa, x);
         var budget: u64 = if (waiting.items.len > 0) try p.roundRows(waiting.items, mem) else p.s.rows;
+        if (decoding and p.s.decode_rows > 0) budget = @min(budget, p.s.decode_rows); // a decoder waits a piece
         std.mem.sort(*Seq, waiting.items, {}, struct {
             fn less(_: void, a: *Seq, b: *Seq) bool {
                 const la = a.n - 1 - a.done;
