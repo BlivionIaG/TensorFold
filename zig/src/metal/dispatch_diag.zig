@@ -1,9 +1,5 @@
-//! A per-kernel diagnostic: dispatches counted by pipeline name, and named kernels skipped or run twice.
-//!
-//! Armed by TF_DSV41_DIAG_FILE=<path>; the file is re-read at every forward when it changes. One directive a line:
-//! `skip NAME` (the dispatch is dropped, output garbage, timing only), `double NAME` (run twice, timing only),
-//! `nobarrier` (memory barriers dropped; serial encoders only), `dump` (print the last forward's per-pipeline dispatch
-//! counts and threadgroups to stderr), `clear`. NAME matches a pipeline name by substring.
+//! A per-kernel diagnostic armed by TF_DSV41_DIAG_FILE: dispatch counts by pipeline name, skipped or doubled kernels.
+
 const std = @import("std");
 
 const max_pipes = 1024;
@@ -13,6 +9,7 @@ const name_cap = 56;
 const Pipe = struct { id: usize = 0, name: [name_cap]u8 = undefined, len: u8 = 0, skip: bool = false, twice: bool = false };
 const Rule = struct { text: [name_cap]u8 = undefined, len: u8 = 0, twice: bool = false };
 
+/// The file is re-read at each forward when it changes; lines: skip NAME, double NAME, nobarrier, dump, clear.
 pub var armed: bool = false;
 /// `nobarrier`: memory barriers are dropped (a serial encoder orders dispatches itself; a concurrent one would race).
 pub var no_barrier: bool = false;
