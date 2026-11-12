@@ -46,6 +46,7 @@ test {
     _ = @import("contract/moss_image_records.zig");
     _ = @import("contract/metal_pair_records.zig");
     _ = @import("contract/affine_gather_records.zig");
+    _ = @import("contract/qwen27_split_records.zig");
     _ = spec;
     _ = gates;
     _ = rows;
