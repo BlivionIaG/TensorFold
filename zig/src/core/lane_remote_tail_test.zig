@@ -61,3 +61,17 @@ test "remote prefix of all but the last token, kept: the same prompt again resum
     try t.expectEqual(@as(?u32, 0), again.pulled_prefix); // nothing pulled this time
     try t.expectEqual(@as(u64, 1), s.counts.misses); // only the first run missed
 }
+
+test "remote prefix 64 rows short of the prompt, kept: the same prompt again resumes a kept state and asks the pair for nothing" {
+    var prompt: [1000]u32 = undefined;
+    for (&prompt, 0..) |*token, i| token.* = @intCast(i + 1);
+    var s = store();
+    defer s.deinit();
+    var peer: fixture.Peer = .{ .at = 936 };
+    defer peer.kept.deinit(t.allocator);
+    const first = try fixture.runKeep(&peer, &.{ .prompt = &prompt, .max_tokens = 1 }, null, &s, .{ .keep = true });
+    try t.expectEqual(@as(usize, 1), first.marks); // the pull's own end is the mark kept: nothing else lies past it
+    try t.expectEqual(@as(u32, 936), s.entries.items[0].at);
+    _ = try fixture.runKeep(&peer, &.{ .prompt = &prompt, .max_tokens = 2 }, null, &s, .{ .keep = true });
+    try t.expectEqual(@as(u32, 1), peer.fills);
+}
