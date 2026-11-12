@@ -118,6 +118,7 @@ pub const Pipeline = struct {
         defer objc.release(desc);
         objc.msg(void, desc, "setComputeFunction:", .{func});
         const id = objc.msg(?Id, device.id, "newComputePipelineStateWithDescriptor:options:reflection:error:", .{ desc, @as(usize, 0), @as(?*anyopaque, null), &err });
+        if (id) |pid| @import("dispatch_diag.zig").register(@intFromPtr(pid), name);
         return .{ .id = id orelse {
             std.log.err("pipeline {s}: {s}", .{ name, objc.errorText(err) });
             return error.PipelineBuild;
@@ -140,6 +141,7 @@ pub const Pipeline = struct {
         objc.msg(void, desc, "setComputeFunction:", .{func});
         objc.msg(void, desc, "setSupportIndirectCommandBuffers:", .{indirect});
         const id = objc.msg(?Id, device.id, "newComputePipelineStateWithDescriptor:options:reflection:error:", .{ desc, @as(usize, 0), @as(?*anyopaque, null), &err });
+        if (id) |pid| @import("dispatch_diag.zig").register(@intFromPtr(pid), name);
         return .{ .id = id orelse {
             if (optional) std.log.info("pipeline {s}: {s}", .{ name, objc.errorText(err) }) else std.log.err("pipeline {s}: {s}", .{ name, objc.errorText(err) });
             return error.PipelineBuild;
