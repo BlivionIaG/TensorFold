@@ -23,6 +23,13 @@ pub const Profile = struct {
     /// the open window is a prefill segment (beginPrefill): its times go to `pf`
     prefill: bool = false,
     pf: Totals = .{},
+    /// the prefill window that just ended: its calls summed by name, until `prefillRows` writes its line
+    cur: std.StringArrayHashMapUnmanaged(Total) = .empty,
+    cur_wall_ns: u64 = 0,
+    cur_gpu_ns: u64 = 0,
+    /// one JSON line a prefill window (TF_DSV41_PROFILE's `<file>.windows.jsonl`): rows before it, its rows, times, calls
+    lines: std.ArrayList(u8) = .empty,
+    lines_n: u64 = 0,
 
     pub const Totals = struct {
         calls: std.StringArrayHashMapUnmanaged(Total) = .empty,
@@ -107,11 +114,36 @@ pub const Profile = struct {
     pub fn beginPrefill(p: *Profile) void {
         p.begin();
         p.prefill = true;
+        p.cur.clearRetainingCapacity();
     }
 
-    /// The rows the last prefill window covered (`tail`: a CED decoder replay's).
+    /// The rows the last prefill window covered (`tail`: a CED decoder replay's): its line joins the windows file.
     pub fn prefillRows(p: *Profile, rows: u64, tail: bool) void {
+        p.windowLine(rows, tail) catch |e| std.log.err("profile: window line not written ({t})", .{e});
         if (tail) p.pf.tail_rows += rows else p.pf.rows += rows;
+    }
+
+    /// One JSON line for the window `end` just summed: {"i", "at" (rows before it), "rows", "tail", wall/gpu ms, "calls": {name: [n, ms]}}.
+    fn windowLine(p: *Profile, rows: u64, tail: bool) !void {
+        if (p.cur.count() == 0) return;
+        var w: std.Io.Writer.Allocating = .init(p.gpa);
+        defer w.deinit();
+        const at = if (tail) p.pf.tail_rows else p.pf.rows;
+        try w.writer.print("{{\"i\": {d}, \"at\": {d}, \"rows\": {d}, \"tail\": {}, \"wall_ms\": {d:.3}, \"gpu_ms\": {d:.3}, \"calls\": {{", .{ p.lines_n, at, rows, tail, @as(f64, @floatFromInt(p.cur_wall_ns)) / 1e6, @as(f64, @floatFromInt(p.cur_gpu_ns)) / 1e6 });
+        for (p.cur.keys(), p.cur.values(), 0..) |k, v, i| try w.writer.print("{s}\"{s}\": [{d}, {d:.3}]", .{ if (i == 0) "" else ", ", k, v.calls, @as(f64, @floatFromInt(v.ns)) / 1e6 });
+        try w.writer.writeAll("}}\n");
+        try p.lines.appendSlice(p.gpa, w.written());
+        p.cur.clearRetainingCapacity();
+        p.lines_n += 1;
+        if (p.lines_n % 4 == 0) p.flushLines();
+    }
+
+    /// `<file>.windows.jsonl`: every line so far (rewritten whole; the engine may be killed before `close`).
+    fn flushLines(p: *Profile) void {
+        const path = std.fmt.allocPrint(p.gpa, "{s}.windows.jsonl", .{p.path}) catch return;
+        defer p.gpa.free(path);
+        const io = std.Io.Threaded.global_single_threaded.io();
+        std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = p.lines.items }) catch |e| std.log.err("profile: {s} not written ({t})", .{ path, e });
     }
 
     /// Before a call: its start event on the stream.
@@ -139,6 +171,10 @@ pub const Profile = struct {
             p.wall_ns += wall;
             p.windows += 1;
         }
+        if (p.prefill) {
+            p.cur_wall_ns = wall;
+            p.cur_gpu_ns = 0;
+        }
         for (p.open.items) |o| {
             const ms = try p.events.items[o.at].elapsedMs(p.events.items[o.at + 1]);
             const ns: u64 = @intFromFloat(@max(0.0, ms) * 1e6);
@@ -149,7 +185,14 @@ pub const Profile = struct {
             }
             g.value_ptr.calls += 1;
             g.value_ptr.ns += ns;
-            if (p.prefill) p.pf.gpu_ns += ns else p.gpu_ns += ns;
+            if (p.prefill) {
+                p.pf.gpu_ns += ns;
+                p.cur_gpu_ns += ns;
+                const c = try p.cur.getOrPut(p.gpa, g.key_ptr.*);
+                if (!c.found_existing) c.value_ptr.* = .{};
+                c.value_ptr.calls += 1;
+                c.value_ptr.ns += ns;
+            } else p.gpu_ns += ns;
             var kb: [24]u8 = undefined;
             const lk = std.fmt.bufPrint(&kb, "layer.{d:0>2}", .{o.layer}) catch continue;
             const lg = try map.getOrPut(p.gpa, lk);
@@ -159,6 +202,12 @@ pub const Profile = struct {
             }
             lg.value_ptr.calls += 1;
             lg.value_ptr.ns += ns;
+            if (p.prefill) {
+                const c = try p.cur.getOrPut(p.gpa, lg.key_ptr.*);
+                if (!c.found_existing) c.value_ptr.* = .{};
+                c.value_ptr.calls += 1;
+                c.value_ptr.ns += ns;
+            }
         }
         p.prefill = false;
     }
@@ -175,6 +224,9 @@ pub const Profile = struct {
         if (std.Io.Dir.cwd().writeFile(io, .{ .sub_path = p.path, .data = w.written() })) |_| {
             std.log.info("profile: {s} written ({d} windows, {d} prefill segments)", .{ p.path, p.windows, p.pf.windows });
         } else |e| std.log.err("profile: {s} not written ({t})", .{ p.path, e });
+        p.flushLines();
+        p.lines.deinit(p.gpa);
+        p.cur.deinit(p.gpa);
         for (p.events.items) |*e| e.deinit();
         p.events.deinit(p.gpa);
         p.open.deinit(p.gpa);
