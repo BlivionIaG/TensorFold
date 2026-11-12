@@ -173,21 +173,21 @@ pub fn tf_expert_trace(l: *const Launcher, picks: CI, pairs: c_int, dst: I, s: S
     try l.go(l.op.expert_trace, dim(1, 1, 1), dim(256, 1, 1), 0, s, &a);
 }
 
-/// The hit/miss check of an offloaded decode layer (kernels/hip/ops/moe.hpp tf_expert_check; one block): `picks` (`pairs` ids) to the layer's trace slot `trace`, each looked up in
-/// `resident` (a u64 a key of this layer's experts), the VRAM table `row` filled on a hit, `need` set on a miss; a hit stores `seen` and `ack` = `n`, a miss `req` = `n`.
-/// `split` (hit-first): the plan's `items` (`count` entries) are also written to `hit` and `miss` by class, each with the other's pair counts zeroed (all 0: not split).
-pub const ItemSplit = struct { items: u64 = 0, count: c_int = 0, hit: u64 = 0, miss: u64 = 0 };
+/// The hit/miss check of an offloaded decode layer (kernels/hip/ops/moe.hpp tf_expert_check; one wave): `picks` (`pairs` ids) to the layer's trace slot `trace`, each looked up in
+/// `resident` (a u64 a key of this layer's experts); a hit stores `seen` and `ack` = `n`, a miss `req` = `n`.
+/// `split` (hit-first): the plan's `items` (`count` entries) are also written to `hit` and `miss` by class, each with the other's pair counts zeroed, and the layer's VRAM table `row`
+/// gets the resident picks' entries (line, 0) at once (all 0: not split, and `tf_expert_rows` writes them after the wait).
+pub const ItemSplit = struct { items: u64 = 0, count: c_int = 0, hit: u64 = 0, miss: u64 = 0, row: u64 = 0 };
 
-pub fn tf_expert_check(l: *const Launcher, picks: CI, pairs: c_int, experts: c_int, resident: u64, row: u64, trace: u64, need: u64, ack: u64, seen: u64, req: u64, n: u32, split: ItemSplit, s: S) Error!void {
+pub fn tf_expert_check(l: *const Launcher, picks: CI, pairs: c_int, experts: c_int, resident: u64, trace: u64, ack: u64, seen: u64, req: u64, n: u32, split: ItemSplit, s: S) Error!void {
     if (comptime !@import("../kernels.zig").expert_ptrs) return invalid("expert_check");
     var a: Args = .{};
     try a.add(ad(picks));
     try a.add(pairs);
     try a.add(experts);
     try a.add(resident);
-    try a.add(row);
+    try a.add(split.row);
     try a.add(trace);
-    try a.add(need);
     try a.add(ack);
     try a.add(seen);
     try a.add(req);
@@ -215,8 +215,8 @@ pub fn tf_expert_chunks(l: *const Launcher, items: CI, count: c_int, experts: c_
     try l.go(l.op.expert_chunks, dim(1, 1, 1), dim(256, 1, 1), 0, s, &a);
 }
 
-/// After the wait on the ack: the host's table row into the VRAM `row` for the picked experts when `need` is set, or for all `experts` when `all`.
-pub fn tf_expert_rows(l: *const Launcher, picks: CI, pairs: c_int, experts: c_int, host_row: u64, row: u64, need: u64, all: bool, s: S) Error!void {
+/// After the wait on the ack: the VRAM table `row` for the picked experts (all `experts` when `all`): (line, 0) from `resident` when `seen` says the card passed job `n`, the host's row otherwise.
+pub fn tf_expert_rows(l: *const Launcher, picks: CI, pairs: c_int, experts: c_int, host_row: u64, row: u64, resident: u64, seen: u64, n: u32, all: bool, s: S) Error!void {
     if (comptime !@import("../kernels.zig").expert_ptrs) return invalid("expert_rows");
     var a: Args = .{};
     try a.add(ad(picks));
@@ -224,7 +224,9 @@ pub fn tf_expert_rows(l: *const Launcher, picks: CI, pairs: c_int, experts: c_in
     try a.add(experts);
     try a.add(host_row);
     try a.add(row);
-    try a.add(need);
+    try a.add(resident);
+    try a.add(seen);
+    try a.add(n);
     try a.add(@as(c_int, @intFromBool(all)));
     try l.go(l.op.expert_rows, dim(1, 1, 1), dim(64, 1, 1), 0, s, &a);
 }

@@ -93,21 +93,22 @@ extern "C" __global__ void tf_expert_trace(const int* picks, int pairs, int* tra
     for (int i = threadIdx.x; i < pairs; i += blockDim.x) trace[i] = picks[i];
 }
 
-// The hit/miss split of an offloaded layer's handshake (hip/expert_store.zig; docs/LATENCY.md M1). One block, after the layer's pick.
+// The hit/miss split of an offloaded layer's handshake (hip/expert_store.zig; docs/LATENCY.md M1). One wave, after the layer's pick.
 // The picks go to the layer's trace slot in host memory (pairs ids, the shared expert's last in each row), where the host's worker reads them
 // whether the card asks or not. Each routed pick is looked up in `resident`, a word a key in host memory: the address of the VRAM line that holds
-// the expert, or 0. All resident: the VRAM table row (entries of two u64: the blob's address, then the admission line or 0) gets the lines'
-// addresses here, `need` stays 0, and the card satisfies the stream's wait on the ack itself (`seen` is the host's view of that); otherwise `need` is
-// set and the card asks (`req`) and leaves the ack to the host. The stores to host memory are in the order trace, then the word: the host reads
-// the trace after it sees the word. With `items` (the plan's (count, 3) entries of expert, first pair, pairs: hit-first, M2) the entries are also split in two
-// arrays of the same shape, by the same lookup: `hit` keeps the entries of resident experts and of the shared one (an id past the routed experts), `miss`
-// the others, each with the other class's pair count zeroed, so a GEMV launched over either does only its class's work.
-extern "C" __global__ void __launch_bounds__(256) tf_expert_check(const int* picks, int pairs, int experts,
-                                                                   const unsigned long long* resident,
-                                                                   unsigned long long* row, int* trace, unsigned* need,
-                                                                   unsigned* ack, unsigned* seen, unsigned* req,
-                                                                   unsigned n, const int* items, int count,
-                                                                   int* hit, int* split_miss) {
+// the expert, or 0. All resident: the card satisfies the stream's wait on the ack itself (`seen` = n is the host's view of that, and what the rows
+// kernel after the wait reads to know the stage was a hit); otherwise it asks (`req`) and leaves the ack to the host. The stores to host memory are in the
+// order trace, then the word: the host reads the trace after it sees the word. With `items` (the plan's (count, 3) entries of expert, first pair, pairs:
+// hit-first, M2) the entries are also split in two arrays of the same shape, by the same lookup: `hit` keeps the entries of resident experts and of the
+// shared one (an id past the routed experts), `miss` the others, each with the other class's pair count zeroed, so a GEMV launched over either does only
+// its class's work. Only there, `row` (the layer's VRAM table row) is not null: the hit experts' GEMVs are launched before the stream's wait, so the resident
+// picks' entries (line, 0) are written here; without it `tf_expert_rows` writes them after the wait.
+extern "C" __global__ void __launch_bounds__(64) tf_expert_check(const int* picks, int pairs, int experts,
+                                                                  const unsigned long long* resident,
+                                                                  unsigned long long* row, int* trace,
+                                                                  unsigned* ack, unsigned* seen, unsigned* req,
+                                                                  unsigned n, const int* items, int count,
+                                                                  int* hit, int* split_miss) {
     __shared__ int miss;
     if (threadIdx.x == 0) miss = 0;
     __syncthreads();
@@ -118,7 +119,7 @@ extern "C" __global__ void __launch_bounds__(256) tf_expert_check(const int* pic
         const unsigned long long line = __hip_atomic_load(resident + id, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
         if (line == 0) {
             miss = 1;
-        } else {
+        } else if (row != nullptr) {
             row[2 * static_cast<long long>(id)] = line;
             row[2 * static_cast<long long>(id) + 1] = 0;
         }
@@ -140,9 +141,7 @@ extern "C" __global__ void __launch_bounds__(256) tf_expert_check(const int* pic
     __threadfence_system();
     __syncthreads();
     if (threadIdx.x == 0) {
-        const int m = miss;
-        need[0] = m ? 1u : 0u;
-        if (m) {
+        if (miss) {
             __hip_atomic_store(req, n, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
         } else {
             __hip_atomic_store(seen, n, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
@@ -151,18 +150,27 @@ extern "C" __global__ void __launch_bounds__(256) tf_expert_check(const int* pic
     }
 }
 
-// After the stream's wait on the ack: the host's table row (host memory) into the VRAM row, for the picked experts, when the check found a miss
-// (`need`) or for every expert of the row (`all`: a prompt span, which does not check). The GEMVs then read their entries from device memory.
-extern "C" __global__ void __launch_bounds__(256) tf_expert_rows(const int* picks, int pairs, int experts,
-                                                                  const unsigned long long* host_row,
-                                                                  unsigned long long* row, const unsigned* need, int all) {
-    if (!all && need[0] == 0) return;
+// After the stream's wait on the ack, the VRAM table row the GEMVs read, for the picked experts (every expert of the row for `all`: a prompt span, which does
+// not check; its entries are the host's). A stage the card passed (the check stored `seen` = n; `seen` only ever holds the last passed stage's number, so a
+// stage the card asked about has `seen` < n): each entry is (the resident line's address, 0), read from `resident` as the check saw it (the host changes it only
+// while serving a later stage). Otherwise the host's row entries (host memory), which the host wrote before it answered.
+extern "C" __global__ void __launch_bounds__(64) tf_expert_rows(const int* picks, int pairs, int experts,
+                                                                 const unsigned long long* host_row,
+                                                                 unsigned long long* row, const unsigned long long* resident,
+                                                                 const unsigned* seen, unsigned n, int all) {
+    const bool passed = !all && static_cast<int>(__hip_atomic_load(seen, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM) - n) >= 0;
     const int count = all ? experts : pairs;
     for (int i = threadIdx.x; i < count; i += blockDim.x) {
         const int id = all ? i : picks[i];
         if (id < 0 || id >= experts) continue;
-        row[2 * static_cast<long long>(id)] = __hip_atomic_load(host_row + 2 * static_cast<long long>(id), __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-        row[2 * static_cast<long long>(id) + 1] = __hip_atomic_load(host_row + 2 * static_cast<long long>(id) + 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        const long long at = 2 * static_cast<long long>(id);
+        if (passed) {
+            row[at] = __hip_atomic_load(resident + id, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+            row[at + 1] = 0;
+        } else {
+            row[at] = __hip_atomic_load(host_row + at, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+            row[at + 1] = __hip_atomic_load(host_row + at + 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        }
     }
 }
 

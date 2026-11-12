@@ -20,10 +20,11 @@
 //!   table entries, then stores `ack`. Two halves of the window alternate by layer, so a layer's slots are never rewritten while its GEMVs run.
 //! A decode stage is split by what the card finds out for itself (docs/LATENCY.md M1): `tf_expert_check` copies the picks to the layer's own trace
 //! slot and looks each one up in `resident`, the table of which experts sit in a cache line (a word a key, kept by the worker through
-//! `Cache.resident`). All resident: it writes the layer's table row in device memory and stores the ack itself, so the stream's wait is satisfied
-//! at once and the host is not asked (a *hit* job); the worker replays it later, touch only, from the trace slot. Otherwise it asks (`req`), the worker
-//! serves the job as above, and `tf_expert_rows` after the wait moves the host's table row into the device's (a *miss* job). The worker serves jobs
-//! in order, so before a miss it replays the hits that came before it and the pool is in the same state as if every layer had asked.
+//! `Cache.resident`). All resident: it stores the ack itself, so the stream's wait is satisfied at once and the host is not asked (a *hit* job); the worker
+//! replays it later, touch only, from the trace slot. Otherwise it asks (`req`) and the worker serves the job as above (a *miss* job). Either way
+//! `tf_expert_rows` after the wait writes the layer's table row in device memory for the picks: the resident lines' addresses for a hit (it knows from
+//! `seen`), the host's row for a miss. The worker serves jobs in order, so before a miss it replays the hits that came before it and the pool is in the
+//! same state as if every layer had asked.
 //! The miss is answered as soon as the experts' places are decided (M3): the window slots are filled after the ack and flag each slot when its blob is in;
 //! a GEMV block whose expert sits in a window slot waits for that flag before it reads a byte (plan.hpp `expert_blob_ready`).
 //! The ack word is host memory, or (M6) a signal word in device memory that the host stores through BAR0 and the command processor polls locally.
@@ -263,7 +264,7 @@ pub const Store = struct {
     cmap_off: usize,
     slots_off: usize,
     nslots: usize,
-    /// The tables in device memory the GEMVs read (layers x row stride), then a word a layer for the check's verdict; null: the plain handshake only.
+    /// The tables in device memory the GEMVs read (layers x row stride), filled by `tf_expert_rows`; null: the plain handshake only.
     rows_dev: ?DeviceBuffer,
     /// The card checks decode stages itself (`rows_dev` is there).
     split: bool,
@@ -391,7 +392,7 @@ pub const Store = struct {
         const want_split = envOn("TF_EXPERT_SPLIT");
         var rows_dev: ?DeviceBuffer = null;
         if (want_split) {
-            if (DeviceBuffer.alloc(r, shape.layers * stride + shape.layers * 64)) |b| {
+            if (DeviceBuffer.alloc(r, shape.layers * stride)) |b| {
                 rows_dev = b;
             } else |_| std.log.warn("experts: no device memory for the layers' tables: every stage keeps the plain handshake", .{});
         }
@@ -481,12 +482,11 @@ pub const Store = struct {
             for (0..shape.experts) |x| row[2 * x ..][0..2].* = .{ win_dev + layout.slots, 0 };
             row[2 * shape.experts ..][0..2].* = .{ shared.base() + l * blob, 0 };
         }
-        // the tables in device memory start as the host's (the shared experts' entries never change), the verdict words at zero
+        // the tables in device memory start as the host's (the shared experts' entries never change)
         if (s.rows_dev) |*b| {
             const image = try gpa.alloc(u8, b.len);
             defer gpa.free(image);
-            @memset(image, 0);
-            @memcpy(image[0 .. shape.layers * stride], s.win.bytes[layout.ptab..][0 .. shape.layers * stride]);
+            @memcpy(image, s.win.bytes[layout.ptab..][0..b.len]);
             try b.upload(0, image);
         }
         return s;
@@ -743,40 +743,41 @@ pub const Store = struct {
         if (rows == 0 or rows > s.shape.trace_rows or s.worker == null) return error.BadShape;
         const checked = s.split and !prefill and rows <= split_rows;
         const n = s.announce(.{ .layer = layer, .rows = @intCast(rows), .prefill = prefill, .split = checked });
-        const e = s.shape.experts;
-        const stride = s.shape.rowStride();
-        const picks_ptr: [*]const i32 = @ptrFromInt(picks);
         if (!s.split) {
             try o.expertTrace(picks, pairs, s.win_dev + s.trace_off);
             try runtime.check(s.write32(o.stream, s.win.bytes[req_at..].ptr, n, 0));
             try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
             return;
         }
-        const table = s.rows_dev.?.base() + layer * stride + header_bytes;
-        const need = s.rows_dev.?.base() + s.shape.layers * stride + layer * 64;
-        const host_table = s.win_dev + s.ptab_off + layer * stride + header_bytes;
         if (checked) {
             try s.queueCheck(o, layer, picks, pairs, n, .{});
             try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
-            try o.l.tf_expert_rows(picks_ptr, @intCast(pairs), @intCast(e), host_table, table, need, false, o.stream);
-            if (s.verify) try o.l.tf_expert_snap(picks_ptr, @intCast(pairs), @intCast(e), s.win_dev + s.resident_off + layer * e * 8, table, s.vsnap_dev + @as(u64, n % vring) * (64 + split_rows * s.shape.picks * 64), n, @intCast(s.shape.blobBytes()), o.stream);
+            try s.queueRows(o, layer, picks, pairs, n, false);
+            if (s.verify) try s.snap(o, layer, picks, pairs, n);
             return;
         }
         try o.expertTrace(picks, pairs, s.win_dev + s.trace_off);
         try runtime.check(s.write32(o.stream, s.win.bytes[req_at..].ptr, n, 0));
         try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
-        try o.l.tf_expert_rows(picks_ptr, @intCast(pairs), @intCast(e), host_table, table, need, true, o.stream);
+        try s.queueRows(o, layer, picks, pairs, n, true);
     }
 
     /// The check kernel of job `n` for `layer`, with the item split when `split` has one.
     fn queueCheck(s: *Store, o: Ops, layer: u32, picks: u64, pairs: usize, n: u32, split: ItemSplit) moe.Error!void {
         const e = s.shape.experts;
-        const stride = s.shape.rowStride();
-        const table = s.rows_dev.?.base() + layer * stride + header_bytes;
-        const need = s.rows_dev.?.base() + s.shape.layers * stride + layer * 64;
         const resident = s.win_dev + s.resident_off + layer * e * 8;
         const trace = s.win_dev + s.dtrace_off + layer * split_rows * s.shape.picks * 4;
-        try o.l.tf_expert_check(@ptrFromInt(picks), @intCast(pairs), @intCast(e), resident, table, trace, need, s.ack.deviceWord(), s.win_dev + seen_at, s.win_dev + req_at, n, split, o.stream);
+        try o.l.tf_expert_check(@ptrFromInt(picks), @intCast(pairs), @intCast(e), resident, trace, s.ack.deviceWord(), s.win_dev + seen_at, s.win_dev + req_at, n, split, o.stream);
+    }
+
+    /// The rows kernel of job `n` for `layer`, queued after the stream's wait on the answer: the layer's VRAM table row for the picks (every expert with `all`).
+    fn queueRows(s: *Store, o: Ops, layer: u32, picks: u64, pairs: usize, n: u32, all: bool) moe.Error!void {
+        const e = s.shape.experts;
+        const stride = s.shape.rowStride();
+        const table = s.rows_dev.?.base() + layer * stride + header_bytes;
+        const host_table = s.win_dev + s.ptab_off + layer * stride + header_bytes;
+        const resident = s.win_dev + s.resident_off + layer * e * 8;
+        try o.l.tf_expert_rows(@ptrFromInt(picks), @intCast(pairs), @intCast(e), host_table, table, resident, s.win_dev + seen_at, n, all, o.stream);
     }
 
     /// Hit-first, first half (moe.HitFirst.begin): the job is announced and the check queued, with the plan's items split in two.
@@ -787,7 +788,8 @@ pub const Store = struct {
         if (!s.hitfirst or !s.split or o.prefill or rows == 0 or rows > split_rows or rows > s.shape.trace_rows or s.worker == null) return false;
         if (count * 12 > itemBytes(s.shape)) return false;
         const n = s.announce(.{ .layer = layer, .rows = @intCast(rows), .prefill = false, .split = true });
-        try s.queueCheck(o, layer, picks, pairs, n, .{ .items = items, .count = @intCast(count), .hit = b.base(), .miss = b.base() + itemBytes(s.shape) });
+        const row = s.rows_dev.?.base() + layer * s.shape.rowStride() + header_bytes;
+        try s.queueCheck(o, layer, picks, pairs, n, .{ .items = items, .count = @intCast(count), .hit = b.base(), .miss = b.base() + itemBytes(s.shape), .row = row });
         return true;
     }
 
@@ -795,12 +797,8 @@ pub const Store = struct {
     fn finish(ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize) moe.Error!void {
         const s: *Store = @ptrCast(@alignCast(ctx));
         const n = s.posted;
-        const stride = s.shape.rowStride();
-        const table = s.rows_dev.?.base() + layer * stride + header_bytes;
-        const need = s.rows_dev.?.base() + s.shape.layers * stride + layer * 64;
-        const host_table = s.win_dev + s.ptab_off + layer * stride + header_bytes;
         try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
-        try o.l.tf_expert_rows(@ptrFromInt(picks), @intCast(pairs), @intCast(s.shape.experts), host_table, table, need, false, o.stream);
+        try s.queueRows(o, layer, picks, pairs, n, false);
     }
 
     /// The fused tile did not take the shape: hit-first is off from here (the stage that found out finishes the plain way).
@@ -819,14 +817,10 @@ pub const Store = struct {
         if (count * 12 > s.chunk_stride) return false;
         const n = s.announce(.{ .layer = layer, .rows = @intCast(rows), .prefill = true, .chunked = true });
         const e = s.shape.experts;
-        const stride = s.shape.rowStride();
-        const table = s.rows_dev.?.base() + layer * stride + header_bytes;
-        const need = s.rows_dev.?.base() + s.shape.layers * stride + layer * 64;
-        const host_table = s.win_dev + s.ptab_off + layer * stride + header_bytes;
         try o.expertTrace(picks, pairs, s.win_dev + s.trace_off);
         try runtime.check(s.write32(o.stream, s.win.bytes[req_at..].ptr, n, 0));
         try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
-        try o.l.tf_expert_rows(@ptrFromInt(picks), @intCast(pairs), @intCast(e), host_table, table, need, true, o.stream);
+        try s.queueRows(o, layer, picks, pairs, n, true);
         try o.l.tf_expert_chunks(@ptrFromInt(items), @intCast(count), @intCast(e), s.win_dev + s.cmap_off, @intCast(s.nchunks), @intCast(s.chunk_stride / 4), b.base(), o.stream);
         return true;
     }
@@ -1082,9 +1076,9 @@ pub const Store = struct {
 
     /// The snapshot slot of job `n` once the card has written it (null: it did not within 200 ms, or the ring has wrapped over it).
     fn snapSlot(s: *Store, n: u32) ?[]const u8 {
-        const snap = s.vsnap orelse return null;
+        const ring_buf = s.vsnap orelse return null;
         const slot_bytes = 64 + split_rows * s.shape.picks * 64;
-        const slot = snap.bytes[(n % vring) * slot_bytes ..][0..slot_bytes];
+        const slot = ring_buf.bytes[(n % vring) * slot_bytes ..][0..slot_bytes];
         const tag: *const u32 = @ptrCast(@alignCast(slot.ptr));
         // the card writes the slot right after its wait on the answer is released
         const deadline = nowNs() + 200 * std.time.ns_per_ms;
@@ -1097,6 +1091,15 @@ pub const Store = struct {
             return null;
         }
         return slot;
+    }
+
+    /// The snapshot kernel of job `n`, queued after the rows kernel, into its ring slot.
+    fn snap(s: *Store, o: Ops, layer: u32, picks: u64, pairs: usize, n: u32) moe.Error!void {
+        const e = s.shape.experts;
+        const table = s.rows_dev.?.base() + layer * s.shape.rowStride() + header_bytes;
+        const slot_bytes: u64 = 64 + split_rows * s.shape.picks * 64;
+        const out = s.vsnap_dev + @as(u64, n % vring) * slot_bytes;
+        try o.l.tf_expert_snap(@ptrFromInt(picks), @intCast(pairs), @intCast(e), s.win_dev + s.resident_off + layer * e * 8, table, out, n, @intCast(s.shape.blobBytes()), o.stream);
     }
 
     /// One log line for a prompt span: its wall time from the first stage to the last answer, the time in stages, the experts copied to the scratch.
@@ -1292,7 +1295,7 @@ pub const Store = struct {
             "experts {s}: {d} rounds {d} tokens, hit {d:.1}% miss {d:.1}/token ({d:.1} MiB/token over the link), window fill {d:.1} MiB/token, admissions {d:.1}/round, stage {d:.2} ms/token (card compute+wait {d:.2}; fill after the answer {d:.2}), card passed {d:.1}% of the stages itself ({d:.2} ms/token replaying), round {d:.2} ms ({d:.2} ms/token), {d} lines",
             .{ label, d.rounds, d.tokens, 100.0 * @as(f64, @floatFromInt(d.hits)) / a, miss / t, miss / t * blob / mib, @as(f64, @floatFromInt(d.window_bytes)) / t / mib, @as(f64, @floatFromInt(d.admissions)) / r, @as(f64, @floatFromInt(d.stage_ns)) / t / 1e6, @as(f64, @floatFromInt(d.idle_ns)) / t / 1e6, @as(f64, @floatFromInt(d.fill_ns)) / t / 1e6, 100.0 * @as(f64, @floatFromInt(d.hit_stages)) / @max(asked, 1), @as(f64, @floatFromInt(d.replay_ns)) / t / 1e6, @as(f64, @floatFromInt(d.round_ns)) / r / 1e6, @as(f64, @floatFromInt(d.round_ns)) / t / 1e6, s.lineCount() },
         );
-        if (s.verify) std.log.info("experts verify: {d} hit picks checked, {d} with a residency word the card read differing from the host's, {d} with a wrong table entry, {d} with wrong blob ends; {d} miss picks checked, {d} whose table entry is not the host row's; {d} stages whose snapshot was missing", .{ s.vfy.picks, s.vfy.bad_resident, s.vfy.bad_rows, s.vfy.bad_data, s.vfy.miss_picks, s.vfy.miss_bad_rows, s.vfy.late });
+        if (s.verify) std.log.info("experts verify: {d} hit picks checked, {d} with a residency word the card read differing from the host's, {d} with a wrong table entry, {d} with wrong blob ends; {d} miss picks checked, {d} whose table entry is not the host row's; {d} snapshots missing", .{ s.vfy.picks, s.vfy.bad_resident, s.vfy.bad_rows, s.vfy.bad_data, s.vfy.miss_picks, s.vfy.miss_bad_rows, s.vfy.late });
     }
 };
 

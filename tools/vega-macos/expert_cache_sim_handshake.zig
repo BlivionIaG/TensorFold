@@ -43,6 +43,10 @@ pub const Tally = struct {
     /// Picks, over all stages, whose residency word the card reads (the split pool's) differed from the line the always-asking host would put in the table row (must be 0):
     /// a stale entry after an eviction, or one a late replay has not reached.
     row_mismatches: u64 = 0,
+    /// Picks of stages the card passed, and those whose VRAM table entry would not be (line, 0) if only the miss stages' row copies ever wrote the table (what the card finds
+    /// when the check kernel's own row writes are lost: an expert admitted by a miss keeps the entry (window slot, line) until a miss stage names it again).
+    hit_picks: u64 = 0,
+    stale_if_check_lost: u64 = 0,
 };
 
 const Pool = struct {
@@ -82,6 +86,12 @@ fn replayTrace(a: std.mem.Allocator, cfg: Config, t: data.Trace, tally: *Tally) 
     var split = try Pool.init(a, cfg);
     defer split.deinit(a);
     var late: [l.NL]usize = undefined;
+    const ent_line = try a.alloc(u64, l.NK);
+    defer a.free(ent_line);
+    const ent_adm = try a.alloc(bool, l.NK);
+    defer a.free(ent_adm);
+    @memset(ent_line, 0);
+    @memset(ent_adm, true);
     var buf: [l.TOPK]offload.Id = undefined;
     tally.prompts += 1;
     for (0..t.decodeTokens()) |tok| {
@@ -102,6 +112,10 @@ fn replayTrace(a: std.mem.Allocator, cfg: Config, t: data.Trace, tally: *Tally) 
             tally.accesses += keys.len;
             tally.misses += keys.len - x.hits;
             if (split.cache.allResident(keys)) {
+                for (keys) |key| {
+                    tally.hit_picks += 1;
+                    if (ent_adm[key] or ent_line[key] != split.resident[key]) tally.stale_if_check_lost += 1;
+                }
                 late[nlate] = layer;
                 nlate += 1;
                 passed += 1;
@@ -114,6 +128,13 @@ fn replayTrace(a: std.mem.Allocator, cfg: Config, t: data.Trace, tally: *Tally) 
             @memcpy(split.cache.ids[0..keys2.len], keys2);
             const y = try split.cache.decide(keys2.len);
             try split.cache.commit(y.started);
+            for (keys2) |key| {
+                const cur = split.resident[key];
+                var admitted = false;
+                for (split.cache.copies[0..y.started]) |cp| admitted = admitted or cp.id == key;
+                ent_line[key] = cur;
+                ent_adm[key] = cur == 0 or admitted;
+            }
         }
         for (late[0..nlate]) |ll| try split.cache.replay(ids(data.Trace.picks(t.dec, tok, ll), &buf));
         tally.tokens += 1;
@@ -185,4 +206,5 @@ pub fn write(out: *std.Io.Writer, cfg: Config, set: data.Set) !void {
     }
     try out.print("\npool after every token, split vs. every layer asking: {d} of {d} tokens differ (must be 0)\n", .{ t.mismatches, t.tokens });
     try out.print("residency word the card reads vs. the line the host's table row would name, per pick: {d} of {d} differ (must be 0)\n", .{ t.row_mismatches, t.accesses });
+    try out.print("picks of passed stages whose table entry is not (line, 0) if only miss stages write the table: {d} of {d} ({d:.1}%)\n", .{ t.stale_if_check_lost, t.hit_picks, pct(t.stale_if_check_lost, t.hit_picks) });
 }
