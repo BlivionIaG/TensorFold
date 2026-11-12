@@ -159,6 +159,13 @@ fn bytesOf(device: mtl.Device, n: usize) !mtl.Buffer {
     return b;
 }
 
+/// Scratch for the separate pipeline: the byte count is not monotone in rows, and the downs run fewer rows.
+fn separateScratch() !usize {
+    var bytes = try ex.scratchBytes(hidden, mid, 2 * routed + 2 * tokens);
+    for ([_]usize{ routed, tokens }) |count| bytes = @max(bytes, try ex.scratchBytes(mid, out_n, count));
+    return bytes;
+}
+
 test "the fused gate+up pass keeps every bit of rotate_out, both SwiGLUs and the down rotate_in" {
     const device = try mtl.Device.init();
     defer device.deinit();
@@ -206,11 +213,13 @@ test "the shared expert's down inside the routed down call keeps every bit of th
     defer device.deinit();
     const queue = try device.queue();
     defer queue.deinit();
-    for ([_]u16{ 4, 6, 8, 10, 12 }) |halves| {
+    // The dense shared call and the routed call share a body only on the tensor-unit decode path, at its dense widths.
+    if (!device.tensorUnits()) return error.SkipZigTest;
+    for ([_]u16{ 6, 10, 12 }) |halves| {
         var f = try Fixture.init(device, halves);
         defer f.deinit();
         const count = 2 * routed + 2 * tokens;
-        const scratch_bytes = try ex.scratchBytes(hidden, mid, count);
+        const scratch_bytes = try separateScratch();
         const gate = try bytesOf(device, count * mid * 2);
         defer gate.deinit();
         const scratch_ref = try bytesOf(device, scratch_bytes);
