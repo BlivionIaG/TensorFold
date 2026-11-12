@@ -493,12 +493,12 @@ pub const Engine = struct {
     /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order.
     fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
         const y = try o.project(hidden, e.model().head, rows, false);
-        try e.drawRows(o, y, rows, reqs, out, false);
+        try e.drawRows(o, y, rows, reqs, out, .{});
     }
 
-    /// Each of `rows` logits rows drawn per `reqs`, whole rows joined first across ranks; `argmaxed`: greedy rows done.
-    pub fn drawRows(e: *Engine, o: hip.ops.Ops, y: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32, argmaxed: bool) !void {
-        try e.drawer.draw(o, e.stream, try e.wholeRows(o, y, rows), reqs[0..rows], out, argmaxed);
+    /// Each of `rows` logits rows drawn per `reqs`, whole rows joined first across ranks; `done`: what the round's own launches drew.
+    pub fn drawRows(e: *Engine, o: hip.ops.Ops, y: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32, done: draw.Done) !void {
+        try e.drawer.drawWith(o, e.stream, try e.wholeRows(o, y, rows), reqs[0..rows], out, done);
     }
 
     /// `rows` logits rows whole: this rank's when it holds the whole head, else every rank's slices joined.
@@ -589,9 +589,20 @@ pub const Engine = struct {
         return lane_round.verify(e, rows, reqs, out);
     }
 
-    /// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys).
-    pub fn choose(e: *Engine, rows: []const Rows, forced: ?Pick) !Pick {
-        return lane_round.choose(e, rows, forced);
+    /// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys); `reqs` the rows' draws.
+    pub fn choose(e: *Engine, rows: []const Rows, reqs: []const draw.Request, forced: ?Pick) !Pick {
+        return lane_round.choose(e, rows, reqs, forced);
+    }
+
+    /// Whether a one-token round can be launched without waiting for it (`queue`).
+    pub fn canQueue(e: *Engine) bool {
+        return lane_round.canQueue(e);
+    }
+
+    /// Launches a one-token greedy round and returns before it has run; its pick lands in the returned mirror slot of the drawer.
+    pub fn queue(e: *Engine, row: Rows, fed: bool) !usize {
+        if (e.stopped) return error.GroupStopped;
+        return lane_round.queued(e, row, fed);
     }
 
     /// Marks a slot of the last verify to keep its first `rows` rows at the next `flush`.

@@ -55,6 +55,7 @@ pub const Fake = struct {
     const Slot = struct { handle: ?u64 = null, blocking: bool = false };
 
     gpa: Allocator,
+    queued: usize = 0, // draws queued ahead (`queue` calls)
     lanes: std.AutoHashMapUnmanaged(*Stream, Lane) = .empty,
     drawn: std.ArrayList(u32) = .empty, // handle -> token
     rounds: u64 = 0,
@@ -424,6 +425,7 @@ pub const Fake = struct {
 
     fn queue(ptr: *anyopaque, s: *Stream, feed: be.Feed, position: u64) anyerror!u64 {
         const x = self(ptr);
+        x.queued += 1;
         const l = x.lane(s);
         try l.history.append(x.gpa, x.value(feed));
         if (x.gpu_charge) |g| s.chargeGpu(g);

@@ -107,7 +107,7 @@ pub const Worker = struct {
             total += rows[i].tokens.len;
             at += 2 + m[at + 1];
         }
-        _ = try w.e.choose(rows[0..n], pick);
+        _ = try w.e.choose(rows[0..n], w.reqs[0..total], pick);
         _ = try w.e.verify(rows[0..n], w.reqs[0..total], w.out[0..total]);
         for (ids[0..n], 0..) |id, i| f.lanes.get(id).?.pending = .{ .slot = i, .rows = rows[i].tokens.len };
     }

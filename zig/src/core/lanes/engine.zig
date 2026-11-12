@@ -149,7 +149,7 @@ pub const Engine = struct {
         } else {
             for (live.items) |s| {
                 // logprobs and grammars take verify windows: rows' logits are read, or bits made, before a forward
-                const windowed = (e.cfg.family_mtp and s.drafts) or !e.cfg.pipelined or s.logprobs != null or s.grammar != null;
+                const windowed = (e.cfg.family_mtp and s.drafts) or !e.pipes(s) or s.logprobs != null or s.grammar != null;
                 const r = if (windowed) try e.familyRound(s, null) else try e.pipelinedRound(s);
                 s.min_rows = if (s.min_rows == 0) r.rows else @min(s.min_rows, r.rows);
             }
@@ -497,6 +497,15 @@ pub const Engine = struct {
                 if (try tree(e.backend.ptr, r.stream, e.gpa)) |held| r.stream.next = held;
             };
         }
+    }
+
+    /// Whether `s` runs a step ahead: the backend queues every draw on the device (`pipe_sampled`), or the stream's is greedy
+    /// (temperature 0 or none, no penalties), the only one a backend that draws sampled rows on the host can queue.
+    pub fn pipes(e: *const Engine, s: *const Stream) bool {
+        if (!e.cfg.pipelined) return false;
+        if (e.cfg.pipe_sampled) return true;
+        const temperature = if (s.sampling) |x| x.temperature else 0.0;
+        return temperature <= 0.0 and !s.penalties.active();
     }
 
     /// One token, the next forward queued first; a copied continuation ahead switches to verify windows.

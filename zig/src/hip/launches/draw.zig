@@ -14,12 +14,18 @@ const dim = util.dim;
 
 /// out[r] = torch.argmax of row r of (rows, n) logits of `kind` (1 fp16, 2 bf16).
 pub fn tf_argmax_rows(l: *const Launcher, logits: C, kind: c_int, rows: c_int, n: c_int, out: I, s: S) Error!void {
+    return tf_argmax_rows_to(l, logits, kind, rows, n, out, 0, s);
+}
+
+/// `tf_argmax_rows`, each pick also stored to the host words the device word `mirror_at` holds the address of (0: only `out`).
+pub fn tf_argmax_rows_to(l: *const Launcher, logits: C, kind: c_int, rows: c_int, n: c_int, out: I, mirror_at: u64, s: S) Error!void {
     if (rows == 0) return;
     var a: Args = .{};
     try a.add(ad(logits));
     try a.add(kind);
     try a.add(n);
     try a.add(ad(out));
+    try a.add(mirror_at);
     try l.go(l.op.argmax, dim(rows, 1, 1), dim(1024, 1, 1), 0, s, &a);
 }
 
@@ -37,6 +43,24 @@ pub fn tf_argmax_parts(
     out: I,
     s: S,
 ) Error!void {
+    return tf_argmax_parts_to(l, logits, kind, rows, n, per, parts, part_v, part_i, out, 0, s);
+}
+
+/// `tf_argmax_parts`, the join's picks also stored to the host words `mirror_at` points to (as `tf_argmax_rows_to`).
+pub fn tf_argmax_parts_to(
+    l: *const Launcher,
+    logits: C,
+    kind: c_int,
+    rows: c_int,
+    n: c_int,
+    per: c_int,
+    parts: c_int,
+    part_v: P,
+    part_i: I,
+    out: I,
+    mirror_at: u64,
+    s: S,
+) Error!void {
     if (rows == 0) return;
     if (per < 1 or parts < 1 or @as(i64, per) * parts < n) return util.invalid("argmax parts");
     var a: Args = .{};
@@ -52,6 +76,7 @@ pub fn tf_argmax_parts(
     try b.add(ad(part_i));
     try b.add(parts);
     try b.add(ad(out));
+    try b.add(mirror_at);
     try l.go(l.op.argmax_join, dim(rows, 1, 1), dim(256, 1, 1), 0, s, &b);
 }
 

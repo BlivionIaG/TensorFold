@@ -22,6 +22,7 @@ pub const Model = struct {
     exact_width: u32 = 1, // the widest window that reproduces one-token steps bit for bit
     first_copy_rows: u32 = 0, // a lone stream's first copy window (0: the exact width)
     gpu_tokens: bool = false, // one-token rounds may run a step ahead (pipelined)
+    pipe_sampled: bool = true, // with gpu_tokens: sampled and penalized streams run a step ahead too (false: only greedy ones, the rest take windows)
     mtp: bool = false, // a draft head is loaded
     speculate: bool = false, // the head can draft from a verify's rows
     speculate_early: bool = true, // draft every row's first draft behind the verify
@@ -71,6 +72,7 @@ pub const Config = struct {
     family_mtp: bool,
     speculate_early: bool,
     pipelined: bool,
+    pipe_sampled: bool,
     plain_guard: bool,
     most_drafts: u32,
     draft_confidence: ?f64 = null,
@@ -158,6 +160,7 @@ pub const Config = struct {
             .family_mtp = m.mtp and width >= 2 and m.speculate,
             .speculate_early = m.speculate_early and !(m.root_copies and m.copy_drafts),
             .pipelined = m.gpu_tokens,
+            .pipe_sampled = m.pipe_sampled,
             .plain_guard = m.plain_guard,
             .most_drafts = @min(m.drafts, @min(width - 1, max_draft)),
             .draft_confidence = m.draft_confidence,

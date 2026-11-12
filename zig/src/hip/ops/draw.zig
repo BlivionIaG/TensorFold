@@ -11,13 +11,18 @@ const int = t.int;
 
 /// torch.argmax of each of `rows` logits rows (width `n`, fp16 or bf16) into device i32 `out`.
 pub fn argmaxRows(o: Ops, logits: Tensor, rows: usize, n: usize, out: u64) Error!void {
+    return argmaxRowsTo(o, logits, rows, n, out, 0);
+}
+
+/// `argmaxRows`, each pick also stored to the host words (one a row) at the address the device word `mirror_at` holds (0: none).
+pub fn argmaxRowsTo(o: Ops, logits: Tensor, rows: usize, n: usize, out: u64, mirror_at: u64) Error!void {
     if (logits.kind == .f32) return error.BadShape;
     // a wide row in parts over the card, then their best: the same pick, as the order is total
     if (o.fused() and n >= 2 * part_values) {
         const parts = (n + part_values - 1) / part_values;
         const v = try o.arena.of(f32, rows * parts);
         const ix = try o.arena.of(i32, rows * parts);
-        return o.l.tf_argmax_parts(
+        return o.l.tf_argmax_parts_to(
             p(logits.ptr),
             @backingInt(logits.kind),
             int(rows),
@@ -27,10 +32,11 @@ pub fn argmaxRows(o: Ops, logits: Tensor, rows: usize, n: usize, out: u64) Error
             p(v),
             i(ix),
             i(out),
+            mirror_at,
             o.stream,
         );
     }
-    try o.l.tf_argmax_rows(p(logits.ptr), @backingInt(logits.kind), int(rows), int(n), i(out), o.stream);
+    try o.l.tf_argmax_rows_to(p(logits.ptr), @backingInt(logits.kind), int(rows), int(n), i(out), mirror_at, o.stream);
 }
 
 /// Values a part of a wide row's argmax takes.

@@ -103,6 +103,7 @@ pub const Ops = struct {
     pub const moeCombine = moe.moeCombine;
     pub const moeCombineGate = moe.moeCombineGate;
     pub const argmaxRows = draw.argmaxRows;
+    pub const argmaxRowsTo = draw.argmaxRowsTo;
     pub const topkRows = draw.topkRows;
     pub const tokenProb = draw.tokenProb;
     pub const addWide = tp.addWide;
