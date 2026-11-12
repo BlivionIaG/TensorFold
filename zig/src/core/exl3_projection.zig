@@ -67,3 +67,6 @@ pub const planBody = swi.planBody;
 pub const stages = swi.stages;
 pub const SwiGLURot = swi.SwiGLURot;
 pub const encodeSwiGLUPreRotate = swi.encodeSwiGLUPreRotate;
+pub const sumsView = swi.sumsView;
+pub const GateUpRot = swi.GateUpRot;
+pub const encodeGateUpSwiGLU = swi.encodeGateUpSwiGLU;

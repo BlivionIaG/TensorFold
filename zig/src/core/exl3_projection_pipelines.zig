@@ -17,6 +17,8 @@ pub const Pipelines = struct {
     rotate_out: mtl.Pipeline,
     /// The routed SwiGLU with the down projection's rotate_in fused.
     swiglu_prerotate: mtl.Pipeline,
+    /// The gate+up call's rotate_out, the SwiGLU and the down projection's rotate_in in one pass over the f32 sums.
+    gateup_swiglu_prerotate: mtl.Pipeline,
     dense: mtl.Pipeline,
     prefill: ?mtl.Pipeline = null,
     /// The int8 prompt-row body (f32 sums, for a pack that keeps the runtime rotation).
@@ -102,6 +104,8 @@ pub const Pipelines = struct {
         errdefer ro.deinit();
         const sr = try mtl.Pipeline.init(device, lib, "tf_exl3_swiglu_prerotate", false);
         errdefer sr.deinit();
+        const gs = try mtl.Pipeline.init(device, lib, "tf_exl3_gateup_swiglu_prerotate", false);
+        errdefer gs.deinit();
         const dn = try mtl.Pipeline.init(device, lib, "tf_exl3_dense", false);
         errdefer dn.deinit();
         for ([_]mtl.Pipeline{ ri, mm, ro }) |p|
@@ -325,6 +329,7 @@ pub const Pipelines = struct {
             .matmul = mm,
             .rotate_out = ro,
             .swiglu_prerotate = sr,
+            .gateup_swiglu_prerotate = gs,
             .dense = dn,
             .prefill = prefill,
             .prefill_fp8 = prefill_fp8,
@@ -364,6 +369,7 @@ pub const Pipelines = struct {
         if (p.prefill_fp8) |v| v.deinit();
         if (p.prefill_cast) |v| v.deinit();
         p.swiglu_prerotate.deinit();
+        p.gateup_swiglu_prerotate.deinit();
         p.dense.deinit();
         if (p.reduce) |pf| pf.deinit();
         if (p.codebook_table) |b| b.deinit();
