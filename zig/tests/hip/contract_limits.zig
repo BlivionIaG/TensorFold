@@ -62,13 +62,15 @@ pub fn live(a: std.mem.Allocator, r: *const hip.Runtime, ctx: hip.Context, arch:
 
 /// `live` over `list`: each record checked in its own code object, whatever image the selection spans.
 pub fn liveOf(a: std.mem.Allocator, r: *const hip.Runtime, ctx: hip.Context, arch: []const u8, list: []const records.Record) !usize {
-    const at = for (limits.rdna, 0..) |t, i| {
+    const vega = std.mem.eql(u8, arch, limits.vega.name);
+    // gfx900 has no recorded usage: it runs the RDNA2 family (the first chip's launches), its usage is the object's
+    const at = if (vega) 0 else for (limits.rdna, 0..) |t, i| {
         if (std.mem.eql(u8, t.name, arch)) break i;
     } else {
         std.debug.print("N/A  limits live: {s} is not a chip the records cover\n", .{arch});
         return 0;
     };
-    const t = limits.rdna[at];
+    const t = if (vega) limits.vega else limits.rdna[at];
     var n: usize = 0;
     const dev = [_]struct { []const u8, hip.abi.DeviceAttribute, u32 }{
         .{ "threads a workgroup", .max_threads_per_block, t.threads },
@@ -101,13 +103,13 @@ pub fn liveOf(a: std.mem.Allocator, r: *const hip.Runtime, ctx: hip.Context, arc
         const lds: u32 = @intCast(try f.attribute(.shared_size_bytes));
         const most: u32 = @intCast(try f.attribute(.max_threads_per_block));
         const fits = rec.launch.threads <= most and lds + rec.launch.dynamic <= t.lds;
-        const current = std.meta.eql(meta, rec.usage[at]) and regs == meta.vgprs and lds == meta.lds;
+        const current = (vega or std.meta.eql(meta, rec.usage[at])) and regs == meta.vgprs and lds == meta.lds;
         const control = isControl(rec);
         if (!control and !(fits and current)) n += 1;
         if (control and (!current or fits or meta.vgprs == 0)) n += 1;
         const red = if (fits) "MISSED" else "RED ";
         const word = if (control) (if (!current or meta.vgprs == 0) "FAIL" else red) else if (fits and current) "PASS" else "FAIL";
-        const want = rec.usage[at];
+        const want = if (vega) meta else rec.usage[at];
         const what = .{ rec.launch.threads, most, regs, lds, rec.launch.dynamic, want.vgprs, want.lds };
         std.debug.print("{s} limits live {s}: {d} threads launched, the runtime allows {d}; " ++
             "{d} VGPRs, {d} + {d} LDS bytes (recorded {d}, {d})\n", .{ word, rec.launch.name } ++ what);
@@ -115,7 +117,7 @@ pub fn liveOf(a: std.mem.Allocator, r: *const hip.Runtime, ctx: hip.Context, arc
     return n;
 }
 
-/// tf-hip-kernel-contract limits DIR: each record against DIR/<chip>/'s code objects, every chip we serve.
+/// tf-hip-kernel-contract limits DIR: each record against DIR/<chip>/'s code objects for every chip, then gfx900's.
 pub fn objects(a: std.mem.Allocator, io: std.Io, dir: []const u8) !usize {
     var n: usize = 0;
     for (all) |rec| {
@@ -164,6 +166,37 @@ pub fn objects(a: std.mem.Allocator, io: std.Io, dir: []const u8) !usize {
         }
         std.debug.print("RECORD {s}: .usage = .{{ {s}}}\n", .{ rec.launch.name, line.items });
         if (!control) n += red;
+        n += try vegaObjects(a, io, dir, rec);
     }
     return n;
+}
+
+/// One launch on gfx900 from its code object alone (no record holds its usage): its problems against the chip's row.
+fn vegaObjects(a: std.mem.Allocator, io: std.Io, dir: []const u8, rec: records.Record) !usize {
+    const control = isControl(rec);
+    const t = limits.vega;
+    if (!rec.usage[0].served and !control) {
+        std.debug.print("N/A  limits {s} {s}: not served there\n", .{ t.name, rec.launch.name });
+        return 0;
+    }
+    const path = try file(a, dir, t.name, rec.launch.image);
+    defer a.free(path);
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(1 << 28)) catch |err| {
+        std.debug.print("FAIL limits {s}: {s}: {t} (build hip-kernel-contract-objects)\n", .{ rec.launch.name, path, err });
+        return 1;
+    };
+    defer a.free(bytes);
+    const listed = try hsaco.kernels(a, bytes);
+    defer a.free(listed);
+    const u = (hsaco.find(listed, rec.launch.symbolOn(0)) orelse return error.SymbolNotInImage).usage;
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(a);
+    const problems = try limits.hip(rec.launch, u, t, &out, a);
+    const missed = control and (u.vgprs == 0 or problems == 0);
+    const word = if (control) (if (missed) "MISSED" else "RED ") else if (problems != 0) "FAIL" else "PASS";
+    const say = "{s} limits {s} {s}: {d} VGPRs, {d} SGPRs, {d} LDS bytes, {d} scratch bytes, bound {d}, wave{d}{s}";
+    const end = if (out.items.len > 0) ": " else "\n";
+    std.debug.print(say, .{ word, t.name, rec.launch.name, u.vgprs, u.sgprs, u.lds, u.private, u.bound, u.wave, end });
+    if (out.items.len > 0) std.debug.print("{s}", .{out.items});
+    return if (control) @intFromBool(missed) else problems;
 }

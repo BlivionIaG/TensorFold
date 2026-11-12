@@ -1,4 +1,4 @@
-//! The stream tile's columns a lane: the widest that fills the card, the narrowest at RDNA3.5's one and two rows.
+//! Columns a lane of the stream tile: the widest that fills the card (gfx900: 4 at most), RDNA3.5's 1-2 rows the least.
 
 const std = @import("std");
 const affine = @import("affine.zig");
@@ -40,6 +40,8 @@ pub fn pick(generation: Generation, m: c_int, lpc_log2: u5, bits: c_int, n: c_in
         const cb = affine.stream_cbs[c];
         // within the registers the lane's code words take
         if (cb * affine.stream_rows[ri] > 16 or cb * bits > affine.stream_code_words) continue;
+        // gfx900 spills 20 to 575 VGPRs at 8 columns a lane and at 4 columns over 4 rows: 4 at most, and 8 over rows
+        if (generation == .gcn5 and (cb > 4 or (affine.stream_rows[ri] > 1 and cb * affine.stream_rows[ri] > 8))) continue;
         tile = .{ .at = c, .per_block = perBlock(c, lpc_log2, halves) };
         const waves = @as(u64, cdiv(n, tile.per_block)) * affine.stream_waves * @as(u64, @intCast(items)) * cdiv(m, affine.stream_rows[ri]);
         if (!narrowest and waves >= affine.streams_wanted) break;
@@ -55,6 +57,16 @@ test "the widest columns that fill the card, and RDNA3.5's narrowest at one and 
     try std.testing.expectEqual(@as(usize, 0), pick(.rdna3_5, 1, 5, 4, 12352, 1, false).at);
     try std.testing.expectEqual(@as(usize, 0), pick(.rdna3_5, 1, 5, 4, 248320, 1, false).at);
     try std.testing.expectEqual(@as(usize, 0), pick(.rdna3_5, 2, 5, 4, 248320, 1, false).at);
+}
+
+test "gfx900 takes at most 4 columns a lane, and at most 8 columns over several rows, where RDNA3 takes 8 and 4 x 4" {
+    try std.testing.expectEqual(@as(usize, 2), pick(.rdna3, 1, 5, 4, 248320, 1, false).at);
+    try std.testing.expectEqual(@as(usize, 1), pick(.gcn5, 1, 5, 4, 248320, 1, false).at);
+    try std.testing.expectEqual(@as(usize, 1), pick(.gcn5, 2, 5, 4, 248320, 1, false).at);
+    try std.testing.expectEqual(@as(usize, 1), pick(.rdna3, 4, 5, 4, 248320, 1, false).at);
+    try std.testing.expectEqual(@as(usize, 0), pick(.gcn5, 4, 5, 4, 248320, 1, false).at);
+    // a launch no width fills ends at the narrowest, as on RDNA3
+    try std.testing.expectEqual(pick(.rdna3, 1, 5, 4, 64, 1, false).at, pick(.gcn5, 1, 5, 4, 64, 1, false).at);
 }
 
 test "three rows and more keep the widest that fills the card on every generation" {

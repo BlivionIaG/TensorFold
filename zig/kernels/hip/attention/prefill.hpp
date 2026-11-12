@@ -5,6 +5,7 @@
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
 
+#include "common/fdot2.hpp"
 #include "decode/pages.hpp"
 
 #ifndef TF_DOT2_SIGNED_ZERO
@@ -30,7 +31,7 @@ struct Dot<__half> {
     static constexpr unsigned top = 0x7c00u;   // the exponent bits, all set in an infinity or NaN
     using pair = _Float16 __attribute__((ext_vector_type(2)));
     static __device__ __forceinline__ float dot(pair a, pair b, float acc) {
-        return __builtin_amdgcn_fdot2(a, b, acc, false);
+        return TF_FDOT2(a, b, acc);
     }
 };
 
@@ -70,10 +71,14 @@ __device__ __forceinline__ uint4 kept(word4 w, bool in) {
     return __builtin_bit_cast(uint4, in ? w : word4{0, 0, 0, 0});
 }
 
-// x from lane ^ M of its 16-lane row (M < 16): a DPP row_xmask move, all lanes active.
+// x from lane ^ M of its 16-lane row (M < 16): DPP row_xmask; gfx900 has none (gfx10+), a width-16 shuffle does the same.
 template <int M>
 __device__ __forceinline__ float row_xor(float x) {
+#if defined(__gfx900__)
+    return __shfl_xor(x, M, 16);
+#else
     return __builtin_bit_cast(float, __builtin_amdgcn_mov_dpp(__builtin_bit_cast(int, x), 0x160 + M, 0xf, 0xf, false));
+#endif
 }
 
 // A 16-lane row's max and sum by xor butterflies over lane distances 8, 4, 2, 1, each lane taking own then partner.
@@ -91,11 +96,15 @@ __device__ __forceinline__ float row_sum16(float x) {
     return x + row_xor<1>(x);
 }
 
-// One lane's x on every lane of its 16-lane row, `sel` naming that lane in each nibble: v_permlane16.
+// One lane's x on every lane of its 16-lane row, `sel` naming that lane per nibble: v_permlane16 (gfx10+), else a shuffle.
 template <typename P>
 __device__ __forceinline__ P row_lane(P x, unsigned sel) {
     const int w = __builtin_bit_cast(int, x);
+#if defined(__gfx900__)
+    return __builtin_bit_cast(P, __shfl(w, static_cast<int>((sel >> (4 * (threadIdx.x & 15))) & 15u), 16));
+#else
     return __builtin_bit_cast(P, __builtin_amdgcn_permlane16(w, w, sel, sel, false, false));
+#endif
 }
 
 // Either 16-bit half of `w` has every exponent bit of `top` set: an infinity or NaN.

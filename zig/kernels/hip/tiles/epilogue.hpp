@@ -57,9 +57,14 @@ struct SiluPairOut {
 template <typename T>
 __device__ inline typename T::elem narrow_product(float a, float b) {
     if constexpr (std::is_same_v<typename T::elem, __half>) {
+#if defined(__gfx900__)
+        // no v_fma_mixlo_f16 on gfx900: the product of two floats is exact in double, which narrows to half in one rounding
+        return __builtin_bit_cast(typename T::elem, static_cast<_Float16>(static_cast<double>(a) * static_cast<double>(b)));
+#else
         uint32_t bits;
         asm("v_fma_mixlo_f16 %0, %1, %2, 0" : "=v"(bits) : "v"(a), "v"(b));
         return __builtin_bit_cast(typename T::elem, static_cast<unsigned short>(bits));
+#endif
     } else {
         return narrow<T>(a * b);
     }
