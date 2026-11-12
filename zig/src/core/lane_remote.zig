@@ -265,8 +265,8 @@ pub fn use(h: *LaneHost, job: *Job, reuse: *lanes.stream.Reuse) void {
     if (reuse.saved != null and reuse.at >= f.at) return drop(job);
     if (job.entry) |e| if (h.cache) |store| store.release(e);
     job.entry = null;
-    // TF_PREFILL_KEEP: the cache's marks past the prefix keep remote states; else no marks and no hook, nothing kept
-    const marks = if (h.keep_remote) past(reuse.marks, f.at) else &.{};
+    // TF_PREFILL_KEEP: marks at or past the prefix keep remote states; else no marks, no hook, nothing kept
+    const marks = if (h.keep_remote) marksFrom(reuse.marks, f.at) else &.{};
     reuse.* = .{ .saved = f.saved, .at = f.at, .remote = true, .pulled = true, .marks = marks, .snap_at = if (h.keep_remote) reuse.snap_at else 0, .hook = if (h.keep_remote) .{ .ptr = job, .at = Job.kept } else null };
 }
 
@@ -281,10 +281,10 @@ fn ownFirst(h: *LaneHost, job: *Job, reuse: *lanes.stream.Reuse) void {
     reuse.remote = false; // its marks and hook stay: what the pass keeps past slot 0's point is exact
 }
 
-/// The marks after `at`, ascending as the store plans them.
-fn past(marks: []const u32, at: u32) []const u32 {
+/// The marks from `at` on, ascending as the store plans them: one at `at` keeps the landed prefix itself.
+fn marksFrom(marks: []const u32, at: u32) []const u32 {
     var i: usize = 0;
-    while (i < marks.len and marks[i] <= at) i += 1;
+    while (i < marks.len and marks[i] < at) i += 1;
     return marks[i..];
 }
 

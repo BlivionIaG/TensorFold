@@ -350,6 +350,8 @@ pub const Fake = struct {
         const kept: *std.ArrayList(u32) = @ptrCast(@alignCast(saved));
         try l.history.appendSlice(x.gpa, kept.items);
         l.restored = s.reuse.at;
+        // a landed prefix's mark: kept where the pass starts
+        if (std.mem.indexOfScalar(u32, s.reuse.marks, s.reuse.at) != null) if (s.reuse.hook) |k| k.at(k.ptr, s, s.reuse.at);
     }
 
     /// The prompt's tokens into the lane's history up to `to`, a mark's hook at each one passed.

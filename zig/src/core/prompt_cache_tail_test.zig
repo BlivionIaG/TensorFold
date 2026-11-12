@@ -44,7 +44,7 @@ test "tail cache: a lookup planned from a landed prefix drops a tail mark under 
     try std.testing.expectEqual(@as(u32, 256), fresh.snap_at);
     store.resume_floor = 230; // the pass starts 26 rows below the mark: a cut there would be a chunk of its own
     const near = try store.lookup(arena.allocator(), &prompt, 0, &.{}, &.{}, &.{});
-    try std.testing.expectEqual(@as(usize, 0), near.marks.len);
+    try std.testing.expectEqualSlices(u32, &.{230}, near.marks); // no cut at 256; the landed prefix is the mark
     try std.testing.expectEqual(@as(u32, 0), near.snap_at);
     store.resume_floor = 100;
     const far = try store.lookup(arena.allocator(), &prompt, 0, &.{}, &.{}, &.{});
