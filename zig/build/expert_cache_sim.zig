@@ -2,7 +2,10 @@
 const std = @import("std");
 
 fn module(b: *std.Build, file: []const u8, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
-    return b.createModule(.{ .root_source_file = b.path(file), .target = target, .optimize = optimize });
+    const m = b.createModule(.{ .root_source_file = b.path(file), .target = target, .optimize = optimize });
+    // the pool the production worker drives (hip/expert_store.zig), which the handshake replay runs: std only
+    m.addImport("expert_offload", b.createModule(.{ .root_source_file = b.path("zig/src/core/expert_offload.zig"), .target = target, .optimize = optimize }));
+    return m;
 }
 
 /// The executable, installed like the other tf-* tools, and the host tests that join `test`; no device, no libc.

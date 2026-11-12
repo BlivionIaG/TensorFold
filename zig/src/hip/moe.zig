@@ -11,13 +11,30 @@ const Projection = ops.Projection;
 /// A shared expert of its own width, run beside the routed stack: gate and up as one (2 NI, K) projection, then down.
 pub const Shared = struct { gate_up: Projection, down: Projection };
 
-/// A layer's stage of an offloaded model: `trace` is where the picks of the forward's rows are written (row-major, `top_k + 1` ids a row), `post`
-/// queues the card's request to the host and its wait for the answer on `stream`, which return once the host has the layer's experts in place.
+/// A layer's stage of an offloaded model: `trace` is where the picks of a prompt span's rows are written (row-major, `top_k + 1` ids a row; the
+/// decode rounds keep a trace slot a layer inside the store). `post` runs after the layer's pick: it traces `picks` (`pairs` ids, `rows` rows) for
+/// the host and queues the card's request and its wait for the answer on `o.stream`, and returns once the host has the layer's experts in
+/// place or will have before the GEMVs below read them.
 pub const Hook = struct {
     ctx: *anyopaque,
     layer: u32,
     trace: u64,
-    post: *const fn (ctx: *anyopaque, stream: @import("abi.zig").Stream, layer: u32, rows: usize, prefill: bool) Error!void,
+    post: *const fn (ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize, rows: usize, prefill: bool) Error!void,
+    /// Hit-first (docs/LATENCY.md M2), when the store has it on.
+    first: ?HitFirst = null,
+};
+
+/// The stage in two halves for a decode layer whose experts the card checks itself: `begin` queues the check, which also splits the plan's `items`
+/// (`count` entries) into `hit_items` (resident experts and the shared one) and `miss_items` (the others), each with the other class's counts zeroed;
+/// the hit items' GEMVs are queued before `finish` queues the wait for the host's answer and the table row copy, the miss items' after. `begin` queues
+/// nothing and returns false when the stage is not one the card checks (a prompt span, too many rows). `off` stops the store offering it (the fused
+/// tile did not take the shape).
+pub const HitFirst = struct {
+    hit_items: u64,
+    miss_items: u64,
+    begin: *const fn (ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize, rows: usize, items: u64, count: usize) Error!bool,
+    finish: *const fn (ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize) Error!void,
+    off: *const fn (ctx: *anyopaque) void,
 };
 
 pub const Error = ops.Error;
@@ -179,8 +196,25 @@ fn expertParts(o: Ops, kind: Kind, r: Routed, x: Tensor, rows: usize, logits: u6
     }
     // offloaded experts: the picks go to the host, which puts those experts where the card reads them before the GEMVs below run
     if (ex.hook) |h| {
-        try o.expertTrace(pick, pairs, h.trace);
-        try h.post(h.ctx, o.stream, h.layer, rows, o.prefill);
+        if (h.first) |hf| {
+            if (ex.shared == null and try hf.begin(h.ctx, o, h.layer, pick, pairs, rows, items, count)) {
+                // hit-first: the experts already in a cache line run while the host answers for the others (the pairs are disjoint between the two
+                // halves, which write the same scratch: the second takes the scratch the first took back)
+                const m = o.arena.mark();
+                if (try o.projectRoutedAct(x, ex.fused, hf.hit_items, count, members, pairs, slots, @min(tile, rows), ex.limit)) |act_hit| {
+                    const y_hit = try o.projectRouted(act_hit, ex.down, hf.hit_items, count, members, pairs, 1, @min(tile, rows));
+                    try hf.finish(h.ctx, o, h.layer, pick, pairs);
+                    o.arena.release(m);
+                    const act_miss = (try o.projectRoutedAct(x, ex.fused, hf.miss_items, count, members, pairs, slots, @min(tile, rows), ex.limit)) orelse return error.Invalid;
+                    const y_miss = try o.projectRouted(act_miss, ex.down, hf.miss_items, count, members, pairs, 1, @min(tile, rows));
+                    std.debug.assert(act_miss.ptr == act_hit.ptr and y_miss == y_hit);
+                    return .{ .y = y_miss };
+                }
+                // the fused tile does not take the shape: nothing was queued for the hit items; the whole stage the plain way, from the answer on
+                hf.off(h.ctx);
+                try hf.finish(h.ctx, o, h.layer, pick, pairs);
+            } else try h.post(h.ctx, o, h.layer, pick, pairs, rows, o.prefill);
+        } else try h.post(h.ctx, o, h.layer, pick, pairs, rows, o.prefill);
     }
     // beside the stack the shared pair's id is the stack's first id past its experts: zero its item, never read its row
     if (ex.shared != null) try o.moeForeignItems(items, count, ex.count);

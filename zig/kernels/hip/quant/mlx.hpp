@@ -54,6 +54,7 @@ __device__ inline bool take_item(Affine& a, int z) {
     if (a.ptrs.ptab) {
         const unsigned long long src = a.ptrs.ptab[2 * expert];
         const unsigned long long dst = a.ptrs.ptab[2 * expert + 1];
+        expert_blob_ready(a.ptrs.ptab, src);
         a.ptrs.dst_delta = dst ? static_cast<long long>(dst - src) : 0;
         const char* blob = reinterpret_cast<const char*>(src) + a.ptrs.ptab_off;
         const long long words_bytes = static_cast<long long>(a.n) * (static_cast<long long>(a.k) * a.bits / 32) * 4;

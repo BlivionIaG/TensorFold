@@ -11,6 +11,7 @@ const npz = @import("npz.zig");
 const npy = @import("npy.zig");
 const pol = @import("expert_cache_sim_policy.zig");
 const freq = @import("expert_cache_sim_freq.zig");
+const hs = @import("expert_cache_sim_handshake.zig");
 
 const tst = std.testing;
 
@@ -701,4 +702,47 @@ test "the report on synthetic traces is the Python original's, whatever the work
     var nobase: std.Io.Writer.Allocating = .init(a);
     defer nobase.deinit();
     try tst.expectError(error.NoBaseline, sim.execute(arena.allocator(), io, &nobase.writer, .{ .traces = traces, .long = "none", .cap = 1400, .jobs_text = "2", .jobs = 2, .only = "warm" }));
+}
+
+test "the handshake replay: the split pool equals the always-asking pool after every token, and the card passes the layers whose picks are all resident" {
+    const io = tst.io;
+    const a = tst.allocator;
+    var tmp = tst.tmpDir(.{});
+    defer tmp.cleanup();
+    try writeDataset(a, io, tmp.dir, "traces", &.{
+        .{ .name = "a0", .cat = "a", .ts = 1, .npre = 4, .ndec = 150 },
+        .{ .name = "a1", .cat = "a", .ts = 2, .npre = 4, .ndec = 120 },
+        .{ .name = "b0", .cat = "b", .ts = 3, .npre = 4, .ndec = 90 },
+    });
+    const root = try tmp.dir.realPathFileAlloc(io, ".", a);
+    defer a.free(root);
+    var arena: std.heap.ArenaAllocator = .init(a);
+    defer arena.deinit();
+    const traces = try std.fs.path.join(arena.allocator(), &.{ root, "traces" });
+    const set = try @import("expert_cache_sim_data.zig").load(arena.allocator(), io, traces);
+    for ([_]hs.Config{
+        .{ .cap = 1400, .warm_tokens = 20 },
+        .{ .cap = 600, .protect_pct = 0, .warm_tokens = 20 },
+        .{ .cap = 900, .copies = 3, .warm_tokens = 20 },
+    }) |cfg| {
+        const t = try hs.replay(a, cfg, set);
+        try tst.expectEqual(@as(u64, 3), t.prompts);
+        try tst.expectEqual(@as(u64, 360), t.tokens);
+        try tst.expectEqual(@as(u64, 360 * 40), t.stages);
+        try tst.expectEqual(@as(u64, 0), t.mismatches);
+        // some layers are passed and some ask, and the per-token histogram accounts for every steady token
+        try tst.expect(t.passed > 0 and t.passed < t.stages);
+        var by: u64 = 0;
+        for (t.by_passed) |n| by += n;
+        try tst.expectEqual(t.steady_tokens, by);
+        var per: u64 = 0;
+        for (t.per_layer) |n| per += n;
+        try tst.expectEqual(t.steady_passed, per);
+    }
+    // the report names the check and prints one row of ten layers a line
+    var text: std.Io.Writer.Allocating = .init(a);
+    defer text.deinit();
+    try sim.execute(arena.allocator(), io, &text.writer, .{ .traces = traces, .cap = 1400, .jobs_text = "1", .jobs = 1, .handshake = true });
+    try tst.expect(std.mem.indexOf(u8, text.written(), "0 of 360 tokens differ (must be 0)") != null);
+    try tst.expect(std.mem.indexOf(u8, text.written(), "  L30-39 ") != null);
 }

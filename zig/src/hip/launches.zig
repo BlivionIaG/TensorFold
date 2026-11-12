@@ -179,6 +179,9 @@ pub const Launcher = struct {
         token_prob: Function,
         /// Offloaded experts (caps `expert_ptrs`): a layer's picks into the round's trace.
         expert_trace: if (kernels.expert_ptrs) Function else void,
+        /// The hit/miss split's check kernel and the row copy after the wait (docs/LATENCY.md M1).
+        expert_check: if (kernels.expert_ptrs) Function else void,
+        expert_rows: if (kernels.expert_ptrs) Function else void,
     };
 
     /// The prompt tile keeps main's sums and needs the edge pass after it: dot2 here ignores a zero's sign.
@@ -267,6 +270,8 @@ pub const Launcher = struct {
             .moe_zero_foreign = try ops.function("tf_moe_zero_foreign"),
             .token_prob = try ops.function("tf_token_prob"),
             .expert_trace = if (kernels.expert_ptrs) try ops.function("tf_expert_trace") else {},
+            .expert_check = if (kernels.expert_ptrs) try ops.function("tf_expert_check") else {},
+            .expert_rows = if (kernels.expert_ptrs) try ops.function("tf_expert_rows") else {},
         };
         const ns = "_ZN2tf4rocm";
         l.rms = .{
@@ -379,6 +384,8 @@ pub const Launcher = struct {
     pub const tf_moe_combine_gate = moe.tf_moe_combine_gate;
     pub const tf_moe_route = moe.tf_moe_route;
     pub const tf_expert_trace = moe.tf_expert_trace;
+    pub const tf_expert_check = moe.tf_expert_check;
+    pub const tf_expert_rows = moe.tf_expert_rows;
     pub const tf_causal = attention.tf_causal;
     pub const tf_attn_gate = attention.tf_attn_gate;
     pub const tf_heads_rows = attention.tf_heads_rows;

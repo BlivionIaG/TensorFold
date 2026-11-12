@@ -6,7 +6,10 @@
 //! admitted in the current call is never the victim (the production `stageAt` rule, zig/src/hip/expert_store.zig). Policies may also refuse to
 //! admit (TinyLFU; ARC never does). The cache and all policy state are emptied at each prompt (or lockstep group) start.
 //!
-//! usage: tf-expert-cache-sim [TRACES_DIR] [--long DIR] [--cap N] [--jobs N] [--only SUBSTR]
+//! usage: tf-expert-cache-sim [TRACES_DIR] [--long DIR] [--cap N] [--jobs N] [--only SUBSTR] [--handshake]
+//!   --handshake replays the short set with production's pool (core/expert_offload.zig Cache) under the hit/miss split of the layer handshake
+//!   (docs/LATENCY.md M1) instead of the policy report: the share of layers the card passes itself, per layer and per token, and the check that
+//!   the worker's late replay leaves the pool exactly as the always-asking handshake does (--cap sets the lines).
 //!   TRACES_DIR holds meta.json + *.npz (ids (T,40,8), kind: 1 = decode, 0 = prefill, as written by routing_trace.py); the default is the study
 //!   worktree's traces/. --long defaults to <TRACES_DIR>/../traces_long (set to "none" to skip).
 //! Datasets: short = every prompt of TRACES_DIR on its own; long = long generations; lock4 = short prompts, 4 at a time in lockstep, per-layer union.
@@ -17,6 +20,7 @@ const data = @import("expert_cache_sim_data.zig");
 const cfg = @import("expert_cache_sim_config.zig");
 const run = @import("expert_cache_sim_run.zig");
 const report = @import("expert_cache_sim_report.zig");
+const handshake = @import("expert_cache_sim_handshake.zig");
 
 const cap_default = 2876;
 const default_traces = "~/Projects/Infra/tf-study-moe-cache/docs/proposals/metal-tb4-split-moe-probe/traces";
@@ -45,6 +49,8 @@ pub const Options = struct {
     jobs: usize,
     /// `--only`: the configurations whose label contains this
     only: []const u8 = "",
+    /// `--handshake`: the hit/miss split report instead of the policy report
+    handshake: bool = false,
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -55,11 +61,14 @@ pub fn main(init: std.process.Init) !void {
     var cap: usize = cap_default;
     var jobs_text: []const u8 = try std.fmt.allocPrint(arena, "{d}", .{std.Thread.getCpuCount() catch 4});
     var only: []const u8 = "";
+    var split = false;
     var positional: ?[]const u8 = null;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        if (std.mem.eql(u8, arg, "--long") or std.mem.eql(u8, arg, "--cap") or std.mem.eql(u8, arg, "--jobs") or std.mem.eql(u8, arg, "--only")) {
+        if (std.mem.eql(u8, arg, "--handshake")) {
+            split = true;
+        } else if (std.mem.eql(u8, arg, "--long") or std.mem.eql(u8, arg, "--cap") or std.mem.eql(u8, arg, "--jobs") or std.mem.eql(u8, arg, "--only")) {
             i += 1;
             if (i == args.len) die("{s} needs a value", .{arg});
             if (std.mem.eql(u8, arg, "--long")) long = args[i] else if (std.mem.eql(u8, arg, "--jobs")) jobs_text = args[i] else if (std.mem.eql(u8, arg, "--only")) only = args[i] else cap = std.fmt.parseInt(usize, args[i], 10) catch die("--cap {s}: not a number of lines", .{args[i]});
@@ -71,7 +80,7 @@ pub fn main(init: std.process.Init) !void {
     var stdout_buf: [16384]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(io, &stdout_buf);
     const out = &stdout.interface;
-    execute(arena, io, out, .{ .traces = traces, .long = long, .cap = cap, .jobs_text = jobs_text, .jobs = jobs, .only = only }) catch |e| {
+    execute(arena, io, out, .{ .traces = traces, .long = long, .cap = cap, .jobs_text = jobs_text, .jobs = jobs, .only = only, .handshake = split }) catch |e| {
         out.flush() catch {};
         switch (e) {
             error.NoBaseline => die("tables 3-4 need the \"LRU global\" configuration (it does not match --only)", .{}),
@@ -88,6 +97,13 @@ fn elapsedSeconds(io: std.Io, since: std.Io.Timestamp) f64 {
 
 /// The whole run: load, replay, write the report to `out`.
 pub fn execute(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opt: Options) !void {
+    if (opt.handshake) {
+        const set = data.load(arena, io, opt.traces) catch |e| {
+            std.debug.print("expert_cache_sim: cannot load {s}: {t}\n", .{ opt.traces, e });
+            return error.LoadFailed;
+        };
+        return handshake.write(out, .{ .cap = opt.cap }, set);
+    }
     const t0 = std.Io.Clock.awake.now(io);
     var ldir: []const u8 = opt.long orelse "";
     if (ldir.len == 0) {

@@ -4,22 +4,31 @@
 //!   * the window: a pinned, device-mapped region of about a GiB and a half that the host fills with the experts a layer needs and the card
 //!     reads in place over the link (an expert served from here is a miss);
 //!   * cache lines of device memory: the hot experts, admitted by SDMA copies from the window (a hit reads VRAM).
-//! The routed GEMVs take a pointer a (projection, expert) from a table (kernels/hip/tiles/plan.hpp, caps `expert_ptrs`), which lives in the
-//! window too: the card learns where an expert sits one layer at a time, so no expert is read before its bytes are in place and the
-//! arithmetic is the checkpoint's wherever an expert sits.
+//! The routed GEMVs take a pointer a (projection, expert) from a table (kernels/hip/tiles/plan.hpp, caps `expert_ptrs`): the card learns where an
+//! expert sits one layer at a time, so no expert is read before its bytes are in place and the arithmetic is the checkpoint's wherever an expert sits.
 //!
 //! One blob holds an expert's six tensors in kernel order: the fused (gate | up) projection's words, scales and biases, then down's. Table
 //! entry (layer, e) is the device address of expert e's blob, in a cache line or in a window slot; the shared expert (id `experts`) has a
 //! line of its own that never leaves.
 //!
 //! A layer's stage, in the stream (the decode rounds and prompt spans of an offloaded model run eager, not as a graph: stream value waits
-//! cannot be captured):
-//!   router, pick, plan -> `tf_expert_trace` (the picks to the window) -> write `req` = n -> wait `ack` >= n -> the expert GEMVs
-//! and on the host a worker thread spins on `req`, reads the layer's picks, lets the policy of core/expert_offload.zig (the CUDA EXL3 host
-//! cache's rules) decide hits and admissions, copies the blobs of the experts that are not in a cache line into window slots, writes their
-//! table entries, then stores `ack`. Two halves of the window alternate by layer, so a layer's slots are never rewritten while its GEMVs run.
-//!   * `beginRound`: copies that landed make their experts resident (the next layer's table names the line);
-//!   * `endRound`: the admissions a round decided are queued on a copy stream (SDMA from the window), under the next round's compute.
+//! cannot be captured), is a *job*, numbered in posting order. A prompt span's stage (and a decode forward of more than `split_rows` rows) keeps the
+//! plain handshake:
+//!   router, pick, plan -> `tf_expert_trace` (the picks to the window) -> write `req` = n -> wait `ack` >= n -> copy the table row to the card's
+//!   and on the host a worker thread spins on `req`, reads the layer's picks, lets the policy of core/expert_offload.zig (the CUDA EXL3 host
+//!   cache's rules) decide hits and admissions, copies the blobs of the experts that are not in a cache line into window slots, writes their
+//!   table entries, then stores `ack`. Two halves of the window alternate by layer, so a layer's slots are never rewritten while its GEMVs run.
+//! A decode stage is split by what the card finds out for itself (docs/LATENCY.md M1): `tf_expert_check` copies the picks to the layer's own trace
+//! slot and looks each one up in `resident`, the table of which experts sit in a cache line (a word a key, kept by the worker through
+//! `Cache.resident`). All resident: it writes the layer's table row in device memory and stores the ack itself, so the stream's wait is satisfied
+//! at once and the host is not asked (a *hit* job); the worker replays it later, touch only, from the trace slot. Otherwise it asks (`req`), the worker
+//! serves the job as above, and `tf_expert_rows` after the wait moves the host's table row into the device's (a *miss* job). The worker serves jobs
+//! in order, so before a miss it replays the hits that came before it and the pool is in the same state as if every layer had asked.
+//! The miss is answered as soon as the experts' places are decided (M3): the window slots are filled after the ack and flag each slot when its blob is in;
+//! a GEMV block whose expert sits in a window slot waits for that flag before it reads a byte (plan.hpp `expert_blob_ready`).
+//! The ack word is host memory, or (M6) a signal word in device memory that the host stores through BAR0 and the command processor polls locally.
+//!   * `beginRound`: the worker has answered every job posted so far;
+//!   * `endRound`: the same again, and the round's admission budget is renewed.
 //! Counters (`Stats`) report hits and misses an access (a router pick of a row), copies started and landed, window bytes and stage time.
 //! Architecture: plain pointer loads; nothing here names a GPU, and the budget is whatever device memory is left.
 
@@ -38,6 +47,8 @@ const DeviceBuffer = memory.DeviceBuffer;
 const HostBuffer = memory.HostBuffer;
 const Stream = stream_mod.Stream;
 const Event = stream_mod.Event;
+const Ops = @import("ops/ops.zig").Ops;
+const ItemSplit = @import("launches/moe.zig").ItemSplit;
 
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 const c_setenv = setenv;
@@ -75,6 +86,11 @@ pub const Shape = struct {
         for (s.part_bytes) |b| if (b == 0 or b % 16 != 0) return error.BadShape;
         if (s.layers * s.experts >= policy.empty_id) return error.BadShape;
     }
+
+    /// Bytes of one layer's table in either memory: a 64-byte header (plan.hpp), then an entry of two u64 an expert, the shared one last.
+    fn rowStride(s: Shape) usize {
+        return std.mem.alignForward(usize, header_bytes + (s.experts + 1) * 16, 64);
+    }
 };
 
 /// What a layer's views need: its table, where its projections sit in a blob, the stage hook, and an address the stub tensors name.
@@ -91,12 +107,17 @@ pub const Stats = struct {
     /// Rows decoded, and the wall nanoseconds of the rounds (forward, readback and draw included).
     tokens: u64 = 0,
     round_ns: u64 = 0,
-    /// Layer stages (decode and prompt), the bytes the host copied into the window, and the nanoseconds the worker spent from a request to its ack.
+    /// Layer stages the card asked for (decode and prompt), the bytes the host copied into the window, and the nanoseconds the worker spent from a request to its ack.
     stages: u64 = 0,
     window_bytes: u64 = 0,
     stage_ns: u64 = 0,
     /// Nanoseconds of the stages' waits for the card's request (the card computing; not stage work).
     idle_ns: u64 = 0,
+    /// Decode stages the card answered by itself (every pick resident), and the nanoseconds the worker spent replaying them.
+    hit_stages: u64 = 0,
+    replay_ns: u64 = 0,
+    /// Nanoseconds the worker spent filling window slots after it had answered (the card reads them as they flag).
+    fill_ns: u64 = 0,
 };
 
 /// An `interval` log line every this many rounds.
@@ -108,35 +129,75 @@ const chunk_bytes: usize = 512 << 20;
 /// Layer stages that may be posted and not yet served (a forward posts one per layer; a prompt's spans queue several forwards).
 const ring: u32 = 4096;
 
+/// The most rows of a decode stage that the card checks itself: each layer keeps a trace slot of this many rows. Past it a stage keeps the plain handshake.
+pub const split_rows: usize = 16;
+
+/// One of the two arrays the hit-first check writes: an entry (expert, first pair, pairs) of three i32 for the most items a stage of `split_rows` rows plans
+/// (at most 9/8 of its pairs for each, bounded by twice them).
+fn itemBytes(shape: Shape) usize {
+    return std.mem.alignForward(usize, 2 * split_rows * shape.picks * 12, 256);
+}
+
+/// The header of each layer's table (plan.hpp): flags address, first slot, bytes of the slots, bytes of a slot.
+const header_bytes: usize = 64;
+
 /// hipStreamWaitValue32's greater-or-equal compare.
 const wait_gte: c_uint = 0;
 
 const WaitValue32 = *const fn (abi.Stream, ?*anyopaque, u32, c_uint, u32) callconv(.c) abi.Result;
 const WriteValue32 = *const fn (abi.Stream, ?*anyopaque, u32, c_uint) callconv(.c) abi.Result;
 
-const Job = struct { layer: u32, rows: u32, prefill: bool };
+/// hipmac's VRAM signal words (docs/LATENCY.md C3; hipmacSignalAlloc/Store/Free of the runtime, absent from a runtime without the ut4g backend).
+const Signal = extern struct { gpu_va: u64, bar0_off: u64, nwords: u32, stride: u32 };
+const SignalAlloc = *const fn (u32, *Signal) callconv(.c) abi.Result;
+const SignalStore = *const fn (*const Signal, u32, u32) callconv(.c) abi.Result;
+const SignalFree = *const fn (*Signal) callconv(.c) abi.Result;
+
+const SignalWord = struct { s: Signal, store: SignalStore, free: SignalFree };
+
+/// Where the host's answer to a request is stored and the stream's wait polls it: a host word in the window, or a signal word in device memory.
+const Ack = struct {
+    host: *u32,
+    host_dev: u64,
+    signal: ?SignalWord = null,
+
+    /// The address the stream waits on and the check kernel stores to.
+    fn deviceWord(a: *const Ack) u64 {
+        return if (a.signal) |g| g.s.gpu_va else a.host_dev;
+    }
+
+    fn waitPtr(a: *const Ack) ?*anyopaque {
+        return if (a.signal) |g| @ptrFromInt(g.s.gpu_va) else a.host;
+    }
+
+    /// The host answers job `n`: everything it stored before is visible to the card once its wait is released.
+    fn publish(a: *const Ack, n: u32) bool {
+        if (a.signal) |g| return g.store(&g.s, 0, n) == 0;
+        @atomicStore(u32, a.host, n, .release);
+        return true;
+    }
+};
+
+/// A window slot to fill after the answer: the slot, and the expert whose blob goes there.
+const Fill = struct { slot: u32, expert: u32 };
+
+const Job = struct {
+    layer: u32,
+    rows: u32,
+    prefill: bool,
+    /// The card checked this stage itself (its picks are in the layer's trace slot, and it may have passed the stage without asking).
+    split: bool = false,
+};
 
 /// The cache lines: device memory in chunks and the policy's bookkeeping.
 const Pool = struct {
     chunks: []DeviceBuffer,
     per_chunk: usize,
-    vram: policy.Vram,
-    slots: []policy.Id,
-    line: []policy.Line,
-    stamp: []u32,
-    flags: []bool,
-    where: []i32,
-    scratch_unique: []policy.Id,
-    ids: []policy.Id,
-    tally: []u16,
-    decisions: []policy.Decision,
-    copies: []policy.Copy,
+    cache: policy.Cache,
+    line_addr: []u64,
     /// A prompt span's staging: one layer's every routed expert in device memory (SDMA copies from the window, which a stage waits for before it answers).
     scratch: DeviceBuffer,
     copy: Stream,
-    /// Admissions the round's remaining stages may still make.
-    budget: usize,
-    copy_experts: usize,
 };
 
 pub const Store = struct {
@@ -147,20 +208,32 @@ pub const Store = struct {
     host: []?[]u8,
     /// The shared experts, one blob a layer.
     shared: DeviceBuffer,
-    /// The window: control words, the table, the picks of the stage in flight, then the blob slots.
+    /// The window: control words, the host's tables, the prompt trace, the residency table, the slot flags, the decode traces, then the blob slots.
     win: HostBuffer,
     win_dev: u64,
     ptab_off: usize,
     trace_off: usize,
+    resident_off: usize,
+    dtrace_off: usize,
+    flags_off: usize,
     slots_off: usize,
     nslots: usize,
+    /// The tables in device memory the GEMVs read (layers x row stride), then a word a layer for the check's verdict; null: the plain handshake only.
+    rows_dev: ?DeviceBuffer,
+    /// The card checks decode stages itself (`rows_dev` is there).
+    split: bool,
+    /// Window slots flag when filled and a stage is answered before they are (the header of the tables names the flags).
+    early: bool,
+    /// Hit-first (M2): the card's check splits the plan's items into two arrays in `items_dev` (TF_EXPERT_HITFIRST=1), and the stream runs the hit items' GEMVs before its wait.
+    hitfirst: bool = false,
+    items_dev: ?DeviceBuffer = null,
+    ack: Ack,
     /// Slot states: 0 free, 1 holds a layer's expert this stage, 2 is the source of an admission in flight.
     used: []u8,
     cursor: [2]usize = .{ 0, 0 },
     wait32: WaitValue32,
     write32: WriteValue32,
     pool: ?Pool = null,
-    now: u32 = 0,
     span: Span = .{},
     stats: Stats = .{},
     since: Stats = .{},
@@ -169,6 +242,10 @@ pub const Store = struct {
     mark: []u32,
     mark_serial: u32 = 0,
     slot_of: []i32,
+    fills: []Fill,
+    /// The host-tier blobs of the layer whose stage was answered before its slots were filled.
+    fill_layer_host: ?[]u8 = null,
+    nfills: usize = 0,
     jobs: []Job,
     /// Jobs posted (main thread only), published to the worker, and served.
     posted: u32 = 0,
@@ -179,14 +256,27 @@ pub const Store = struct {
     worker: ?std.Thread = null,
 
     const ctl_bytes: usize = 4096;
+    /// The last job the card asked for; the last it passed by itself; the host ack word (when the ack is not a signal word).
     const req_at: usize = 0;
     const ack_at: usize = 64;
+    const seen_at: usize = 128;
 
-    /// Bytes of the window's head (control, table, trace) for `shape`.
-    fn headBytes(shape: Shape) usize {
-        const ptab = std.mem.alignForward(usize, shape.layers * (shape.experts + 1) * 16, 4096);
-        const trace = std.mem.alignForward(usize, shape.trace_rows * shape.picks * 4, 4096);
-        return ctl_bytes + ptab + trace;
+    /// The window's head layout for `shape` with room for `nslots` slot flags: where each part starts.
+    const Layout = struct { ptab: usize, trace: usize, resident: usize, dtrace: usize, flags: usize, slots: usize };
+
+    fn layoutOf(shape: Shape, nslots: usize) Layout {
+        const page = 4096;
+        const ptab = ctl_bytes;
+        const trace = ptab + std.mem.alignForward(usize, shape.layers * shape.rowStride(), page);
+        const resident = trace + std.mem.alignForward(usize, shape.trace_rows * shape.picks * 4, page);
+        const dtrace = resident + std.mem.alignForward(usize, shape.layers * shape.experts * 8, page);
+        const flags = dtrace + std.mem.alignForward(usize, shape.layers * split_rows * shape.picks * 4, page);
+        return .{ .ptab = ptab, .trace = trace, .resident = resident, .dtrace = dtrace, .flags = flags, .slots = flags + std.mem.alignForward(usize, nslots * 4, page) };
+    }
+
+    /// Bytes of the window's head (control, tables, traces, residency, flags) for `shape`, with the flags of up to `nslots` slots.
+    fn headBytes(shape: Shape, nslots: usize) usize {
+        return layoutOf(shape, nslots).slots;
     }
 
     /// `window_bytes` of pinned memory for the window (slots rounded down to an even count of at least two halves that each hold a layer's
@@ -200,24 +290,27 @@ pub const Store = struct {
         // hipmac bounds a value wait from its submission (10 s by default), and a forward queues all its layers' waits at once: a prompt span whose
         // earlier layers take longer than that would be released early. The host worker answers every wait, so none is left unbounded for long.
         _ = c_setenv("HIPMAC_WAIT_VALUE_TIMEOUT_MS", "0", 0);
-        const head = headBytes(shape);
         const least = 2 * (shape.experts + 8);
         var want = window_bytes;
         var win: HostBuffer = undefined;
         var nslots: usize = 0;
+        var layout: Layout = undefined;
         while (true) {
-            nslots = (want -| head) / blob / 2 * 2;
+            // the flags are sized for the slots before the flags are subtracted: at most one page more than needed
+            const first = (want -| headBytes(shape, 0)) / blob / 2 * 2;
+            layout = layoutOf(shape, first);
+            nslots = (want -| layout.slots) / blob / 2 * 2;
             if (nslots < least) return error.BadShape;
-            if (HostBuffer.allocMapped(r, head + nslots * blob)) |w| {
+            if (HostBuffer.allocMapped(r, layout.slots + nslots * blob)) |w| {
                 win = w;
                 break;
             } else |err| {
-                if (want / 4 * 3 < head + least * blob) return err;
+                if (want / 4 * 3 < headBytes(shape, 0) + least * blob) return err;
                 want = want / 4 * 3;
             }
         }
         errdefer win.free();
-        @memset(win.bytes[0..head], 0);
+        @memset(win.bytes[0..layout.slots], 0);
         const host = try gpa.alloc(?[]u8, shape.layers);
         errdefer gpa.free(host);
         @memset(host, null);
@@ -231,9 +324,35 @@ pub const Store = struct {
         @memset(mark, 0);
         const slot_of = try gpa.alloc(i32, shape.experts);
         errdefer gpa.free(slot_of);
+        const fills = try gpa.alloc(Fill, shape.experts);
+        errdefer gpa.free(fills);
         const jobs = try gpa.alloc(Job, ring);
         errdefer gpa.free(jobs);
         const win_dev = try win.device();
+        const stride = shape.rowStride();
+        // the card checks decode stages itself unless TF_EXPERT_SPLIT=0 (the plain handshake every layer) or the device tables do not fit
+        const want_split = !envOff("TF_EXPERT_SPLIT");
+        var rows_dev: ?DeviceBuffer = null;
+        if (want_split) {
+            if (DeviceBuffer.alloc(r, shape.layers * stride + shape.layers * 64)) |b| {
+                rows_dev = b;
+            } else |_| std.log.warn("experts: no device memory for the layers' tables: every stage keeps the plain handshake", .{});
+        }
+        errdefer if (rows_dev) |*b| b.free();
+        var items_dev: ?DeviceBuffer = null;
+        if (rows_dev != null and envOn("TF_EXPERT_HITFIRST")) {
+            if (DeviceBuffer.alloc(r, 2 * itemBytes(shape))) |b| {
+                items_dev = b;
+            } else |_| std.log.warn("experts: no device memory for the hit-first item arrays: stages run the plain way", .{});
+        }
+        errdefer if (items_dev) |*b| b.free();
+        var ack: Ack = .{ .host = @ptrCast(@alignCast(win.bytes[ack_at..].ptr)), .host_dev = win_dev + ack_at };
+        // the ack is a VRAM signal word when the runtime has them (docs/LATENCY.md C3), unless TF_EXPERT_ACK=host
+        const ack_host = if (platform.getenv("TF_EXPERT_ACK")) |mode| std.mem.eql(u8, mode, "host") else false;
+        if (!ack_host) ack.signal = openSignal(r);
+        errdefer if (ack.signal) |*g| {
+            _ = g.free(&g.s);
+        };
         var s: Store = .{
             .gpa = gpa,
             .r = r,
@@ -242,24 +361,75 @@ pub const Store = struct {
             .shared = shared,
             .win = win,
             .win_dev = win_dev,
-            .ptab_off = ctl_bytes,
-            .trace_off = ctl_bytes + std.mem.alignForward(usize, shape.layers * (shape.experts + 1) * 16, 4096),
-            .slots_off = head,
+            .ptab_off = layout.ptab,
+            .trace_off = layout.trace,
+            .resident_off = layout.resident,
+            .dtrace_off = layout.dtrace,
+            .flags_off = layout.flags,
+            .slots_off = layout.slots,
             .nslots = nslots,
+            .rows_dev = rows_dev,
+            .split = rows_dev != null,
+            .early = !envOff("TF_EXPERT_FLAGS"),
+            .hitfirst = items_dev != null,
+            .items_dev = items_dev,
+            .ack = ack,
             .used = used,
             .wait32 = wait32,
             .write32 = write32,
             .mark = mark,
             .slot_of = slot_of,
+            .fills = fills,
             .jobs = jobs,
         };
-        const words = s.tableWords();
         for (0..shape.layers) |l| {
-            const row = words[l * (shape.experts + 1) * 2 ..][0 .. (shape.experts + 1) * 2];
-            for (0..shape.experts) |x| row[2 * x ..][0..2].* = .{ win_dev + head, 0 };
+            const head = s.hostHeader(l);
+            head[0] = if (s.early) win_dev + layout.flags else 0;
+            head[1] = win_dev + layout.slots;
+            head[2] = nslots * blob;
+            head[3] = blob;
+            const row = s.hostRow(l);
+            for (0..shape.experts) |x| row[2 * x ..][0..2].* = .{ win_dev + layout.slots, 0 };
             row[2 * shape.experts ..][0..2].* = .{ shared.base() + l * blob, 0 };
         }
+        // the tables in device memory start as the host's (the shared experts' entries never change), the verdict words at zero
+        if (s.rows_dev) |*b| {
+            const image = try gpa.alloc(u8, b.len);
+            defer gpa.free(image);
+            @memset(image, 0);
+            @memcpy(image[0 .. shape.layers * stride], s.win.bytes[layout.ptab..][0 .. shape.layers * stride]);
+            try b.upload(0, image);
+        }
         return s;
+    }
+
+    /// Whether the environment variable `name` is set to 0.
+    fn envOff(name: [:0]const u8) bool {
+        const v = platform.getenv(name) orelse return false;
+        return std.mem.eql(u8, v, "0");
+    }
+
+    /// Whether the environment variable `name` is set to 1.
+    fn envOn(name: [:0]const u8) bool {
+        const v = platform.getenv(name) orelse return false;
+        return std.mem.eql(u8, v, "1");
+    }
+
+    fn openSignal(r: *const Runtime) ?SignalWord {
+        const lib: *@TypeOf(r.lib) = @constCast(&r.lib);
+        const alloc = lib.lookup(SignalAlloc, "hipmacSignalAlloc");
+        const store = lib.lookup(SignalStore, "hipmacSignalStore");
+        const free = lib.lookup(SignalFree, "hipmacSignalFree");
+        if (alloc == null or store == null or free == null) {
+            std.log.info("experts: the runtime has no signal words: the ack stays in host memory", .{});
+            return null;
+        }
+        var sig: Signal = undefined;
+        if (alloc.?(1, &sig) != 0) {
+            std.log.warn("experts: no signal word could be allocated: the ack stays in host memory", .{});
+            return null;
+        }
+        return .{ .s = sig, .store = store.?, .free = free.? };
     }
 
     pub fn deinit(s: *Store) void {
@@ -270,18 +440,14 @@ pub const Store = struct {
             p.scratch.free();
             for (p.chunks) |*c| c.free();
             s.gpa.free(p.chunks);
-            s.gpa.free(p.slots);
-            s.gpa.free(p.line);
-            s.gpa.free(p.stamp);
-            s.gpa.free(p.flags);
-            s.gpa.free(p.where);
-            s.gpa.free(p.scratch_unique);
-            s.gpa.free(p.ids);
-            s.gpa.free(p.tally);
-            s.gpa.free(p.decisions);
-            s.gpa.free(p.copies);
+            s.gpa.free(p.line_addr);
+            p.cache.deinit();
         }
+        if (s.ack.signal) |*g| _ = g.free(&g.s);
+        if (s.rows_dev) |*b| b.free();
+        if (s.items_dev) |*b| b.free();
         s.gpa.free(s.jobs);
+        s.gpa.free(s.fills);
         s.gpa.free(s.slot_of);
         s.gpa.free(s.mark);
         s.gpa.free(s.used);
@@ -337,26 +503,58 @@ pub const Store = struct {
         s.layers_added += 1;
     }
 
-    /// The addresses layer `layer`'s views carry.
+    /// The addresses layer `layer`'s views carry: its table is the one in device memory when the card checks stages itself, else the host's.
     pub fn ref(s: *Store, layer: usize) Ref {
-        const entries = s.shape.experts + 1;
+        const stride = s.shape.rowStride();
+        const table = if (s.rows_dev) |b| b.base() + layer * stride else s.win_dev + s.ptab_off + layer * stride;
         return .{
-            .ptab = s.win_dev + s.ptab_off + layer * entries * 16,
+            .ptab = table + header_bytes,
             .fused_off = 0,
             .down_off = s.shape.downOffset(),
             .anchor = s.win_dev,
-            .hook = .{ .ctx = s, .post = post, .layer = @intCast(layer), .trace = s.win_dev + s.trace_off },
+            .hook = .{ .ctx = s, .post = post, .layer = @intCast(layer), .trace = s.win_dev + s.trace_off, .first = if (s.items_dev) |b| .{
+                .hit_items = b.base(),
+                .miss_items = b.base() + itemBytes(s.shape),
+                .begin = begin,
+                .finish = finish,
+                .off = hitFirstOff,
+            } else null },
         };
     }
 
-    fn tableWords(s: *const Store) []u64 {
-        const bytes = s.win.bytes[s.ptab_off..s.trace_off];
-        return @alignCast(std.mem.bytesAsSlice(u64, bytes[0 .. bytes.len / 8 * 8]));
+    /// Layer `layer`'s table in the window: entries of two u64 an expert (the blob's address, the admission line or 0), the shared expert's last.
+    fn hostRow(s: *const Store, layer: usize) []u64 {
+        const at = s.ptab_off + layer * s.shape.rowStride() + header_bytes;
+        const bytes = s.win.bytes[at..][0 .. (s.shape.experts + 1) * 16];
+        return @alignCast(std.mem.bytesAsSlice(u64, bytes));
     }
 
+    fn hostHeader(s: *const Store, layer: usize) []u64 {
+        const at = s.ptab_off + layer * s.shape.rowStride();
+        return @alignCast(std.mem.bytesAsSlice(u64, s.win.bytes[at..][0..header_bytes]));
+    }
+
+    /// The prompt trace: a forward's rows' picks (the plain handshake).
     fn traceWords(s: *const Store) []i32 {
-        const bytes = s.win.bytes[s.trace_off..s.slots_off];
+        const bytes = s.win.bytes[s.trace_off..s.resident_off];
         return @alignCast(std.mem.bytesAsSlice(i32, bytes[0 .. bytes.len / 4 * 4]));
+    }
+
+    /// Layer `layer`'s decode trace slot: the picks of the stage the card checked, until the host has served or replayed it.
+    fn decodeTrace(s: *const Store, layer: usize) []i32 {
+        const n = split_rows * s.shape.picks;
+        return @alignCast(std.mem.bytesAsSlice(i32, s.win.bytes[s.dtrace_off + layer * n * 4 ..][0 .. n * 4]));
+    }
+
+    /// The residency table: a word a key (layer * experts + expert), the address of the cache line the expert sits in, or 0.
+    fn residentWords(s: *const Store) []u64 {
+        const n = s.shape.layers * s.shape.experts;
+        return @alignCast(std.mem.bytesAsSlice(u64, s.win.bytes[s.resident_off..][0 .. n * 8]));
+    }
+
+    /// A flag a window slot: 0 until the host has copied the slot's blob.
+    fn flagWords(s: *const Store) []u32 {
+        return @alignCast(std.mem.bytesAsSlice(u32, s.win.bytes[s.flags_off..][0 .. s.nslots * 4]));
     }
 
     fn word(s: *const Store, at: usize) *u32 {
@@ -370,10 +568,6 @@ pub const Store = struct {
 
     fn slotAddr(s: *const Store, slot: usize) u64 {
         return s.win_dev + s.slots_off + slot * s.shape.blobBytes();
-    }
-
-    fn lineAddr(s: *const Store, p: *const Pool, slot: usize) u64 {
-        return p.chunks[slot / p.per_chunk].base() + (slot % p.per_chunk) * s.shape.blobBytes();
     }
 
     /// `total` cache lines of device memory, a prompt span's scratch (one layer's every expert) among them; decode admits at most `copy_experts` misses a round;
@@ -394,57 +588,26 @@ pub const Store = struct {
             c.* = try DeviceBuffer.alloc(s.r, @min(per_chunk, lines - i * per_chunk) * blob);
             made += 1;
         }
-        const slots = try s.gpa.alloc(policy.Id, lines);
-        errdefer s.gpa.free(slots);
-        const line = try s.gpa.alloc(policy.Line, lines);
-        errdefer s.gpa.free(line);
-        const stamp = try s.gpa.alloc(u32, lines);
-        errdefer s.gpa.free(stamp);
-        const flags = try s.gpa.alloc(bool, lines);
-        errdefer s.gpa.free(flags);
-        const where = try s.gpa.alloc(i32, keys);
-        errdefer s.gpa.free(where);
-        const picks_max = s.shape.trace_rows * (s.shape.picks - 1);
-        const unique = try s.gpa.alloc(policy.Id, picks_max);
-        errdefer s.gpa.free(unique);
-        const tally = try s.gpa.alloc(u16, keys);
-        errdefer s.gpa.free(tally);
-        @memset(tally, 0);
-        const decisions = try s.gpa.alloc(policy.Decision, picks_max);
-        errdefer s.gpa.free(decisions);
-        const ids = try s.gpa.alloc(policy.Id, picks_max);
-        errdefer s.gpa.free(ids);
-        const copies = try s.gpa.alloc(policy.Copy, @min(@max(copy_experts, 1), picks_max));
-        errdefer s.gpa.free(copies);
+        const line_addr = try s.gpa.alloc(u64, lines);
+        errdefer s.gpa.free(line_addr);
+        for (line_addr, 0..) |*a, i| a.* = chunks[i / per_chunk].base() + (i % per_chunk) * blob;
         var scratch = try DeviceBuffer.alloc(s.r, s.shape.experts * blob);
         errdefer scratch.free();
         var copy = try Stream.init(s.r);
         errdefer copy.deinit();
-        var vram = policy.Vram.init(slots, line, stamp, where);
-        if (protect_pct > 0) vram.enableSegments(flags, lines * @as(usize, protect_pct) / 100);
-        s.pool = .{
-            .chunks = chunks,
-            .per_chunk = per_chunk,
-            .vram = vram,
-            .slots = slots,
-            .line = line,
-            .stamp = stamp,
-            .flags = flags,
-            .where = where,
-            .scratch_unique = unique,
-            .ids = ids,
-            .tally = tally,
-            .decisions = decisions,
-            .copies = copies,
-            .scratch = scratch,
-            .copy = copy,
-            .budget = copy_experts,
+        const cache = try policy.Cache.init(s.gpa, .{
+            .keys = keys,
+            .lines = lines,
+            .picks_max = s.shape.trace_rows * (s.shape.picks - 1),
             .copy_experts = copy_experts,
-        };
+            .expert_bytes = blob,
+            .protect_pct = protect_pct,
+        }, s.residentWords(), line_addr);
+        s.pool = .{ .chunks = chunks, .per_chunk = per_chunk, .cache = cache, .line_addr = line_addr, .scratch = scratch, .copy = copy };
     }
 
     pub fn lineCount(s: *const Store) usize {
-        return if (s.pool) |p| p.slots.len else 0;
+        return if (s.pool) |p| p.cache.slots.len else 0;
     }
 
     /// Starts the worker that serves the layers' stages; the first offloaded forward needs it.
@@ -465,41 +628,123 @@ pub const Store = struct {
         while (s.done.load(.acquire) != s.posted) std.atomic.spinLoopHint();
     }
 
-    /// A layer's stage in the stream, after its picks were traced: the card asks (`req`), then waits for the host's answer (`ack`).
-    fn post(ctx: *anyopaque, stream: abi.Stream, layer: u32, rows: usize, prefill: bool) moe.Error!void {
-        const s: *Store = @ptrCast(@alignCast(ctx));
-        // a dry run measuring scratch launches nothing and waits for no one
-        if (stream == @import("launches/util.zig").counting) return;
-        if (rows == 0 or rows > s.shape.trace_rows or s.worker == null) return error.BadShape;
+    /// Posts job `n` for the stage the stream is about to run: the worker may see it from here. Returns its number.
+    fn announce(s: *Store, job: Job) u32 {
         while (s.posted -% s.done.load(.acquire) >= ring - 1) std.atomic.spinLoopHint();
         s.posted +%= 1;
-        s.jobs[s.posted % ring] = .{ .layer = layer, .rows = @intCast(rows), .prefill = prefill };
+        s.jobs[s.posted % ring] = job;
         s.published.store(s.posted, .release);
-        try runtime.check(s.write32(stream, s.win.bytes[req_at..].ptr, s.posted, 0));
-        try runtime.check(s.wait32(stream, s.win.bytes[ack_at..].ptr, s.posted, wait_gte, 0xffff_ffff));
+        return s.posted;
+    }
+
+    /// A layer's stage in the stream, after its picks were chosen. The plain handshake: the picks go to the prompt trace, the card asks (`req`), then waits for the
+    /// host's answer (`ack`). A decode stage the card checks itself: `tf_expert_check`, the wait, `tf_expert_rows`.
+    fn post(ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize, rows: usize, prefill: bool) moe.Error!void {
+        const s: *Store = @ptrCast(@alignCast(ctx));
+        // a dry run measuring scratch launches nothing and waits for no one
+        if (o.stream == @import("launches/util.zig").counting) return;
+        if (rows == 0 or rows > s.shape.trace_rows or s.worker == null) return error.BadShape;
+        const checked = s.split and !prefill and rows <= split_rows;
+        const n = s.announce(.{ .layer = layer, .rows = @intCast(rows), .prefill = prefill, .split = checked });
+        const e = s.shape.experts;
+        const stride = s.shape.rowStride();
+        const picks_ptr: [*]const i32 = @ptrFromInt(picks);
+        if (!s.split) {
+            try o.expertTrace(picks, pairs, s.win_dev + s.trace_off);
+            try runtime.check(s.write32(o.stream, s.win.bytes[req_at..].ptr, n, 0));
+            try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
+            return;
+        }
+        const table = s.rows_dev.?.base() + layer * stride + header_bytes;
+        const need = s.rows_dev.?.base() + s.shape.layers * stride + layer * 64;
+        const host_table = s.win_dev + s.ptab_off + layer * stride + header_bytes;
+        if (checked) {
+            try s.queueCheck(o, layer, picks, pairs, n, .{});
+            try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
+            try o.l.tf_expert_rows(picks_ptr, @intCast(pairs), @intCast(e), host_table, table, need, false, o.stream);
+            return;
+        }
+        try o.expertTrace(picks, pairs, s.win_dev + s.trace_off);
+        try runtime.check(s.write32(o.stream, s.win.bytes[req_at..].ptr, n, 0));
+        try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
+        try o.l.tf_expert_rows(picks_ptr, @intCast(pairs), @intCast(e), host_table, table, need, true, o.stream);
+    }
+
+    /// The check kernel of job `n` for `layer`, with the item split when `split` has one.
+    fn queueCheck(s: *Store, o: Ops, layer: u32, picks: u64, pairs: usize, n: u32, split: ItemSplit) moe.Error!void {
+        const e = s.shape.experts;
+        const stride = s.shape.rowStride();
+        const table = s.rows_dev.?.base() + layer * stride + header_bytes;
+        const need = s.rows_dev.?.base() + s.shape.layers * stride + layer * 64;
+        const resident = s.win_dev + s.resident_off + layer * e * 8;
+        const trace = s.win_dev + s.dtrace_off + layer * split_rows * s.shape.picks * 4;
+        try o.l.tf_expert_check(@ptrFromInt(picks), @intCast(pairs), @intCast(e), resident, table, trace, need, s.ack.deviceWord(), s.win_dev + seen_at, s.win_dev + req_at, n, split, o.stream);
+    }
+
+    /// Hit-first, first half (moe.HitFirst.begin): the job is announced and the check queued, with the plan's items split in two.
+    fn begin(ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize, rows: usize, items: u64, count: usize) moe.Error!bool {
+        const s: *Store = @ptrCast(@alignCast(ctx));
+        if (o.stream == @import("launches/util.zig").counting) return false;
+        const b = s.items_dev orelse return false;
+        if (!s.hitfirst or !s.split or o.prefill or rows == 0 or rows > split_rows or rows > s.shape.trace_rows or s.worker == null) return false;
+        if (count * 12 > itemBytes(s.shape)) return false;
+        const n = s.announce(.{ .layer = layer, .rows = @intCast(rows), .prefill = false, .split = true });
+        try s.queueCheck(o, layer, picks, pairs, n, .{ .items = items, .count = @intCast(count), .hit = b.base(), .miss = b.base() + itemBytes(s.shape) });
+        return true;
+    }
+
+    /// Hit-first, second half: the stream's wait for the host's answer to the job `begin` announced, and the table row copy.
+    fn finish(ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize) moe.Error!void {
+        const s: *Store = @ptrCast(@alignCast(ctx));
+        const n = s.posted;
+        const stride = s.shape.rowStride();
+        const table = s.rows_dev.?.base() + layer * stride + header_bytes;
+        const need = s.rows_dev.?.base() + s.shape.layers * stride + layer * 64;
+        const host_table = s.win_dev + s.ptab_off + layer * stride + header_bytes;
+        try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
+        try o.l.tf_expert_rows(@ptrFromInt(picks), @intCast(pairs), @intCast(s.shape.experts), host_table, table, need, false, o.stream);
+    }
+
+    /// The fused tile did not take the shape: hit-first is off from here (the stage that found out finishes the plain way).
+    fn hitFirstOff(ctx: *anyopaque) void {
+        const s: *Store = @ptrCast(@alignCast(ctx));
+        s.hitfirst = false;
     }
 
     fn workerMain(s: *Store) void {
-        const req: *volatile u32 = @ptrCast(@alignCast(s.win.bytes[req_at..].ptr));
+        // busy CPUs must not delay the answer to a request: the card is waiting for it
+        _ = platform.c.pthread_set_qos_class_self_np(.USER_INTERACTIVE, 0);
+        const req: *const u32 = @ptrCast(@alignCast(s.win.bytes[req_at..].ptr));
+        const seen: *const u32 = @ptrCast(@alignCast(s.win.bytes[seen_at..].ptr));
         var waited: u64 = nowNs();
         while (!s.stop.load(.acquire)) {
             const n = s.done.load(.monotonic) +% 1;
-            if (s.published.load(.acquire) -% n >= 0x8000_0000) {
+            if (!policy.reached(s.published.load(.acquire), n)) {
                 // nothing posted: the engine is between forwards
                 napNs(50_000);
                 waited = nowNs();
                 continue;
             }
-            // the card asks once it has traced the picks of stage n
-            if (@atomicLoad(u32, @as(*const u32, @volatileCast(req)), .acquire) -% n >= 0x8000_0000) {
+            // the card either asks once it has traced the picks of stage n, or passes it by itself
+            const how = policy.classify(n, @atomicLoad(u32, seen, .acquire), @atomicLoad(u32, req, .acquire));
+            if (how == .pending) {
                 std.atomic.spinLoopHint();
                 continue;
             }
             const began = nowNs();
-            s.stats.idle_ns += began - waited;
             const job = s.jobs[n % ring];
+            if (how == .hit) {
+                s.replay(job);
+                const ended = nowNs();
+                s.stats.hit_stages += 1;
+                s.stats.replay_ns += ended - began;
+                s.done.store(n, .release);
+                waited = nowNs();
+                continue;
+            }
+            s.stats.idle_ns += began - waited;
             if (job.prefill and job.layer == 0) s.span = .{ .began = began, .bytes = s.stats.scratch_bytes };
-            s.serve(job);
+            s.serve(job, n);
             const ended = nowNs();
             s.stats.stage_ns += ended - began;
             s.stats.stages += 1;
@@ -512,10 +757,36 @@ pub const Store = struct {
         }
     }
 
-    /// Stage `job`: decide, fill the window, write the table row, answer.
-    fn serve(s: *Store, job: Job) void {
-        s.stage(job) catch s.failed.store(true, .release);
-        @atomicStore(u32, s.word(ack_at), s.done.load(.monotonic) +% 1, .release);
+    /// Stage `job`: decide, write the table row, answer, and (answered early) fill the window slots.
+    fn serve(s: *Store, job: Job, n: u32) void {
+        // a prompt span's stage copies before it answers (its scratch copies read the slots)
+        const early = s.early and !job.prefill;
+        s.stage(job, early) catch s.failed.store(true, .release);
+        if (!s.ack.publish(n)) s.failed.store(true, .release);
+        if (early) {
+            const began = nowNs();
+            s.fill();
+            s.stats.fill_ns += nowNs() - began;
+        }
+    }
+
+    /// A hit job, late: the card passed the stage by itself, so the pool only needs the touches of its picks (from the stage's trace slot).
+    fn replay(s: *Store, job: Job) void {
+        if (!job.split) return s.failed.store(true, .release);
+        const p = &(s.pool orelse return s.failed.store(true, .release));
+        const e = s.shape.experts;
+        const picks = s.shape.picks;
+        const base: policy.Id = @intCast(@as(usize, job.layer) * e);
+        const words = s.decodeTrace(job.layer);
+        var n: usize = 0;
+        for (0..job.rows) |r| for (words[r * picks ..][0 .. picks - 1]) |id| {
+            if (id < 0 or id >= e) continue;
+            p.cache.ids[n] = base + @as(policy.Id, @intCast(id));
+            n += 1;
+        };
+        p.cache.replay(p.cache.ids[0..n]) catch return s.failed.store(true, .release);
+        s.stats.accesses += n;
+        s.stats.hits += n;
     }
 
     /// One log line for a prompt span: its wall time from the first stage to the last answer, the time in stages, the experts copied to the scratch.
@@ -529,17 +800,37 @@ pub const Store = struct {
     /// A prompt span's counters.
     const Span = struct { began: u64 = 0, stage_ns: u64 = 0, bytes: u64 = 0 };
 
-    fn stage(s: *Store, job: Job) error{StageFailed}!void {
+    /// The window slots a stage took and has not filled: the blobs go in ascending expert order (the order the plan's items, and so the GEMV blocks, ask for them),
+    /// each flagged when it is in.
+    fn fill(s: *Store) void {
+        const n = s.nfills;
+        s.nfills = 0;
+        const list = s.fills[0..n];
+        std.mem.sort(Fill, list, {}, struct {
+            fn less(_: void, a: Fill, b: Fill) bool {
+                return a.expert < b.expert;
+            }
+        }.less);
+        const blob = s.shape.blobBytes();
+        const flags = s.flagWords();
+        for (list) |f| {
+            const layer_host = s.fill_layer_host orelse return s.failed.store(true, .release);
+            @memcpy(s.slotBytes(f.slot), layer_host[f.expert * blob ..][0..blob]);
+            @atomicStore(u32, &flags[f.slot], 1, .release);
+        }
+        s.fill_layer_host = null;
+    }
+
+    fn stage(s: *Store, job: Job, early: bool) error{StageFailed}!void {
         const e = s.shape.experts;
         const picks = s.shape.picks;
         const layer: usize = job.layer;
         const blob = s.shape.blobBytes();
-        const words = s.traceWords();
+        const words = if (job.split) s.decodeTrace(layer) else s.traceWords();
         const base: policy.Id = @intCast(layer * e);
-        var no_ids: [0]policy.Id = .{};
+        const cache: ?*policy.Cache = if (s.pool) |*p| &p.cache else null;
+        const decode_cache: ?*policy.Cache = if (job.prefill) null else cache;
         var n: usize = 0;
-        const ids: []policy.Id = if (s.pool) |p| p.ids else &no_ids;
-        const have_pool = s.pool != null;
         s.mark_serial +%= 1;
         if (s.mark_serial == 0) {
             @memset(s.mark, 0);
@@ -552,8 +843,8 @@ pub const Store = struct {
         for (0..job.rows) |r| for (words[r * picks ..][0 .. picks - 1]) |id| {
             if (id < 0 or id >= e) continue;
             const x: u32 = @intCast(id);
-            if (have_pool and !job.prefill) {
-                ids[n] = base + x;
+            if (decode_cache) |c| {
+                c.ids[n] = base + x;
                 n += 1;
             }
             if (s.mark[x] != s.mark_serial) {
@@ -564,15 +855,11 @@ pub const Store = struct {
             }
         };
         var started: usize = 0;
-        if (have_pool and !job.prefill) {
-            const p = &s.pool.?;
-            s.now +%= 1;
-            started = policy.schedule(&p.vram, ids[0..n], .{ .slots = @intCast(p.slots.len), .expert_bytes = blob, .copy_bytes = @as(u64, p.budget) * blob }, s.now, p.decisions[0..n], .{ .unique = p.scratch_unique, .tally = p.tally }, p.copies) catch return error.StageFailed;
-            p.budget -= started;
-            for (p.decisions[0..n]) |d| {
-                s.stats.accesses += 1;
-                if (d == .hit) s.stats.hits += 1;
-            }
+        if (decode_cache) |c| {
+            const d = c.decide(n) catch return error.StageFailed;
+            started = d.started;
+            s.stats.accesses += n;
+            s.stats.hits += d.hits;
         }
         // the layer's half of the window is free again: its previous layer's GEMVs have finished (they precede this layer's trace in the stream)
         const half = layer & 1;
@@ -580,24 +867,35 @@ pub const Store = struct {
         for (s.used[half * per_half ..][0..per_half]) |*u| {
             if (u.* == 1) u.* = 0;
         }
-        const table = s.tableWords()[layer * (e + 1) * 2 ..][0 .. e * 2];
+        const table = s.hostRow(layer);
         const host = s.host[layer] orelse return error.StageFailed;
+        const flags = s.flagWords();
+        s.nfills = 0;
         // a prompt span's experts are copied (SDMA, from their window slots) into the scratch and read there by the span's GEMMs: the tiles read a
         // window slot in place far below the link's speed, a copy runs at it
-        const prefill_pool: ?*Pool = if (job.prefill and have_pool) &s.pool.? else null;
+        const prefill_pool: ?*Pool = if (job.prefill and s.pool != null) &s.pool.? else null;
         var staged: usize = 0;
         for (uniq[0..nu]) |x| {
             const key: policy.Id = base + x;
-            if (have_pool and policy.onDevice(s.pool.?.vram, key)) {
-                const p = &s.pool.?;
-                table[2 * x] = s.lineAddr(p, @intCast(p.vram.where[key]));
+            if (cache) |c| if (c.address(key)) |line| {
+                table[2 * x] = line;
                 table[2 * x + 1] = 0;
                 continue;
-            }
+            };
             const w = s.takeSlot(half, per_half) orelse return error.StageFailed;
-            @memcpy(s.slotBytes(w), host[x * blob ..][0..blob]);
-            s.stats.window_bytes += blob;
             table[2 * x + 1] = 0;
+            if (early) {
+                // answered before the copy: the card waits for the flag of this slot
+                @atomicStore(u32, &flags[w], 0, .release);
+                s.fills[s.nfills] = .{ .slot = @intCast(w), .expert = x };
+                s.nfills += 1;
+                s.stats.window_bytes += blob;
+                table[2 * x] = s.slotAddr(w);
+                continue;
+            }
+            @memcpy(s.slotBytes(w), host[x * blob ..][0..blob]);
+            @atomicStore(u32, &flags[w], 1, .release);
+            s.stats.window_bytes += blob;
             if (prefill_pool) |p| {
                 const at = staged * blob;
                 p.scratch.uploadAsync(at, s.win.view(s.slots_off + w * blob, s.slots_off + (w + 1) * blob), p.copy) catch return error.StageFailed;
@@ -607,6 +905,7 @@ pub const Store = struct {
             }
             table[2 * x] = s.slotAddr(w);
         }
+        if (early) s.fill_layer_host = host;
         if (staged > 0) {
             prefill_pool.?.copy.synchronize() catch return error.StageFailed;
             s.stats.scratch_bytes += staged * blob;
@@ -614,11 +913,9 @@ pub const Store = struct {
         // read-through admission: the GEMVs of this layer that read an admitted miss in its window slot store what they read into the line the
         // policy gave it (table entry word 1); the line is resident for the next stage, which the stream orders after those GEMVs
         if (started > 0) {
-            const p = &s.pool.?;
-            for (p.copies[0..started]) |c| {
-                table[2 * (c.id - base) + 1] = s.lineAddr(p, c.slot);
-                policy.reap(&p.vram, c.id, s.now) catch return error.StageFailed;
-            }
+            const c = decode_cache.?;
+            for (c.copies[0..started]) |cp| table[2 * (cp.id - base) + 1] = c.line_addr[cp.slot];
+            c.commit(started) catch return error.StageFailed;
             s.stats.admissions += started;
         }
     }
@@ -651,7 +948,7 @@ pub const Store = struct {
         s.stats.tokens += rows;
         s.stats.round_ns += ns;
         if (s.stats.rounds % report_every == 0) s.report("interval");
-        if (s.pool) |*p| p.budget = p.copy_experts;
+        if (s.pool) |*p| p.cache.beginRound();
     }
 
     /// One log line for the rounds since the last (or since the start): hit rate, misses and window traffic a token, the stage time.
@@ -668,6 +965,9 @@ pub const Store = struct {
             .window_bytes = s.stats.window_bytes - s.since.window_bytes,
             .stage_ns = s.stats.stage_ns - s.since.stage_ns,
             .idle_ns = s.stats.idle_ns - s.since.idle_ns,
+            .hit_stages = s.stats.hit_stages - s.since.hit_stages,
+            .replay_ns = s.stats.replay_ns - s.since.replay_ns,
+            .fill_ns = s.stats.fill_ns - s.since.fill_ns,
         };
         s.since = s.stats;
         if (d.rounds == 0) return;
@@ -677,9 +977,10 @@ pub const Store = struct {
         const miss: f64 = @floatFromInt(d.accesses - d.hits);
         const mib: f64 = 1024.0 * 1024.0;
         const blob: f64 = @floatFromInt(s.shape.blobBytes());
+        const asked: f64 = @floatFromInt(d.stages + d.hit_stages);
         std.log.info(
-            "experts {s}: {d} rounds {d} tokens, hit {d:.1}% miss {d:.1}/token ({d:.1} MiB/token over the link), window fill {d:.1} MiB/token, admissions {d:.1}/round, stage {d:.2} ms/token (card compute+wait {d:.2}), round {d:.2} ms ({d:.2} ms/token), {d} lines",
-            .{ label, d.rounds, d.tokens, 100.0 * @as(f64, @floatFromInt(d.hits)) / a, miss / t, miss / t * blob / mib, @as(f64, @floatFromInt(d.window_bytes)) / t / mib, @as(f64, @floatFromInt(d.admissions)) / r, @as(f64, @floatFromInt(d.stage_ns)) / t / 1e6, @as(f64, @floatFromInt(d.idle_ns)) / t / 1e6, @as(f64, @floatFromInt(d.round_ns)) / r / 1e6, @as(f64, @floatFromInt(d.round_ns)) / t / 1e6, s.lineCount() },
+            "experts {s}: {d} rounds {d} tokens, hit {d:.1}% miss {d:.1}/token ({d:.1} MiB/token over the link), window fill {d:.1} MiB/token, admissions {d:.1}/round, stage {d:.2} ms/token (card compute+wait {d:.2}; fill after the answer {d:.2}), card passed {d:.1}% of the stages itself ({d:.2} ms/token replaying), round {d:.2} ms ({d:.2} ms/token), {d} lines",
+            .{ label, d.rounds, d.tokens, 100.0 * @as(f64, @floatFromInt(d.hits)) / a, miss / t, miss / t * blob / mib, @as(f64, @floatFromInt(d.window_bytes)) / t / mib, @as(f64, @floatFromInt(d.admissions)) / r, @as(f64, @floatFromInt(d.stage_ns)) / t / 1e6, @as(f64, @floatFromInt(d.idle_ns)) / t / 1e6, @as(f64, @floatFromInt(d.fill_ns)) / t / 1e6, 100.0 * @as(f64, @floatFromInt(d.hit_stages)) / @max(asked, 1), @as(f64, @floatFromInt(d.replay_ns)) / t / 1e6, @as(f64, @floatFromInt(d.round_ns)) / r / 1e6, @as(f64, @floatFromInt(d.round_ns)) / t / 1e6, s.lineCount() },
         );
     }
 };
@@ -742,9 +1043,14 @@ test "stages fill window slots, admitted misses name their lines (the GEMVs writ
     var got: [160]u8 = undefined;
     try s.shared.download(1 * blob, &got);
     try std.testing.expectEqualSlices(u8, &want, &got);
-    try std.testing.expectEqual(s.shared.base() + blob, s.tableWords()[(1 * 5 + 4) * 2]);
-    try std.testing.expectEqual(@as(u64, 0), s.tableWords()[(1 * 5 + 4) * 2 + 1]);
+    try std.testing.expectEqual(s.shared.base() + blob, s.hostRow(1)[4 * 2]);
+    try std.testing.expectEqual(@as(u64, 0), s.hostRow(1)[4 * 2 + 1]);
     try std.testing.expectError(error.BadShape, s.addLayer(2, t0));
+    // each layer's table has its header before the entries (the slot flags, the first slot, the slots' bytes, a slot's bytes)
+    const head = s.hostHeader(1);
+    try std.testing.expectEqual(s.win_dev + s.slots_off, head[1]);
+    try std.testing.expectEqual(s.nslots * blob, head[2]);
+    try std.testing.expectEqual(blob, head[3]);
 
     // 12 lines of device memory: 4 of them (one layer's every expert) the prompt scratch
     try s.attachPool(12, 2, 0);
@@ -752,38 +1058,42 @@ test "stages fill window slots, admitted misses name their lines (the GEMVs writ
     // stage 1 (layer 0, decode): rows name 1 twice, 2 and 3. Two admissions fit the budget: the hottest (key 1) and the lowest id of the rest
     setPicks(&s, 0, &.{ 1, 2, 4 });
     setPicks(&s, 1, &.{ 1, 3, 4 });
-    try s.stage(.{ .layer = 0, .rows = 2, .prefill = false });
+    try s.stage(.{ .layer = 0, .rows = 2, .prefill = false }, false);
     try std.testing.expectEqual(@as(u64, 0), s.stats.hits);
     try std.testing.expectEqual(@as(u64, 2), s.stats.admissions);
     // the card reads every miss where it sits: all three experts have window slots with their bytes
-    const slot1 = s.tableWords()[2];
+    const slot1 = s.hostRow(0)[2];
     try std.testing.expect(slot1 >= s.win_dev + s.slots_off and slot1 < s.win_dev + s.win.bytes.len);
     blobOf(shape, t0, 1, &want);
     try std.testing.expectEqualSlices(u8, &want, s.slotBytes((slot1 - s.win_dev - s.slots_off) / blob));
+    try std.testing.expectEqual(@as(u32, 1), s.flagWords()[(slot1 - s.win_dev - s.slots_off) / blob]);
     // the two admitted ones also name a line (their GEMVs store what they read there); the third does not
     var named: usize = 0;
-    for (1..4) |x| named += @intFromBool(s.tableWords()[2 * x + 1] != 0);
+    for (1..4) |x| named += @intFromBool(s.hostRow(0)[2 * x + 1] != 0);
     try std.testing.expectEqual(@as(usize, 2), named);
-    const line_of_1 = s.tableWords()[3];
+    const line_of_1 = s.hostRow(0)[3];
     try std.testing.expect(line_of_1 != 0 and (line_of_1 < s.win_dev + s.slots_off or line_of_1 >= s.win_dev + s.win.bytes.len));
     // the stores, as the stream tile makes them
     for (1..4) |x| {
-        const dst = s.tableWords()[2 * x + 1];
+        const dst = s.hostRow(0)[2 * x + 1];
         if (dst == 0) continue;
-        const src = s.tableWords()[2 * x];
+        const src = s.hostRow(0)[2 * x];
         const chunk = &s.pool.?.chunks[0];
         try chunk.upload(dst - chunk.base(), s.slotBytes((src - s.win_dev - s.slots_off) / blob));
     }
     try s.endRound(2, 1000);
-    try std.testing.expect(policy.onDevice(s.pool.?.vram, 1));
+    try std.testing.expect(policy.onDevice(s.pool.?.cache.vram, 1));
+    // the residency table the card checks names the line of each admitted expert, and nothing else in this layer
+    try std.testing.expectEqual(line_of_1, s.residentWords()[1]);
+    try std.testing.expectEqual(@as(u64, 0), s.residentWords()[0]);
     // stage 2 (layer 0 again): the resident expert is a hit and its entry names its line, with the bytes the GEMVs stored
     setPicks(&s, 0, &.{ 1, 2, 4 });
     setPicks(&s, 1, &.{ 1, 2, 4 });
-    try s.stage(.{ .layer = 0, .rows = 2, .prefill = false });
+    try s.stage(.{ .layer = 0, .rows = 2, .prefill = false }, false);
     try std.testing.expect(s.stats.hits >= 2);
-    const line = s.tableWords()[2];
+    const line = s.hostRow(0)[2];
     try std.testing.expect(line < s.win_dev + s.slots_off or line >= s.win_dev + s.win.bytes.len);
-    try std.testing.expectEqual(@as(u64, 0), s.tableWords()[3]);
+    try std.testing.expectEqual(@as(u64, 0), s.hostRow(0)[3]);
     blobOf(shape, t0, 1, &want);
     var dev: [160]u8 = undefined;
     try s.pool.?.chunks[0].download(line - s.pool.?.chunks[0].base(), &dev);
@@ -792,13 +1102,113 @@ test "stages fill window slots, admitted misses name their lines (the GEMVs writ
     const before = s.stats.admissions;
     setPicks(&s, 0, &.{ 0, 3, 4 });
     setPicks(&s, 1, &.{ 2, 3, 4 });
-    try s.stage(.{ .layer = 1, .rows = 2, .prefill = true });
+    try s.stage(.{ .layer = 1, .rows = 2, .prefill = true }, false);
     try std.testing.expectEqual(before, s.stats.admissions);
-    const e0 = s.tableWords()[(1 * 5 + 0) * 2];
+    const e0 = s.hostRow(1)[0];
     const scratch = &s.pool.?.scratch;
     try std.testing.expect(e0 >= scratch.base() and e0 < scratch.base() + scratch.len);
     blobOf(shape, t1, 0, &want);
     try scratch.download(e0 - scratch.base(), &dev);
     try std.testing.expectEqualSlices(u8, &want, &dev);
     try std.testing.expectEqual(@as(u64, 3 * blob), s.stats.scratch_bytes);
+}
+
+/// The card's side of a decode stage, on the window's own words as tf_expert_check makes them: the picks into the layer's trace slot, each looked up in the
+/// residency table, then either `seen` and the ack (a hit: nothing asks the host) or `req` and a wait for the ack (a miss). Returns whether the card passed it.
+fn cardChecks(s: *Store, layer: usize, rows: usize, ids: []const i32) bool {
+    const n = s.announce(.{ .layer = @intCast(layer), .rows = @intCast(rows), .prefill = false, .split = true });
+    @memcpy(s.decodeTrace(layer)[0..ids.len], ids);
+    var all = true;
+    for (ids) |id| {
+        if (id < 0 or id >= s.shape.experts) continue;
+        if (@atomicLoad(u64, &s.residentWords()[layer * s.shape.experts + @as(usize, @intCast(id))], .acquire) == 0) all = false;
+    }
+    if (all) {
+        @atomicStore(u32, s.word(Store.seen_at), n, .release);
+        _ = s.ack.publish(n);
+        return true;
+    }
+    @atomicStore(u32, s.word(Store.req_at), n, .release);
+    while (!policy.reached(@atomicLoad(u32, s.word(Store.ack_at), .acquire), n)) std.atomic.spinLoopHint();
+    return false;
+}
+
+test "the worker answers a stage the card could not check and replays one the card passed, in order, and the pool ends as if every stage had asked" {
+    const gpa = std.testing.allocator;
+    var r = try Runtime.open();
+    defer r.close();
+    var ctx = try @import("context.zig").Context.init(&r, 0);
+    defer ctx.deinit();
+    const shape: Shape = .{ .layers = 3, .experts = 8, .picks = 3, .trace_rows = 4, .part_bytes = .{ 64, 16, 16, 32, 16, 16 } };
+    const blob = shape.blobBytes();
+    var s = try Store.init(gpa, &r, shape, 1 << 20);
+    defer s.deinit();
+    // the host answers into the window's own word here, whatever the runtime offers
+    if (s.ack.signal) |*g| {
+        _ = g.free(&g.s);
+        s.ack.signal = null;
+    }
+    const t0 = try testTensors(gpa, shape, 1);
+    const t1 = try testTensors(gpa, shape, 2);
+    defer for (t0 ++ t1) |t| gpa.free(t);
+    try s.addLayer(0, t0);
+    try s.addLayer(1, t1);
+    try s.addLayer(2, t0);
+    try s.attachPool(24, 4, 0);
+    try s.start();
+    try s.beginRound();
+    // round 1: nothing is resident, the card asks for layer 0 and layer 1
+    try std.testing.expect(!cardChecks(&s, 0, 1, &.{ 1, 2, 8 }));
+    // answered: the entries name window slots, and the slots fill after (flags rise, bytes are the blobs')
+    const row0 = s.hostRow(0);
+    for ([_]usize{ 1, 2 }) |x| {
+        const at = (row0[2 * x] - s.win_dev - s.slots_off) / blob;
+        while (@atomicLoad(u32, &s.flagWords()[at], .acquire) == 0) std.atomic.spinLoopHint();
+        var want: [160]u8 = undefined;
+        blobOf(shape, t0, x, &want);
+        try std.testing.expectEqualSlices(u8, &want, s.slotBytes(at));
+    }
+    try std.testing.expect(!cardChecks(&s, 1, 1, &.{ 3, 4, 8 }));
+    try std.testing.expect(!cardChecks(&s, 2, 1, &.{ 5, 6, 8 }));
+    try s.endRound(1, 1000);
+    try std.testing.expectEqual(@as(u64, 3), s.stats.stages);
+    try std.testing.expectEqual(@as(u64, 0), s.stats.hit_stages);
+    // both admitted pairs are resident, with the lines' addresses
+    try std.testing.expect(s.residentWords()[1] != 0 and s.residentWords()[2] != 0);
+    try std.testing.expect(s.residentWords()[8 + 3] != 0 and s.residentWords()[8 + 4] != 0);
+    // round 2: layer 0 and layer 1 name resident experts only: the card passes both, the worker replays them
+    try s.beginRound();
+    try std.testing.expect(cardChecks(&s, 0, 1, &.{ 2, 1, 8 }));
+    try std.testing.expect(cardChecks(&s, 1, 1, &.{ 3, 4, 8 }));
+    // layer 2 asks (expert 7 is new) after the two hits: the worker replays them first, then serves it
+    try std.testing.expect(!cardChecks(&s, 2, 1, &.{ 5, 7, 8 }));
+    try s.endRound(1, 1000);
+    try std.testing.expectEqual(@as(u64, 2), s.stats.hit_stages);
+    try std.testing.expectEqual(@as(u64, 4), s.stats.stages);
+    try std.testing.expect(!s.failed.load(.acquire));
+    // the two late touches happened before the third stage chose anything: the pool has the same stamps as the stage-per-layer run
+    var twin = try Store.init(gpa, &r, shape, 1 << 20);
+    defer twin.deinit();
+    try twin.addLayer(0, t0);
+    try twin.addLayer(1, t1);
+    try twin.addLayer(2, t0);
+    try twin.attachPool(24, 4, 0);
+    const stages = [_]struct { layer: usize, ids: [3]i32 }{
+        .{ .layer = 0, .ids = .{ 1, 2, 8 } },
+        .{ .layer = 1, .ids = .{ 3, 4, 8 } },
+        .{ .layer = 2, .ids = .{ 5, 6, 8 } },
+        .{ .layer = 0, .ids = .{ 2, 1, 8 } },
+        .{ .layer = 1, .ids = .{ 3, 4, 8 } },
+        .{ .layer = 2, .ids = .{ 5, 7, 8 } },
+    };
+    for (stages, 0..) |st, i| {
+        if (i == 0 or i == 3) twin.pool.?.cache.beginRound();
+        @memcpy(twin.traceWords()[0..3], &st.ids);
+        try twin.stage(.{ .layer = @intCast(st.layer), .rows = 1, .prefill = false }, false);
+    }
+    const a = &s.pool.?.cache;
+    const b = &twin.pool.?.cache;
+    try std.testing.expectEqual(b.now, a.now);
+    try std.testing.expectEqualSlices(u32, b.stamp, a.stamp);
+    try std.testing.expectEqualSlices(i32, b.where, a.where);
 }

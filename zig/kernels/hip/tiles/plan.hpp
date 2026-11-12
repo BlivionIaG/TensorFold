@@ -15,11 +15,28 @@ namespace rocm {
 // projection's own size), not the stack's e-th slice: a VRAM cache slot's address or a host-tier address. ptab[2e + 1] is 0, or the address of a VRAM
 // cache line the stream tile writes the blob it reads into (read-through admission: the miss's one trip over the link is also its admission); the
 // kernel keeps the byte distance between the two blobs in `dst_delta`.
+//
+// The 64 bytes before `ptab` are the table's header (four u64): [0] the address of the window's slot flags (one u32 a window slot, nonzero once the slot's
+// blob has been copied in; 0: no flags, the host has copied every blob before it answered), [1] the address of the window's first slot, [2] the bytes of
+// all its slots, [3] the bytes of one slot. An entry whose blob is in a window slot waits for that slot's flag before any of its bytes is read: the host
+// answers a layer's request as soon as it has decided where the experts sit and fills the slots after (hip/expert_store.zig, LATENCY.md M3). Entries
+// that name a cache line or the prompt's scratch are outside the window and wait for nothing.
 struct ExpertPtrs {
     const unsigned long long* ptab = nullptr;
     long long ptab_off = 0;
     long long dst_delta = 0;  // set by the kernel from its item
 };
+
+// Waits until the host has copied the blob of the window slot `src` points at, when the table's header has flags and `src` is a slot of the window.
+__device__ inline void expert_blob_ready(const unsigned long long* ptab, unsigned long long src) {
+    const unsigned long long* head = ptab - 8;
+    const unsigned long long flags = head[0];
+    if (flags == 0) return;
+    const unsigned long long at = src - head[1];
+    if (at >= head[2]) return;
+    const unsigned* flag = reinterpret_cast<const unsigned*>(flags) + at / head[3];
+    while (__hip_atomic_load(flag, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM) == 0) __builtin_amdgcn_s_sleep(2);
+}
 #endif
 
 struct Routing {
