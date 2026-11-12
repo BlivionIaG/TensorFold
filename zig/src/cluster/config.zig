@@ -204,8 +204,8 @@ fn nodes(a: Allocator, v: ?Value, probs: *Problems) ![]Node {
         const x = item.object;
         const name = str(x.get("name")) orelse "";
         const backend_text = str(x.get("backend")) orelse "";
-        const backend: ?node.Backend = if (std.mem.eql(u8, backend_text, "metal")) .metal else if (std.mem.eql(u8, backend_text, "cuda")) .cuda else null;
-        if (backend == null) probs.add("nodes[{d}] ({s}): backend must be \"metal\" or \"cuda\"", .{ i, name });
+        const backend: ?node.Backend = if (std.mem.eql(u8, backend_text, "metal")) .metal else if (std.mem.eql(u8, backend_text, "cuda")) .cuda else if (std.mem.eql(u8, backend_text, "hip")) .hip else null;
+        if (backend == null) probs.add("nodes[{d}] ({s}): backend must be \"metal\", \"cuda\" or \"hip\"", .{ i, name });
         var n: Node = .{ .name = name, .address = str(x.get("address")) orelse "", .via = str(x.get("via")), .backend = backend orelse .metal, .chip = str(x.get("chip")) orelse str(x.get("gpu")), .root = str(x.get("model_root")) };
         if (x.get("library")) |l| n.library = str(l) orelse "";
         if (x.get("bin")) |b| n.bin = str(b) orelse "";

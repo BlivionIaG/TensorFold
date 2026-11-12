@@ -20,7 +20,7 @@ const Sim = struct {
         for (cables) |c| s.net.cable(c[0], c[1], c[2], c[3]);
         for (&s.nodes, 0..) |*m, i| {
             const inv: node.Inventory = .{ .id = 100 + 10 * @as(u64, @intCast(i)), .name = .of("n"), .memory = 512 * node.gib };
-            m.* = Membership.init(gpa, .{}, inv, 1);
+            m.* = try Membership.init(gpa, .{}, inv, 1);
         }
         return s;
     }
@@ -99,7 +99,7 @@ test "a node that leaves is dropped at once, and a restart with a new incarnatio
     try s.run(400 * ms);
     try s.agree(&.{ 100, 110, 120 });
     s.nodes[3].deinit();
-    s.nodes[3] = Membership.init(gpa, .{}, .{ .id = 130, .name = .of("n") }, 2);
+    s.nodes[3] = try Membership.init(gpa, .{}, .{ .id = 130, .name = .of("n") }, 2);
     try s.run(600 * ms);
     try s.agree(&.{ 100, 110, 120, 130 });
 }
@@ -163,7 +163,7 @@ const Seat = struct {
         s.net.cable(b, 2, c, to_b);
         const far = [3][2]u64{ .{ 110, 120 }, .{ 100, 120 }, .{ 100, 110 } };
         for (&s.nodes, 0..) |*m, i| {
-            m.* = Membership.init(gpa, .{}, .{ .id = 100 + 10 * @as(u64, @intCast(i)), .name = .of(&.{"abc"[i]}), .memory = 512 * node.gib }, 1);
+            m.* = try Membership.init(gpa, .{}, .{ .id = 100 + 10 * @as(u64, @intCast(i)), .name = .of(&.{"abc"[i]}), .memory = 512 * node.gib }, 1);
             if (!closed) continue;
             m.roster = @splat(null);
             m.roster.?[1] = far[i][0];
@@ -326,4 +326,9 @@ test "security: a peer's incarnation or epoch at the top of its range overflows 
         try std.testing.expectEqual(@as(u64, top), at_a.me.epoch);
         try std.testing.expectEqual(@as(u64, 100), at_a.leader);
     }
+}
+
+test "a node on an external GPU cannot join a cluster" {
+    const inv: node.Inventory = .{ .id = 7, .name = .of("gpu0"), .backend = .hip, .unified = false, .gpu_limit = 24 * node.gib };
+    try std.testing.expectError(error.UnlaunchableBackend, Membership.init(std.testing.allocator, .{}, inv, 1));
 }

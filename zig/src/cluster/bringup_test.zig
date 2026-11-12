@@ -59,7 +59,7 @@ const Pair = struct {
         p.c = try fabric.fake.Cluster.init(gpa, 2, layout.total, .immediate, null);
         for (&p.ranks, 0..) |*r, i| {
             r.* = .{ .link = try fabric_link.Link.init(gpa, p.c.endpoint(@intCast(i)), layout), .live = undefined, .then = then[i] };
-            r.live = bringup.Live.init(gpa, .{ .name = .of(as[i]) }, r.link.transport(), names[i], plans[i], quick);
+            r.live = try bringup.Live.init(gpa, .{ .name = .of(as[i]) }, r.link.transport(), names[i], plans[i], quick);
         }
     }
 
@@ -231,7 +231,7 @@ test "security: a member's lies add no node, make no leader and end no other mem
     }
     for (&ranks, 0..) |*r, i| {
         const t = if (i == 2) liar.transport() else r.link.transport();
-        r.live = bringup.Live.init(gpa, .{ .id = ids[i], .name = .of(abc[i]) }, t, &abc, 0x51, quick);
+        r.live = try bringup.Live.init(gpa, .{ .id = ids[i], .name = .of(abc[i]) }, t, &abc, 0x51, quick);
     }
     defer for (&ranks) |*r| r.live.deinit();
     const ta = try std.Thread.spawn(.{}, Rank.run, .{&ranks[0]});

@@ -98,7 +98,9 @@ pub const Membership = struct {
     small: []u8 = &.{},
     rx: []u8 = &.{},
 
-    pub fn init(gpa: std.mem.Allocator, cfg: Config, inv: node.Inventory, incarnation: u64) Membership {
+    /// A node whose backend cannot run a cluster node (an external GPU) is refused with `error.UnlaunchableBackend`.
+    pub fn init(gpa: std.mem.Allocator, cfg: Config, inv: node.Inventory, incarnation: u64) error{UnlaunchableBackend}!Membership {
+        if (!inv.backend.launchable()) return error.UnlaunchableBackend;
         return .{ .gpa = gpa, .cfg = cfg, .me = .{ .id = inv.id, .incarnation = incarnation }, .inv = inv, .leader = inv.id };
     }
 
