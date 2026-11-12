@@ -41,10 +41,15 @@ const Builder = struct {
         return std.fmt.allocPrint(b.a, "model.layers.{d}.{s}", .{ layer, leaf });
     }
 };
+/// How the LM head is stored: its own random matrix, a copy of the embedding table, or the table itself (tied).
+pub const Head = enum { untied, copy, tied };
 pub fn create(a: std.mem.Allocator) !*q.model.Model {
     return createLayers(a, 4);
 }
 pub fn createLayers(a: std.mem.Allocator, layers: usize) !*q.model.Model {
+    return createHead(a, layers, .untied);
+}
+pub fn createHead(a: std.mem.Allocator, layers: usize, head: Head) !*q.model.Model {
     if (layers == 0 or layers > 5) return error.BadSyntheticLayerCount;
     var c = q.config.Config{
         .hidden = 512,
@@ -64,6 +69,7 @@ pub fn createLayers(a: std.mem.Allocator, layers: usize) !*q.model.Model {
         .rope_theta = 10000000,
     };
     c.kinds[3] = .attention;
+    c.tied = head == .tied;
     c.eos[0] = 95;
     c.eos_count = 1;
     const device = try mtl.Device.init();
@@ -73,8 +79,10 @@ pub fn createLayers(a: std.mem.Allocator, layers: usize) !*q.model.Model {
     var cp = core.checkpoint_metal.Checkpoint.init(a);
     errdefer cp.deinit();
     var builder = Builder{ .a = a, .device = device, .cp = &cp };
+    const table_seed = builder.seed;
     try builder.matrix("model.embed_tokens", c.vocab, c.hidden);
-    try builder.matrix("lm_head", c.vocab, c.hidden);
+    if (head == .copy) builder.seed = table_seed;
+    if (head != .tied) try builder.matrix("lm_head", c.vocab, c.hidden);
     try builder.tensor("model.norm.weight", &.{c.hidden}, .bf16, 1);
     for (0..c.layers) |i| {
         try builder.tensor(try builder.layerName(i, "input_layernorm.weight"), &.{c.hidden}, .bf16, 1);
