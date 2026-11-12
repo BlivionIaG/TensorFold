@@ -101,6 +101,17 @@ pub fn stampedLen(n: usize) usize {
     return (n + group_data - 1) / group_data * group_bytes;
 }
 
+/// Bytes `rows` rows of `row_bytes` take once stamped, each row on its own groups (a row starts on a group boundary).
+pub fn stampedRowsLen(rows: usize, row_bytes: usize) usize {
+    return rows * stampedLen(row_bytes);
+}
+
+/// `packStamped` for `rows` consecutive rows of `row_bytes` in `src`.
+pub fn packStampedRows(dst: []u8, src: []const u8, rows: usize, row_bytes: usize, stamp: u32) void {
+    std.debug.assert(src.len >= rows * row_bytes and dst.len >= stampedRowsLen(rows, row_bytes));
+    for (0..rows) |r| packStamped(dst[r * stampedLen(row_bytes) ..], src[r * row_bytes ..][0..row_bytes], stamp);
+}
+
 /// Pack `src` into `dst` as 16-byte groups: 12 data bytes and a little-endian 32-bit stamp, the last group zero padded.
 pub fn packStamped(dst: []u8, src: []const u8, stamp: u32) void {
     std.debug.assert(dst.len >= stampedLen(src.len));
@@ -141,6 +152,14 @@ pub fn readStamped(out: []u8, region: []const u8, stamp: u32, retries: u32) Erro
         }
         at += n;
     }
+    return again;
+}
+
+/// `readStamped` for `rows` consecutive stamped rows; returns the re-reads in all.
+pub fn readStampedRows(out: []u8, region: []const u8, rows: usize, row_bytes: usize, stamp: u32, retries: u32) Error!u32 {
+    std.debug.assert(out.len >= rows * row_bytes and region.len >= stampedRowsLen(rows, row_bytes));
+    var again: u32 = 0;
+    for (0..rows) |r| again += try readStamped(out[r * row_bytes ..][0..row_bytes], region[r * stampedLen(row_bytes) ..], stamp, retries);
     return again;
 }
 
@@ -219,4 +238,16 @@ test "a slot publishes data before its sequence word and refuses an aborted step
     try std.testing.expectError(error.Aborted, s.wait(2, 1_000));
     var big: [5000]u8 = undefined;
     try std.testing.expectError(error.Oversize, s.publish(3, .hidden, 0, 1, &big, .ok));
+}
+
+test "stamped rows start on a group boundary and round trip" {
+    var src: [3 * 20]u8 = undefined;
+    for (&src, 0..) |*b, i| b.* = @truncate(i * 5 + 1);
+    var region: [stampedRowsLen(3, 20)]u8 align(16) = undefined;
+    packStampedRows(&region, &src, 3, 20, 7);
+    try std.testing.expectEqual(@as(usize, 3 * 32), region.len);
+    var out: [3 * 20]u8 = undefined;
+    try std.testing.expectEqual(@as(u32, 0), try readStampedRows(&out, &region, 3, 20, 7, 0));
+    try std.testing.expectEqualSlices(u8, &src, &out);
+    try std.testing.expectError(error.StaleReply, readStampedRows(&out, &region, 3, 20, 8, 2));
 }
