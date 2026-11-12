@@ -52,7 +52,7 @@ const Pair = struct {
         p.c = try fabric.fake.Cluster.init(gpa, 2, layout.total, .immediate, null);
         for (&p.ranks, 0..) |*r, i| {
             r.* = .{ .link = try fabric_link.Link.init(gpa, p.c.endpoint(@intCast(i)), layout), .live = undefined, .then = then[i] };
-            r.live = bringup.Live.init(gpa, .{ .id = 700 + @as(u64, @intCast(i)), .name = .of(as[i]) }, r.link.transport(), names[i], plans[i], quick);
+            r.live = try bringup.Live.init(gpa, .{ .id = 700 + @as(u64, @intCast(i)), .name = .of(as[i]) }, r.link.transport(), names[i], plans[i], quick);
         }
     }
 

@@ -164,7 +164,12 @@ pub const Link = struct {
         for (0..l.ep.size()) |i| {
             if (i == l.ep.rank() or k == out.len) continue;
             const kind = l.ep.link(@intCast(i));
-            out[k] = .{ .id = @intCast(i), .up = true, .kind = if (kind == .cx5) .cx5 else if (kind == .nccl) .cx7 else .tb5, .gbps = 80 };
+            out[k] = .{ .id = @intCast(i), .up = true, .kind = switch (kind) {
+                .cx5 => .cx5,
+                .nccl => .cx7,
+                .tb_gpu => .tb_gpu,
+                .local, .tb5 => .tb5,
+            }, .gbps = 80 };
             k += 1;
         }
         return k;

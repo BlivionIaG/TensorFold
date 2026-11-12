@@ -21,6 +21,8 @@ pub const cx5_mac_to_cuda: Link = .{ .kind = .cx5, .latency_ns = 7_625, .bandwid
 pub const cx5_cuda_to_mac: Link = .{ .kind = .cx5, .latency_ns = 3_680, .bandwidth = 51.0e9 / 8.0, .node_bandwidth = 51.2e9 / 8.0, .source = .documented };
 /// Thunderbolt 5 between two M3 Ultras: half the 8 B-4 KiB ping-pong round trip, and streaming SENDs of 16 KiB-4 MiB.
 pub const tb5: Link = .{ .kind = .tb5, .latency_ns = 3_500, .bandwidth = 9.38e9, .source = .measured };
+/// A host to its own external GPU through a PCIe tunnel over Thunderbolt (the slower staged-copy direction).
+pub const tb_gpu: Link = .{ .kind = .tb_gpu, .latency_ns = 1_000, .bandwidth = 3.2e9, .source = .documented };
 /// A same-node copy through unified memory.
 pub const local: Link = .{ .kind = .local, .latency_ns = 1_000, .bandwidth = 400e9, .source = .assumed };
 
@@ -33,6 +35,8 @@ pub const Handoff = struct {
 
 /// A command buffer signals a shared event the host waits on; the host's signal wakes the next one (our M5 wake time).
 pub const event_handoff: Handoff = .{ .gpu_to_host_ns = 10_000, .host_to_gpu_ns = 100_000, .source = .probed };
+/// Metal's event handoff while a PCIe-tunnelled GPU is in use: a poll sees the store before the command buffer wakes.
+pub const metal_event_handoff: Handoff = .{ .gpu_to_host_ns = 25_000, .host_to_gpu_ns = 124_000, .source = .measured };
 /// A resident kernel polls flag words the NIC writes into a shared buffer; unverified on Apple GPUs.
 pub const polled_handoff: Handoff = .{ .gpu_to_host_ns = 2_000, .host_to_gpu_ns = 3_000, .source = .assumed };
 /// The network alone, for the floor.
@@ -82,4 +86,13 @@ test "costs grow with bytes and handoff, and a shared bottleneck caps fan-out" {
     const lone = estimateNs(.broadcast, cx5_cuda_to_mac, no_handoff, .{ .ranks = 2, .bytes = 1 << 20 });
     try std.testing.expect(fan > lone);
     try std.testing.expectApproxEqRel(@as(f64, 186) * small, roundNs(.all_reduce, 186, 1, 14_336, tb5, no_handoff, 4), 1e-9);
+}
+
+test "a layer-split hop over the PCIe tunnel is the handoff plus the tunnel's latency and the bytes at its bandwidth" {
+    const bytes: u64 = 65_536;
+    const gpu = estimateNs(.send, tb_gpu, metal_event_handoff, .{ .ranks = 2, .bytes = bytes });
+    const mac = estimateNs(.send, tb5, metal_event_handoff, .{ .ranks = 2, .bytes = bytes });
+    const sync = metal_event_handoff.gpu_to_host_ns + metal_event_handoff.host_to_gpu_ns;
+    try std.testing.expectApproxEqRel(sync + tb_gpu.latency_ns + @as(f64, bytes) / tb_gpu.bandwidth * 1e9, gpu, 1e-9);
+    try std.testing.expect(gpu > mac and gpu < 1e6);
 }

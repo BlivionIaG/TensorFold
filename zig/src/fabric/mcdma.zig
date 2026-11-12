@@ -110,7 +110,7 @@ fn validate(gpa: std.mem.Allocator, config: Config) Error!usize {
                 if (link.gid < 0) return error.NeedGidIndex;
                 if (n > 1 or link.ports.len > 0 or link.peer_ports.len > 0) return error.UnsupportedLink;
             },
-            .local, .nccl => return error.InvalidConfig,
+            .local, .nccl, .tb_gpu => return error.InvalidConfig,
         };
     }
     const stage = std.math.mul(usize, config.ranks, config.staging_bytes) catch return error.InvalidConfig;
