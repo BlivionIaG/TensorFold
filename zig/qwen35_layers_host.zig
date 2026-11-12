@@ -267,7 +267,7 @@ test "qwen35 layers: real configs, each entry point admits the pattern its old r
             relaxed += @intFromBool(now == .pattern and was == .refused);
         }
     }
-    try t.expectEqual(@as(usize, 21), admitted); // (config, backend) pairs, with #2046's and LightOnOCR-3's HIP BF16 and #1125's Ornith
+    try t.expectEqual(@as(usize, 26), admitted); // (config, backend) pairs, with #2046's and LightOnOCR-3's HIP BF16, #1125's Ornith and the Metal 27B engine's tied heads
     try t.expectEqual(@as(usize, 0), relaxed); // none of the repo's configs is one the table newly admits
 }
 
@@ -333,9 +333,9 @@ test "qwen35 layers: #1863's table, the same answer or refusal from every backen
             if (row.refused) |e| try t.expect(got == .refused and got.refused == e) else try t.expect(Outcome.same(got, .every(4, probe.pattern.len)));
         }
     };
-    // the 2B: Metal's 2B engine, HIP and CUDA; the 27B: Metal's 27B engine, HIP, CUDA and XPU
+    // the 2B: Metal's 2B and 27B engines (a tied head), HIP and CUDA; the 27B: Metal's 27B engine, HIP, CUDA and XPU
     for (std.enums.values(Backend)) |b| try t.expect(took.get(b) >= 1);
-    try t.expectEqual(@as(usize, 7), took.get(.metal27) + took.get(.metal2b) + took.get(.hip) + took.get(.cuda) + took.get(.xpu));
+    try t.expectEqual(@as(usize, 8), took.get(.metal27) + took.get(.metal2b) + took.get(.hip) + took.get(.cuda) + took.get(.xpu));
 }
 
 test "qwen35 layers: beside an unset interval, layer_types are read as written; fixed schedules refuse other ones" {

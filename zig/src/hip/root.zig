@@ -59,6 +59,8 @@ pub const vote = @import("vote.zig");
 pub const Votes = vote.Votes;
 /// Groups of threads joined over 127.0.0.1, for host tests of what ranks agree.
 pub const loopback = @import("comm/loopback.zig");
+/// A card as the offload layer's external device (windows, stream wait/write value, bounded sync).
+pub const offload = @import("offload.zig");
 
 test {
     _ = blas;
@@ -88,4 +90,6 @@ test {
     _ = @import("comm/loopback.zig");
     _ = @import("tuning/search.zig");
     _ = @import("kernel_tests/affine/cells.zig");
+    _ = @import("ops/split_rows_wire_test.zig");
+    _ = offload;
 }

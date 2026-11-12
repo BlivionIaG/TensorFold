@@ -32,7 +32,7 @@ pub fn simulate(gpa: std.mem.Allocator, invs: []const node.Inventory, edges: []c
     for (edges) |e| if (e.up) net.cable(@intCast(e.a), e.a_port, @intCast(e.b), e.b_port);
     const ms = try gpa.alloc(membership.Membership, n);
     defer gpa.free(ms);
-    for (ms, invs) |*m, inv| m.* = membership.Membership.init(gpa, .{}, inv, 1);
+    for (ms, invs) |*m, inv| m.* = try membership.Membership.init(gpa, .{}, inv, 1);
     defer for (ms) |*m| m.deinit();
     var now: u64 = 0;
     const step = 10 * std.time.ns_per_ms;
@@ -94,8 +94,8 @@ pub const Live = struct {
     seen: usize = 0,
     culprit: Culprit = .{},
 
-    pub fn init(gpa: Allocator, inv: node.Inventory, t: transport.Transport, names: []const []const u8, plan: u64, opts: Options) Live {
-        return .{ .m = membership.Membership.init(gpa, opts.membership, inv, opts.incarnation), .t = t, .names = names, .plan = plan, .opts = opts };
+    pub fn init(gpa: Allocator, inv: node.Inventory, t: transport.Transport, names: []const []const u8, plan: u64, opts: Options) error{UnlaunchableBackend}!Live {
+        return .{ .m = try membership.Membership.init(gpa, opts.membership, inv, opts.incarnation), .t = t, .names = names, .plan = plan, .opts = opts };
     }
 
     pub fn deinit(l: *Live) void {
@@ -249,7 +249,7 @@ pub fn onHost(gpa: Allocator, s: mcdma_link.Spec, inv: node.Inventory, plan: u64
     for (s.links) |l| try out.print(" \"{s}\" to {s} ({s}, path MTU {d})", .{ l.name, s.names[l.peer], @tagName(o.ep.rdma().link(l.peer)), l.mtu });
     try out.writeAll("\n");
     try out.flush();
-    var live = Live.init(gpa, inv, o.link.transport(), s.names, plan, h.live);
+    var live = try Live.init(gpa, inv, o.link.transport(), s.names, plan, h.live);
     defer live.deinit();
     const r = live.up() catch |err| {
         diag.culprit = live.culprit;

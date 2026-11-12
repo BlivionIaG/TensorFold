@@ -37,24 +37,63 @@ pub const Trace = struct {
     layer: *const fn (ctx: *anyopaque, index: usize, x: Tensor, rows: usize) anyerror!void,
 };
 
+/// How a stage's boundary rows cross the host window, as device addresses (a window's host pointer is its GPU address).
+pub const Handoff = struct {
+    /// A range that does not start at layer 0 reads the previous stage's hidden rows here: `len * hidden` f32 values,
+    /// or, with `stamp`, the same values in 16-byte groups of 12 data bytes and a stamp.
+    src: u64 = 0,
+    stamp: ?Stamp = null,
+    /// A range that does not end at the last layer writes its residual rows here as f32, before the next input norm.
+    dst: u64 = 0,
+};
+
+/// The stamped hand-off of `metal_first`: every group's stamp must equal `seq` (re-read at most `retries` times each);
+/// each row's consume kernel stores 0 (ok) or 1 (timed out) in its own u32, row `r`'s at `status + 4 * r`.
+pub const Stamp = struct { seq: u32, status: u64, retries: u32 };
+
+/// `rows` hidden rows of `width` values from the previous stage into `x` (the activation dtype). Plain rows are
+/// contiguous f32; stamped rows each start on a group boundary (`split_rows.stampedBytes(width)` apart), one consume
+/// launch each, the only per-row work of a hand-off.
+pub fn takeRows(o: Ops, hand: Handoff, x: Tensor, rows: usize, width: usize) Error!void {
+    const split_rows = hip.ops.split_rows;
+    const st = hand.stamp orelse return split_rows.importRow(o, hand.src, x, rows * width);
+    for (0..rows) |r| try split_rows.consumeStamped(o, hand.src + r * split_rows.stampedBytes(width), st.seq, at(x, r * width), width, st.status + 4 * r, st.retries);
+}
+
+/// `n` residual values of `x` to the next stage, as f32.
+pub fn giveRows(o: Ops, hand: Handoff, x: Tensor, n: usize) Error!void {
+    return hip.ops.split_rows.exportRow(o, x, hand.dst, n);
+}
+
 /// The span's final-normed rows (len, hidden) in the activation dtype; `ids` are int32 token ids on the device.
 pub fn span(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len: usize, pos0: usize, trace: ?Trace) Error!Tensor {
+    return spanWith(ops, m, caches, ids, len, pos0, trace, .{});
+}
+
+/// `span` over the layers of `m.range`. A range that starts past layer 0 reads its rows through `hand` (`ids` is not
+/// read); one that stops short of the last layer writes its residual rows through `hand` and returns them, with no final
+/// norm. The launches are those of the whole model's span for the same layers, plus the hand-off kernels.
+pub fn spanWith(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len: usize, pos0: usize, trace: ?Trace, hand: Handoff) Error!Tensor {
     // prefill's kernels at any row count: a prompt's rows have the same bits fresh, resumed or in steps
     var o = ops;
     o.prefill = true;
     const s = m.spec;
     const x = try take(o, m.act, len * s.hidden);
     var start: usize = 0;
-    while (start < len) : (start += SPAN) {
-        const rows = @min(SPAN, len - start);
-        try o.embedRows(m.embed, ids + start * 4, rows, at(x, start * s.hidden));
+    if (m.range.embeds()) {
+        while (start < len) : (start += SPAN) {
+            const rows = @min(SPAN, len - start);
+            try o.embedRows(m.embed.?, ids + start * 4, rows, at(x, start * s.hidden));
+        }
+    } else {
+        try takeRows(o, hand, x, len, s.hidden);
     }
     if (m.frame) |frame| {
         for (frame.runs) |run| if (run.clip(pos0, len, s.hidden)) |clip| {
             try o.copyCols(.{ .ptr = clip.features, .kind = .bf16 }, s.hidden, 0, x.ptr + clip.first * s.hidden * 2, clip.rows, s.hidden);
         };
     }
-    for (m.layers, 0..) |layer, index| {
+    for (m.layers, m.range.first..) |layer, index| {
         start = 0;
         while (start < len) : (start += SPAN) {
             const rows = @min(SPAN, len - start);
@@ -77,6 +116,10 @@ pub fn span(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len
             if (m.taps.of(index)) |ti| if (caches.tap) |ring| try hip.plan_ops.tapRows(o, xs, ring.base(), rows, s.hidden, ti, m.taps.n, m.taps.rows, pos0 + start);
         }
         if (trace) |t| t.layer(t.ctx, index, x, len) catch |err| return if (err == error.Cancelled) error.Cancelled else error.HipFailed;
+    }
+    if (!m.headed()) {
+        try giveRows(o, hand, x, len * s.hidden);
+        return x;
     }
     const out = try take(o, m.act, len * s.hidden);
     try o.rms(x, m.final_norm, out, len, s.hidden, @floatCast(s.eps));
