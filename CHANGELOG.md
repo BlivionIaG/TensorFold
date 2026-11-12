@@ -5,6 +5,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 ## Unreleased
 
 - DeepSeek-V4.1 on CUDA: the DSpark statics staging rounds its region stride up to 8 bytes, so a round of more than one pass group no longer aborts with `incorrect alignment` when a pass's int32 count is odd.
+- DeepSeek-V4.1 on CUDA: `TF_DSV41_PREFILL_DECODE_ROWS` (default 2048, `0` keeps `TF_DSV41_PREFILL_ROWS`) cuts a prompt piece to that many rows while a stream decodes, so a decoder waits one 2048-row piece (about 1 s) instead of a 4096-row one; a prompt with nobody decoding still runs full pieces, so a lone prompt's prefill speed is unchanged. `TF_DSV41_PREFILL_INTERLEAVE_MS` and the new knob are in `docs/environment.md`.
 
 - DeepSeek-V4.1 on CUDA: `TF_PRODUCE_SPILL_DIR` (and `TF_PRODUCE_SPILL_MIB`, default 16) gives a producer's export buffers, the pool pages read back at the cut and the converted parts a hand-off holds, unlinked file-backed memory instead of RAM. At 1M tokens that is about 1.0 GiB plus 1.55 GiB a rank that the kernel can write back as page cache rather than count against a GB10's 4.0 GiB hard floor; the floor is unchanged, the held-export cap (`TF_PRODUCE_HELD_GIB`) still bounds the bytes, and unset keeps every buffer in RAM as before.
 
