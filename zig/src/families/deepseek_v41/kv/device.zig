@@ -97,9 +97,8 @@ pub const DevicePool = struct {
         p.* = undefined;
     }
 
-    /// Uploads the table entries each slot changed since the last sync, on the compute stream.
+    /// Uploads each slot's changed table entries on the compute stream, in its order (no host wait).
     pub fn syncTables(p: *DevicePool) !void {
-        try p.compute.synchronize();
         for (p.pool.slots.items) |s| {
             if (s.id >= p.slots) return error.TooManySlots;
             const r = s.takeDirty() orelse continue;

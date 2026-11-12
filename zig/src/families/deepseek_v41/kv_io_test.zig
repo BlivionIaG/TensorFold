@@ -87,3 +87,38 @@ test "Snapshot state: failed page table publication restores the dirty range for
     try t.expect(slot.takeDirty() == null);
     try t.expectEqual(@as(i32, @intCast(slot.tableAt(0))), ht[0]);
 }
+test "Snapshot state: page table publication queues behind the stream's work and never waits for it" {
+    var d = mock.init();
+    const fams = [_]kv.sessions.Family{.{ .name = "comp", .ratio = 1, .row_bytes = 2 }};
+    var pool = try kv.sessions.Pool.init(t.allocator, .{ .families = &fams, .page = 4 }, 16, 1, 0);
+    defer pool.deinit();
+    const slot = try pool.newSlot(8);
+    try slot.ensure(4);
+    var ht = [_]i32{ 0, 0 };
+    var hl = [_]i32{ 0, 0 };
+    var p: kv.DevicePool = undefined;
+    p.pool = &pool;
+    p.d = &d;
+    p.pts = 2;
+    p.slots = 1;
+    p.host_table = &ht;
+    p.host_local = &hl;
+    p.compute = .{ .d = &d, .handle = null };
+    p.table = try cuda.DeviceBuffer.alloc(&d, 8);
+    p.local = try cuda.DeviceBuffer.alloc(&d, 8);
+    defer {
+        mock.fail_sync = false;
+        p.compute.synchronize() catch unreachable;
+        p.table.free();
+        p.local.free();
+    }
+    // a window is still running on the stream: any host wait for it would fail the call
+    mock.pending = true;
+    mock.fail_sync = true;
+    try p.syncTables();
+    try t.expect(slot.takeDirty() == null);
+    try t.expectEqual(@as(i32, @intCast(slot.tableAt(0))), ht[0]);
+    // the upload took the entry through its own copy (fake device memory 1 is the table), the window still pending
+    try t.expectEqual(ht[0], std.mem.readInt(i32, mock.memory[1][0..4], .little));
+    try t.expect(mock.pending);
+}
