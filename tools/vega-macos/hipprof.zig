@@ -215,12 +215,37 @@ const init_entry: *const fn () callconv(.c) void = &init;
 comptime {
     @export(&init_entry, .{ .name = "hipprof_init_entry", .visibility = .hidden, .section = if (darwin) "__DATA,__mod_init_func" else ".init_array" });
     for (fwd.names) |name| @export(&Forward(name).call, .{ .name = name });
+    for (fwd.optional) |name| @export(&OptionalForward(name).call, .{ .name = name });
 }
 
 fn Forward(comptime name: [:0]const u8) type {
     return struct {
         fn call(a: U, b: U, c: U, d: U, e: U, f: U, g: U, h: U, i: U, j: U, k: U) callconv(.c) U {
             return real(name)(a, b, c, d, e, f, g, h, i, j, k);
+        }
+    };
+}
+
+/// hipErrorNotSupported: what an optional entry point returns when the runtime behind hipprof does not have it.
+const not_supported: U = 801;
+
+/// A forward of an entry point only some runtimes have (hipmac's signal words): the caller finds the symbol in hipprof whether the runtime has it or not,
+/// so a runtime without it answers with an error the caller reads as "no such feature" instead of ending the process.
+fn OptionalForward(comptime name: [:0]const u8) type {
+    return struct {
+        const symbol = name;
+        /// 0 not looked up, 1 the runtime has no such symbol, else its address
+        var cached: std.atomic.Value(U) = .init(0);
+
+        fn call(a: U, b: U, c: U, d: U, e: U, f: U, g: U, h: U, i: U, j: U, k: U) callconv(.c) U {
+            var p = cached.load(.acquire);
+            if (p == 0) {
+                p = if (dlsym(libHandle(), symbol)) |sym| @intFromPtr(sym) else 1;
+                cached.store(p, .release);
+            }
+            if (p == 1) return not_supported;
+            const f_real: Fn = @ptrFromInt(p);
+            return f_real(a, b, c, d, e, f, g, h, i, j, k);
         }
     };
 }

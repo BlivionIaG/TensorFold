@@ -51,7 +51,8 @@ TensorFold opens `libamdhip64` through `TENSORFOLD_HIP`. Point that at `libhippr
         TF_POLICY=graphs=off zig-out/native-hip/bin/tensorfold-native serve ...
 
 Every symbol of `zig/src/hip/abi.zig` (and `hipGetDevicePropertiesR0600`) is forwarded unchanged; `hipModuleGetFunction`,
-`hipStreamBeginCapture`, `hipStreamEndCapture`, `hipGraphLaunch` and `hipModuleLaunchKernel` also keep their own books.
+`hipStreamBeginCapture`, `hipStreamEndCapture`, `hipGraphLaunch` and `hipModuleLaunchKernel` also keep their own books. hipmac's signal words
+(`hipmacSignalAlloc`, `Store`, `Load`, `Free`; the expert offload's VRAM ack looks them up by name) are exported too and forwarded when the runtime has them, else they answer hipErrorNotSupported (801), so the offload falls back to its host ack.
 `hipModuleLaunchKernel` is timed in one of three ways:
 
 | Mode | Variable | Meaning |

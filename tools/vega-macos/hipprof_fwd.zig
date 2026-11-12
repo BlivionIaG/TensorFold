@@ -74,6 +74,15 @@ pub const interposed = [_][:0]const u8{
     "hipModuleLaunchKernel",
 };
 
+/// Entry points of hipmac's own (the signal words, `LATENCY.md` C3; expert_store.zig looks them up by name) that hipprof exports whether or not the runtime behind it
+/// has them: forwarded when it does, hipErrorNotSupported (801) when it does not, so a profiled run measures the same VRAM ack as an unprofiled one.
+pub const optional = [_][:0]const u8{
+    "hipmacSignalAlloc",
+    "hipmacSignalStore",
+    "hipmacSignalLoad",
+    "hipmacSignalFree",
+};
+
 fn listed(list: []const [:0]const u8, name: []const u8) bool {
     for (list) |n| if (std.mem.eql(u8, n, name)) return true;
     return false;
@@ -87,7 +96,7 @@ test "every symbol zig/src/hip/abi.zig binds is forwarded or interposed" {
 }
 
 test "no symbol is listed twice and none is both forwarded and interposed" {
-    const all = names ++ interposed;
+    const all = names ++ interposed ++ optional;
     for (all, 0..) |a, i| {
         for (all[i + 1 ..]) |b| try std.testing.expect(!std.mem.eql(u8, a, b));
     }
