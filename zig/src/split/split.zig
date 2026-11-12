@@ -10,6 +10,9 @@ pub const geometry = @import("geometry.zig");
 pub const receipt = @import("receipt.zig");
 pub const placement = @import("placement.zig");
 pub const planner = @import("planner.zig");
+pub const probe = @import("probe.zig");
+pub const cpu_host = @import("cpu_host.zig");
+pub const cli = @import("cli.zig");
 
 test {
     std.testing.refAllDecls(@This());
