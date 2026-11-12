@@ -404,9 +404,10 @@ pub const Store = struct {
         }
         errdefer if (chunk_items) |*b| b.free();
         var ack: Ack = .{ .host = @ptrCast(@alignCast(win.bytes[ack_at..].ptr)), .host_dev = win_dev + ack_at, .base = win.bytes.ptr };
-        // the ack is a VRAM signal word when the runtime has them (docs/LATENCY.md C3), unless TF_EXPERT_ACK=host
-        const ack_host = if (platform.getenv("TF_EXPERT_ACK")) |mode| std.mem.eql(u8, mode, "host") else false;
-        if (!ack_host) ack.signal = openSignal(r, if (chunk_items != null) 1 + max_chunks else 1);
+        // the ack is a host word in the window; a VRAM signal word (docs/LATENCY.md C3) only with TF_EXPERT_ACK=vram: hipmac's signal words hung the card in
+        // lat_probe (WAIT_REG_MEM on the signal's address never released), so that stays opt-in until the fix is validated on the card
+        const ack_vram = if (platform.getenv("TF_EXPERT_ACK")) |mode| std.mem.eql(u8, mode, "vram") else false;
+        if (ack_vram) ack.signal = openSignal(r, if (chunk_items != null) 1 + max_chunks else 1);
         errdefer if (ack.signal) |*g| {
             _ = g.free(&g.s);
         };
