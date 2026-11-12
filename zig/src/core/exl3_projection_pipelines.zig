@@ -3,6 +3,7 @@ const std = @import("std");
 const mtl = @import("metal");
 const sources = @import("kernel_sources");
 const frags = @import("frags.zig");
+const chain_set = @import("exl3_projection_chain.zig");
 const core = @import("exl3_projection_core.zig");
 const format = core.format;
 const codebookTable = core.codebookTable;
@@ -71,6 +72,8 @@ pub const Pipelines = struct {
     matmul_static_lut: ?mtl.Pipeline = null,
     /// The gated int8 expert path's numerical core: a 16x16 trellis tile as int8 with its own scale.
     int8_tile: ?mtl.Pipeline = null,
+    /// Epilogues fused with the block-local work after them (exl3_projection_chain.zig).
+    chain: chain_set.Set = .{},
 
     pub fn load(device: mtl.Device) !Pipelines {
         return loadWith(device, null);
@@ -355,6 +358,7 @@ pub const Pipelines = struct {
             .matmul_tab = if (table != null) mmt else null,
             .matmul_static_lut = if (table != null) mmsl else null,
             .codebook_table = table,
+            .chain = chain_set.Set.load(device, lib),
         };
     }
     pub fn deinit(p: *Pipelines) void {
@@ -389,6 +393,7 @@ pub const Pipelines = struct {
         if (p.matmul_tab) |pf| pf.deinit();
         if (p.matmul_static_lut) |pf| pf.deinit();
         if (p.int8_tile) |pf| pf.deinit();
+        p.chain.deinit();
     }
 };
 pub var nax_db_logged: bool = false;
