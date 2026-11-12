@@ -223,10 +223,14 @@ pub const Stage = struct {
                 if (compressed_rows != 0 and !few_keys) {
                     // TF_DSV41_DOUBLE_ATTN_INDEXER -- same-output duplicate of the index layer's query projection.
                     const indexer_passes: u32 = if (std.c.getenv("TF_DSV41_DOUBLE_ATTN_INDEXER") != null) 2 else 1;
-                    for (0..indexer_passes) |_| try projection(ep, e, selector.wq_b, qr, iq, scratch, rows, c.q_lora, iq_width, .bf16);
+                    // The indexer's wq_b epilogue and its query RoPE as one dispatch.
+                    const fused_iq = rows == 1 and indexer_passes == 1 and selector.wq_b == .trellis and fuse.iqRopeReady(ep, p, c, position);
+                    if (fused_iq) try fuse.encodeIqRope(ep, p, e, selector.wq_b.trellis, qr, iq, scratch, c, ratio, position) else {
+                        for (0..indexer_passes) |_| try projection(ep, e, selector.wq_b, qr, iq, scratch, rows, c.q_lora, iq_width, .bf16);
+                    }
                     // The index_q block's four dispatches split.
                     attnMark(layer, "iq_proj", prof, &e);
-                    try rotate(p, e, iq, rows, c.index_heads, c.index_dim, position, ratio, 1, false, c);
+                    if (!fused_iq) try rotate(p, e, iq, rows, c.index_heads, c.index_dim, position, ratio, 1, false, c);
                     attnMark(layer, "iq_rope", prof, &e);
                     try p.cache.encodePack(e, iq, work.selection.queryPacked(), .{ .rows = rows * c.index_heads, .width = c.index_dim, .stride = c.index_dim, .packed_stride = kv.cache.index_stride, .block = 32, .kind = .index_fp4, .inplace = 1 });
                     attnMark(layer, "iq_pack", prof, &e);

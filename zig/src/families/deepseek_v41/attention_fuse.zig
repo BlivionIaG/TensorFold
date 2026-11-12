@@ -22,6 +22,8 @@ pub const Switches = struct {
     qrope: bool,
     /// The output's inverse RoPE and wo_a's rotate_in in one dispatch.
     orope: bool,
+    /// The indexer's wq_b epilogue and its query RoPE in one dispatch.
+    iqrope: bool,
     /// The merged query/key call's epilogue with the query latent's norm, wq_b's rotate_in and the key's window glue.
     qkv_tail: bool,
 };
@@ -35,6 +37,7 @@ pub fn switches() Switches {
         .qnorm = std.c.getenv("TF_DSV41_NO_FUSE_QNORM") == null,
         .qrope = std.c.getenv("TF_DSV41_NO_FUSE_QROPE") == null,
         .orope = std.c.getenv("TF_DSV41_NO_FUSE_OROPE") == null,
+        .iqrope = std.c.getenv("TF_DSV41_NO_FUSE_IQROPE") == null,
         .qkv_tail = std.c.getenv("TF_DSV41_NO_FUSE_QKV_TAIL") == null,
     };
     cached = s;
@@ -45,6 +48,21 @@ pub fn switches() Switches {
 fn ropeFactors(ap: *const common.Pipelines, ratio: u32) exl3.View {
     const offset: usize = if (ratio == 0) 0 else @as(usize, ap.rotary.capacity) * ap.rotary.rotary * @sizeOf(f32);
     return .{ .buffer = ap.rotary.factors, .offset = offset };
+}
+
+/// Whether the indexer's query epilogue and its RoPE of one decode row can run as one dispatch.
+pub fn iqRopeReady(ep: *const exl3.Pipelines, ap: *const common.Pipelines, c: config.Config, position: u32) bool {
+    return switches().iqrope and ep.chain.rotate_out_rope != null and ap.rotary.rotary == c.rope_dim and
+        position < ap.rotary.capacity and c.index_dim % 128 == 0 and c.rope_dim % 32 == 0 and c.rope_dim <= 128;
+}
+
+/// The indexer's wq_b over the normalized latent into `iq`, with the query RoPE (heads of `index_dim` columns) fused.
+pub fn encodeIqRope(ep: *const exl3.Pipelines, ap: *const common.Pipelines, e: mtl.ComputeEncoder, m: weights.Matrix, qr: View, iq: View, scratch: exl3.View, c: config.Config, ratio: u32, position: u32) !void {
+    try exl3.chain.encodeRotateOutRope(ep, e, m, core(qr), core(iq), scratch, .{ .count = 1, .x_stride = c.q_lora, .y_stride = c.index_heads * c.index_dim }, ropeFactors(ap, ratio), .{
+        .width = c.index_dim,
+        .rotary = c.rope_dim,
+        .position = position,
+    });
 }
 
 /// The eight output groups' indexed wo_a call. `chained` fuses its epilogue with wo_b's rotate_in (`encodeWoB` then
