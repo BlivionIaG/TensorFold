@@ -4,6 +4,8 @@ const std = @import("std");
 pub const device = @import("device.zig");
 pub const wire = @import("wire.zig");
 pub const mock = @import("mock.zig");
+pub const pipeline = @import("pipeline.zig");
+pub const toy = @import("toy.zig");
 
 test {
     std.testing.refAllDecls(@This());

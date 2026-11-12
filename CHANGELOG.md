@@ -6,6 +6,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Cluster: `hip` is a node backend and `tb_gpu` a link kind, for a host's own external GPU: a config naming a hip node parses, the cost model prices the PCIe tunnel, and `tensorfold node`, `serve --cluster` and membership refuse a hip node by name (`UnlaunchableBackend`); metal and cuda clusters behave as before.
 
+- Split offload core: `zig/src/split` has the external-device interface, the slot protocol (plain and stamped hidden rows), a CPU mock device and a two-stage layer pipeline, and `zig build test-split` checks a toy model split at several layers, both orders and both protocol levels against its unsplit run, token for token; no GPU is involved and no serving path changes.
+
 - Tests: `tf-cuda-test flashnext-rank RANK PORT timeout` passes again on two GPUs. NCCL start-up keeps its 30 s bound and only the stalled collective gets 200 ms, and both ranks meet once their communicators are up, so `timeout` and `eof` fail the collective under test, not the start-up (#2976, fixes #2975). Thanks to @swbiggart.
 
 - Tokenizer: a split pattern is held to a work allowance per piece (2,048 instructions a byte, counted, not timed) and refused at load when too deep or too large, so a crafted tokenizer or prompt can't hang the pre-tokenizer; every split of the patterns we serve is unchanged (#3071).
