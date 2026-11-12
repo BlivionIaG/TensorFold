@@ -73,7 +73,7 @@ fn produce(stage: *fabric.row_stage.Stage, latch: *fabric.row_stage.Stage, x: *E
     latch.publish(1) catch latch.fail();
 }
 
-/// The M5 session's pull sink (native Session.put): the boundary layer's rows to the stage, every other layer to the landing.
+/// The M5 session's pull sink (native Session.put): boundary rows to the stage, every other layer to the landing.
 const Session = struct {
     landing: *landing.Landing,
     stage: *fabric.row_stage.Stage,

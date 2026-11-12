@@ -89,8 +89,7 @@ pub fn exportable(h: *const LaneHost, r: *const Request) bool {
     return r.prompt.len >= 2 and r.images.len == 0 and !r.promptOnly();
 }
 
-/// A layer-split handoff ends here instead of opening a stream: the exporter prefills and exports on this (engine)
-/// thread with the slot empty, and the reply is the token `run` returns. True: the job was run and finished.
+/// A layer-split handoff is run here by the exporter on the engine thread (slot empty); true: the job was finished.
 pub fn runSplit(h: *LaneHost, job: *Job) bool {
     const k = job.request.handoff orelse return false;
     const x = h.exporter orelse return false;
