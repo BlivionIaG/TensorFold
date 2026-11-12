@@ -16,6 +16,8 @@ pub const Caps = struct {
     /// dot2 rounds a sum with a -0 lane apart from the same sum with +0, so masked lanes must enter as +0.
     dot2_signed_zero: bool,
     generation: Generation,
+    /// The routed tiles take expert pointers (kernels/hip/tiles/plan.hpp TF_EXPERT_PTRS): the expert offload runs here.
+    expert_ptrs: bool = false,
 
     /// The caps of `name` ("gfx1030", "gfx1151:xnack-" ...), or null for a GPU outside the table.
     pub fn of(name: []const u8) ?Caps {

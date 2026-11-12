@@ -25,7 +25,7 @@ fn affineOf(proj: Projection, h: mlx.Matrix) Affine {
         .bf16 => .bf16,
         .f16 => .f16,
     };
-    return .{ .words = h.words, .scale = h.scale, .bias = h.bias, .tables = tables, .n = proj.n, .k = proj.k, .bits = h.bits, .group = h.group, .partial = proj.partial };
+    return .{ .words = h.words, .scale = h.scale, .bias = h.bias, .tables = tables, .n = proj.n, .k = proj.k, .bits = h.bits, .group = h.group, .partial = proj.partial, .ptab = h.ptab, .ptab_off = h.ptab_off };
 }
 
 /// matmul(x, proj) for a projection of any format: fp32 when `f32_out`, else x's kind (the MLX rules of `affine`).
@@ -340,7 +340,7 @@ pub fn affineRoutedAct(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, m
     const kind = w.tables.table();
     var shape = shapeOf(o, x, w, rows);
     shape.pairs = true;
-    if (z.affine.choose(.routed_act, .decode, shape) == null) return null;
+    if (z.affineFor(w.ptab).choose(.routed_act, .decode, shape) == null) return null;
     const out = try o.arena.take(pairs * (w.n / 2) * 2);
     const arg: affine_launch.Arg = .{
         .x = x.ptr,
@@ -356,8 +356,9 @@ pub fn affineRoutedAct(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, m
         .fp16 = @intFromBool(x.kind == .f16),
         .route = .{ .items = items, .members = members, .x_div = int(x_div) },
         .out16 = out,
+        .ptrs = affine_launch.expertPtrs(w.ptab, w.ptab_off),
     };
-    if (!try z.affine.pairRun(z.r, arg, limit, int(count), o.stream)) return null;
+    if (!try z.affineFor(w.ptab).pairRun(z.r, arg, limit, int(count), o.stream)) return null;
     return .{ .ptr = out, .kind = x.kind };
 }
 
@@ -370,10 +371,11 @@ pub fn affineRouted(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, memb
         if (expert_rows == 0) return error.BadShape;
         const z = o.l;
         const kind = w.tables.table();
-        try z.affine.prefillLaunch(z.r, .{ .x = x.ptr, .words = w.words, .scale = .{ .p = w.scale, .kind = kind }, .bias = .{ .p = w.bias, .kind = kind }, .out = out, .m = int(rows), .n = int(w.n), .k = int(w.k), .bits = int(w.bits), .group = int(w.group), .fp16 = @intFromBool(x.kind == .f16), .route = .{ .items = items, .members = members, .x_div = int(x_div) } }, o.stream, int(count), int(pairs), int(expert_rows));
+        try z.affineFor(w.ptab).prefillLaunch(z.r, .{ .x = x.ptr, .words = w.words, .scale = .{ .p = w.scale, .kind = kind }, .bias = .{ .p = w.bias, .kind = kind }, .out = out, .m = int(rows), .n = int(w.n), .k = int(w.k), .bits = int(w.bits), .group = int(w.group), .fp16 = @intFromBool(x.kind == .f16), .route = .{ .items = items, .members = members, .x_div = int(x_div) }, .ptrs = affine_launch.expertPtrs(w.ptab, w.ptab_off) }, o.stream, int(count), int(pairs), int(expert_rows));
         return out;
     }
-    try o.l.tf_affine_routed(p(x.ptr), p(w.words), p(w.scale), p(w.bias), w.tables.table(), p(out), i(items), int(count), i(members), int(x_div), int(rows), int(w.n), int(w.k), w.bits, w.group, @intFromBool(x.kind == .f16), o.stream);
+    const tk = w.tables.table();
+    try o.l.affineFor(w.ptab).routed(o.l.r, .{ .x = x.ptr, .words = w.words, .scale = .{ .p = w.scale, .kind = tk }, .bias = .{ .p = w.bias, .kind = tk }, .out = out, .m = int(rows), .n = int(w.n), .k = int(w.k), .bits = int(w.bits), .group = int(w.group), .fp16 = @intFromBool(x.kind == .f16), .route = .{ .items = items, .members = members, .x_div = int(x_div) }, .ptrs = affine_launch.expertPtrs(w.ptab, w.ptab_off) }, int(count), o.stream);
     return out;
 }
 

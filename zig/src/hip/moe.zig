@@ -11,6 +11,16 @@ const Projection = ops.Projection;
 /// A shared expert of its own width, run beside the routed stack: gate and up as one (2 NI, K) projection, then down.
 pub const Shared = struct { gate_up: Projection, down: Projection };
 
+/// A layer's stage of an offloaded model: its rows' picks go to `trace`, `post` asks the host and waits on `stream`.
+pub const Hook = struct {
+    ctx: *anyopaque,
+    layer: u32,
+    trace: u64,
+    post: *const fn (ctx: *anyopaque, stream: @import("abi.zig").Stream, layer: u32, rows: usize, prefill: bool) Error!void,
+};
+
+pub const Error = ops.Error;
+
 /// A layer's experts, shared last in the stack, or beside it in `shared` at its own bits and group (`count` is then E).
 pub const Experts = struct {
     fused: Projection,
@@ -21,6 +31,8 @@ pub const Experts = struct {
     dims: usize,
     limit: f32 = 0,
     shared: ?Shared = null,
+    /// Offloaded experts: the layer's stage with the host (hip/expert_store.zig).
+    hook: ?Hook = null,
 };
 
 /// The router's rows in fp32 (E + 1, D), the shared expert's gate last, and the experts.
@@ -170,6 +182,11 @@ fn expertParts(o: Ops, kind: Kind, r: Routed, x: Tensor, rows: usize, logits: u6
         try o.moeSelect(logits, pick, wts, null, 0, rows, r.count(), r.top_k);
         tile = tileFor(o, rows);
         try o.moeRoute(pick, pairs, r.rows, tile, members, items, cap);
+    }
+    // offloaded experts: the picks go to the host, which readies those experts before the products run
+    if (ex.hook) |h| {
+        try o.expertTrace(pick, pairs, h.trace);
+        try h.post(h.ctx, o.stream, h.layer, rows, o.prefill);
     }
     // beside the stack the shared pair's id is the stack's first id past its experts: zero its item, never read its row
     if (ex.shared != null) try o.moeForeignItems(items, count, ex.count);

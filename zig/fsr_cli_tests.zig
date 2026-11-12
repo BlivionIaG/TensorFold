@@ -32,3 +32,25 @@ test "FSR CLI forwards explicit budgets and refuses unsupported backends and fam
     try std.testing.expectError(error.Usage, cli.parse(a, &.{ "model", "--fsr-route-trace=" }, &usage));
     _ = api;
 }
+
+test "a HIP Qwen3.5 MoE takes --ssd-experts alone with a finite budget, and no other flag, family or backend does" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var usage: cli.Usage = .{};
+    const moe = try cli.request(a, "unused", "qwen3_5_moe", try cli.parse(a, &.{ "model", "--ssd-experts=8" }, &usage));
+    try std.testing.expect(moe.fsrRefusal("hip") == null);
+    try std.testing.expect(moe.fsrRefusal("cuda") != null);
+    var other = moe;
+    other.ssd_experts_gib = 0;
+    try std.testing.expect(other.fsrRefusal("hip") != null);
+    other = moe;
+    other.ple_on_ssd = true;
+    try std.testing.expect(other.fsrRefusal("hip") != null);
+    other = moe;
+    other.fsr_trace = "route.jsonl";
+    try std.testing.expect(other.fsrRefusal("hip") != null);
+    other = moe;
+    other.model_type = "qwen3_5";
+    try std.testing.expect(other.fsrRefusal("hip") != null);
+}

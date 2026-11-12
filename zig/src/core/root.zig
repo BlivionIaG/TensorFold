@@ -70,6 +70,7 @@ pub const expert_offload = @import("expert_offload.zig");
 pub const expert_window = @import("expert_window.zig");
 pub const expert_tier = @import("expert_tier.zig");
 pub const expert_service = @import("expert_service.zig");
+pub const expert_stats = @import("expert_stats.zig");
 pub const dense_ref = @import("dense_ref.zig");
 
 pub const checkpoint_weights = @import("checkpoint_weights.zig");

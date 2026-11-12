@@ -40,8 +40,8 @@ pub fn relu2PairGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, b: Arg,
     const split = cdiv(a.n, per);
     const f = k.relu2_pair[bi][ri][tile.at] orelse return false;
     var args: hl.Args = .{};
-    try args.add(a);
-    try args.add(b);
+    try k.addArg(&args, a);
+    try k.addArg(&args, b);
     try args.add(@as(c_int, @intCast(split)));
     try args.add(@as(c_int, lpc_log2));
     try args.add(@as(c_int, switch (a.group) {

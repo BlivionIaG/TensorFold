@@ -99,6 +99,8 @@ pub const Launcher = struct {
     edge: bool,
     /// The MLX affine products and the registry that picks their tiles.
     affine: affine.Kernels,
+    /// The products from tiles built with the expert-offload code, taken only by offloaded experts (`affineFor`).
+    affine_ptr: if (kernels.expert_ptrs) affine.Kernels else void,
     /// The BF16 dense GEMM (raw BF16 weights through the dot2 GEMM tile).
     dense: dense.Kernels,
     /// Flash Next's kernels: its residual streams, n-gram rows, indexer and sparse attention.
@@ -174,6 +176,8 @@ pub const Launcher = struct {
         moe_foreign_items: Function,
         moe_zero_foreign: Function,
         token_prob: Function,
+        /// Offloaded experts (caps `expert_ptrs`): a layer's picks into the round's trace.
+        expert_trace: if (kernels.expert_ptrs) Function else void,
     };
 
     /// The prompt tile keeps main's sums and needs the edge pass after it: dot2 here ignores a zero's sign.
@@ -261,6 +265,7 @@ pub const Launcher = struct {
             .moe_foreign_items = try ops.function("tf_moe_foreign_items"),
             .moe_zero_foreign = try ops.function("tf_moe_zero_foreign"),
             .token_prob = try ops.function("tf_token_prob"),
+            .expert_trace = if (kernels.expert_ptrs) try ops.function("tf_expert_trace") else {},
         };
         const ns = "_ZN2tf4rocm";
         l.rms = .{
@@ -329,11 +334,20 @@ pub const Launcher = struct {
         const tiles = l.mods[@backingInt(kernels.Group.affine_tiles)];
         const dot2 = l.mods[@backingInt(kernels.Group.affine_dot2)];
         const chip = caps.Caps.of(kernels.arch) orelse return error.Invalid;
-        l.affine = try affine.Kernels.load(tiles, dot2, chip, choices.products);
+        l.affine = try affine.Kernels.load(tiles, dot2, chip, choices.products, false);
         l.dense = try dense.Kernels.load(tiles, chip.act == .bf16, chip.matrix == .wmma12, choices.products.matrix);
         try l.affine.fillByteLut(r, dot2);
+        if (kernels.expert_ptrs) l.affine_ptr = try affine.Kernels.load(l.mods[@backingInt(kernels.Group.affine_tiles_ptr)], dot2, chip, choices.products, true);
         l.fnx = try flashnext.Fns.load(l.mods[@backingInt(kernels.Group.flashnext)]);
         return l;
+    }
+
+    /// The affine kernels for experts behind the table `ptab` (0: a plain stack, and any chip without the code).
+    pub fn affineFor(l: *const Launcher, ptab: u64) *const affine.Kernels {
+        if (comptime kernels.expert_ptrs) {
+            if (ptab != 0) return &l.affine_ptr;
+        }
+        return &l.affine;
     }
 
     pub fn unload(l: *Launcher) void {
@@ -363,6 +377,7 @@ pub const Launcher = struct {
     pub const tf_moe_combine = moe.tf_moe_combine;
     pub const tf_moe_combine_gate = moe.tf_moe_combine_gate;
     pub const tf_moe_route = moe.tf_moe_route;
+    pub const tf_expert_trace = moe.tf_expert_trace;
     pub const tf_causal = attention.tf_causal;
     pub const tf_attn_gate = attention.tf_attn_gate;
     pub const tf_heads_rows = attention.tf_heads_rows;
@@ -436,10 +451,6 @@ pub const Launcher = struct {
 
     pub fn tf_affine(l: *const Launcher, x: C, words: C, scale: C, bias: C, scale_kind: c_int, out: P, m: c_int, n: c_int, k: c_int, bits: c_int, group: c_int, schedule: c_int, fp16: c_int, s: S, partial: F, splits: c_int, out_half: c_int) Error!void {
         try l.affine.run(l.r, .{ .x = ad(x), .words = ad(words), .scale = .{ .p = ad(scale), .kind = scale_kind }, .bias = .{ .p = ad(bias), .kind = scale_kind }, .out = ad(out), .m = m, .n = n, .k = k, .bits = bits, .group = group, .fp16 = fp16 }, schedule, s, ad(partial), splits, out_half != 0);
-    }
-
-    pub fn tf_affine_routed(l: *const Launcher, x: C, words: C, scale: C, bias: C, scale_kind: c_int, out: P, items: CI, count: c_int, members: CI, x_div: c_int, rows: c_int, n: c_int, k: c_int, bits: c_int, group: c_int, fp16: c_int, s: S) Error!void {
-        try l.affine.routed(l.r, .{ .x = ad(x), .words = ad(words), .scale = .{ .p = ad(scale), .kind = scale_kind }, .bias = .{ .p = ad(bias), .kind = scale_kind }, .out = ad(out), .m = rows, .n = n, .k = k, .bits = bits, .group = group, .fp16 = fp16, .route = .{ .items = ad(items), .members = ad(members), .x_div = x_div } }, count, s);
     }
 
     /// The 256-thread, one-element-a-thread launch of an ops.hip kernel over `n` elements.

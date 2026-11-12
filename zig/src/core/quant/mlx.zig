@@ -177,8 +177,8 @@ pub fn upload(u: types.Uploader, h: Host) !Device {
     return .{ .words = try u.tensor(h.words), .scales = try u.tensor(h.scales), .biases = try u.tensor(h.biases), .bits = h.bits, .group = h.group };
 }
 
-/// What the kernels read of an MLX projection: the three addresses, the tables' type and the width.
-pub const Matrix = struct { words: u64, scale: u64, bias: u64, tables: types.Tables, bits: u8, group: u16 };
+/// What the kernels read of an MLX projection; with `ptab`, expert e's blob is at `ptab[e]` + `ptab_off`.
+pub const Matrix = struct { words: u64, scale: u64, bias: u64, tables: types.Tables, bits: u8, group: u16, ptab: u64 = 0, ptab_off: u64 = 0 };
 
 pub const View = struct { n: u32, k: u32, matrix: Matrix };
 
