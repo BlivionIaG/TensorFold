@@ -183,6 +183,19 @@ fn fusedTable(device: mtl.Device, gate: mtl.Buffer, up: mtl.Buffer, count: usize
     return table;
 }
 
+/// The shared down projection's one-descriptor table and a zero pick map, for the shared SwiGLU's prerotate.
+fn bindSharedDown(device: mtl.Device, moe: *Moe) !void {
+    const table = try device.buffer(@sizeOf(exl3.ExpertDescriptor), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+    errdefer table.deinit();
+    const out: [*]exl3.ExpertDescriptor = @ptrCast(@alignCast(table.contents()));
+    out[0] = try exl3.descriptor(moe.shared[2]);
+    const ids = try device.buffer(8 * 4, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+    errdefer ids.deinit();
+    @memset(ids.contents()[0 .. 8 * 4], 0);
+    moe.shared_down = table;
+    moe.shared_down_ids = ids;
+}
+
 /// The attention's wq_a and wkv as one indexed call's two-entry table.
 fn qkvTable(device: mtl.Device, a: exl3.Matrix, b: exl3.Matrix) !mtl.Buffer {
     const table = try device.buffer(2 * @sizeOf(exl3.ExpertDescriptor), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
@@ -317,30 +330,7 @@ pub fn bind(device: mtl.Device, checkpoint: *const cp.Checkpoint, stream: bool) 
             out[0] = try exl3.descriptor(layer.moe.shared[0]);
             out[1] = try exl3.descriptor(layer.moe.shared[1]);
         }
-        // The shared down's descriptor (one entry) and its zero pick map.
-        {
-            const table = try device.buffer(@sizeOf(exl3.ExpertDescriptor), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
-            errdefer table.deinit();
-            layer.moe.shared_down = table;
-            const out: [*]exl3.ExpertDescriptor = @ptrCast(@alignCast(table.contents()));
-            out[0] = try exl3.descriptor(layer.moe.shared[2]);
-            const ids = try device.buffer(8 * 4, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
-            errdefer ids.deinit();
-            @memset(ids.contents()[0 .. 8 * 4], 0);
-            layer.moe.shared_down_ids = ids;
-        }
-        // The shared down's descriptor (one entry) and its zero pick map.
-        {
-            const table = try device.buffer(@sizeOf(exl3.ExpertDescriptor), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
-            errdefer table.deinit();
-            layer.moe.shared_down = table;
-            const out: [*]exl3.ExpertDescriptor = @ptrCast(@alignCast(table.contents()));
-            out[0] = try exl3.descriptor(layer.moe.shared[2]);
-            const ids = try device.buffer(8 * 4, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
-            errdefer ids.deinit();
-            @memset(ids.contents()[0 .. 8 * 4], 0);
-            layer.moe.shared_down_ids = ids;
-        }
+        try bindSharedDown(device, &layer.moe);
         // THE DRAFTER'S EIGHT wo_a GROUPS AS ONE INDEXED DECODE TABLE -- the trunk's own fused form, same shapes.
         {
             const groups = try device.buffer(8 * @sizeOf(exl3.ExpertDescriptor), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
@@ -384,6 +374,7 @@ pub fn bind(device: mtl.Device, checkpoint: *const cp.Checkpoint, stream: bool) 
             out[0] = try exl3.descriptor(layer.moe.shared[0]);
             out[1] = try exl3.descriptor(layer.moe.shared[1]);
         }
+        try bindSharedDown(device, &layer.moe);
         // The eight wo_a output groups as one indexed decode projection's descriptor table.
         {
             const groups = try device.buffer(8 * @sizeOf(exl3.ExpertDescriptor), mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
