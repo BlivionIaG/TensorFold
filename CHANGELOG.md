@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- Remote prefill: with `TF_PREFILL_KEEP` (default on) a pull that leaves the pass nothing to keep past it, the usual case for a single long prompt, keeps the landed prefix itself as a remote state (the pass stands there before its first chunk), and a kept remote state is found even where it ends off the chunk grid or one row short of the prompt; the same prompt again resumes it from the prompt cache, so a repeat of a 1M-token prompt costs the tail pass and no second export.
+
 - DeepSeek-V4.1 on CUDA: `TF_PRODUCE_SPILL_DIR` (and `TF_PRODUCE_SPILL_MIB`, default 16) gives a producer's export buffers, the pool pages read back at the cut and the converted parts a hand-off holds, unlinked file-backed memory instead of RAM. At 1M tokens that is about 1.0 GiB plus 1.55 GiB a rank that the kernel can write back as page cache rather than count against a GB10's 4.0 GiB hard floor; the floor is unchanged, the held-export cap (`TF_PRODUCE_HELD_GIB`) still bounds the bytes, and unset keeps every buffer in RAM as before.
 
 - DeepSeek V4.1 on Metal: the load admission is a pure memory plan (`metal_plan.zig`): weights, the shared workspaces and rotary tables, and one full-context lane a stream (0.94 GB at `--context 1048576`, 890 bytes a position), checked against `GLM_LOAD_LIMIT_GB` and Metal's working set. The boot logs it (`memory plan: ... 4 lanes x 0.94 GB ... headroom ..., at most N lanes at this context`), and a refusal names the `--parallel` and the `--context` that would fit instead of two byte counts. Host tests pin `--context 1048576 --parallel 4` on a 256 GB machine (221.35 GB needed, 9.2 GB of headroom).

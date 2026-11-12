@@ -120,7 +120,8 @@ on the Qwen3.8-27B pull) gives the lane host a `lane_remote.Source`: `wants` is 
 host slices, so nothing is staged), seals it (`Model.snapshotSeal`: position, the Engram record of the last three tokens'
 compressed ids, taps with no rows) and returns `{ saved, at }`. `Backend.prefill` restores it with `snapshotRestore` and
 prefills the tail, exactly as for a kept prompt state. `drop` frees the Snapshot; `TF_PREFILL_KEEP` decides whether states
-built on it are kept (marked remote). The drafter's rings are in the Snapshot's `live` bytes when the slot's cache plan has the three
+built on it are kept (marked remote); a pull that leaves the pass no mark past it keeps the landed prefix itself, before the first
+chunk, so the same prompt again resumes it with no second pull. The drafter's rings are in the Snapshot's `live` bytes when the slot's cache plan has the three
 DSpark stages (43 layers), and `ring` parts then land there (all three stages or none; a part that is short, repeated or for another
 stage is refused). A producer sends them only in its full-prefill profile with drafts on (`MissingRing` otherwise, and the replay
 profile ships none); a plan without the stages reads and drops them, which `Landing.dropped` counts. Without rings, or without

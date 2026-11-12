@@ -91,5 +91,7 @@ pub fn marksRewind(s: *const Store, a: Allocator, prompt: []const u32, from: u32
             }
         }
     }
+    // A pull leaving the pass nothing to keep: the landed prefix itself is the state a repeat resumes.
+    if (out.items.len == 0 and s.resume_floor > 0 and from == s.resume_floor and !short and from + s.rules.lookahead <= prompt.len and s.usable(from, starts)) try out.append(a, from);
     return out.toOwnedSlice(a);
 }

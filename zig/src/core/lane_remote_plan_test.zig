@@ -32,11 +32,15 @@ test "remote prefix kept: a tail mark under 64 rows past the pull is no cut, and
     defer near.kept.deinit(t.allocator);
     const close = try fixture.runKeep(&near, &.{ .prompt = &prompt, .max_tokens = 2 }, null, &s, .{ .keep = true });
     try t.expect(close.restoring and close.remote and close.at == 230);
-    try t.expectEqual(@as(usize, 0), close.marks); // 256 is 26 rows past the pull: one chunk to the end
+    // 256 is 26 rows past the pull: one chunk to the end, no cut; the pull itself is the one mark kept
+    try t.expectEqual(@as(usize, 1), close.marks);
+    try t.expectEqual(@as(u32, 230), close.first_mark);
     try t.expectEqual(@as(u32, 0), close.snap_at);
+    var other = store(); // the first prompt's kept state would be resumed over a pull of 100 rows
+    defer other.deinit();
     var far: fixture.Peer = .{ .at = 100 };
     defer far.kept.deinit(t.allocator);
-    const wide = try fixture.runKeep(&far, &.{ .prompt = &prompt, .max_tokens = 2 }, null, &s, .{ .keep = true });
+    const wide = try fixture.runKeep(&far, &.{ .prompt = &prompt, .max_tokens = 2 }, null, &other, .{ .keep = true });
     try t.expect(wide.restoring and wide.remote and wide.at == 100);
     try t.expectEqual(@as(usize, 1), wide.marks);
     try t.expectEqual(@as(u32, 256), wide.first_mark);

@@ -543,13 +543,13 @@ test "remote prefix kept: a pull past a shorter kept state releases the lookup's
     try t.expect(store.keep(&six, 2, null, &.{}, &.{})); // shorter than the pull: the lookup borrows it, the pull beats it
     var peer: Peer = .{ .at = 4 };
     defer peer.kept.deinit(t.allocator);
-    // a history ending where the pull does: the pass never stands there, so no mark is left to keep
+    // a history ending where the pull does: the pass never stands past it, so the landed prefix is the one mark kept
     const at_pull = try runKeep(&peer, &.{ .prompt = &six, .max_tokens = 2, .history_len = 4 }, null, &store, .{ .keep = true });
-    try t.expect(at_pull.restoring and at_pull.remote and at_pull.hooked and at_pull.marks == 0);
-    try t.expectEqual(@as(u64, 1), store.counts.kept);
+    try t.expect(at_pull.restoring and at_pull.remote and at_pull.hooked and at_pull.marks == 1 and at_pull.first_mark == 4);
+    try t.expectEqual(@as(u64, 2), store.counts.kept);
     const beyond = try runKeep(&peer, &.{ .prompt = &six, .max_tokens = 2, .history_len = 5 }, null, &store, .{ .keep = true });
     try t.expect(beyond.restoring and beyond.remote and beyond.at == 4 and beyond.marks == 1);
-    try t.expectEqual(@as(u32, 2), peer.fills);
+    try t.expectEqual(@as(u32, 1), peer.fills); // the landed prefix kept at 4 beat a second pull
     for (store.entries.items) |e| try t.expectEqual(@as(u32, 0), e.borrowers); // else the shorter state is never evicted
     try t.expect(store.find(&six, &.{}, &.{}).?.remote); // the pass kept 5, marked remote
 }
