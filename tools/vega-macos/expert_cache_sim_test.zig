@@ -730,6 +730,8 @@ test "the handshake replay: the split pool equals the always-asking pool after e
         try tst.expectEqual(@as(u64, 360), t.tokens);
         try tst.expectEqual(@as(u64, 360 * 40), t.stages);
         try tst.expectEqual(@as(u64, 0), t.mismatches);
+        // the residency word the card reads is the line the host's table row would name, for every pick of every stage (no stale entry after an eviction)
+        try tst.expectEqual(@as(u64, 0), t.row_mismatches);
         // some layers are passed and some ask, and the per-token histogram accounts for every steady token
         try tst.expect(t.passed > 0 and t.passed < t.stages);
         var by: u64 = 0;

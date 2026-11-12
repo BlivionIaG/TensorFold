@@ -40,6 +40,9 @@ pub const Tally = struct {
     misses: u64 = 0,
     /// Tokens after which the split pool differed from the always-asking one (must be 0).
     mismatches: u64 = 0,
+    /// Picks, over all stages, whose residency word the card reads (the split pool's) differed from the line the always-asking host would put in the table row (must be 0):
+    /// a stale entry after an eviction, or one a late replay has not reached.
+    row_mismatches: u64 = 0,
 };
 
 const Pool = struct {
@@ -89,6 +92,10 @@ fn replayTrace(a: std.mem.Allocator, cfg: Config, t: data.Trace, tally: *Tally) 
         const steady = tok >= cfg.warm_tokens;
         for (0..l.NL) |layer| {
             const keys = ids(data.Trace.picks(t.dec, tok, layer), &buf);
+            for (keys) |key| {
+                const host_line: u64 = if (base.cache.address(key)) |line| line else 0;
+                if (split.resident[key] != host_line) tally.row_mismatches += 1;
+            }
             @memcpy(base.cache.ids[0..keys.len], keys);
             const x = try base.cache.decide(keys.len);
             try base.cache.commit(x.started);
@@ -177,4 +184,5 @@ pub fn write(out: *std.Io.Writer, cfg: Config, set: data.Set) !void {
         try out.writeAll("% of tokens\n");
     }
     try out.print("\npool after every token, split vs. every layer asking: {d} of {d} tokens differ (must be 0)\n", .{ t.mismatches, t.tokens });
+    try out.print("residency word the card reads vs. the line the host's table row would name, per pick: {d} of {d} differ (must be 0)\n", .{ t.row_mismatches, t.accesses });
 }

@@ -269,6 +269,11 @@ pub const Store = struct {
     /// Hit-first (M2): the card's check splits the plan's items into two arrays in `items_dev` (TF_EXPERT_HITFIRST=1), and the stream runs the hit items' GEMVs before its wait.
     hitfirst: bool = false,
     items_dev: ?DeviceBuffer = null,
+    /// TF_EXPERT_VERIFY=1 (with the split): the worker checks every pick of a stage the card passed by itself against the device (the table entry, the head and tail
+    /// of the line's blob against the host tier) through a pinned buffer and the copy stream, and counts what differs. A diagnostic: it costs several small copies a pick.
+    verify: bool = false,
+    vbuf: ?HostBuffer = null,
+    vfy: struct { picks: u64 = 0, bad_rows: u64 = 0, bad_data: u64 = 0, logged: u32 = 0 } = .{},
     /// Chunked staging of a prompt span (F1, TF_EXPERT_PREFILL_CHUNKS=K, 2 to `max_chunks`): the plan's items in `nchunks` = K + 1 arrays of `chunk_stride` bytes (array 0 the
     /// experts already in a line), in `chunk_items`; 0 chunks: a span's stage answers once, after every copy.
     chunk_items: ?DeviceBuffer = null,
@@ -378,8 +383,8 @@ pub const Store = struct {
         errdefer gpa.free(jobs);
         const win_dev = try win.device();
         const stride = shape.rowStride();
-        // the card checks decode stages itself unless TF_EXPERT_SPLIT=0 (the plain handshake every layer) or the device tables do not fit
-        const want_split = !envOff("TF_EXPERT_SPLIT");
+        // the card checks decode stages itself (M1) only with TF_EXPERT_SPLIT=1: default is the plain handshake every layer (pre-L9 behaviour), until the card gates pass
+        const want_split = envOn("TF_EXPERT_SPLIT");
         var rows_dev: ?DeviceBuffer = null;
         if (want_split) {
             if (DeviceBuffer.alloc(r, shape.layers * stride + shape.layers * 64)) |b| {
@@ -403,6 +408,9 @@ pub const Store = struct {
             } else |_| std.log.warn("experts: no device memory for the chunked staging's item arrays: prompt spans answer once", .{});
         }
         errdefer if (chunk_items) |*b| b.free();
+        var vbuf: ?HostBuffer = null;
+        if (rows_dev != null and envOn("TF_EXPERT_VERIFY")) vbuf = HostBuffer.alloc(r, 4096) catch null;
+        errdefer if (vbuf) |*b| b.free();
         var ack: Ack = .{ .host = @ptrCast(@alignCast(win.bytes[ack_at..].ptr)), .host_dev = win_dev + ack_at, .base = win.bytes.ptr };
         // the ack is a host word in the window; a VRAM signal word (docs/LATENCY.md C3) only with TF_EXPERT_ACK=vram: hipmac's signal words hung the card in
         // lat_probe (WAIT_REG_MEM on the signal's address never released), so that stays opt-in until the fix is validated on the card
@@ -429,9 +437,11 @@ pub const Store = struct {
             .nslots = nslots,
             .rows_dev = rows_dev,
             .split = rows_dev != null,
-            .early = !envOff("TF_EXPERT_FLAGS"),
+            .early = envOn("TF_EXPERT_FLAGS"),
             .hitfirst = items_dev != null,
             .items_dev = items_dev,
+            .verify = vbuf != null,
+            .vbuf = vbuf,
             .chunk_items = chunk_items,
             .nchunks = if (chunk_items != null) chunk_k + 1 else 0,
             .chunk_stride = chunkItemBytes(shape),
@@ -463,12 +473,6 @@ pub const Store = struct {
             try b.upload(0, image);
         }
         return s;
-    }
-
-    /// Whether the environment variable `name` is set to 0.
-    fn envOff(name: [:0]const u8) bool {
-        const v = platform.getenv(name) orelse return false;
-        return std.mem.eql(u8, v, "0");
     }
 
     /// Whether the environment variable `name` is set to 1.
@@ -510,6 +514,7 @@ pub const Store = struct {
         if (s.rows_dev) |*b| b.free();
         if (s.items_dev) |*b| b.free();
         if (s.chunk_items) |*b| b.free();
+        if (s.vbuf) |*b| b.free();
         s.gpa.free(s.jobs);
         s.gpa.free(s.fills);
         s.gpa.free(s.slot_of);
@@ -989,9 +994,49 @@ pub const Store = struct {
             p.cache.ids[n] = base + @as(policy.Id, @intCast(id));
             n += 1;
         };
+        if (s.verify) s.verifyHit(job, p, words);
         p.cache.replay(p.cache.ids[0..n]) catch return s.failed.store(true, .release);
         s.stats.accesses += n;
         s.stats.hits += n;
+    }
+
+    /// TF_EXPERT_VERIFY: what the card used for a stage it passed: per routed pick the VRAM table entry (must name the cache line the residency word held, with no admission
+    /// line) and the first and last 128 bytes of the line (must be the host tier's blob). Both are read back through the copy stream, which does not wait for the compute stream.
+    fn verifyHit(s: *Store, job: Job, p: *Pool, words: []const i32) void {
+        const vb = (s.vbuf orelse return).bytes;
+        const layer: usize = job.layer;
+        const e = s.shape.experts;
+        const picks = s.shape.picks;
+        const blob = s.shape.blobBytes();
+        const host = s.host[layer] orelse return;
+        const row_dev = s.rows_dev.?.base() + layer * s.shape.rowStride() + header_bytes;
+        const api = s.r.api;
+        for (0..job.rows) |r| for (words[r * picks ..][0 .. picks - 1]) |id| {
+            if (id < 0 or id >= e) continue;
+            const x: usize = @intCast(id);
+            const line = p.cache.resident[layer * e + x];
+            s.vfy.picks += 1;
+            var bad_row = false;
+            var bad_data = false;
+            if (line == 0) {
+                bad_row = true;
+            } else {
+                const ok = api.hipMemcpyDtoHAsync(vb.ptr, @ptrFromInt(row_dev + 16 * x), 16, p.copy.handle) == 0 and
+                    api.hipMemcpyDtoHAsync(vb.ptr + 16, @ptrFromInt(line), 128, p.copy.handle) == 0 and
+                    api.hipMemcpyDtoHAsync(vb.ptr + 144, @ptrFromInt(line + blob - 128), 128, p.copy.handle) == 0;
+                if (!ok) return s.failed.store(true, .release);
+                p.copy.synchronize() catch return s.failed.store(true, .release);
+                const entry: [2]u64 = .{ std.mem.readInt(u64, vb[0..8], .little), std.mem.readInt(u64, vb[8..16], .little) };
+                bad_row = entry[0] != line or entry[1] != 0;
+                bad_data = !std.mem.eql(u8, vb[16..144], host[x * blob ..][0..128]) or !std.mem.eql(u8, vb[144..272], host[x * blob + blob - 128 ..][0..128]);
+                if ((bad_row or bad_data) and s.vfy.logged < 16) {
+                    s.vfy.logged += 1;
+                    std.log.err("experts verify: layer {d} expert {d} line 0x{x}: table entry 0x{x} 0x{x}, head {s}, tail {s}", .{ layer, x, line, entry[0], entry[1], if (std.mem.eql(u8, vb[16..144], host[x * blob ..][0..128])) "ok" else "WRONG", if (std.mem.eql(u8, vb[144..272], host[x * blob + blob - 128 ..][0..128])) "ok" else "WRONG" });
+                }
+            }
+            if (bad_row) s.vfy.bad_rows += 1;
+            if (bad_data) s.vfy.bad_data += 1;
+        };
     }
 
     /// One log line for a prompt span: its wall time from the first stage to the last answer, the time in stages, the experts copied to the scratch.
@@ -1187,6 +1232,7 @@ pub const Store = struct {
             "experts {s}: {d} rounds {d} tokens, hit {d:.1}% miss {d:.1}/token ({d:.1} MiB/token over the link), window fill {d:.1} MiB/token, admissions {d:.1}/round, stage {d:.2} ms/token (card compute+wait {d:.2}; fill after the answer {d:.2}), card passed {d:.1}% of the stages itself ({d:.2} ms/token replaying), round {d:.2} ms ({d:.2} ms/token), {d} lines",
             .{ label, d.rounds, d.tokens, 100.0 * @as(f64, @floatFromInt(d.hits)) / a, miss / t, miss / t * blob / mib, @as(f64, @floatFromInt(d.window_bytes)) / t / mib, @as(f64, @floatFromInt(d.admissions)) / r, @as(f64, @floatFromInt(d.stage_ns)) / t / 1e6, @as(f64, @floatFromInt(d.idle_ns)) / t / 1e6, @as(f64, @floatFromInt(d.fill_ns)) / t / 1e6, 100.0 * @as(f64, @floatFromInt(d.hit_stages)) / @max(asked, 1), @as(f64, @floatFromInt(d.replay_ns)) / t / 1e6, @as(f64, @floatFromInt(d.round_ns)) / r / 1e6, @as(f64, @floatFromInt(d.round_ns)) / t / 1e6, s.lineCount() },
         );
+        if (s.verify) std.log.info("experts verify: {d} picks of passed stages checked, {d} with a wrong table entry, {d} with wrong line bytes", .{ s.vfy.picks, s.vfy.bad_rows, s.vfy.bad_data });
     }
 };
 
@@ -1199,6 +1245,17 @@ fn nowNs() u64 {
 fn napNs(ns: u64) void {
     var ts: std.c.timespec = .{ .sec = 0, .nsec = @intCast(ns) };
     _ = std.c.nanosleep(&ts, null);
+}
+
+/// A store with the card-side split and the slot flags on (both are opt-in in production: TF_EXPERT_SPLIT=1, TF_EXPERT_FLAGS=1); the environment is back to off after.
+fn initOn(gpa: std.mem.Allocator, r: *const Runtime, shape: Shape) Error!Store {
+    _ = c_setenv("TF_EXPERT_SPLIT", "1", 1);
+    _ = c_setenv("TF_EXPERT_FLAGS", "1", 1);
+    defer {
+        _ = c_setenv("TF_EXPERT_SPLIT", "0", 1);
+        _ = c_setenv("TF_EXPERT_FLAGS", "0", 1);
+    }
+    return Store.init(gpa, r, shape, 1 << 20);
 }
 
 fn testTensors(gpa: std.mem.Allocator, shape: Shape, seed: u8) ![parts][]u8 {
@@ -1232,7 +1289,7 @@ test "stages fill window slots, admitted misses name their lines (the GEMVs writ
     const blob = shape.blobBytes();
     try std.testing.expectEqual(@as(usize, 160), blob);
     try std.testing.expectEqual(@as(usize, 96), shape.downOffset());
-    var s = try Store.init(gpa, &r, shape, 1 << 20);
+    var s = try initOn(gpa, &r, shape);
     defer s.deinit();
     try std.testing.expect(s.nslots >= 2 * (shape.experts + 8) and s.nslots % 2 == 0);
     const t0 = try testTensors(gpa, shape, 1);
@@ -1346,7 +1403,7 @@ test "the worker answers a stage the card could not check and replays one the ca
     defer ctx.deinit();
     const shape: Shape = .{ .layers = 3, .experts = 8, .picks = 3, .trace_rows = 4, .part_bytes = .{ 64, 16, 16, 32, 16, 16 } };
     const blob = shape.blobBytes();
-    var s = try Store.init(gpa, &r, shape, 1 << 20);
+    var s = try initOn(gpa, &r, shape);
     defer s.deinit();
     // the host answers into the window's own word here, whatever the runtime offers
     if (s.ack.signal) |*g| {
@@ -1392,7 +1449,7 @@ test "the worker answers a stage the card could not check and replays one the ca
     try std.testing.expectEqual(@as(u64, 4), s.stats.stages);
     try std.testing.expect(!s.failed.load(.acquire));
     // the two late touches happened before the third stage chose anything: the pool has the same stamps as the stage-per-layer run
-    var twin = try Store.init(gpa, &r, shape, 1 << 20);
+    var twin = try initOn(gpa, &r, shape);
     defer twin.deinit();
     try twin.addLayer(0, t0);
     try twin.addLayer(1, t1);
@@ -1427,7 +1484,7 @@ test "a prompt span's stage in chunks: the first answer names each expert's chun
     const shape: Shape = .{ .layers = 2, .experts = 8, .picks = 4, .trace_rows = 4, .part_bytes = .{ 64, 16, 16, 32, 16, 16 } };
     const blob = shape.blobBytes();
     _ = c_setenv("TF_EXPERT_PREFILL_CHUNKS", "2", 1);
-    const made = Store.init(gpa, &r, shape, 1 << 20);
+    const made = initOn(gpa, &r, shape);
     _ = c_setenv("TF_EXPERT_PREFILL_CHUNKS", "0", 1);
     var s = try made;
     defer s.deinit();
@@ -1481,7 +1538,7 @@ test "a chunked stage that fails still releases every word the card waits for" {
     defer ctx.deinit();
     const shape: Shape = .{ .layers = 2, .experts = 8, .picks = 4, .trace_rows = 4, .part_bytes = .{ 64, 16, 16, 32, 16, 16 } };
     _ = c_setenv("TF_EXPERT_PREFILL_CHUNKS", "3", 1);
-    const made = Store.init(gpa, &r, shape, 1 << 20);
+    const made = initOn(gpa, &r, shape);
     _ = c_setenv("TF_EXPERT_PREFILL_CHUNKS", "0", 1);
     var s = try made;
     defer s.deinit();

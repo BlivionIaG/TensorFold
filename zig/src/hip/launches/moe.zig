@@ -196,7 +196,8 @@ pub fn tf_expert_check(l: *const Launcher, picks: CI, pairs: c_int, experts: c_i
     try a.add(split.count);
     try a.add(split.hit);
     try a.add(split.miss);
-    try l.go(l.op.expert_check, dim(1, 1, 1), dim(256, 1, 1), 0, s, &a);
+    // one wave: a decode layer has at most a few dozen picks, and every wave of the block would wait on its own system-scope fence
+    try l.go(l.op.expert_check, dim(1, 1, 1), dim(64, 1, 1), 0, s, &a);
 }
 
 /// The plan's `items` (`count` entries) written `nchunks` times at `out` (`stride` ints apart), each keeping the pair counts of the experts `chunk` (host memory, a u32 an expert) puts in that chunk
@@ -225,5 +226,5 @@ pub fn tf_expert_rows(l: *const Launcher, picks: CI, pairs: c_int, experts: c_in
     try a.add(row);
     try a.add(need);
     try a.add(@as(c_int, @intFromBool(all)));
-    try l.go(l.op.expert_rows, dim(1, 1, 1), dim(256, 1, 1), 0, s, &a);
+    try l.go(l.op.expert_rows, dim(1, 1, 1), dim(64, 1, 1), 0, s, &a);
 }
