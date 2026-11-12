@@ -123,7 +123,7 @@ pub const Profile = struct {
         if (tail) p.pf.tail_rows += rows else p.pf.rows += rows;
     }
 
-    /// One JSON line for the window just summed: i, at (rows before it), rows, tail, wall/gpu ms, calls {name: [n, ms]}.
+    /// One JSON line for the window just summed: i, at (rows before), rows, tail, wall/gpu ms, calls {name: [n, ms]}.
     fn windowLine(p: *Profile, rows: u64, tail: bool) !void {
         if (p.cur.count() == 0) return;
         var w: std.Io.Writer.Allocating = .init(p.gpa);
