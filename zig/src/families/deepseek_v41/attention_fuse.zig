@@ -1,5 +1,4 @@
-//! The decode attention chain's fused dispatches (one row): each replaces adjacent dispatches whose arithmetic is
-//! block local, with bit-identical output. Every fusion has a kill switch, `TF_DSV41_NO_FUSE_<NAME>`, default on.
+//! The decode attention chain's fused dispatches (one row); each has a kill switch (TF_DSV41_NO_FUSE_*).
 const std = @import("std");
 const mtl = @import("metal");
 const exl3 = @import("core").exl3_projection;
@@ -65,9 +64,7 @@ pub fn encodeIqRope(ep: *const exl3.Pipelines, ap: *const common.Pipelines, e: m
     });
 }
 
-/// The eight output groups' indexed wo_a call. `chained` fuses its epilogue with wo_b's rotate_in (`encodeWoB` then
-/// runs wo_b over the scratch); `rope` fuses the output's inverse RoPE into the call's own rotate_in (the rope the
-/// read stage left pending). `grouped` still receives wo_a's bf16 output.
+/// The eight output groups' indexed wo_a call, optionally with the output rope in and wo_b's rotate_in out.
 pub fn encodeWoA(ep: *const exl3.Pipelines, ap: *const common.Pipelines, e: mtl.ComputeEncoder, w: *const weights.Attention, work: *const Workspace, q: View, grouped: View, scratch: exl3.View, c: config.Config, chained: bool, rope: ?struct { ratio: u32, position: u32 }) !void {
     for (&w.wo_a) |*m| exl3.useMatrix(e, m.*);
     const q_width = c.heads * c.head_dim;
@@ -125,8 +122,7 @@ pub fn qRopeReady(ep: *const exl3.Pipelines, ap: *const common.Pipelines, c: con
         std.c.getenv("TF_DSV41_DOUBLE_ROPE") == null;
 }
 
-/// wq_b into `q`. `rotated`: the input is already rotated in the scratch base (`encodeQNorm` left it there), else it is
-/// `qr`. `rope` (the layer's compress ratio and position) fuses the query's RoPE into the epilogue.
+/// wq_b into `q` (`rotated`: the input is already rotated in the scratch base), the query RoPE optionally fused.
 pub fn encodeQb(ep: *const exl3.Pipelines, ap: *const common.Pipelines, e: mtl.ComputeEncoder, w: *const weights.Attention, qr: View, q: View, scratch: exl3.View, c: config.Config, rotated: bool, rope: ?struct { ratio: u32, position: u32 }) !void {
     const rows: exl3.Rows = .{ .count = 1, .x_stride = c.q_lora, .y_stride = c.heads * c.head_dim, .prerotated = rotated };
     const x = if (rotated) scratch else core(qr);
@@ -138,8 +134,7 @@ pub fn encodeQb(ep: *const exl3.Pipelines, ap: *const common.Pipelines, e: mtl.C
     });
 }
 
-/// Whether the merged call's epilogue can carry the query norm, wq_b's rotate_in and the key's window glue (one decode
-/// row, no capture): the three fusions it replaces must all be on, and none of their doubling arms.
+/// Whether the merged call's epilogue can carry the query norm, wq_b's rotate_in and the key glue (one decode row).
 pub fn qkvTailReady(ep: *const exl3.Pipelines, ap: *const common.Pipelines, w: *const weights.Attention, c: config.Config, position: u32) bool {
     const sw = switches();
     return sw.qkv_tail and sw.qnorm and std.c.getenv("TF_DSV41_NO_FUSE_KVGLUE") == null and
@@ -149,9 +144,7 @@ pub fn qkvTailReady(ep: *const exl3.Pipelines, ap: *const common.Pipelines, w: *
         std.c.getenv("TF_DSV41_DOUBLE_ROPE") == null and std.c.getenv("TF_DSV41_DOUBLE_ATTN_PACK") == null;
 }
 
-/// The merged wq_a + wkv call (see `Stage.queryStage`) with its epilogue and the tail `qkvTailReady` names as one
-/// dispatch: `fused` ends with the normalized latent and the raw key, the scratch base holds wq_b's rotated input, and
-/// the key's window row is in `chunk`. The caller runs wq_b `prerotated` and skips the window glue.
+/// The merged wq_a + wkv call with the tail `qkvTailReady` names fused in; the caller runs wq_b `prerotated`.
 pub fn encodeQkvTail(ep: *const exl3.Pipelines, ap: *const common.Pipelines, e: mtl.ComputeEncoder, w: *const weights.Attention, work: *const Workspace, x: View, fused: View, chunk: View, scratch: exl3.View, c: config.Config, ratio: u32, position: u32) !void {
     try exl3.chain.encodeQkvEpilogue(ep, e, .{ .descriptors = .{ .buffer = w.qkv_descriptors.?, .offset = 0 }, .count = 2, .k = c.hidden, .n = c.q_lora }, core(x), core(fused), scratch, .{
         .count = 2,
