@@ -68,6 +68,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_PREFILL_AHEAD", .scope = .metal, .kind = .u64, .min = 1, .forms = "a whole number of fills ahead from 1 (default 4)" },
     .{ .name = "TF_PREFILL_API_KEY_FILE", .scope = .metal, .kind = .path, .forms = "a path to a file only its owner can read, holding the GB10 server's API key" },
     .{ .name = "TF_PREFILL_TIMEOUT_S", .scope = .metal, .kind = .u64, .min = 1, .max = std.time.s_per_day, .forms = "whole seconds from 1 to 86400 (default 60 and 1 per 400 tokens sent)" },
+    .{ .name = "TF_DSV41_PROMPT_CACHE_GIB", .scope = .metal, .kind = .real, .trim = " \t", .forms = "a finite GiB budget of at least 0 for the DeepSeek V4.1 server's kept prompt states (0 keeps none; --prompt-cache-gib wins; default: the automatic budget)" },
     .{ .name = "TF_FLASHNEXT_GROUPED_ROWS", .scope = .metal, .kind = .size, .forms = "0 (never) or the rows, 1 to 32, from which a window's experts run grouped", .max = 32 },
     .{ .name = "XPU_A8_BITS", .scope = .xpu, .kind = .bit_width, .forms = "4 or 8" },
     .{ .name = "LFM3_FUSE", .scope = .xpu, .kind = .u32, .forms = "a whole fusion mask from 0 to 4294967295" },

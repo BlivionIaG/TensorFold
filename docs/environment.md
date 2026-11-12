@@ -55,6 +55,7 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
 | `TF_DSV41_PRODUCE_LINK` | On a follower rank (above 0) of a `TF_DSV41_KV_SPLIT` pool: the `mcdma-rpcd` listen link name (1 to 20 of letters, digits, `_`, `-`) on which that rank exports its share of every hand-off. Rank 0's `--mcdma-produce` exports shard 0 and the Mac pulls them all (`--mcdma-link a,b`). Unset: the follower exports nothing and a split pool's hand-offs cannot complete |
 | `TF_DSV41_HANDOFF_DUMP` | A directory path without control characters, used as given; a DeepSeek-V4.1 producer also writes each hand-off export there as a file, with or without `--mcdma-produce`. Unset or blank writes none |
 | `TF_PREFILL_TIMEOUT_S` | With `--prefill-from`: whole seconds 1 through 86400 for the trigger and, with `--mcdma-link http`, separately for the transfer of the export; default 60 plus 1 per 400 tokens sent |
+| `TF_DSV41_PROMPT_CACHE_GIB` | DeepSeek V4.1 Metal server: a finite GiB budget of at least 0 for the kept prompt states (a state holds the rows its prompt used, not the context's capacity); `--prompt-cache-gib` wins, 0 keeps none, unset takes the automatic budget (half the room under the load limit, at least 16 GiB when it fits) |
 | `XPU_A8_BITS` | Exactly `4` or `8`, for the XPU quantization study; unset keeps the study's existing setting |
 | `LFM3_FUSE` | Whole u32 fusion mask; default 7 |
 | `TF_SLIDE_POCKET_KEY` | Exactly `auto`, `reply`, `subject` or `both`; default `auto` |

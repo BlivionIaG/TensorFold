@@ -24,6 +24,10 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - DeepSeek V4.1 hand-offs from a split KV pool (`TF_DSV41_KV_SPLIT=1`): each rank exports the pool pages it stores as its own MKVH shard (rank 0 over `--mcdma-produce LINK`, a follower over `TF_DSV41_PRODUCE_LINK=NAME`, announced by the leader at the cut), and the Mac pulls every shard at once over its own link (`--mcdma-link A,B`, shard 0 first) into one landing. A split pool no longer has to be unsplit to export, so the pool that reaches a million tokens on a GB10 pair can be handed to the Mac, and a pair cabled to both of the Mac's ports moves the state at the sum of the two links. A replicated pool and a single link are unchanged. `TF_DSV41_HANDOFF_CHECK=synth:TOKENS:FILE.mkvh2` (several joined by `+`) writes hand-off streams of synthetic rows of any length, for timing decode at a context nothing has prefilled.
 
+- DeepSeek V4.1 on Metal: a kept prompt holds the rows its prompt used (890 bytes a token plus the rings, taps and Engram cursor), not the lane's whole `--context`: at `--context 1048576` an entry was 0.93 GB whatever its length. A kept state restores into a lane of any capacity from its length up, and the prompt cache's reserve and promise count the bytes a state will hold. `--learn-conversations` keeps these states on disk too (`--spill-gib` writes the ones RAM evicts).
+
+- DeepSeek V4.1 on Metal: `TF_DSV41_PROMPT_CACHE_GIB` sets the prompt cache's budget when `--prompt-cache-gib` is absent (`0` keeps none); with neither, the server takes the automatic budget the other Metal engines use, where it kept no prompt cache before.
+
 ## 1.2.7
 
 - GLM-5.3-Flash on CUDA: with `TF_GLM_LAYERS=N`, serve's start-up memory check counts the weights by tensor from the shard headers, only those the load reads (the first N layers, the MTP layer when drafts are on, the embedding, norm and head), where it counted every checkpoint file. A 20-layer thin load of the 163.6 GiB checkpoint now counts 66.6 GiB without drafts. Unset, the count is the files' as before (#2788, fixes #2745). Thanks to @wojo.

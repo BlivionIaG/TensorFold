@@ -22,10 +22,10 @@ pub fn policy() !ps.Policy {
 pub const keeps = q27.keeps;
 pub const checkpointId = api.LaneHost.Remote.checkpointId;
 
-/// A slot's Packed layout over a Snapshot's own buffers (host-visible: nothing is staged).
+/// A slot's Packed layout over a Snapshot's own buffers (host-visible: nothing is staged), at the rows it is sized for.
 pub fn packedOf(m: *const ds.Model, snap: *ds.Model.Snapshot) ho.metal.Packed {
     const plan = m.caches[0].plan;
-    return .{ .live = snap.live, .storage = snap.storage, .layers = plan.layers, .capacity = plan.capacity };
+    return .{ .live = snap.live, .storage = snap.storage, .layers = plan.layers, .capacity = snap.capacity };
 }
 
 /// The lane host's remote source: one pull at a time over its link, each into a blank Snapshot of this model's shape.
@@ -63,7 +63,7 @@ pub const Pull = struct {
         const offer = src.offer(prompt, cached) orelse return null;
         const at: u32 = std.math.cast(u32, offer.upto) orelse return error.PrefixTooLong;
         const t0 = fabric.words.nowNs();
-        const snap = try p.model.snapshotBlank();
+        const snap = try p.model.snapshotBlank(at);
         errdefer p.model.snapshotDrop(snap);
         var landing: ho.landing.Landing = undefined;
         try landing.initShards(p.gpa, at, @intCast(1 + p.remote.peers.len), .{ .@"packed" = packedOf(p.model, snap) });
@@ -185,7 +185,7 @@ pub const FileSource = struct {
         const tokens = f.blob.tokens;
         if (prompt.len <= tokens.len or !std.mem.eql(u32, prompt[0..tokens.len], tokens)) return null;
         const at: u32 = @intCast(tokens.len);
-        const snap = try f.model.snapshotBlank();
+        const snap = try f.model.snapshotBlank(at);
         errdefer f.model.snapshotDrop(snap);
         var landing: ho.landing.Landing = undefined;
         try landing.init(f.gpa, at, .{ .@"packed" = packedOf(f.model, snap) });
