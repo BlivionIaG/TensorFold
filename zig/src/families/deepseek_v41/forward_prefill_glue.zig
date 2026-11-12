@@ -175,6 +175,22 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
     return glueOne(ctx, r, c);
 }
 
+/// glue.sel_gather(sel int32 [2 h, K], mine [h, K], all [2 h, K], h) (TF_DSV41_INDEX_SPLIT): each rank's half of the
+/// selection rows (rank r: rows [r h, (r + 1) h)) all-gathered; the other rank's half lands in `sel` beside its own.
+fn selGather(f: *Forward, r: *run.Runner, c: *const calls.Call) !void {
+    const x = c.args;
+    const half: usize = @intCast(x[3].arg.i);
+    const bytes = half * @as(usize, @intCast(dim(x[0].arg.t, 1))) * 4;
+    const me: usize = f.comm.rank();
+    if (f.comm.world() != 2 or me > 1 or bytesOf(x[0].arg.t) != 2 * bytes) return error.BadGlue;
+    const sel = try r.tensorAddr(x[0].arg.t);
+    const all = try r.tensorAddr(x[2].arg.t);
+    const mine = try r.tensorAddr(x[1].arg.t);
+    try copy(r, mine, sel + me * bytes, bytes);
+    try f.comm.allGather(mine, all, bytes / 4, .i32, r.stream.handle);
+    return copy(r, sel + (1 - me) * bytes, all + (1 - me) * bytes, bytes);
+}
+
 pub fn glueOne(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!void {
     if (try @import("prefill_heads.zig").glue(r, c)) return;
     const f: *Forward = @ptrCast(@alignCast(ctx));
@@ -192,6 +208,7 @@ pub fn glueOne(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!v
         return copy(r, buf + bytesOf(carry), try r.tensorAddr(x[1].arg.t), bytesOf(x[1].arg.t));
     }
     if (eql(u8, step, "stream_merge")) return longpf.merge(&st.long, f.gpa, r, c);
+    if (eql(u8, step, "sel_gather")) return selGather(f, r, c);
     // TF_DSV41_PF_TBO: A's ratio-2 carry into the slot at its layer's end; the pair's closing join has nothing to run
     if (eql(u8, step, "copy_rows")) return copy(r, try r.tensorAddr(x[1].arg.t), try r.tensorAddr(x[0].arg.t), bytesOf(x[0].arg.t));
     if (eql(u8, step, "tbo_join")) return;

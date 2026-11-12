@@ -82,6 +82,8 @@ pub const Options = struct {
     pf_tbo: bool = false,
     /// TF_DSV41_STREAM_RB (0 off; 1 / 2 / 4): the long-context stream top-k as the row-blocked twin `_stream_rb<N>`
     stream_rb: i64 = 0,
+    /// TF_DSV41_INDEX_SPLIT (TP=2): each rank streams the top-k of half a segment's rows; the halves are all-gathered
+    index_split: bool = false,
     /// TF_DSV41_INDEX_BOUND: decode index scores and top-k as row-bounded twins that stop at each row's visible end
     index_bound: bool = false,
     /// decode knob set (same bits): ATTN_SPLIT, ATTN_ROPE, MHC_TAIL, MHC_DEFER, RG_PRUNE, PRUNE_KIT, MOE_BF16, RMS_FOLD

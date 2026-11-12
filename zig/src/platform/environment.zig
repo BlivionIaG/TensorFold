@@ -106,6 +106,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_DSV41_OWN_PREFILL", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_DRAFTS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_GRAPHS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+    .{ .name = "TF_DSV41_INDEX_SPLIT", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_AOT_GUARD", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_ENGRAM_PREFETCH", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_BIAS_VL", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1 (either selects the vision bias; unset or blank does not)" },

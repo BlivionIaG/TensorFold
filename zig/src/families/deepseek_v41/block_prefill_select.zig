@@ -13,6 +13,7 @@ const cdiv = prefill.cdiv;
 const Seg = prefill.Seg;
 const pos = prefill.Seg.pos;
 const indexKeys = prefill.Seg.indexKeys;
+const split_min: i64 = 256; // TF_DSV41_INDEX_SPLIT: fewer rows cost more in the exchange than the half they save
 
 /// The segment's selection of index layer `src` (reuse layers read the latest source's).
 pub fn selection(e: *E, src: u32) ![2]Arg {
@@ -157,7 +158,13 @@ pub fn select(s: *Seg, L: u32) !void {
         const cand = e.cfg.isCandidateSource(L);
         // backend.select's stream path (full-mode layers without the candidates' scores): stream_topk.select
         if (streamed) {
-            try s.streamSelect(src, ratio, topk, sel[0]);
+            if (splitRows(e)) |half| {
+                // TF_DSV41_INDEX_SPLIT: this rank's half of the rows, then the halves over an all-gather
+                const mine: [2]i64 = if (e.o.rank == 0) .{ 0, half } else .{ half, n };
+                try s.streamSelect(src, ratio, topk, sel[0], mine[0], mine[1]);
+                const pair = [_]Arg{ try e.buf("L.ix.selh", .{}, .i32, &.{ half, topk }), try e.buf("L.ix.selall", .{}, .i32, &.{ n, topk }) };
+                try e.glue("sel_gather", &.{ sel[0], pair[0], pair[1], .{ .i = half } });
+            } else try s.streamSelect(src, ratio, topk, sel[0], 0, n);
             try e.glue("counts", &.{ sel[0], sel[1], try e.buf("w.pos64", .{}, .i64, &.{n}), .{ .i = ratio } });
             return;
         }
@@ -181,22 +188,27 @@ pub fn select(s: *Seg, L: u32) !void {
     try e.glue("counts", &.{ sel[0], sel[1], try e.buf("w.pos64", .{}, .i64, &.{n}), .{ .i = ratio } });
 }
 
-/// Stream top-k in row blocks within its scratch budget: each block's `_stream`, then the merge glue.
-pub fn streamSelect(s: *Seg, src: u32, ratio: i64, topk: i64, out: Arg) !void {
+/// TF_DSV41_INDEX_SPLIT: the rows one rank selects for, half of an even segment (TP=2); null: every row on every rank.
+fn splitRows(e: *E) ?i64 {
+    if (!e.o.index_split or e.o.world != 2 or e.n < split_min or @rem(e.n, 2) != 0) return null;
+    return @divExact(e.n, 2);
+}
+
+/// Stream top-k of rows [lo, hi) in row blocks within its scratch budget: each block's `_stream`, then the merge glue.
+pub fn streamSelect(s: *Seg, src: u32, ratio: i64, topk: i64, out: Arg, lo: i64, hi: i64) !void {
     const e = s.e;
-    const n = e.n;
     const IH: i64 = e.cfg.index_heads;
     const ID: i64 = e.cfg.index_dim;
-    const st = longpf.plan(n, @max(@divFloor(e.end(), ratio), 1), topk);
+    const st = longpf.plan(hi - lo, @max(@divFloor(e.end(), ratio), 1), topk);
     const spg = try e.paging(ratio, false);
-    var a: i64 = 0;
+    var a: i64 = lo;
     var j: usize = 0;
-    while (a < n) : ({
+    while (a < hi) : ({
         a += st;
         j += 1;
     }) {
-        const rows = @min(st, n - a);
-        const p = if (st >= n) try pos(e) else try s.blockPos(j, a);
+        const rows = @min(st, hi - a);
+        const p = if (lo == 0 and st >= hi) try pos(e) else try s.blockPos(j, a);
         const nk = @max(@divFloor(e.start + a + rows, ratio), 1);
         const ns = longpf.splits(nk);
         const buf = try e.buf("L.ix.stream", .{}, .i64, &.{ rows, ns, 2 * topk });

@@ -49,6 +49,7 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
     }
     f.opts.pf_tbo = try pfTbo(&env);
     f.opts.stream_rb = try streamRb(&env);
+    f.opts.index_split = try pk.indexSplit(&env);
     f.opts.index_bound = try indexBound(&env);
     // TF_DSV41_BRANCHES: the side stream exists before any capture
     if (f.branches == null) f.branches = try @import("branches.zig").install(f.gpa, f, rank);
@@ -111,6 +112,7 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
     if (f.opts.x3ld_epi) log.info("x3ld epilogues: gateup_epilogue / down_combine fused into the decode expert streamer (TF_DSV41_X3LD_EPI)", .{});
     if (f.opts.stream_rb == 1) log.info("stream top-k: _stream_pf (the next tile's key loads issued ahead)", .{});
     if (f.opts.stream_rb > 1) log.info("stream top-k: {d} rows a program (_stream_rb{d})", .{ f.opts.stream_rb, f.opts.stream_rb });
+    if (f.opts.index_split) log.info("index split: each rank selects the stream top-k of half the rows, the halves all-gathered (TF_DSV41_INDEX_SPLIT)", .{});
     if (f.opts.pf_tbo) log.info("prefill tbo: encoder segments two at a time on two streams, x3gm on at most {d} SMs (0: all){s}", .{ dk.exl3.gm_sms_cap, if (f.opts.pf_overlap > 0) "; TF_DSV41_PF_OVERLAP is off under it" else "" });
     if (pf.state(f).cone_on) log.info("replay: exact decoder replay, programs of {d} layers over the last {d} rows, end fence {s} (TF_DSV41_REPLAY_EXACT, _GROUP, _OVERLAP)", .{ pf.state(f).cone_group, @import("ced.zig").cone_keep, if (pf.state(f).cone_overlap) "on" else "off" });
     if (f.opts.pf_overlap > 0) log.info("prefill overlap: a segment's exchanges in {d} row pieces on the side stream{s}", .{ f.opts.pf_overlap, if (f.opts.pf_overlap_site) ", every piece; the next mixing site in the same pieces, each after its own" else "" });

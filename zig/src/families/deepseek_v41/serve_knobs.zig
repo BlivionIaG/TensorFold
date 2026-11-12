@@ -143,6 +143,15 @@ fn badSms(raw: []const u8) error{BadKnob} {
     return error.BadKnob;
 }
 
+/// TF_DSV41_INDEX_SPLIT (0 / 1, default 0): TP=2 ranks stream the top-k of half a segment's rows each (Options.index_split).
+pub fn indexSplit(get: Get) !bool {
+    const raw = std.mem.trim(u8, get("TF_DSV41_INDEX_SPLIT") orelse "0", " ");
+    if (std.mem.eql(u8, raw, "0")) return false;
+    if (std.mem.eql(u8, raw, "1")) return true;
+    if (!quiet) std.log.warn("TF_DSV41_INDEX_SPLIT={s}: 0 or 1", .{raw});
+    return error.BadKnob;
+}
+
 /// TF_DSV41_STREAM_RB (unset / 0 off, 1, 2 or 4): the stream top-k's twin: 1 `_stream_pf`, 2 / 4 `_stream_rb<N>`.
 pub fn streamRb(get: Get) !i64 {
     const raw = std.mem.trim(u8, get("TF_DSV41_STREAM_RB") orelse "0", " ");
