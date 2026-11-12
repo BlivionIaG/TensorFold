@@ -13,6 +13,8 @@ pub const Fusion = struct {
     gateup: bool = false,
     /// The shared expert's down runs inside the routed down call, its rows after the routed rows.
     shared_down: bool = false,
+    /// The down call stops at its sums and one pass applies its rotate_out and the combine.
+    down_combine: bool = false,
     /// The first rotated-row index of the shared expert's down input.
     shared_row: usize = 0,
 };
@@ -46,7 +48,9 @@ pub fn plan(ws: *const work.Workspace, w: *const weights.Moe, c: Call) !Fusion {
     if (std.c.getenv("TF_DSV41_NO_FUSE_SHARED_DOWN") == null and !c.skip_shared and w.down_shared != null and
         try exl3.scratchBytes(2304, 5120, routed + r) <= room)
     {
-        return .{ .gateup = true, .shared_down = true, .shared_row = routed };
+        const combine = std.c.getenv("TF_DSV41_NO_FUSE_DOWN_COMBINE") == null and
+            std.c.getenv("TF_DSV41_SKIP_COMBINE") == null and std.c.getenv("TF_DSV41_DOUBLE_COMBINE") == null and c.picks <= 7;
+        return .{ .gateup = true, .shared_down = true, .down_combine = combine, .shared_row = routed };
     }
     // The shared rotated rows stay clear of the routed down call's scratch and of the gate+up sums they are read from.
     const row = (try exl3.scratchBytes(2304, 5120, routed) + rotated_row_bytes - 1) / rotated_row_bytes;

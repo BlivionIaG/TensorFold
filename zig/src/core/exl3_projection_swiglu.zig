@@ -351,6 +351,39 @@ pub fn encodeGateUpSwiGLU(p: *const Pipelines, e: mtl.ComputeEncoder, sums: View
     e.dispatchGroups(.{ .width = (d.k / 128 + 3) / 4, .height = d.rows + d.shared_rows }, .{ .width = 128 });
 }
 
+/// The routed picks' and the shared expert's down rows combined: the call's rotate_out and the weighted-sum's end.
+pub const DownCombine = struct {
+    tokens: usize,
+    picks: usize,
+    width: usize,
+    /// The table entry of the shared row (the routed count): its descriptor carries that row's scales and bias.
+    experts: usize,
+    y_stride: usize,
+    /// The sums row of token 0's shared output; the routed rows are token * picks + slot from row 0.
+    shared_row: usize,
+};
+
+pub fn encodeDownCombine(p: *const Pipelines, e: mtl.ComputeEncoder, sums: View, ids: View, descriptors: View, y: View, d: DownCombine) void {
+    const A = extern struct { rows: u32, picks: u32, width: u32, sums_stride: u32, experts: u32, y_stride: u32, shared_row: u32, reserved: u32 };
+    const args = A{
+        .rows = @intCast(d.tokens),
+        .picks = @intCast(d.picks),
+        .width = @intCast(d.width),
+        .sums_stride = @intCast(d.width),
+        .experts = @intCast(d.experts),
+        .y_stride = @intCast(d.y_stride),
+        .shared_row = @intCast(d.shared_row),
+        .reserved = 0,
+    };
+    e.setPipeline(p.down_combine);
+    bind(e, sums, 0);
+    bind(e, ids, 1);
+    bind(e, descriptors, 2);
+    bind(e, y, 3);
+    e.setValue(args, 4);
+    e.dispatchGroups(.{ .width = d.width / 128, .height = d.tokens }, .{ .width = 256 });
+}
+
 test "EXL3 scratch is row compact and bounded independently of full matrices" {
     // 214,016 was the pre-split-K bound; the formula now adds the split-K partials and the fused gate+up split room.
     try std.testing.expectEqual(@as(usize, 1025024), try scratchBytes(5120, 2304, 11));

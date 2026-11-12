@@ -417,6 +417,7 @@ pub fn moe(m: *Model, enc: *mtl.ComputeEncoder, e: ?*mtl.CommandBuffer, w: *cons
     routed_rows.prerotated = swiglu_rot;
     // The shared expert's down rows follow the routed rows: one more table entry, ids written by the fused pass.
     if (fused_pass.shared_down) routed_rows.count += rows;
+    routed_rows.no_epilogue = fused_pass.down_combine;
     const down_input: exl3.View = if (swiglu_rot) ws.projection() else convert(ws.view(.activation));
     for (0..down_passes) |_| if (!skip_experts) try exl3.encodeIndexed(&p.projection, encoder, .{ .descriptors = .{ .buffer = if (fused_pass.shared_down) w.down_shared.? else w.descriptors[2] }, .count = experts + @intFromBool(fused_pass.shared_down), .k = 2304, .n = 5120 }, down_input, convert(ws.view(.routed)), ws.projection(), routed_rows);
     try splitStage(m, enc, e, "down", 0);
@@ -492,7 +493,10 @@ pub fn moe(m: *Model, enc: *mtl.ComputeEncoder, e: ?*mtl.CommandBuffer, w: *cons
 
     const routed_view = ws.view(.routed);
     const shared_down_view = if (fused_pass.shared_down) View{ .buffer = routed_view.buffer, .offset = routed_view.offset + @as(usize, rows) * picks * 5120 * 2 } else ws.view(.shared_down);
-    if (std.c.getenv("TF_DSV41_SKIP_COMBINE") == null) ops.encodeCombine(encoder, &p.ops, ws.view(.routed), shared_down_view, ws.view(.route_ids), ws.view(.branch), .{ .rows = rows, .width = 5120, .routed_row_stride = picks * 5120, .slot_stride = 5120, .shared_stride = 5120, .y_stride = 5120, .id_stride = picks });
+    if (fused_pass.down_combine) {
+        const sums = exl3.sumsView(ws.projection(), routed_rows.count, 2304);
+        exl3.encodeDownCombine(&p.projection, encoder, sums, convert(ws.view(.route_ids)), .{ .buffer = w.down_shared.? }, convert(ws.view(.branch)), .{ .tokens = rows, .picks = picks, .width = 5120, .experts = experts, .y_stride = 5120, .shared_row = @as(usize, rows) * picks });
+    } else if (std.c.getenv("TF_DSV41_SKIP_COMBINE") == null) ops.encodeCombine(encoder, &p.ops, ws.view(.routed), shared_down_view, ws.view(.route_ids), ws.view(.branch), .{ .rows = rows, .width = 5120, .routed_row_stride = picks * 5120, .slot_stride = 5120, .shared_stride = 5120, .y_stride = 5120, .id_stride = picks });
     // A second identical pass leaves the value unchanged and isolates the kernel in place.
     if (std.c.getenv("TF_DSV41_DOUBLE_COMBINE") != null) ops.encodeCombine(encoder, &p.ops, ws.view(.routed), shared_down_view, ws.view(.route_ids), ws.view(.branch), .{ .rows = rows, .width = 5120, .routed_row_stride = picks * 5120, .slot_stride = 5120, .shared_stride = 5120, .y_stride = 5120, .id_stride = picks });
     encoder.barrier();
