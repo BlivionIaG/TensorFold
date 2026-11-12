@@ -22,6 +22,8 @@ pub const Hook = struct {
     post: *const fn (ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize, rows: usize, prefill: bool) Error!void,
     /// Hit-first (docs/LATENCY.md M2), when the store has it on.
     first: ?HitFirst = null,
+    /// Chunked staging of a prompt span (docs/LATENCY.md F1), when the store has it on.
+    chunked: ?Chunked = null,
 };
 
 /// The stage in two halves for a decode layer whose experts the card checks itself: `begin` queues the check, which also splits the plan's `items`
@@ -35,6 +37,18 @@ pub const HitFirst = struct {
     begin: *const fn (ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize, rows: usize, items: u64, count: usize) Error!bool,
     finish: *const fn (ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize) Error!void,
     off: *const fn (ctx: *anyopaque) void,
+};
+
+/// A prompt span's layer whose experts the host stages in chunks and answers progressively: `begin` queues the trace and request, the wait for the host's first
+/// answer (which names each expert's chunk and its place in the scratch), the table row copy and the split of the plan's `items` into `chunks` arrays (array c at
+/// `items + c * stride`, each with only chunk c's experts' pair counts); array 0 is the experts that need no staging. `wait` queues the stream's wait for chunk
+/// c's experts to land. `begin` queues nothing and returns false when the layer is not staged this way.
+pub const Chunked = struct {
+    items: u64,
+    stride: u64,
+    chunks: usize,
+    begin: *const fn (ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize, rows: usize, items: u64, count: usize) Error!bool,
+    wait: *const fn (ctx: *anyopaque, o: Ops, chunk: usize) Error!void,
 };
 
 pub const Error = ops.Error;
@@ -196,6 +210,25 @@ fn expertParts(o: Ops, kind: Kind, r: Routed, x: Tensor, rows: usize, logits: u6
     }
     // offloaded experts: the picks go to the host, which puts those experts where the card reads them before the GEMVs below run
     if (ex.hook) |h| {
+        if (o.prefill and ex.shared == null) if (h.chunked) |hc| {
+            if (try hc.begin(h.ctx, o, h.layer, pick, pairs, rows, items, count)) {
+                // chunk by chunk: the GEMMs of the experts already in a line, then those of each chunk as the copy engine delivers it (the three products of a
+                // chunk write the same scratch, which the next chunk takes back; the pairs of different chunks are different rows)
+                const t = @min(tile, rows);
+                const m = o.arena.mark();
+                var y: u64 = 0;
+                for (0..hc.chunks) |c| {
+                    if (c > 0) try hc.wait(h.ctx, o, c);
+                    o.arena.release(m);
+                    const it = hc.items + c * hc.stride;
+                    const both = try o.projectRouted(x, ex.fused, it, count, members, pairs, slots, t);
+                    const act: Tensor = .{ .ptr = try o.arena.take(pairs * ex.width * kind.size()), .kind = kind };
+                    try o.moeActItems(both, act, it, members, count, t, ex.width, ex.limit);
+                    y = try o.projectRouted(act, ex.down, it, count, members, pairs, 1, t);
+                }
+                return .{ .y = y };
+            }
+        };
         if (h.first) |hf| {
             if (ex.shared == null and try hf.begin(h.ctx, o, h.layer, pick, pairs, rows, items, count)) {
                 // hit-first: the experts already in a cache line run while the host answers for the others (the pairs are disjoint between the two

@@ -138,6 +138,25 @@ fn itemBytes(shape: Shape) usize {
     return std.mem.alignForward(usize, 2 * split_rows * shape.picks * 12, 256);
 }
 
+/// One of the arrays the chunked staging writes: the plan's entries for the most items a prompt span plans (its rows' next power of two times the picks, as `moe.capacity` has it).
+fn chunkItemBytes(shape: Shape) usize {
+    const rows = std.math.ceilPowerOfTwo(usize, shape.trace_rows) catch shape.trace_rows;
+    const pairs = rows * shape.picks;
+    return std.mem.alignForward(usize, (@min(pairs, shape.experts + 1) + pairs / 8 + 8) * 12, 256);
+}
+
+/// TF_EXPERT_PREFILL_CHUNKS: the chunks a prompt span's layer is staged in (2 to `max_chunks`), 0 when unset or out of range.
+fn chunksWanted() usize {
+    const v = platform.getenv("TF_EXPERT_PREFILL_CHUNKS") orelse return 0;
+    const k = std.fmt.parseInt(usize, v, 10) catch return 0;
+    return if (k >= 2 and k <= max_chunks) k else 0;
+}
+
+/// The chunk of the `i`-th of `total` experts a stage copies: 1 to `k`, each chunk the same number of experts give or take one.
+fn chunkOf(i: usize, total: usize, k: usize) usize {
+    return 1 + i * k / total;
+}
+
 /// The header of each layer's table (plan.hpp): flags address, first slot, bytes of the slots, bytes of a slot.
 const header_bytes: usize = 64;
 
@@ -159,6 +178,8 @@ const SignalWord = struct { s: Signal, store: SignalStore, free: SignalFree };
 const Ack = struct {
     host: *u32,
     host_dev: u64,
+    /// The window's first byte: a prompt span's chunk words are host words after the control ones when the ack is not a signal word.
+    base: [*]u8,
     signal: ?SignalWord = null,
 
     /// The address the stream waits on and the check kernel stores to.
@@ -167,16 +188,31 @@ const Ack = struct {
     }
 
     fn waitPtr(a: *const Ack) ?*anyopaque {
-        return if (a.signal) |g| @ptrFromInt(g.s.gpu_va) else a.host;
+        return a.waitPtrAt(0);
+    }
+
+    /// Word `idx` (0 the stage's ack, c the arrival of chunk c of a prompt span's stage).
+    fn waitPtrAt(a: *const Ack, idx: usize) ?*anyopaque {
+        if (a.signal) |g| return @ptrFromInt(g.s.gpu_va + idx * g.s.stride);
+        return if (idx == 0) a.host else @ptrCast(a.base + chunk_word_at + idx * 64);
     }
 
     /// The host answers job `n`: everything it stored before is visible to the card once its wait is released.
     fn publish(a: *const Ack, n: u32) bool {
-        if (a.signal) |g| return g.store(&g.s, 0, n) == 0;
-        @atomicStore(u32, a.host, n, .release);
+        return a.publishAt(0, n);
+    }
+
+    fn publishAt(a: *const Ack, idx: usize, n: u32) bool {
+        if (a.signal) |g| return g.store(&g.s, @intCast(idx), n) == 0;
+        @atomicStore(u32, @as(*u32, @ptrCast(@alignCast(a.waitPtrAt(idx)))), n, .release);
         return true;
     }
 };
+
+/// A prompt span's layer may be staged in this many chunks at most (words after `ack_at`'s in the window, or in the signal block).
+pub const max_chunks: usize = 8;
+/// The first chunk word of the host ack (chunk c at this + 64 c; the control words are below).
+const chunk_word_at: usize = 192;
 
 /// A window slot to fill after the answer: the slot, and the expert whose blob goes there.
 const Fill = struct { slot: u32, expert: u32 };
@@ -185,6 +221,8 @@ const Job = struct {
     layer: u32,
     rows: u32,
     prefill: bool,
+    /// The span's stage is answered in chunks (`Chunked` of the hook): the first answer names each expert's chunk, each chunk then has its own word.
+    chunked: bool = false,
     /// The card checked this stage itself (its picks are in the layer's trace slot, and it may have passed the stage without asking).
     split: bool = false,
 };
@@ -198,6 +236,8 @@ const Pool = struct {
     /// A prompt span's staging: one layer's every routed expert in device memory (SDMA copies from the window, which a stage waits for before it answers).
     scratch: DeviceBuffer,
     copy: Stream,
+    /// Chunked staging: one event a chunk (index c - 1), recorded on `copy` after the chunk's uploads.
+    events: [max_chunks]?Event = @splat(null),
 };
 
 pub const Store = struct {
@@ -216,6 +256,8 @@ pub const Store = struct {
     resident_off: usize,
     dtrace_off: usize,
     flags_off: usize,
+    /// A prompt span's chunk of each expert of the layer being staged (u32 an expert, written before the first answer).
+    cmap_off: usize,
     slots_off: usize,
     nslots: usize,
     /// The tables in device memory the GEMVs read (layers x row stride), then a word a layer for the check's verdict; null: the plain handshake only.
@@ -227,6 +269,11 @@ pub const Store = struct {
     /// Hit-first (M2): the card's check splits the plan's items into two arrays in `items_dev` (TF_EXPERT_HITFIRST=1), and the stream runs the hit items' GEMVs before its wait.
     hitfirst: bool = false,
     items_dev: ?DeviceBuffer = null,
+    /// Chunked staging of a prompt span (F1, TF_EXPERT_PREFILL_CHUNKS=K, 2 to `max_chunks`): the plan's items in `nchunks` = K + 1 arrays of `chunk_stride` bytes (array 0 the
+    /// experts already in a line), in `chunk_items`; 0 chunks: a span's stage answers once, after every copy.
+    chunk_items: ?DeviceBuffer = null,
+    nchunks: usize = 0,
+    chunk_stride: usize = 0,
     ack: Ack,
     /// Slot states: 0 free, 1 holds a layer's expert this stage, 2 is the source of an admission in flight.
     used: []u8,
@@ -262,7 +309,7 @@ pub const Store = struct {
     const seen_at: usize = 128;
 
     /// The window's head layout for `shape` with room for `nslots` slot flags: where each part starts.
-    const Layout = struct { ptab: usize, trace: usize, resident: usize, dtrace: usize, flags: usize, slots: usize };
+    const Layout = struct { ptab: usize, trace: usize, resident: usize, dtrace: usize, flags: usize, cmap: usize, slots: usize };
 
     fn layoutOf(shape: Shape, nslots: usize) Layout {
         const page = 4096;
@@ -271,7 +318,8 @@ pub const Store = struct {
         const resident = trace + std.mem.alignForward(usize, shape.trace_rows * shape.picks * 4, page);
         const dtrace = resident + std.mem.alignForward(usize, shape.layers * shape.experts * 8, page);
         const flags = dtrace + std.mem.alignForward(usize, shape.layers * split_rows * shape.picks * 4, page);
-        return .{ .ptab = ptab, .trace = trace, .resident = resident, .dtrace = dtrace, .flags = flags, .slots = flags + std.mem.alignForward(usize, nslots * 4, page) };
+        const cmap = flags + std.mem.alignForward(usize, nslots * 4, page);
+        return .{ .ptab = ptab, .trace = trace, .resident = resident, .dtrace = dtrace, .flags = flags, .cmap = cmap, .slots = cmap + std.mem.alignForward(usize, (shape.experts + 1) * 4, page) };
     }
 
     /// Bytes of the window's head (control, tables, traces, residency, flags) for `shape`, with the flags of up to `nslots` slots.
@@ -346,10 +394,19 @@ pub const Store = struct {
             } else |_| std.log.warn("experts: no device memory for the hit-first item arrays: stages run the plain way", .{});
         }
         errdefer if (items_dev) |*b| b.free();
-        var ack: Ack = .{ .host = @ptrCast(@alignCast(win.bytes[ack_at..].ptr)), .host_dev = win_dev + ack_at };
+        // chunked staging of prompt spans (F1): off unless TF_EXPERT_PREFILL_CHUNKS names a chunk count
+        const chunk_k: usize = if (rows_dev != null) chunksWanted() else 0;
+        var chunk_items: ?DeviceBuffer = null;
+        if (chunk_k > 0) {
+            if (DeviceBuffer.alloc(r, (chunk_k + 1) * chunkItemBytes(shape))) |b| {
+                chunk_items = b;
+            } else |_| std.log.warn("experts: no device memory for the chunked staging's item arrays: prompt spans answer once", .{});
+        }
+        errdefer if (chunk_items) |*b| b.free();
+        var ack: Ack = .{ .host = @ptrCast(@alignCast(win.bytes[ack_at..].ptr)), .host_dev = win_dev + ack_at, .base = win.bytes.ptr };
         // the ack is a VRAM signal word when the runtime has them (docs/LATENCY.md C3), unless TF_EXPERT_ACK=host
         const ack_host = if (platform.getenv("TF_EXPERT_ACK")) |mode| std.mem.eql(u8, mode, "host") else false;
-        if (!ack_host) ack.signal = openSignal(r);
+        if (!ack_host) ack.signal = openSignal(r, if (chunk_items != null) 1 + max_chunks else 1);
         errdefer if (ack.signal) |*g| {
             _ = g.free(&g.s);
         };
@@ -366,6 +423,7 @@ pub const Store = struct {
             .resident_off = layout.resident,
             .dtrace_off = layout.dtrace,
             .flags_off = layout.flags,
+            .cmap_off = layout.cmap,
             .slots_off = layout.slots,
             .nslots = nslots,
             .rows_dev = rows_dev,
@@ -373,6 +431,9 @@ pub const Store = struct {
             .early = !envOff("TF_EXPERT_FLAGS"),
             .hitfirst = items_dev != null,
             .items_dev = items_dev,
+            .chunk_items = chunk_items,
+            .nchunks = if (chunk_items != null) chunk_k + 1 else 0,
+            .chunk_stride = chunkItemBytes(shape),
             .ack = ack,
             .used = used,
             .wait32 = wait32,
@@ -415,7 +476,7 @@ pub const Store = struct {
         return std.mem.eql(u8, v, "1");
     }
 
-    fn openSignal(r: *const Runtime) ?SignalWord {
+    fn openSignal(r: *const Runtime, nwords: u32) ?SignalWord {
         const lib: *@TypeOf(r.lib) = @constCast(&r.lib);
         const alloc = lib.lookup(SignalAlloc, "hipmacSignalAlloc");
         const store = lib.lookup(SignalStore, "hipmacSignalStore");
@@ -425,7 +486,7 @@ pub const Store = struct {
             return null;
         }
         var sig: Signal = undefined;
-        if (alloc.?(1, &sig) != 0) {
+        if (alloc.?(nwords, &sig) != 0) {
             std.log.warn("experts: no signal word could be allocated: the ack stays in host memory", .{});
             return null;
         }
@@ -437,6 +498,7 @@ pub const Store = struct {
         s.stopWorker();
         if (s.pool) |*p| {
             p.copy.deinit();
+            for (&p.events) |*ev| if (ev.*) |*x| x.deinit();
             p.scratch.free();
             for (p.chunks) |*c| c.free();
             s.gpa.free(p.chunks);
@@ -446,6 +508,7 @@ pub const Store = struct {
         if (s.ack.signal) |*g| _ = g.free(&g.s);
         if (s.rows_dev) |*b| b.free();
         if (s.items_dev) |*b| b.free();
+        if (s.chunk_items) |*b| b.free();
         s.gpa.free(s.jobs);
         s.gpa.free(s.fills);
         s.gpa.free(s.slot_of);
@@ -518,6 +581,12 @@ pub const Store = struct {
                 .begin = begin,
                 .finish = finish,
                 .off = hitFirstOff,
+            } else null, .chunked = if (s.chunk_items) |b| .{
+                .items = b.base(),
+                .stride = s.chunk_stride,
+                .chunks = s.nchunks,
+                .begin = chunkBegin,
+                .wait = chunkWait,
             } else null },
         };
     }
@@ -595,6 +664,11 @@ pub const Store = struct {
         errdefer scratch.free();
         var copy = try Stream.init(s.r);
         errdefer copy.deinit();
+        var events: [max_chunks]?Event = @splat(null);
+        errdefer for (&events) |*ev| if (ev.*) |*x| x.deinit();
+        if (s.nchunks > 1) for (events[0 .. s.nchunks - 1]) |*ev| {
+            ev.* = try Event.init(s.r, false);
+        };
         const cache = try policy.Cache.init(s.gpa, .{
             .keys = keys,
             .lines = lines,
@@ -603,7 +677,7 @@ pub const Store = struct {
             .expert_bytes = blob,
             .protect_pct = protect_pct,
         }, s.residentWords(), line_addr);
-        s.pool = .{ .chunks = chunks, .per_chunk = per_chunk, .cache = cache, .line_addr = line_addr, .scratch = scratch, .copy = copy };
+        s.pool = .{ .chunks = chunks, .per_chunk = per_chunk, .cache = cache, .line_addr = line_addr, .scratch = scratch, .copy = copy, .events = events };
     }
 
     pub fn lineCount(s: *const Store) usize {
@@ -711,6 +785,38 @@ pub const Store = struct {
         s.hitfirst = false;
     }
 
+    /// Chunked staging, first half (moe.Chunked.begin): the job is announced, and the stream queued the trace and the request, the wait for the first answer, the table row copy
+    /// and the split of the plan's items by the chunk each expert arrives in.
+    fn chunkBegin(ctx: *anyopaque, o: Ops, layer: u32, picks: u64, pairs: usize, rows: usize, items: u64, count: usize) moe.Error!bool {
+        const s: *Store = @ptrCast(@alignCast(ctx));
+        if (o.stream == @import("launches/util.zig").counting) return false;
+        const b = s.chunk_items orelse return false;
+        if (s.pool == null or !o.prefill or rows == 0 or rows > s.shape.trace_rows or s.worker == null) return false;
+        if (count * 12 > s.chunk_stride) return false;
+        const n = s.announce(.{ .layer = layer, .rows = @intCast(rows), .prefill = true, .chunked = true });
+        const e = s.shape.experts;
+        const stride = s.shape.rowStride();
+        const table = s.rows_dev.?.base() + layer * stride + header_bytes;
+        const need = s.rows_dev.?.base() + s.shape.layers * stride + layer * 64;
+        const host_table = s.win_dev + s.ptab_off + layer * stride + header_bytes;
+        try o.expertTrace(picks, pairs, s.win_dev + s.trace_off);
+        try runtime.check(s.write32(o.stream, s.win.bytes[req_at..].ptr, n, 0));
+        try runtime.check(s.wait32(o.stream, s.ack.waitPtr(), n, wait_gte, 0xffff_ffff));
+        try o.l.tf_expert_rows(@ptrFromInt(picks), @intCast(pairs), @intCast(e), host_table, table, need, true, o.stream);
+        try o.l.tf_expert_chunks(@ptrFromInt(items), @intCast(count), @intCast(e), s.win_dev + s.cmap_off, @intCast(s.nchunks), @intCast(s.chunk_stride / 4), b.base(), o.stream);
+        return true;
+    }
+
+    /// Chunked staging, second half: the stream's wait for chunk `c` of the job `chunkBegin` announced to have landed.
+    fn chunkWait(ctx: *anyopaque, o: Ops, c: usize) moe.Error!void {
+        const s: *Store = @ptrCast(@alignCast(ctx));
+        try runtime.check(s.wait32(o.stream, s.ack.waitPtrAt(c), s.posted, wait_gte, 0xffff_ffff));
+    }
+
+    fn chunkWords(s: *Store) []u32 {
+        return @as([*]u32, @ptrCast(@alignCast(s.win.bytes[s.cmap_off..].ptr)))[0 .. s.shape.experts + 1];
+    }
+
     fn workerMain(s: *Store) void {
         // busy CPUs must not delay the answer to a request: the card is waiting for it
         _ = platform.c.pthread_set_qos_class_self_np(.USER_INTERACTIVE, 0);
@@ -759,6 +865,7 @@ pub const Store = struct {
 
     /// Stage `job`: decide, write the table row, answer, and (answered early) fill the window slots.
     fn serve(s: *Store, job: Job, n: u32) void {
+        if (job.chunked) return s.serveChunked(job, n);
         // a prompt span's stage copies before it answers (its scratch copies read the slots)
         const early = s.early and !job.prefill;
         s.stage(job, early) catch s.failed.store(true, .release);
@@ -768,6 +875,103 @@ pub const Store = struct {
             s.fill();
             s.stats.fill_ns += nowNs() - began;
         }
+    }
+
+    /// A prompt span's stage in chunks: whatever happens, every word the card waits for is released.
+    fn serveChunked(s: *Store, job: Job, n: u32) void {
+        s.stageChunked(job, n) catch {
+            s.failed.store(true, .release);
+            _ = s.ack.publish(n);
+            for (1..s.nchunks) |c| _ = s.ack.publishAt(c, n);
+        };
+    }
+
+    /// A prompt span's stage in chunks (F1): the experts the cache holds are chunk 0; each other expert gets its place in the scratch and its chunk (the table row and the
+    /// chunk map), and the first answer (`ack`) goes out at once, before any copy; then the blobs go window slot -> scratch chunk by chunk on the copy stream, and the word of
+    /// chunk c is stored when its uploads have landed, which is when the span's GEMMs for those experts may run.
+    fn stageChunked(s: *Store, job: Job, n: u32) error{StageFailed}!void {
+        const p = &(s.pool orelse return error.StageFailed);
+        const e = s.shape.experts;
+        const picks = s.shape.picks;
+        const layer: usize = job.layer;
+        const blob = s.shape.blobBytes();
+        const k = s.nchunks - 1;
+        const words = s.traceWords();
+        const base: policy.Id = @intCast(layer * e);
+        s.mark_serial +%= 1;
+        if (s.mark_serial == 0) {
+            @memset(s.mark, 0);
+            s.mark_serial = 1;
+        }
+        var uniq: [4096]u32 = undefined;
+        var nu: usize = 0;
+        if (job.rows > s.shape.trace_rows) return error.StageFailed;
+        for (0..job.rows) |r| for (words[r * picks ..][0 .. picks - 1]) |id| {
+            if (id < 0 or id >= e) continue;
+            const x: u32 = @intCast(id);
+            if (s.mark[x] != s.mark_serial) {
+                s.mark[x] = s.mark_serial;
+                if (nu >= uniq.len) return error.StageFailed;
+                uniq[nu] = x;
+                nu += 1;
+            }
+        };
+        // the layer's half of the window is free again (its previous layer's GEMMs have finished, which the request of this one is ordered after)
+        const half = layer & 1;
+        const per_half = s.nslots / 2;
+        for (s.used[half * per_half ..][0..per_half]) |*u| {
+            if (u.* == 1) u.* = 0;
+        }
+        const table = s.hostRow(layer);
+        const host = s.host[layer] orelse return error.StageFailed;
+        const cmap = s.chunkWords();
+        var staged: usize = 0;
+        for (uniq[0..nu]) |x| {
+            if (p.cache.address(base + x) == null) staged += 1;
+        }
+        if (staged > s.fills.len) return error.StageFailed;
+        var i: usize = 0;
+        for (uniq[0..nu]) |x| {
+            if (p.cache.address(base + x)) |line| {
+                table[2 * x] = line;
+                table[2 * x + 1] = 0;
+                cmap[x] = 0;
+                continue;
+            }
+            const w = s.takeSlot(half, per_half) orelse return error.StageFailed;
+            s.fills[i] = .{ .slot = @intCast(w), .expert = x };
+            table[2 * x] = p.scratch.base() + i * blob;
+            table[2 * x + 1] = 0;
+            cmap[x] = @intCast(chunkOf(i, staged, k));
+            s.stats.window_bytes += blob;
+            i += 1;
+        }
+        if (!s.ack.publish(n)) return error.StageFailed;
+        // chunk by chunk; a chunk's word goes out once its event has passed, which is checked as the next chunk's copies are queued
+        var pending: usize = 0;
+        i = 0;
+        for (1..k + 1) |c| {
+            while (i < staged and chunkOf(i, staged, k) == c) : (i += 1) {
+                const f = s.fills[i];
+                @memcpy(s.slotBytes(f.slot), host[f.expert * blob ..][0..blob]);
+                p.scratch.uploadAsync(i * blob, s.win.view(s.slots_off + f.slot * blob, s.slots_off + (f.slot + 1) * blob), p.copy) catch return error.StageFailed;
+                if (pending != 0 and (p.events[pending - 1].?.done() catch return error.StageFailed)) {
+                    if (!s.ack.publishAt(pending, n)) return error.StageFailed;
+                    pending = 0;
+                }
+            }
+            p.events[c - 1].?.record(p.copy) catch return error.StageFailed;
+            if (pending != 0) {
+                p.events[pending - 1].?.synchronize() catch return error.StageFailed;
+                if (!s.ack.publishAt(pending, n)) return error.StageFailed;
+            }
+            pending = c;
+        }
+        if (pending != 0) {
+            p.events[pending - 1].?.synchronize() catch return error.StageFailed;
+            if (!s.ack.publishAt(pending, n)) return error.StageFailed;
+        }
+        s.stats.scratch_bytes += staged * blob;
     }
 
     /// A hit job, late: the card passed the stage by itself, so the pool only needs the touches of its picks (from the stage's trace slot).
@@ -1211,4 +1415,83 @@ test "the worker answers a stage the card could not check and replays one the ca
     try std.testing.expectEqual(b.now, a.now);
     try std.testing.expectEqualSlices(u32, b.stamp, a.stamp);
     try std.testing.expectEqualSlices(i32, b.where, a.where);
+}
+
+test "a prompt span's stage in chunks: the first answer names each expert's chunk and place, then each chunk's word follows its copies, in order" {
+    const gpa = std.testing.allocator;
+    var r = try Runtime.open();
+    defer r.close();
+    var ctx = try @import("context.zig").Context.init(&r, 0);
+    defer ctx.deinit();
+    const shape: Shape = .{ .layers = 2, .experts = 8, .picks = 4, .trace_rows = 4, .part_bytes = .{ 64, 16, 16, 32, 16, 16 } };
+    const blob = shape.blobBytes();
+    _ = c_setenv("TF_EXPERT_PREFILL_CHUNKS", "2", 1);
+    const made = Store.init(gpa, &r, shape, 1 << 20);
+    _ = c_setenv("TF_EXPERT_PREFILL_CHUNKS", "0", 1);
+    var s = try made;
+    defer s.deinit();
+    try std.testing.expectEqual(@as(usize, 3), s.nchunks);
+    if (s.ack.signal) |*g| {
+        _ = g.free(&g.s);
+        s.ack.signal = null;
+    }
+    const t0 = try testTensors(gpa, shape, 1);
+    const t1 = try testTensors(gpa, shape, 2);
+    defer for (t0 ++ t1) |t| gpa.free(t);
+    try s.addLayer(0, t0);
+    try s.addLayer(1, t1);
+    try s.attachPool(24, 4, 0);
+    try s.start();
+    try s.beginRound();
+    // layer 1's span: two rows name experts 1 2 3 and 4 5 2 (the shared one's id, 8, last in each row); nothing is in a line, so five experts are staged in two chunks (3 and 2)
+    setPicks(&s, 0, &.{ 1, 2, 3, 8 });
+    setPicks(&s, 1, &.{ 4, 5, 2, 8 });
+    const n = s.announce(.{ .layer = 1, .rows = 2, .prefill = true, .chunked = true });
+    @atomicStore(u32, s.word(Store.req_at), n, .release);
+    while (!policy.reached(@atomicLoad(u32, s.word(Store.ack_at), .acquire), n)) std.atomic.spinLoopHint();
+    // the first answer names where each expert will be and which chunk it comes in
+    const cmap = s.chunkWords();
+    try std.testing.expectEqualSlices(u32, &.{ 1, 1, 1, 2, 2 }, cmap[1..6]);
+    const scratch = &s.pool.?.scratch;
+    const row = s.hostRow(1);
+    for ([_]usize{ 1, 2, 3, 4, 5 }, 0..) |x, i| try std.testing.expectEqual(scratch.base() + i * blob, row[2 * x]);
+    // the words come in chunk order, and the bytes of a chunk are in the scratch once its word is
+    var dev: [160]u8 = undefined;
+    var want: [160]u8 = undefined;
+    for ([_]usize{ 1, 2 }) |c| {
+        while (!policy.reached(@atomicLoad(u32, s.word(chunk_word_at + c * 64), .acquire), n)) std.atomic.spinLoopHint();
+        for ([_]usize{ 1, 2, 3, 4, 5 }, 0..) |x, i| {
+            if (cmap[x] != c) continue;
+            try scratch.download(i * blob, &dev);
+            blobOf(shape, t1, x, &want);
+            try std.testing.expectEqualSlices(u8, &want, &dev);
+        }
+    }
+    try s.endRound(1, 1000);
+    try std.testing.expect(!s.failed.load(.acquire));
+    try std.testing.expectEqual(@as(u64, 5 * blob), s.stats.scratch_bytes);
+}
+
+test "a chunked stage that fails still releases every word the card waits for" {
+    const gpa = std.testing.allocator;
+    var r = try Runtime.open();
+    defer r.close();
+    var ctx = try @import("context.zig").Context.init(&r, 0);
+    defer ctx.deinit();
+    const shape: Shape = .{ .layers = 2, .experts = 8, .picks = 4, .trace_rows = 4, .part_bytes = .{ 64, 16, 16, 32, 16, 16 } };
+    _ = c_setenv("TF_EXPERT_PREFILL_CHUNKS", "3", 1);
+    const made = Store.init(gpa, &r, shape, 1 << 20);
+    _ = c_setenv("TF_EXPERT_PREFILL_CHUNKS", "0", 1);
+    var s = try made;
+    defer s.deinit();
+    if (s.ack.signal) |*g| {
+        _ = g.free(&g.s);
+        s.ack.signal = null;
+    }
+    // no layer was added: the stage cannot find the host tier, and says so by failing
+    try s.attachPool(24, 4, 0);
+    setPicks(&s, 0, &.{ 1, 2, 3, 8 });
+    s.serveChunked(.{ .layer = 0, .rows = 1, .prefill = true, .chunked = true }, 7);
+    try std.testing.expect(s.failed.load(.acquire));
+    for (0..s.nchunks) |c| try std.testing.expectEqual(@as(u32, 7), @atomicLoad(u32, @as(*u32, @ptrCast(@alignCast(s.ack.waitPtrAt(c)))), .acquire));
 }

@@ -325,6 +325,40 @@ __global__ void moe_act_kernel(const float* __restrict__ both, T* __restrict__ o
     narrow(g / (1.f + expf(-g)) * u, out + i);
 }
 
+// moe_act_kernel's arithmetic over the pair rows of the plan's items alone: block (x, z) takes item z's rows (`members[first + r]` is a pair's row of `both` and
+// of `out`), so a layer whose experts arrive in chunks (the prompt span's progressive staging) activates each chunk's pairs when its GEMM has run. An item
+// with no pairs, which is what a chunk's plan holds for the other chunks' experts, returns at once.
+template <typename T>
+__device__ inline void moe_act_items_body(const float* __restrict__ both, T* __restrict__ out, const int* __restrict__ items,
+                                          const int* __restrict__ members, int width, float limit) {
+    const int* item = items + 3 * static_cast<long long>(blockIdx.y);
+    const long long total = static_cast<long long>(item[2]) * width;
+    const long long i = static_cast<long long>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i >= total) return;
+    const int r = static_cast<int>(i / width);
+    const int c = static_cast<int>(i - static_cast<long long>(r) * width);
+    const long long p = members[item[1] + r];
+    float g = both[p * 2 * width + c];
+    float u = both[p * 2 * width + width + c];
+    if (limit > 0.f) {
+        g = fminf(g, limit);
+        u = fminf(fmaxf(u, -limit), limit);
+    }
+    narrow(g / (1.f + expf(-g)) * u, out + p * width + c);
+}
+
+extern "C" __global__ void tf_moe_act_items_f16(const float* __restrict__ both, __half* __restrict__ out,
+                                                const int* __restrict__ items, const int* __restrict__ members, int width,
+                                                float limit) {
+    moe_act_items_body(both, out, items, members, width, limit);
+}
+
+extern "C" __global__ void tf_moe_act_items_bf16(const float* __restrict__ both, hip_bfloat16* __restrict__ out,
+                                                 const int* __restrict__ items, const int* __restrict__ members, int width,
+                                                 float limit) {
+    moe_act_items_body(both, out, items, members, width, limit);
+}
+
 template <typename T>
 __global__ void moe_combine_kernel(const float* __restrict__ y, const float* __restrict__ wts, T* __restrict__ out,
                                    int slots, int d) {

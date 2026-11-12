@@ -110,6 +110,18 @@ pub fn tf_moe_act(l: *const Launcher, both: CF, out: P, kind: c_int, pairs: c_in
     try l.go(l.moe_act[if (kind == 1) 0 else 1], dim(cdiv(total, 256), 1, 1), dim(256, 1, 1), 0, s, &a);
 }
 
+/// kernels/hip/ops/act.hip tf_moe_act_items: the activation of the pair rows of `count` plan items alone (`tile` the most pairs an item holds), same arithmetic as `tf_moe_act`.
+pub fn tf_moe_act_items(l: *const Launcher, both: CF, out: P, kind: c_int, items: CI, members: CI, count: c_int, tile: c_int, width: c_int, limit: f32, s: S) Error!void {
+    var a: Args = .{};
+    try a.add(ad(both));
+    try a.add(ad(out));
+    try a.add(ad(items));
+    try a.add(ad(members));
+    try a.add(width);
+    try a.add(limit);
+    try l.go(l.moe_act_items[if (kind == 1) 0 else 1], dim(cdiv(@as(i64, tile) * width, 256), count, 1), dim(256, 1, 1), 0, s, &a);
+}
+
 pub fn tf_moe_combine(l: *const Launcher, y: CF, wts: CF, out: P, kind: c_int, r: c_int, slots: c_int, d: c_int, s: S) Error!void {
     var a: Args = .{};
     try a.add(ad(y));
@@ -185,6 +197,21 @@ pub fn tf_expert_check(l: *const Launcher, picks: CI, pairs: c_int, experts: c_i
     try a.add(split.hit);
     try a.add(split.miss);
     try l.go(l.op.expert_check, dim(1, 1, 1), dim(256, 1, 1), 0, s, &a);
+}
+
+/// The plan's `items` (`count` entries) written `nchunks` times at `out` (`stride` ints apart), each keeping the pair counts of the experts `chunk` (host memory, a u32 an expert) puts in that chunk
+/// (kernels/hip/ops/moe.hpp tf_expert_chunks; one block).
+pub fn tf_expert_chunks(l: *const Launcher, items: CI, count: c_int, experts: c_int, chunk: u64, nchunks: c_int, stride: c_int, out: u64, s: S) Error!void {
+    if (comptime !@import("../kernels.zig").expert_ptrs) return invalid("expert_chunks");
+    var a: Args = .{};
+    try a.add(ad(items));
+    try a.add(count);
+    try a.add(experts);
+    try a.add(chunk);
+    try a.add(nchunks);
+    try a.add(stride);
+    try a.add(out);
+    try l.go(l.op.expert_chunks, dim(1, 1, 1), dim(256, 1, 1), 0, s, &a);
 }
 
 /// After the wait on the ack: the host's table row into the VRAM `row` for the picked experts when `need` is set, or for all `experts` when `all`.

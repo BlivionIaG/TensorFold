@@ -69,6 +69,8 @@ pub const Launcher = struct {
     moe_router: [2]Function, // fp16, bf16
     moe_select: Function,
     moe_act: [2]Function,
+    /// moe_act over the pair rows of a plan's items alone (the prompt span's chunked staging), fp16 and bf16.
+    moe_act_items: [2]Function,
     moe_combine: Triple,
     /// the same sum with a shared expert run beside the stack, weighted by wts' last slot
     moe_combine_gate: Function,
@@ -182,6 +184,8 @@ pub const Launcher = struct {
         /// The hit/miss split's check kernel and the row copy after the wait (docs/LATENCY.md M1).
         expert_check: if (kernels.expert_ptrs) Function else void,
         expert_rows: if (kernels.expert_ptrs) Function else void,
+        /// The prompt span's chunk split of a plan's items (docs/LATENCY.md F1).
+        expert_chunks: if (kernels.expert_ptrs) Function else void,
     };
 
     /// The prompt tile keeps main's sums and needs the edge pass after it: dot2 here ignores a zero's sign.
@@ -272,6 +276,7 @@ pub const Launcher = struct {
             .expert_trace = if (kernels.expert_ptrs) try ops.function("tf_expert_trace") else {},
             .expert_check = if (kernels.expert_ptrs) try ops.function("tf_expert_check") else {},
             .expert_rows = if (kernels.expert_ptrs) try ops.function("tf_expert_rows") else {},
+            .expert_chunks = if (kernels.expert_ptrs) try ops.function("tf_expert_chunks") else {},
         };
         const ns = "_ZN2tf4rocm";
         l.rms = .{
@@ -292,6 +297,7 @@ pub const Launcher = struct {
             try act.function(ns ++ "14moe_act_kernelI6__halfEEvPKfPT_ifx"),
             try act.function(ns ++ "14moe_act_kernelI12hip_bfloat16EEvPKfPT_ifx"),
         };
+        l.moe_act_items = .{ try act.function("tf_moe_act_items_f16"), try act.function("tf_moe_act_items_bf16") };
         l.moe_combine = .{
             try act.function(ns ++ "18moe_combine_kernelIfEEvPKfS3_PT_ii"),
             try act.function(ns ++ "18moe_combine_kernelI6__halfEEvPKfS4_PT_ii"),
@@ -380,12 +386,14 @@ pub const Launcher = struct {
     pub const tf_moe_router = moe.tf_moe_router;
     pub const tf_moe_select = moe.tf_moe_select;
     pub const tf_moe_act = moe.tf_moe_act;
+    pub const tf_moe_act_items = moe.tf_moe_act_items;
     pub const tf_moe_combine = moe.tf_moe_combine;
     pub const tf_moe_combine_gate = moe.tf_moe_combine_gate;
     pub const tf_moe_route = moe.tf_moe_route;
     pub const tf_expert_trace = moe.tf_expert_trace;
     pub const tf_expert_check = moe.tf_expert_check;
     pub const tf_expert_rows = moe.tf_expert_rows;
+    pub const tf_expert_chunks = moe.tf_expert_chunks;
     pub const tf_causal = attention.tf_causal;
     pub const tf_attn_gate = attention.tf_attn_gate;
     pub const tf_heads_rows = attention.tf_heads_rows;

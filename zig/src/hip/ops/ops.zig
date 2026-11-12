@@ -100,6 +100,7 @@ pub const Ops = struct {
     pub const moeRoute = moe.moeRoute;
     pub const expertTrace = moe.expertTrace;
     pub const moeAct = moe.moeAct;
+    pub const moeActItems = moe.moeActItems;
     pub const moeCombine = moe.moeCombine;
     pub const moeCombineGate = moe.moeCombineGate;
     pub const argmaxRows = draw.argmaxRows;

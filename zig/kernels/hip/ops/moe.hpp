@@ -165,6 +165,26 @@ extern "C" __global__ void __launch_bounds__(256) tf_expert_rows(const int* pick
         row[2 * static_cast<long long>(id) + 1] = __hip_atomic_load(host_row + 2 * static_cast<long long>(id) + 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
     }
 }
+
+// A prompt span's progressive staging (docs/LATENCY.md F1): after the host's first answer, `chunk[e]` (host memory) names the chunk the expert e of this layer arrives in
+// (0: already in a cache line; the shared expert, an id past `experts`, is chunk 0 too). The plan's `items` (`count` entries of expert, first pair, pairs) are
+// written `nchunks` times, array k at `out + k * stride` (ints), each keeping the pair counts of chunk k's experts and zeroing the others', so a GEMM
+// launched over array k does only the work whose weights have landed when chunk k's word is released. One block.
+extern "C" __global__ void __launch_bounds__(256) tf_expert_chunks(const int* items, int count, int experts, const unsigned* chunk,
+                                                                    int nchunks, int stride, int* out) {
+    for (int z = threadIdx.x; z < count; z += blockDim.x) {
+        const int e = items[3 * z];
+        const int pairs = items[3 * z + 2];
+        const int k_of = (e < 0 || e >= experts) ? 0
+            : static_cast<int>(__hip_atomic_load(chunk + e, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM));
+        for (int k = 0; k < nchunks; ++k) {
+            int* dst = out + static_cast<long long>(k) * stride + 3 * z;
+            dst[0] = e;
+            dst[1] = items[3 * z + 1];
+            dst[2] = (k == k_of) ? pairs : 0;
+        }
+    }
+}
 #endif
 
 // moe_router_kernel's logits with a wave's expert row read once for 8 token rows; each logit keeps its bits.

@@ -51,6 +51,11 @@ pub fn moeAct(o: Ops, both: u64, out: Tensor, pairs: usize, width: usize, limit:
     try o.l.tf_moe_act(f(both), p(out.ptr), @backingInt(out.kind), int(pairs), int(width), limit, o.stream);
 }
 
+/// `moeAct` over the pair rows of the plan's `items` alone (`count` entries, up to `tile` pairs each): the rows of the other items are left as they are.
+pub fn moeActItems(o: Ops, both: u64, out: Tensor, items: u64, members: u64, count: usize, tile: usize, width: usize, limit: f32) Error!void {
+    try o.l.tf_moe_act_items(f(both), p(out.ptr), @backingInt(out.kind), @ptrFromInt(items), @ptrFromInt(members), int(count), int(tile), int(width), limit, o.stream);
+}
+
 pub fn moeCombine(o: Ops, y: u64, wts: u64, out: Tensor, r: usize, slots: usize, d: usize) Error!void {
     try o.l.tf_moe_combine(f(y), f(wts), p(out.ptr), @backingInt(out.kind), int(r), int(slots), int(d), o.stream);
 }
