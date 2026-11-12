@@ -75,3 +75,19 @@ test "remote prefix 64 rows short of the prompt, kept: the same prompt again res
     _ = try fixture.runKeep(&peer, &.{ .prompt = &prompt, .max_tokens = 2 }, null, &s, .{ .keep = true });
     try t.expectEqual(@as(u32, 1), peer.fills);
 }
+
+test "remote prefix 64 rows short, a family that keeps ends: the landed prefix is kept beside the end state and a repeat resumes it" {
+    var prompt: [1000]u32 = undefined;
+    for (&prompt, 0..) |*token, i| token.* = @intCast(i + 1);
+    var none: u8 = 0;
+    var s = pc.Store.init(t.allocator, .{ .ptr = &none, .vtable = &.{ .bytes = Blank.bytes, .save = Blank.save, .restore = Blank.restore, .drop = Blank.drop } }, .{ .planned = true, .grid = 128, .tail = true, .tail_align = 128, .min_prompt = 0, .min_gap = 64, .end_mark = true }, 1 << 20);
+    defer s.deinit();
+    var peer: fixture.Peer = .{ .at = 936 };
+    defer peer.kept.deinit(t.allocator);
+    _ = try fixture.runKeep(&peer, &.{ .prompt = &prompt, .max_tokens = 1 }, null, &s, .{ .keep = true });
+    var landed = false;
+    for (s.entries.items) |e| landed = landed or e.at == 936;
+    try t.expect(landed);
+    _ = try fixture.runKeep(&peer, &.{ .prompt = &prompt, .max_tokens = 2 }, null, &s, .{ .keep = true });
+    try t.expectEqual(@as(u32, 1), peer.fills);
+}

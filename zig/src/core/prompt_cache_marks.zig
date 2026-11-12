@@ -91,7 +91,13 @@ pub fn marksRewind(s: *const Store, a: Allocator, prompt: []const u32, from: u32
             }
         }
     }
-    // A pull leaving the pass nothing to keep: the landed prefix itself is the state a repeat resumes.
-    if (out.items.len == 0 and s.resume_floor > 0 and from == s.resume_floor and !short and from + s.rules.lookahead <= prompt.len and s.usable(from, starts)) try out.append(a, from);
+    // No mark below the prompt's end (an end state serves no repeat): the landed prefix is what a repeat resumes.
+    const serves = for (out.items) |m| {
+        if (m < prompt.len) break true;
+    } else false;
+    if (!serves and s.resume_floor > 0 and from == s.resume_floor and !short and from + s.rules.lookahead <= prompt.len and s.usable(from, starts)) {
+        try out.append(a, from);
+        std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+    }
     return out.toOwnedSlice(a);
 }
