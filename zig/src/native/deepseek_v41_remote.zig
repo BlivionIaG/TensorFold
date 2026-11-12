@@ -314,7 +314,7 @@ pub const Link = struct {
         const key = try q27.apiKey(gpa, io);
         errdefer if (key) |k| gpa.free(k);
         l.http = .{ .gpa = gpa, .io = io, .url = try std.fmt.allocPrint(gpa, "{s}/v1/completions", .{base}), .model = "", .closing = &l.pull.closing, .key = key };
-        l.pull = .{ .gpa = gpa, .io = io, .model = m, .route = gate, .link = &l.relink, .more = l.more, .http = &l.http, .remote = .{ .gpa = gpa, .policy = rules, .client = &l.relink.client, .peers = l.peers, .trigger = l.http.trigger(), .renew = .{ .ptr = &l.pull, .renew_fn = Pull.renewAfterTrigger }, .model = id, .protocol = fabric.wire.recurrent_version, .stream = try @import("sys").environment.read(bool, "TF_PREFILL_STREAM", false) } };
+        l.pull = .{ .gpa = gpa, .io = io, .model = m, .route = gate, .link = &l.relink, .more = l.more, .http = &l.http, .remote = .{ .gpa = gpa, .policy = rules, .client = &l.relink.client, .peers = l.peers, .trigger = l.http.trigger(), .renew = .{ .ptr = &l.pull, .renew_fn = Pull.renewAfterTrigger }, .model = id, .protocol = fabric.wire.recurrent_version, .stream = try @import("sys").environment.read(bool, "TF_PREFILL_STREAM", true) } };
         return l;
     }
 

@@ -5,6 +5,7 @@ const quiet = @import("builtin").is_test; // a test's stderr is the build runner
 const api = @import("engine_api");
 const lanes = @import("lanes");
 const model = @import("cuda_model.zig");
+const graphs_mod = @import("graphs.zig");
 const ln = @import("draft/lanes.zig");
 const drive = @import("draft/drive.zig");
 const costs_mod = @import("draft/costs.zig");
@@ -175,6 +176,8 @@ pub const Served = struct {
             std.c.getenv("TF_ROCE") != null,
             if (round_graph.current()) |rg| rg.split or rg.gate else |_| false,
             std.c.getenv("TF_DSV41_ROUND_GRAPH") != null,
+            if (graphs_mod.Settings.fromEnvOr(m.f.graphs_default)) |gs| gs.on else |_| false,
+            std.c.getenv("TF_DSV41_GRAPHS") != null,
             m.f.opts.branches,
             std.c.getenv("TF_DSV41_BRANCHES") != null,
         );

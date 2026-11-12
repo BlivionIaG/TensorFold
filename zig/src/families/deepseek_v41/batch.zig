@@ -91,7 +91,7 @@ pub const Batch = struct {
         var assembled = false;
         errdefer if (assembled) b.deinit() else gpa.destroy(b);
         const r = f.runner;
-        // graphs as the one-slot forward's default (served: on unless TF_DSV41_GRAPHS=0; the gates' drivers: off)
+        // graphs as the one-slot forward's default (cuda_model.zig: the served model is on unless TF_DSV41_GRAPHS=0; the gates' drivers: off)
         const s = try graphs.Settings.fromEnvOr(f.graphs_default);
         var tab = try Table.init(r.d, cap);
         errdefer if (!assembled) tab.deinit();
