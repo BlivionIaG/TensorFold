@@ -70,3 +70,5 @@ pub const encodeSwiGLUPreRotate = swi.encodeSwiGLUPreRotate;
 pub const sumsView = swi.sumsView;
 pub const GateUpRot = swi.GateUpRot;
 pub const encodeGateUpSwiGLU = swi.encodeGateUpSwiGLU;
+pub const DownCombine = swi.DownCombine;
+pub const encodeDownCombine = swi.encodeDownCombine;

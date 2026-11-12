@@ -241,7 +241,7 @@ test "the shared expert's down inside the routed down call keeps every bit of th
         const down_rows = ex.Rows{ .count = routed, .x_stride = mid, .y_stride = out_n, .routes = .{ .ids = .{ .buffer = f.route_ids }, .repeat = 1 }, .input_rows = routed, .prerotated = true };
         try ex.encodeIndexed(&f.p, e, .{ .descriptors = .{ .buffer = f.down }, .count = experts, .k = mid, .n = out_n }, .{ .buffer = scratch_ref }, .{ .buffer = routed_ref }, .{ .buffer = scratch_ref }, down_rows);
         try ex.encode(&f.p, e, f.mats[3 * experts + 2].matrix, .{ .buffer = scratch_shared }, .{ .buffer = shared_ref }, .{ .buffer = scratch_shared }, .{ .count = tokens, .x_stride = mid, .y_stride = out_n, .prerotated = true });
-        // The fused calls: the gate+up pass leaves the shared rows after the routed ones and the shared id after the picks.
+        // The fused calls: the shared rows follow the routed ones, and the shared id follows the picks.
         try f.gateUp(e, gate, scratch_fused, true);
         const sums = ex.sumsView(.{ .buffer = scratch_fused }, count, hidden);
         const shared_table = ex.View{ .buffer = f.down_shared, .offset = experts * @sizeOf(ex.ExpertDescriptor) };
