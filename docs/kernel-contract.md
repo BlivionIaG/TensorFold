@@ -446,6 +446,11 @@ each given one planted fault: the gate reading the next head's column, the plain
 rope without its factor, absorb_q and expand_v reading the next head's weights, the chunks the next head's queries,
 the split chunks reading a rank's page z as chunk z, and the per-rank merge one chunk short).
 
+HIP's split boundary rows (`split/rows.hip`: `tf_split_import_row`, `tf_split_export_row`, `tf_split_consume_stamped`)
+are checked by value at hidden widths 2560, 2561 and 5120: every output is its input converted to the activation kind
+(nearest even; NaN and infinity stay such) and the consume's status word is 0, or 1 for a group that stays stale. Two
+controls (an import one value short, a consume waiting for the next sequence number) must go red at `shapes`.
+
 ## CUDA records per nvcc release
 
 nvcc allocates registers differently from one release to the next, so the CUDA records are kept per release.

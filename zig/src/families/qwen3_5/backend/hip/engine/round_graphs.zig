@@ -4,8 +4,8 @@ const hip = @import("hip");
 const plan = @import("../forward/plan.zig");
 const graph_cache = hip.graph_cache;
 
-/// What a replay hands back: the forward's outputs and where the arena stands after it.
-pub const Out = struct { hidden: hip.ops.Tensor, y: hip.ops.Tensor, used: usize };
+/// What a replay hands back: the forward's outputs (`y` null short of the last layer) and where the arena stands.
+pub const Out = struct { hidden: hip.ops.Tensor, y: ?hip.ops.Tensor, used: usize };
 
 pub const Graphs = graph_cache.CacheOf(plan.Shape, Out, hip.graph_split.Split);
 

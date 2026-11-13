@@ -43,19 +43,6 @@ pub fn options(b: *std.Build) Options {
         .relax_branches = b.option(bool, "hip-relax-branches", "Relax gfx1100 branches earlier (-amdgpu-s-branch-bits=15), for clang 21 (#1521)") orelse false,
     };
 }
-/// The Qwen3.5 / 3.6 checkpoint loader tests: part of `test` on every build, HIP or not.
-pub fn loaderTests(b: *std.Build, test_step: *std.Build.Step) void {
-    const loader = b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{
-        .root_source_file = b.path("zig/src/families/qwen3_5/loader.zig"),
-        .target = b.graph.host,
-        .link_libc = true,
-        .imports = &.{.{ .name = "core", .module = coreModule(b, b.graph.host) }},
-    }) }));
-    loader.has_side_effects = true; // TF_QWEN_DIR is not a cached input
-    test_step.dependOn(&loader.step);
-    loader.step.dependOn(@import("mesh.zig").qwenDeclTest(b, coreModule(b, b.graph.host))); // its cuts as declarations
-    b.step("test-qwen35", "Qwen3.5 / 3.6 checkpoint loader tests; TF_QWEN_DIR indexes a real checkpoint").dependOn(&loader.step);
-}
 /// hip-host-test (part of `test`), hip-gpu-build and hip-gpu-test, hip-affine-build and hip-affine-test.
 pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, build_options: *std.Build.Step.Options, test_step: *std.Build.Step, o: Options) void {
     const hip_fixtures = b.addOptions();
@@ -338,6 +325,7 @@ pub fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
     const core = coreModule(b, target);
     const hip = b.createModule(.{ .root_source_file = b.path("zig/src/hip/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
     hip.addImport("core", core);
+    hip.addImport("split", b.createModule(.{ .root_source_file = b.path("zig/src/split/split.zig"), .target = target, .optimize = optimize, .link_libc = true }));
     hip.addImport("hip_kernels", kernels);
     hip.addImport("cuda_memory", b.createModule(.{ .root_source_file = b.path("zig/src/native/cuda_memory.zig"), .target = target, .optimize = optimize }));
     if (hip_include) |dir| {
@@ -498,7 +486,7 @@ fn exactTool(b: *std.Build, target: std.Build.ResolvedTarget, e: Engine, family_
 /// A group's source and whether it compiles with IEEE arithmetic (`strict`: -O2 -fno-fast-math, IEEE denormals).
 const Source = struct { path: []const u8, strict: bool = false };
 /// The model-free kernels' source groups, in zig/src/hip/kernels.zig's Group order.
-const groups = [_]Source{
+pub const groups = [_]Source{
     .{ .path = "ops/ops.hip" },
     .{ .path = "ops/act.hip" },
     .{ .path = "attention/attention.hip" },
@@ -515,6 +503,7 @@ const groups = [_]Source{
     .{ .path = "lighton_ocr.hip", .strict = true },
     .{ .path = "qwen_vision.hip", .strict = true },
     .{ .path = "draft/draft.hip" },
+    .{ .path = "split/rows.hip" },
 };
 /// What the group sources include, so an edit to one rebuilds them.
 const headers = [_][]const u8{
@@ -530,7 +519,7 @@ const headers = [_][]const u8{
 };
 /// The flags of the kernels' first build: no contraction, wave32 on RDNA, C++20.
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-mno-wavefrontsize64", "-ffp-contract=off" };
-const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
+pub const stub = std.fmt.comptimePrint("pub const arch = \"\";\npub const images: [{d}][]align(8) const u8 = @splat(&.{{}});\n", .{groups.len});
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 pub fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, relax_branches: bool, arch: []const u8) *std.Build.Module {
     const files = objectFiles(b, .{ .name = hipcc, .resolved = hipcc_resolved, .device_lib = device_lib, .relax_branches = relax_branches }, arch);
@@ -591,7 +580,7 @@ fn compileSource(b: *std.Build, cc: Hipcc, arch: []const u8, source: LazyPath, o
 }
 
 /// The backend-neutral core (checkpoint formats, the kernel registry), as the other backends import it.
-fn coreModule(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Module {
+pub fn coreModule(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Module {
     const core = b.createModule(.{ .root_source_file = b.path("zig/src/core/root.zig"), .target = target, .link_libc = true });
     core.addImport("gpu_memory", @import("gpu_memory.zig").module(b, target));
     core.addImport("tokenizer", b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .link_libc = true }));
