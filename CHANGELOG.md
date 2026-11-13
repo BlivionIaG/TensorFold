@@ -16,6 +16,10 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Qwen3.8-27B engine on Metal: a layer range runs as a stage of the split pipeline (`split_peer.zig`, decode rows, the hand-off row crossing the window as f32 words), and `zig build test-qwen27-split` requires the unsplit run's tokens at every cut on generated weights, and on a real checkpoint when `TF_SPLIT_QWEN_DIR` names one; the default engine is unchanged.
 
+- Split offload: `split.remote` serves a pipeline's host stage over a unix socket with the window shared by descriptor (only the calls that start a step and wait for it cross the socket), `split.reference` saves and loads an unsplit run's tokens for a split run to compare to, and `Pipeline.phases` sums where the steps spent their time; `zig build test-split` covers all three, and no engine or serving path changes.
+
+- Split offload, several sequences: a step of the split pipeline carries up to 256 positions of one sequence, or one position of each of up to eight, and several sequences share one device through pipelines over their own slots of its window (`zig/src/split/streams.zig`) with the host and the device working on different sequences at once; `split.remote` serves one host stage per sequence over its one socket, and the Metal and Qwen3.8-27B stages take decode rows of one sequence; the toy-model tests check every sequence's tokens against its unsplit run in every order and level. No GPU is involved and no serving path changes.
+
 - Tests: `tf-cuda-test flashnext-rank RANK PORT timeout` passes again on two GPUs. NCCL start-up keeps its 30 s bound and only the stalled collective gets 200 ms, and both ranks meet once their communicators are up, so `timeout` and `eof` fail the collective under test, not the start-up (#2976, fixes #2975). Thanks to @swbiggart.
 
 - Tokenizer: a split pattern is held to a work allowance per piece (2,048 instructions a byte, counted, not timed) and refused at load when too deep or too large, so a crafted tokenizer or prompt can't hang the pre-tokenizer; every split of the patterns we serve is unchanged (#3071).
