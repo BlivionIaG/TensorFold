@@ -81,6 +81,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_FLASHNEXT_EXL3_STREAMS", .scope = .cuda, .kind = .size, .min = 1, .forms = "a positive whole stream count the expert pools leave room for (default 1; --parallel wins)" },
     .{ .name = "TF_FLASHNEXT_EXPERT_LINES", .scope = .cuda, .kind = .size, .forms = "a whole count of expert lines a layer keeps on the device (the pool refuses fewer than 10)" },
     .{ .name = "TF_FLASHNEXT_EXPERT_RESERVE_MB", .scope = .cuda, .kind = .u64, .max = std.math.maxInt(u64) >> 20, .forms = "a whole MiB count from 0 to 17592186044415 left free after the expert pools" },
+    .{ .name = "TF_FLASHNEXT_PLE_PREFETCH", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (1 lets the draft chain ask the kernel to read the n-gram rows of the coming verify window early; EXL3 table, mapped reads; the rows read are unchanged)" },
     .{ .name = "TF_FLASHNEXT_PLE_READ", .scope = .cuda, .kind = .word, .words = &.{ "map", "pread" }, .forms = "map or pread (default map; pread reads the n-gram rows by positional read)" },
     .{ .name = "TF_FLASHNEXT_EXL3_PROFILE_DIR", .scope = .cuda, .kind = .path, .forms = "a directory path without control characters where expert-use profiles persist" },
     .{ .name = "TF_FLASHNEXT_EXL3_ROUTED", .scope = .cuda, .kind = .word, .words = &.{ "host", "device" }, .forms = "host or device (default host; device keeps every routed expert on the device)" },

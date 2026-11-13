@@ -102,6 +102,7 @@ const valid = [_]Case{
     .{ .name = "TF_FLASHNEXT_EXL3_PREFILL_OVERLAP", .raw = "0", .n = 0 },
     .{ .name = "TF_FLASHNEXT_EXPERT_LINES", .raw = "0", .n = 0 },
     .{ .name = "TF_FLASHNEXT_EXPERT_RESERVE_MB", .raw = "17592186044415", .n = 17592186044415 },
+    .{ .name = "TF_FLASHNEXT_PLE_PREFETCH", .raw = "1", .n = 1 },
     .{ .name = "TF_FLASHNEXT_PLE_READ", .raw = "pread", .n = 1 },
     .{ .name = "TF_FLASHNEXT_EXL3_PROFILE_DIR", .raw = "/var/lib/exl3 profiles", .n = 0 },
     .{ .name = "TF_FLASHNEXT_EXL3_ROUTED", .raw = "device", .n = 1 },

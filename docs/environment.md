@@ -53,6 +53,7 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
 | `TF_FLASHNEXT_EXL3_STREAMS` | Positive whole stream count; default 1; `--parallel` wins |
 | `TF_FLASHNEXT_EXPERT_LINES` | Whole expert-line count per layer; pool construction requires at least 10; unset derives the count from memory |
 | `TF_FLASHNEXT_EXPERT_RESERVE_MB` | Whole MiB from 0 through 17592186044415; unset uses the server reserve |
+| `TF_FLASHNEXT_PLE_PREFETCH` | `0` or `1`; default 0 leaves the n-gram rows to be read when the verify window gathers them |
 | `TF_FLASHNEXT_PLE_READ` | Exactly `map` or `pread`; default `map` |
 | `TF_FLASHNEXT_EXL3_PROFILE_DIR` | Directory path without control characters; unset disables persisted expert-use profiles |
 | `TF_FLASHNEXT_EXL3_ROUTED` | Exactly `host` or `device`; default `host` |

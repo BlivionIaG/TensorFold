@@ -150,6 +150,7 @@ starts a rank. These switches tune it:
 | `TF_FLASHNEXT_KV_SLOTS` | 128 | With the host tier: frames lent to a stream, 64 four-row slots a frame for each attention layer. |
 | `TF_FLASHNEXT_EXL3_UNIFORM_LINES` | `0` | `0` or `1`; `1` with `TF_FLASHNEXT_EXPERT_LINES` gives every rank exactly that many lines instead of using spare room. `0`, unset or blank keeps automatic sizing; other text is refused. |
 | `TF_FLASHNEXT_EXL3_GRAPH`, `_GRAPH_ASYNC` | `0`, `1` | `GRAPH=0`: host planner; `eager`: device planner without graphs; `1`: device planner with graph replay. See [graph ownership and retries](../flash-next-exl3-graphs.md). |
+| `TF_FLASHNEXT_PLE_PREFETCH` | `0` | `0` or `1`; `1` lets the host draft chain ask the kernel (`MADV_WILLNEED`) to read the n-gram rows of the coming verify window into the page cache while the head steps run; EXL3 table with mapped reads. Same bytes, read earlier; `0` reads each row when the window gathers it. |
 | `TF_FLASHNEXT_PLE_READ` | `map` | `map` or `pread`; `pread` reads the n-gram embedding rows by positional read. |
 | `TF_FLASHNEXT_SNAP_HOST` | `1` above 32,768 tokens of context, else `0` | `0` or `1`: whether kept prompt-cache states live in pinned host memory. |
 | `TF_FLASHNEXT_CACHE_TELEMETRY` | `0` | Diagnostics only: `0` or `1`; `1` logs `EXL3-CACHE` expert-cache counters per phase, with a sync at each boundary. |

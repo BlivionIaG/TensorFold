@@ -540,6 +540,7 @@ pub fn Namespace(comptime Tri: type) type {
                     if (d.open) try self.ops().rollback(&l.seq, d, d.rows);
                 }
                 if (r.position != l.seq.fed + 1) return error.PositionMismatch;
+                d.chain_history = l.seq.history;
                 // the window's rows past the cache's room cannot run: fewer drafts there
                 const count = @min(@min(r.depth, mtp.depthFor(r.stream.sampling, self.depth, rule.greedy)), l.seq.cap - l.seq.fed - 1);
                 if (r.rows) |path| {
