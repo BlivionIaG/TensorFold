@@ -14,6 +14,7 @@ const hooks = @import("forward_hooks.zig");
 const ft = @import("forward_types.zig");
 const kvs = @import("cuda_kv.zig");
 const er = @import("engram_rows.zig");
+const ea = @import("engram_ahead.zig");
 pub const kops = @import("dsv41_kernels").ops;
 const ph = @import("phases.zig");
 const hs = @import("host_stage.zig");
@@ -90,6 +91,8 @@ pub const Forward = struct {
     engram_opened: bool = false,
     /// Engram read-ahead at the DSpark pass (TF_DSV41_ENGRAM_PREFETCH=0: rows read when the window needs them)
     engram_prefetch: bool = true,
+    /// a long prompt's Engram rows gathered on a worker (TF_DSV41_ENGRAM_AHEAD), opened by the first read-ahead
+    engram_ahead: ea.Handle = .{},
     gate: ?*anyopaque = null, // TF_DSV41_ENGRAM_GATE: opened with the table (engram_gate.Gate)
     gated: bool = false, // the window being issued armed the gate: its engram_rows steps launch the gate kernel
     /// TF_DSV41_ROUND_GRAPH's `gate`: recorded after each gated window, the gate's arm waits for it (not the stream)
@@ -177,6 +180,7 @@ pub const Forward = struct {
         if (f.prefill_state != null) hooks.set.prefill.?.deinit(f);
         f.calib_marks.deinit(f.gpa);
         if (f.gate) |x| hooks.set.gate.?.close(x);
+        if (f.engram_ahead.ahead) |x| x.close();
         if (f.engram_rows) |x| x.close();
         if (f.branches != null) hooks.set.branches.?.close(f);
         if (f.pick_host) |*b| b.free();
@@ -474,6 +478,9 @@ pub const Forward = struct {
     pub const gateCopy = fwd_engram.gateCopy;
     pub const issueEngram = fwd_engram.issueEngram;
     pub const prefetchEngram = fwd_engram.prefetchEngram;
+    pub const engramAhead = fwd_engram.engramAhead;
+    pub const engramAheadSubmit = fwd_engram.engramAheadSubmit;
+    pub const engramAheadRelease = fwd_engram.engramAheadRelease;
     pub const engramGathered = fwd_graph.engramGathered;
     pub const activeGraph = fwd_graph.activeGraph;
     pub const graphState = fwd_graph.graphState;

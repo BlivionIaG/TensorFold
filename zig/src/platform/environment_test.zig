@@ -113,6 +113,8 @@ const valid = [_]Case{
     .{ .name = "TF_PRODUCE_HELD_GIB", .raw = "32", .n = 32 },
     .{ .name = "TF_DSV41_EXPORT_STREAM", .raw = "0", .n = 0 },
     .{ .name = "TF_DSV41_EXPORT_STREAM", .raw = "1", .n = 1 },
+    .{ .name = "TF_DSV41_ENGRAM_AHEAD", .raw = "0", .n = 0 },
+    .{ .name = "TF_DSV41_ENGRAM_AHEAD", .raw = " 1 ", .n = 1 },
     .{ .name = "TF_PRODUCE_SPILL_DIR", .raw = "/var/tmp/export spill", .n = 0 },
     .{ .name = "TF_PRODUCE_SPILL_MIB", .raw = "16", .n = 16 },
     .{ .name = "TF_DSV41_HANDOFF_DUMP", .raw = "/tmp/handoff exports", .n = 0 },

@@ -1,6 +1,7 @@
 const std = @import("std");
 test {
     _ = @import("engram_host.zig");
+    _ = @import("engram_ahead_test.zig");
     _ = @import("engram_tables.zig");
     _ = @import("engram_shared_test.zig");
     _ = @import("engram_rows_safetensors_test.zig");

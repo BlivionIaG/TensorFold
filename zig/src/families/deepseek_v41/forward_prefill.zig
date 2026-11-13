@@ -318,6 +318,9 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
     st.ws_ok = true;
     if (st.k4 or (st.mode == .replay and f.opts.pf_tbo)) st.ws_ok = try wsAgreed(f);
     const seg: usize = segmentRows(f);
+    if (st.ahead and pairOf(f, ids.len) == null) aheadFirst(f, ids, seg);
+    const more = st.next.items.len > 0;
+    defer if (!more) f.engramAheadRelease(); // the prompt's last call: its worker's rows dropped and logged
     defer st.next.clearRetainingCapacity();
     var at: usize = 0;
     while (at < ids.len) {
@@ -418,11 +421,15 @@ fn segmentPair(f: *Forward, ia: []const u32, ib: []const u32) !bool {
 /// Read-ahead of the Engram rows after segment ids[at .. at + n] (next segment or piece); a wrong guess costs a read.
 fn ahead(f: *Forward, ids: []const u32, at: usize, n: usize, seg: usize) void {
     const st = state(f);
-    if (at + n < ids.len) return readAhead(f, ids, at, n, ids[at + n .. at + n + @min(seg, ids.len - at - n)]);
-    if (st.next.items.len > 0) readAhead(f, ids, at, n, st.next.items);
+    if (at + n < ids.len) {
+        const rest = ids.len - at - n;
+        return readAhead(f, ids, at, n, ids[at + n ..][0..@min(seg, rest)], seg, pairOf(f, rest) == null);
+    }
+    if (st.next.items.len > 0) readAhead(f, ids, at, n, st.next.items, seg, true);
 }
 
-fn readAhead(f: *Forward, ids: []const u32, at: usize, n: usize, next: []const u32) void {
+/// `next`'s rows read ahead of the `n` rows at `at`: its first segment to the worker when `single`, else read here.
+fn readAhead(f: *Forward, ids: []const u32, at: usize, n: usize, next: []const u32, seg: usize, single: bool) void {
     const h = f.engram orelse return;
     if (!f.engram_prefetch) return;
     const src = (f.engramSource(h) catch return) orelse return;
@@ -435,7 +442,18 @@ fn readAhead(f: *Forward, ids: []const u32, at: usize, n: usize, next: []const u
         @memcpy(buf[old .. old + n], ids[at..b]);
         break :blk buf[0 .. old + n];
     };
+    if (single and f.engramAheadSubmit(h, next[0..@min(next.len, seg)], lb)) return;
     h.prefetch(f.gpa, src, next, lb, f.comm.rank(), f.comm.world());
+}
+
+/// The prompt's first segment's rows queued for the worker before anything else: its first Engram layer waits for them.
+fn aheadFirst(f: *Forward, ids: []const u32, seg: usize) void {
+    const h = f.engram orelse return;
+    if (!f.engram_prefetch) return;
+    _ = (f.engramSource(h) catch return) orelse return;
+    var buf: [2 * eh.max_ngram]u32 = undefined;
+    const lb = eh.lookbackAt(f.slot.tail[0..f.slot.tail_len], f.slot.pos, null, f.slot.pos, h.max_ngram - 1, &buf) orelse return;
+    _ = f.engramAheadSubmit(h, ids[0..@min(seg, ids.len)], lb);
 }
 
 /// One segment at the slot's position, run eagerly, then committed.

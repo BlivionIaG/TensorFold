@@ -7,6 +7,7 @@ const calls = @import("block_calls.zig");
 const run = @import("run.zig");
 const eh = @import("engram_host.zig");
 const er = @import("engram_rows.zig");
+const ea = @import("engram_ahead.zig");
 const hooks = @import("forward_hooks.zig");
 const ft = @import("forward_types.zig");
 const ph = @import("phases.zig");
@@ -15,6 +16,10 @@ const fwd = @import("forward.zig");
 const fwd_glue = @import("forward_glue.zig");
 const Forward = fwd.Forward;
 const glueMissing = fwd_glue.glueMissing;
+
+comptime {
+    std.debug.assert(ea.min_rows == hs.chunk); // the worker serves the windows past a chunk, as the stage's wait does
+}
 
 /// A window's Engram rows of layer L: hashes, this rank's heads' rows, the all-gather and the column reorder.
 pub fn engramRows(f: *Forward, r: *run.Runner, c: *const calls.Call) !void {
@@ -69,7 +74,11 @@ pub fn fillEngramRows(f: *Forward, h: *const eh.Host, L: u32, out: []u16) !void 
         for (m.segs, m.row0, m.tails) |sg, r0, t| try h.windowRows(f.gpa, try f.engramSource(h), sg.ids, t.items(), L, f.comm.rank(), f.comm.world(), f.cfg.engram_head_dim, out[r0 * cols ..][0 .. sg.ids.len * cols]);
         return;
     }
-    return h.windowRows(f.gpa, try f.engramSource(h), f.ids, f.slot.tail[0..f.slot.tail_len], L, f.comm.rank(), f.comm.world(), f.cfg.engram_head_dim, out);
+    const src = try f.engramSource(h);
+    const tail = f.slot.tail[0..f.slot.tail_len];
+    // the worker's rows for this window and layer when it gathered them (same function, same bytes); else read here
+    if (f.engram_ahead.ahead) |a| if (a.take(L, f.ids, tail, out)) return;
+    return h.windowRows(f.gpa, src, f.ids, tail, L, f.comm.rank(), f.comm.world(), f.cfg.engram_head_dim, out);
 }
 
 /// The Engram rows' source, opened on first use (TF_DSV41_ENGRAM_DIR; TF_DSV41_ENGRAM_CACHE records a layer).
@@ -77,6 +86,7 @@ pub fn engramSource(f: *Forward, h: *const eh.Host) !?eh.Source {
     if (!f.engram_opened) {
         f.engram_opened = true;
         f.engram_prefetch = try @import("sys").environment.read(bool, "TF_DSV41_ENGRAM_PREFETCH", f.engram_prefetch);
+        f.engram_ahead.off = !(try @import("sys").environment.read(bool, "TF_DSV41_ENGRAM_AHEAD", true));
         if (std.c.getenv("TF_DSV41_ENGRAM_DIR")) |dir| {
             const cap: u32 = if (std.c.getenv("TF_DSV41_ENGRAM_CACHE")) |v| try std.fmt.parseInt(u32, std.mem.span(v), 10) else 65536;
             f.engram_rows = try er.Rows.open(f.gpa, std.mem.span(dir), f.comm.rank(), f.comm.world(), h.layer_ids, cap);
@@ -85,6 +95,7 @@ pub fn engramSource(f: *Forward, h: *const eh.Host) !?eh.Source {
         try (try hooks.gate()).open(f, h);
     }
     if (f.gate) |g| return hooks.set.gate.?.source(g);
+    if (f.engram_ahead.ahead) |a| return a.source(); // the worker's reads and these never meet in the table
     return if (f.engram_rows) |x| x.source() else null;
 }
 
@@ -147,4 +158,33 @@ pub fn prefetchEngram(f: *Forward, start: u64, ids: []const u32) void {
     // the gate's worker owns the table between windows: a warm job, not a read on this thread
     if (f.gate) |g| return hooks.set.gate.?.warm(g, &.{.{ .ids = ids, .tail = lb }});
     h.prefetch(f.gpa, src, ids, lb, f.comm.rank(), f.comm.world());
+}
+
+/// The rows worker, started by the first prompt window read ahead; none off the knob, with the gate or without shards.
+pub fn engramAhead(f: *Forward, h: *const eh.Host) ?*ea.Ahead {
+    if (f.engram_ahead.ahead) |a| return a;
+    if (f.engram_ahead.off or !f.engram_opened) return null;
+    f.engram_ahead.off = true; // one try
+    const rows = f.engram_rows orelse return null;
+    if (f.gate != null) return null;
+    const a = ea.Ahead.open(std.heap.c_allocator, h, rows.source(), f.comm.rank(), f.comm.world(), f.cfg.engram_head_dim) catch |e| {
+        if (!quiet) std.log.scoped(.dsv41).warn("engram ahead: the worker did not start ({t}); rows are read on the launch thread", .{e});
+        return null;
+    };
+    f.engram_ahead.ahead = a;
+    if (!quiet) std.log.scoped(.dsv41).info("engram ahead: a prompt's segment rows are gathered on a worker (TF_DSV41_ENGRAM_AHEAD=0: here)", .{});
+    return a;
+}
+
+/// A prompt window's rows (`ids` after `lookback`) queued for the worker; false: none, the caller reads ahead itself.
+pub fn engramAheadSubmit(f: *Forward, h: *const eh.Host, ids: []const u32, lookback: []const u32) bool {
+    if (ids.len <= ea.min_rows) return false;
+    const a = f.engramAhead(h) orelse return false;
+    a.submit(ids, lookback);
+    return true;
+}
+
+/// A prompt's end: the worker's unread windows dropped, what the prompt saw logged.
+pub fn engramAheadRelease(f: *Forward) void {
+    if (f.engram_ahead.ahead) |a| a.release();
 }
