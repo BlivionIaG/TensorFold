@@ -16,11 +16,11 @@ const splitScan = common.splitScan;
 
 var enabled_cache: ?bool = null;
 
-/// TF_DSV41_BATCH_ATTN=1 runs the slot phase batched; the default is the per-slot chain (same arithmetic).
+/// The slot phase runs batched by default (same arithmetic); TF_DSV41_BATCH_ATTN=0 restores the per-slot chain.
 fn enabled() bool {
     if (enabled_cache == null) {
         const raw = std.c.getenv("TF_DSV41_BATCH_ATTN");
-        enabled_cache = raw != null and std.mem.eql(u8, std.mem.span(raw.?), "1");
+        enabled_cache = raw == null or !std.mem.eql(u8, std.mem.span(raw.?), "0");
     }
     return enabled_cache.?;
 }
