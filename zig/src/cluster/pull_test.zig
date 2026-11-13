@@ -38,7 +38,7 @@ test "a node pulls a missing shard's ranges from its peer over the links and loa
     try have.dir.writeFile(io, .{ .sub_path = "model.safetensors", .data = bytes });
     const files = [_]checkpoint.File{.{ .name = "model.safetensors", .size = bytes.len }};
     const sim = try a.create(Sim);
-    sim.* = .{ .net = try fake_net.Net.init(gpa, 2, 2), .members = .{ .init(gpa, .{}, .{ .id = 1 }, 1), .init(gpa, .{}, .{ .id = 2 }, 1) } };
+    sim.* = .{ .net = try fake_net.Net.init(gpa, 2, 2), .members = .{ try .init(gpa, .{}, .{ .id = 1 }, 1), try .init(gpa, .{}, .{ .id = 2 }, 1) } };
     defer {
         for (&sim.members) |*m| m.deinit();
         for (&sim.agents) |*ag| ag.deinit();

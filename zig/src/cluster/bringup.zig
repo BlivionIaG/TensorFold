@@ -32,7 +32,7 @@ pub fn simulate(gpa: std.mem.Allocator, invs: []const node.Inventory, edges: []c
     for (edges) |e| if (e.up) net.cable(@intCast(e.a), e.a_port, @intCast(e.b), e.b_port);
     const ms = try gpa.alloc(membership.Membership, n);
     defer gpa.free(ms);
-    for (ms, invs) |*m, inv| m.* = membership.Membership.init(gpa, .{}, inv, 1);
+    for (ms, invs) |*m, inv| m.* = try membership.Membership.init(gpa, .{}, inv, 1);
     defer for (ms) |*m| m.deinit();
     var now: u64 = 0;
     const step = 10 * std.time.ns_per_ms;
@@ -95,10 +95,10 @@ pub const Live = struct {
     culprit: Culprit = .{},
 
     /// `inv.name` is this node's name in the file; its id is the name's, so each node checks the others by `names`.
-    pub fn init(gpa: Allocator, inv: node.Inventory, t: transport.Transport, names: []const []const u8, plan: u64, opts: Options) Live {
+    pub fn init(gpa: Allocator, inv: node.Inventory, t: transport.Transport, names: []const []const u8, plan: u64, opts: Options) error{UnlaunchableBackend}!Live {
         var me = inv;
         me.id = node.idFrom(inv.name.str());
-        var l: Live = .{ .m = membership.Membership.init(gpa, opts.membership, me, opts.incarnation), .t = t, .names = names, .plan = plan, .opts = opts };
+        var l: Live = .{ .m = try membership.Membership.init(gpa, opts.membership, me, opts.incarnation), .t = t, .names = names, .plan = plan, .opts = opts };
         var at: [transport.max_links]?node.NodeId = @splat(null);
         for (names, 0..) |name, i| {
             if (i < at.len and !std.mem.eql(u8, name, inv.name.str())) at[i] = node.idFrom(name);
@@ -262,7 +262,7 @@ pub fn onHost(gpa: Allocator, s: mcdma_link.Spec, inv: node.Inventory, plan: u64
     for (s.links) |l| try out.print(" \"{s}\" to {s} ({s}, path MTU {d})", .{ l.name, s.names[l.peer], @tagName(o.ep.rdma().link(l.peer)), l.mtu });
     try out.writeAll("\n");
     try out.flush();
-    var live = Live.init(gpa, inv, o.link.transport(), s.names, plan, h.live);
+    var live = try Live.init(gpa, inv, o.link.transport(), s.names, plan, h.live);
     defer live.deinit();
     const r = live.up() catch |err| {
         diag.culprit = live.culprit;
