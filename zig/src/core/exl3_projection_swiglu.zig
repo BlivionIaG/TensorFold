@@ -103,6 +103,9 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     };
     const fma_t = if (tile_pick) |ti| p.decode_fma_t[ti] != null and decode_nax and a.rows <= moe_split_rows and !fma_off else false;
     const fma_t_dense = if (tile_pick) |ti| p.decode_fma_t_dense[ti] != null and fma_dense and a.codebook == 2 else false;
+    // Slots that name one expert decode it once for two rows: only when the call carries more than one token.
+    const pair_pick: ?usize = if (fma_t and r.share and knobs.routed_pair and tiles <= 2) tile_pick else null;
+    const fma_t_pair = if (pair_pick) |ti| p.decode_fma_t_pair[ti] != null else false;
     const splits: usize = if (fma or fma_t or fma_dense or fma_dense_multi2 or fma_dense_multi4) 1 else if (a.indexed == 0 and a.routed == 0 and (a.rows == 1 or (row_invariant and a.rows <= 8)) and p.reduce != null)
         @as(usize, splitOverride() orelse @as(u32, @intCast(if (wide) wide_splits else one_row_splits)))
     else
@@ -165,7 +168,7 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
         pipe.matmul_tab_logged = true;
         std.log.info("exl3: one-row table body {s} rows={d} n={d} k={d} splits={d}", .{ if (matmul_static_lut) "static-lut" else "matmul", a.rows, a.n, a.k, splits });
     }
-    const pipeline = (if (fma_t) p.decode_fma_t[tile_pick.?].? else if (fma_t_dense) p.decode_fma_t_dense[tile_pick.?].? else if (fma_static_lut) p.decode_fma_static_lut.? else if (fma_static) p.decode_fma_static.? else if (fma) p.decode_fma.? else if (fma_dense_multi4) p.decode_fma_dense_multi4.? else if (fma_dense_multi2) p.decode_fma_dense_multi2.? else if (fma_dense) p.decode_fma_dense.? else if (decode_pipe) |dp| dp else if (matmul_static_lut) p.matmul_static_lut.? else if (matmul_tab) p.matmul_tab.? else if (nax_dense_db) p.prefill_nax_dense_db.? else if (nax_funnel_only) nax_funnel_only_pick.? else if (nax_skip_pad) nax_skip_pad_pick.? else if (nax_funnel) nax_funnel_pick.? else if (nax) nax_pick.? else if (shared) p.prefill.? else p.matmul);
+    const pipeline = (if (fma_t_pair) p.decode_fma_t_pair[pair_pick.?].? else if (fma_t) p.decode_fma_t[tile_pick.?].? else if (fma_t_dense) p.decode_fma_t_dense[tile_pick.?].? else if (fma_static_lut) p.decode_fma_static_lut.? else if (fma_static) p.decode_fma_static.? else if (fma) p.decode_fma.? else if (fma_dense_multi4) p.decode_fma_dense_multi4.? else if (fma_dense_multi2) p.decode_fma_dense_multi2.? else if (fma_dense) p.decode_fma_dense.? else if (decode_pipe) |dp| dp else if (matmul_static_lut) p.matmul_static_lut.? else if (matmul_tab) p.matmul_tab.? else if (nax_dense_db) p.prefill_nax_dense_db.? else if (nax_funnel_only) nax_funnel_only_pick.? else if (nax_skip_pad) nax_skip_pad_pick.? else if (nax_funnel) nax_funnel_pick.? else if (nax) nax_pick.? else if (shared) p.prefill.? else p.matmul);
     // Rows a decode threadgroup takes: one a SIMDgroup (the row knob selects one a threadgroup).
     const moe_rows: usize = if (decode_nax) (if (compact) 1 else knobs.moe_rows) else 4;
     const group_rows: usize = if (fma or fma_static or fma_static_lut or fma_dense_multi2 or fma_dense_multi4) 1 else if (decode_nax) moe_rows else if (nax) nax_tile else if (shared) 32 else 8;

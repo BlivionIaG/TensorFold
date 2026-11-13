@@ -12,6 +12,7 @@ test {
     _ = @import("src/families/deepseek_v41/index_precision_test.zig");
     _ = @import("src/families/deepseek_v41/config.zig");
     _ = @import("src/families/deepseek_v41/projection_knobs_test.zig");
+    _ = @import("src/families/deepseek_v41/depth_run.zig");
     _ = @import("src/families/deepseek_v41/model_support.zig");
     _ = @import("src/families/deepseek_v41/profiler.zig");
     _ = @import("core").gpu_counters;

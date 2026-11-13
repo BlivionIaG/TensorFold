@@ -554,6 +554,7 @@ pub const Stage = struct {
                 .output = .bf16,
                 .output_rows = rows * c.o_groups,
                 .routes = .{ .ids = core(.{ .buffer = work.ids, .offset = 0 }), .repeat = 1 },
+                .share = rows >= 2,
             });
             attnMark(layer, "wo_a", prof, &e);
         } else {

@@ -409,12 +409,19 @@ pub fn snapshotRestore(m: *Model, slot: u32, snap: *const Snapshot) !void {
     m.valid = true;
 }
 pub fn beginSlot(m: *Model, slot: u32) !void {
+    return beginWindow(m, slot, 2);
+}
+
+/// Open the slot's transaction for a window of `rows`. A one-row window is kept whole (the lane only rolls back and
+/// restores a rejected row), so it stashes neither the ring rows nor the partial state, and skips the stash's sync wait.
+pub fn beginWindow(m: *Model, slot: u32, rows: u32) !void {
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const view = try m.workspace.historyView(slot);
     const history: [*]u8 = @ptrCast(@alignCast(view.buffer.contents() + view.offset));
     @memcpy(m.engram_stash[slot * 16 ..][0..16], history[0..16]);
     try m.caches[slot].begin();
     // Stash the window ring's next slots before the verify writes them.
+    if (rows < 2) return;
     if (ringKeepOn()) {
         const state = &m.caches[slot];
         const stash_bytes = @as(usize, state.plan.layers) * max_ring_rows * kv.cache.ring_stride;

@@ -296,7 +296,7 @@ pub fn moe(m: *Model, enc: *mtl.ComputeEncoder, e: ?*mtl.CommandBuffer, w: *cons
         }
         std.log.info("route ids: {s}", .{line[0..at]});
     }
-    var routed_rows = exl3.Rows{ .count = @as(usize, rows) * picks, .x_stride = 5120, .y_stride = 2304, .input_rows = rows, .output_rows = @as(usize, rows) * picks, .tile_rows = Model.moeTileRows(), .routes = .{ .ids = convert(ws.view(.route_ids)), .repeat = picks } };
+    var routed_rows = exl3.Rows{ .count = @as(usize, rows) * picks, .x_stride = 5120, .y_stride = 2304, .input_rows = rows, .output_rows = @as(usize, rows) * picks, .tile_rows = Model.moeTileRows(), .routes = .{ .ids = convert(ws.view(.route_ids)), .repeat = picks }, .share = rows >= 2 };
     if (grouped) |g| {
         try expert_groups.encode(encoder, &p.groups, convert(ws.view(.route_ids)), g, picks, 0);
         routed_rows.count = g.plan.padded;

@@ -72,7 +72,7 @@ pub fn verify(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) a
             const st = &b.model.caches[slot];
             if (w.positions.len != 1 or w.positions[0] != st.position + 1) return error.PositionMismatch;
             b.model.commitSlot(slot) catch {};
-            try b.model.beginSlot(slot);
+            try b.model.beginWindow(slot, 1);
             begun += 1;
             batch_feeds[wi] = try b.gpa.alloc(u32, 1);
             made += 1;
@@ -97,7 +97,7 @@ pub fn verify(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) a
             if (w.positions.len != rows) return error.WindowOutOfStep;
             for (w.positions, 0..) |p, r| if (p != state.position + r + 1) return error.PositionMismatch;
             b.model.commitSlot(i) catch {}; // a window the engine accepted whole leaves its transaction to close here
-            try b.model.beginSlot(i);
+            try b.model.beginWindow(i, @intCast(rows));
             opened = true;
             feeds = try b.gpa.alloc(u32, rows);
             feeds[0] = w.pending;
@@ -321,6 +321,10 @@ pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
         const i = b.by.get(r.stream) orelse continue;
         if (b.held[i].len > 0) b.gpa.free(b.held[i]);
         b.held[i] = &.{};
+        // The depth controller reads the round just verified: its drafts and the rows it kept, counts only.
+        if (policy.depthRunOn() and b.gov_rows[i] > 0) if (r.rows) |kept| {
+            b.run_depth[i] = policy.runDepth(b.gov_rows[i] - 1, @intCast(kept.len), @min(mtpDepthMax(), 4));
+        };
         if (r.depth == 0) continue;
         if (draftGovernorOff(b, i)) {
             // The switch must reach the lane planner, not only the held list.
@@ -385,7 +389,7 @@ pub fn tree(ptr: *anyopaque, s: *Stream, gpa: std.mem.Allocator) anyerror!?lanes
         depth = mtpDepthFor(b, slot_i);
         // THE CONFIRMED SWITCH-UP: one sample is not a change of text, so the up-transition must hold `confirm` rounds.
         const confirm = mtpConfirmRounds();
-        if (confirm > 1 and slot_i < b.up_streak.len) {
+        if (confirm > 1 and slot_i < b.up_streak.len and !policy.depthRunOn()) {
             if (depth > 1 and prev < 2) {
                 b.up_streak[slot_i] += 1;
                 if (b.up_streak[slot_i] < confirm) depth = 1;
@@ -451,6 +455,7 @@ pub fn release(ptr: *anyopaque, s: *Stream) void {
     const entry = b.by.fetchRemove(s) orelse return;
     b.model.resetAcceptSlot(entry.value);
     if (entry.value < b.last_depth.len) b.last_depth[entry.value] = 0;
+    if (entry.value < b.run_depth.len) b.run_depth[entry.value] = std.math.maxInt(u32);
     if (entry.value < b.shallow.len) {
         b.shallow[entry.value] = false;
         b.low_streak[entry.value] = 0;

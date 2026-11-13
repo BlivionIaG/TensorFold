@@ -60,6 +60,8 @@ pub const Backend = struct {
     /// The ratchet's per-slot state -- the request has fallen back to the shallow window.
     shallow: []bool,
     low_streak: []u32,
+    /// The acceptance-run controller's per-slot depth: the drafts the next window carries.
+    run_depth: []u32,
     /// The drafting governor's per-slot state -- the rounds this request has completed, the tokens they committed.
     gov_rounds: []u32,
     gov_committed: []u32,
@@ -104,7 +106,10 @@ pub const Backend = struct {
         @memset(gov_kept, 0);
         const gov_off = try gpa.alloc(bool, model.lanes);
         @memset(gov_off, false);
+        const run_depth = try gpa.alloc(u32, model.lanes);
+        @memset(run_depth, std.math.maxInt(u32));
         return .{
+            .run_depth = run_depth,
             .last_depth = last_depth,
             .up_streak = up_streak,
             .keep_pending = keep_pending,
@@ -143,6 +148,7 @@ pub const Backend = struct {
         b.gpa.free(b.gov_rows);
         b.gpa.free(b.gov_kept);
         b.gpa.free(b.gov_off);
+        b.gpa.free(b.run_depth);
         b.pen_counts.deinit(b.gpa);
         if (b.pen_row.len > 0) b.gpa.free(b.pen_row);
     }

@@ -264,6 +264,9 @@ pub const Model = struct {
     pub fn beginSlot(m: *Model, slot: u32) !void {
         return model_lifecycle.beginSlot(m, slot);
     }
+    pub fn beginWindow(m: *Model, slot: u32, rows: u32) !void {
+        return model_lifecycle.beginWindow(m, slot, rows);
+    }
     pub fn commitSlot(m: *Model, slot: u32) !void {
         return model_lifecycle.commitSlot(m, slot);
     }

@@ -400,3 +400,59 @@ test "the exact half-FMA decode bodies keep every bit of the table bodies for an
         }
     }
 }
+
+test "routed slots that name one expert decode it once for two rows and keep every bit" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
+    defer p.deinit();
+    const queue = try device.queue();
+    defer queue.deinit();
+    const saved = ex.knobs.*;
+    defer ex.knobs.* = saved;
+    ex.knobs.fma_tile_groups = 0;
+    const x = try input(device, 3);
+    defer x.deinit();
+    const slots = 11;
+    const scratch = try device.buffer(try ex.scratchBytes(k, n, slots), mtl.ResourceOptions.shared);
+    defer scratch.deinit();
+    const ref = try device.buffer(slots * n * 4, mtl.ResourceOptions.shared);
+    defer ref.deinit();
+    const got = try device.buffer(slots * n * 4, mtl.ResourceOptions.shared);
+    defer got.deinit();
+    const descriptors = try device.buffer(3 * @sizeOf(ex.ExpertDescriptor), mtl.ResourceOptions.shared);
+    defer descriptors.deinit();
+    // Runs of one expert of every length (1 to 4), an out-of-range id, and an expert that only a later slot reuses.
+    const ids = try device.buffer(slots * 4, mtl.ResourceOptions.shared);
+    defer ids.deinit();
+    @memcpy(ids.slice(u32, slots), &[_]u32{ 0, 1, 1, 0, 1, 0, 2, 0, 1, 9, 1 });
+    const gather = try device.buffer(slots * 4, mtl.ResourceOptions.shared);
+    defer gather.deinit();
+    @memcpy(gather.slice(u32, slots), &[_]u32{ 2, 0, 1, 2, 1, 0, 1, 2, 0, 0, 2 });
+    for ([_]u16{ 2, 4, 6, 8, 10, 12 }) |halves| {
+        const w0 = try Owned.init(device, halves, .mul1, 0xc0 + @as(u64, halves));
+        defer w0.deinit();
+        const w1 = try Owned.init(device, halves, .mcg, 0xd0 + @as(u64, halves));
+        defer w1.deinit();
+        const w2 = try Owned.init(device, halves, .mul1, 0xe0 + @as(u64, halves));
+        defer w2.deinit();
+        descriptors.slice(ex.ExpertDescriptor, 3)[0] = try ex.descriptor(w0.matrix);
+        descriptors.slice(ex.ExpertDescriptor, 3)[1] = try ex.descriptor(w1.matrix);
+        descriptors.slice(ex.ExpertDescriptor, 3)[2] = try ex.descriptor(w2.matrix);
+        for ([_]u32{ 1, 2 }) |tiles| {
+            ex.knobs.fma_tiles = tiles;
+            for ([_]bool{ false, true }) |share| {
+                const out = if (share) got else ref;
+                @memset(out.slice(u32, slots * n), 0x7fbebebe);
+                const cb = queue.commandBuffer();
+                const e = cb.compute(.concurrent);
+                ex.useMatrix(e, w0.matrix);
+                ex.useMatrix(e, w1.matrix);
+                ex.useMatrix(e, w2.matrix);
+                try ex.encodeIndexed(&p, e, .{ .descriptors = .{ .buffer = descriptors }, .count = 3, .k = k, .n = n }, .{ .buffer = x, .offset = 32 }, .{ .buffer = out }, .{ .buffer = scratch }, .{ .count = slots, .x_stride = k + 16, .y_stride = n, .output = .f32, .routes = .{ .ids = .{ .buffer = ids } }, .input_rows = 3, .output_rows = slots, .input_ids = .{ .buffer = gather }, .share = share });
+                try complete(cb, e);
+            }
+            try std.testing.expectEqualSlices(u32, ref.slice(u32, slots * n), got.slice(u32, slots * n));
+        }
+    }
+}

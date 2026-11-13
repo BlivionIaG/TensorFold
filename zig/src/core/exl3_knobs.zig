@@ -40,6 +40,8 @@ pub const Knobs = struct {
     row_invariant: bool = true,
     fma_tiles: u32 = 2,
     fma_tile_groups: u32 = 400,
+    /// Routed decode slots that name one expert decode it once for two rows (same sums, bit for bit).
+    routed_pair: bool = true,
     fma_dense_h8: bool = true,
     fma_dense_multi: u32 = 4,
     fma_dense_multi_ceil: bool = true,

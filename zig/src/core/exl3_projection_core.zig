@@ -114,6 +114,8 @@ pub const Rows = struct {
     no_epilogue: bool = false,
     /// The caller asks for the tensor-unit dense tile from EIGHT rows up (the shipped gate is 64).
     dense8: bool = false,
+    /// Slots of one call may name the same expert (several tokens' picks): the decode body then pairs equal routes.
+    share: bool = false,
 };
 
 /// Metal 3 / tier-2 argument-buffer ABI; borrowed pointers remain resident until the encoded work completes.

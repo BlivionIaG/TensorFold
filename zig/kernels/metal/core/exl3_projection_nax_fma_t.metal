@@ -74,9 +74,16 @@ inline uint2 tf_exl3_t_funnel(const thread uint* p, uint first_bit) {
 // One threadgroup: T tiles of sixteen columns of up to R rows; k is cut into sixteen ranges whatever the warp count.
 constant constexpr uint TF_EXL3_T_RANGES = 16u;
 
-template <uint S, uint T, uint R, bool Mul1>
+// The slot a threadgroup's r-th row is: consecutive rows from row0, or (Pair) the two slots row0 and `second`.
+template <bool Pair>
+inline uint tf_exl3_t_slot(uint row0, uint second, uint r) {
+  return (Pair && r == 1u) ? second : row0 + r;
+}
+
+template <uint S, uint T, uint R, bool Mul1, bool Pair>
 inline void tf_exl3_t_body(const device half* x, const TfExl3DecodeJob job, device float* sums, constant TfExl3Args& a,
-                           const device half* table, uint row0, uint nb, uint lane, uint sg, threadgroup float* red) {
+                           const device half* table, uint row0, uint second, uint nb, uint lane, uint sg,
+                           threadgroup float* red) {
   constexpr bool Two = S <= 4u;
   constexpr uint W = TF_EXL3_T_RANGES;
   const uint blocks = a.k / 16;
@@ -84,7 +91,7 @@ inline void tf_exl3_t_body(const device half* x, const TfExl3DecodeJob job, devi
   // A block row is a 32-bit step in ushorts (a pack is far below 8 GiB), so the pointers advance by one add.
   const uint block_step = uint(job.tile_k_stride >> 1);
   uint xrow[R];
-  for (uint r = 0; r < R; ++r) xrow[r] = min(row0 + r, a.rows - 1u) * a.k + 2 * (lane & 3u);
+  for (uint r = 0; r < R; ++r) xrow[r] = min(tf_exl3_t_slot<Pair>(row0, second, r), a.rows - 1u) * a.k + 2 * (lane & 3u);
   for (uint g = sg; g < W; g += TF_FMA_WARPS) {
     const uint b0 = blocks * g / W, b1 = blocks * (g + 1u) / W;
     const device ushort* tile[T];
@@ -134,7 +141,8 @@ inline void tf_exl3_t_body(const device half* x, const TfExl3DecodeJob job, devi
   threadgroup_barrier(mem_flags::mem_threadgroup);
   if (sg != 0) return;
   for (uint r = 0; r < R; ++r) {
-    if (row0 + r >= a.rows) break;
+    const uint out_slot = tf_exl3_t_slot<Pair>(row0, second, r);
+    if (out_slot >= a.rows) break;
     for (uint t = 0; t < T; ++t) {
       float acc0 = 0.0f, acc1 = 0.0f;
       for (uint w = 0; w < W; ++w) {
@@ -147,24 +155,24 @@ inline void tf_exl3_t_body(const device half* x, const TfExl3DecodeJob job, devi
       acc1 += simd_shuffle_xor(acc1, 1);
       acc1 += simd_shuffle_xor(acc1, 2);
       if ((lane & 3u) == 0u) {
-        sums[ulong(row0 + r) * a.n + nb + t * 16u + lane / 4] = acc0;
-        sums[ulong(row0 + r) * a.n + nb + t * 16u + 8 + lane / 4] = acc1;
+        sums[ulong(out_slot) * a.n + nb + t * 16u + lane / 4] = acc0;
+        sums[ulong(out_slot) * a.n + nb + t * 16u + 8 + lane / 4] = acc1;
       }
     }
   }
 }
 
-template <uint T, uint R, bool Mul1>
+template <uint T, uint R, bool Mul1, bool Pair = false>
 inline void tf_exl3_t_halves(const device half* x, const TfExl3DecodeJob job, device float* sums,
-                             constant TfExl3Args& a, const device half* table, uint row, uint nb, uint lane, uint sg,
-                             threadgroup float* red) {
+                             constant TfExl3Args& a, const device half* table, uint row, uint second, uint nb,
+                             uint lane, uint sg, threadgroup float* red) {
   switch (job.halves) {
-    case 6u: tf_exl3_t_body<3, T, R, Mul1>(x, job, sums, a, table, row, nb, lane, sg, red); break;
-    case 10u: tf_exl3_t_body<5, T, R, Mul1>(x, job, sums, a, table, row, nb, lane, sg, red); break;
-    case 12u: tf_exl3_t_body<6, T, R, Mul1>(x, job, sums, a, table, row, nb, lane, sg, red); break;
-    case 8u: tf_exl3_t_body<4, T, R, Mul1>(x, job, sums, a, table, row, nb, lane, sg, red); break;
-    case 4u: tf_exl3_t_body<2, T, R, Mul1>(x, job, sums, a, table, row, nb, lane, sg, red); break;
-    case 2u: tf_exl3_t_body<1, T, R, Mul1>(x, job, sums, a, table, row, nb, lane, sg, red); break;
+    case 6u: tf_exl3_t_body<3, T, R, Mul1, Pair>(x, job, sums, a, table, row, second, nb, lane, sg, red); break;
+    case 10u: tf_exl3_t_body<5, T, R, Mul1, Pair>(x, job, sums, a, table, row, second, nb, lane, sg, red); break;
+    case 12u: tf_exl3_t_body<6, T, R, Mul1, Pair>(x, job, sums, a, table, row, second, nb, lane, sg, red); break;
+    case 8u: tf_exl3_t_body<4, T, R, Mul1, Pair>(x, job, sums, a, table, row, second, nb, lane, sg, red); break;
+    case 4u: tf_exl3_t_body<2, T, R, Mul1, Pair>(x, job, sums, a, table, row, second, nb, lane, sg, red); break;
+    case 2u: tf_exl3_t_body<1, T, R, Mul1, Pair>(x, job, sums, a, table, row, second, nb, lane, sg, red); break;
     default: break;
   }
 }
@@ -182,8 +190,43 @@ inline void tf_exl3_t_routed_kernel(const device half* x, const device uchar* tr
   const TfExl3DecodeJob job = tf_exl3_routed_decode_job(trellis, a, descriptors, expert);
   const uint nb = tg.x * 16u * T;
   if (nb >= job.width) return;
-  if (job.codebook == 2u) tf_exl3_t_halves<T, 1, true>(x, job, sums, a, table, row, nb, lane, sg, red);
-  else tf_exl3_t_halves<T, 1, false>(x, job, sums, a, table, row, nb, lane, sg, red);
+  if (job.codebook == 2u) tf_exl3_t_halves<T, 1, true>(x, job, sums, a, table, row, 0u, nb, lane, sg, red);
+  else tf_exl3_t_halves<T, 1, false>(x, job, sums, a, table, row, 0u, nb, lane, sg, red);
+}
+
+// The routed body for slots that name the same expert: the first slot of each pair of equal routes decodes the
+// expert once for both rows (each row keeps its own accumulators, so every sum equals the one-row body's), and the
+// second slot of a pair returns. A slot's rank is the count of earlier slots with its expert; even ranks lead.
+template <uint T>
+inline void tf_exl3_t_routed_pair_kernel(const device half* x, const device uchar* trellis, device float* sums,
+                                         constant TfExl3Args& a, const device uint* routes,
+                                         const device TfExl3Expert* descriptors, const device half* table, uint lane,
+                                         uint sg, uint3 tg, threadgroup float* red) {
+  const uint row = tg.y;
+  if (row >= a.rows) return;
+  const uint expert = routes[row];
+  if (expert >= a.experts) return;
+  uint rank = 0u;
+  for (uint j = 0; j < row; ++j) rank += uint(routes[j] == expert);
+  if ((rank & 1u) != 0u) return;
+  uint second = a.rows;
+  for (uint j = row + 1u; j < a.rows; ++j) {
+    if (routes[j] == expert) {
+      second = j;
+      break;
+    }
+  }
+  const TfExl3DecodeJob job = tf_exl3_routed_decode_job(trellis, a, descriptors, expert);
+  const uint nb = tg.x * 16u * T;
+  if (nb >= job.width) return;
+  if (second >= a.rows) {
+    if (job.codebook == 2u) tf_exl3_t_halves<T, 1, true>(x, job, sums, a, table, row, 0u, nb, lane, sg, red);
+    else tf_exl3_t_halves<T, 1, false>(x, job, sums, a, table, row, 0u, nb, lane, sg, red);
+  } else if (job.codebook == 2u) {
+    tf_exl3_t_halves<T, 2, true, true>(x, job, sums, a, table, row, second, nb, lane, sg, red);
+  } else {
+    tf_exl3_t_halves<T, 2, false, true>(x, job, sums, a, table, row, second, nb, lane, sg, red);
+  }
 }
 
 // The dense body: one matrix, one row a threadgroup.
@@ -195,7 +238,7 @@ inline void tf_exl3_t_dense_kernel(const device half* x, const device uchar* tre
   const TfExl3DecodeJob job = tf_exl3_dense_decode_job(trellis, a);
   const uint nb = tg.x * 16u * T;
   if (nb >= job.width) return;
-  tf_exl3_t_halves<T, 1, true>(x, job, sums, a, nullptr, row, nb, lane, sg, red);
+  tf_exl3_t_halves<T, 1, true>(x, job, sums, a, nullptr, row, 0u, nb, lane, sg, red);
 }
 
 // The multi-row dense body: R rows a threadgroup share one decode of the matrix (any codebook), one tile wide.
@@ -208,8 +251,8 @@ inline void tf_exl3_t_multi_kernel(const device half* x, const device uchar* tre
   const TfExl3DecodeJob job = tf_exl3_dense_decode_job(trellis, a);
   const uint nb = tg.x * 16u * T;
   if (nb >= job.width) return;
-  if (job.codebook == 2u) tf_exl3_t_halves<T, R, true>(x, job, sums, a, table, row0, nb, lane, sg, red);
-  else tf_exl3_t_halves<T, R, false>(x, job, sums, a, table, row0, nb, lane, sg, red);
+  if (job.codebook == 2u) tf_exl3_t_halves<T, R, true>(x, job, sums, a, table, row0, 0u, nb, lane, sg, red);
+  else tf_exl3_t_halves<T, R, false>(x, job, sums, a, table, row0, 0u, nb, lane, sg, red);
 }
 
 #define TF_EXL3_T_MULTI(NAME, T, R)                                                                               \
@@ -246,3 +289,17 @@ TF_EXL3_T_MULTI(tf_exl3_matmul_decode_fma_dense_multi4, 1, 4)
 TF_EXL3_T_KERNELS(1)
 TF_EXL3_T_KERNELS(2)
 TF_EXL3_T_KERNELS(4)
+
+#define TF_EXL3_T_PAIR_KERNEL(T)                                                                                  \
+  kernel void tf_exl3_matmul_decode_fma_t##T##_pair(                                                              \
+      const device half* x [[buffer(0)]], const device uchar* trellis [[buffer(1)]], device float* sums [[buffer(2)]], \
+      constant TfExl3Args& a [[buffer(3)]], const device uint* routes [[buffer(4)]],                              \
+      const device TfExl3Expert* descriptors [[buffer(5)]], const device half* table [[buffer(7)]],               \
+      uint lane [[thread_index_in_simdgroup]], uint sg [[simdgroup_index_in_threadgroup]],                         \
+      uint3 tg [[threadgroup_position_in_grid]]) {                                                                \
+    threadgroup float red[TF_EXL3_T_RANGES * 64 * T * 2];                                                           \
+    tf_exl3_t_routed_pair_kernel<T>(x, trellis, sums, a, routes, descriptors, table, lane, sg, tg, red);         \
+  }
+
+TF_EXL3_T_PAIR_KERNEL(1)
+TF_EXL3_T_PAIR_KERNEL(2)

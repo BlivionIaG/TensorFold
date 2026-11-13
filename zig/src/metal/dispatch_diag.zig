@@ -9,8 +9,10 @@ const name_cap = 56;
 const Pipe = struct { id: usize = 0, name: [name_cap]u8 = undefined, len: u8 = 0, skip: bool = false, twice: bool = false };
 const Rule = struct { text: [name_cap]u8 = undefined, len: u8 = 0, twice: bool = false };
 
-/// The file is re-read at each forward when it changes; lines: skip NAME, double NAME, nobarrier, dump, clear.
+/// The file is re-read at each forward when it changes; lines: skip NAME, double NAME, nobarrier, dump, dumpall, clear.
 pub var armed: bool = false;
+/// `dumpall`: every forward's counts are printed at the next forward (not only when the file changes).
+var dump_all: bool = false;
 /// `nobarrier`: memory barriers are dropped (a serial encoder orders dispatches itself; a concurrent one would race).
 pub var no_barrier: bool = false;
 var pipes: [max_pipes]Pipe = undefined;
@@ -79,12 +81,14 @@ fn dump() void {
 fn load(text: []const u8) void {
     nrules = 0;
     no_barrier = false;
+    dump_all = false;
     var want_dump = false;
     var lines = std.mem.tokenizeAny(u8, text, "\r\n");
     while (lines.next()) |line| {
         var f = std.mem.tokenizeAny(u8, line, " \t");
         const verb = f.next() orelse continue;
         if (std.mem.eql(u8, verb, "dump")) want_dump = true;
+        if (std.mem.eql(u8, verb, "dumpall")) dump_all = true;
         if (std.mem.eql(u8, verb, "clear")) nrules = 0;
         if (std.mem.eql(u8, verb, "nobarrier")) no_barrier = true;
         const arg = f.next() orelse continue;
@@ -122,6 +126,7 @@ pub fn poll() void {
         if (n > 0) load(buf[0..@intCast(n)]);
     }
     // Counts are per forward: the dump shows the one before this call.
+    if (dump_all) dump();
     @memset(&counts, 0);
     @memset(&groups, 0);
 }
