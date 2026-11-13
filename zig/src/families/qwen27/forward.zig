@@ -8,6 +8,8 @@ const Config = @import("config.zig").Config;
 pub const Ref = @import("projection.zig").Ref;
 const Frame = @import("gpu_frame.zig").Frame;
 const ane_mlp = @import("ane_mlp.zig");
+pub const Range = @import("range.zig").Range;
+const stage_rows = @import("stage_rows.zig");
 
 pub const Mixer = struct {
     ptr: *anyopaque,
@@ -63,6 +65,13 @@ pub const Reduce = struct {
 pub const Head = enum { all, last, none };
 /// A verified head's dependent readback work stays in its final command buffer.
 pub const Tail = struct { ptr: *anyopaque, encode: *const fn (*anyopaque, mtl.ComputeEncoder) anyerror!void };
+/// A layer range's boundary rows: `input` (plain f32 words) if it does not start the model, `output` if not its end.
+pub const Io = struct {
+    rows: *const stage_rows.Rows,
+    input: ?Ref = null,
+    output: ?Ref = null,
+    stamp_out: u32 = 0,
+};
 pub const Stages = struct {
     model: *Model,
     rows: u32,
@@ -78,11 +87,25 @@ pub const Stages = struct {
     reduce: ?Reduce = null,
     /// Head seam picks (one u32 a row), required with `Reduce.argmax`: the ranks must pick the same token.
     picks: ?Ref = null,
+    /// The layers this pass runs, driven as layers `0..len`; null: every layer, the embedding and the head.
+    range: ?Range = null,
+    /// Required with a range that does not hold both the embedding and the head.
+    io: ?Io = null,
+    /// The model's layer for the driver's `i`th layer.
+    fn at(s: *const Stages, i: usize) usize {
+        return (if (s.range) |r| r.first else 0) + i;
+    }
     pub fn begin(s: *Stages, lane: *@import("core").segments.Lane) !void {
         const m = s.model;
         if (s.rows == 0 or s.rows > m.frame.capacity or lane.k != 0) return error.BadFrameRows;
         s.hidden = m.frame.get(.hidden);
         s.residual = m.frame.get(.residual);
+        if (s.range) |r| if (!r.embed()) {
+            const io = s.io orelse return error.StageIoMissing;
+            io.rows.encodeLoad(lane.enc, io.input orelse return error.StageIoMissing, s.hidden, @intCast(m.config.hidden), s.rows);
+            lane.enc.barrier();
+            return;
+        };
         try m.glue.embedding(lane.enc, m.config, m.weights.embed, m.frame.get(.ids), s.hidden, s.rows);
         lane.enc.barrier();
         if (s.images) |rows| {
@@ -94,7 +117,8 @@ pub const Stages = struct {
         return .mixer;
     }
     pub fn handoff(_: *Stages, _: *@import("core").segments.Lane, _: usize) !void {}
-    pub fn pre(s: *Stages, lane: *@import("core").segments.Lane, index: usize) !void {
+    pub fn pre(s: *Stages, lane: *@import("core").segments.Lane, i: usize) !void {
+        const index = s.at(i);
         const m = s.model;
         const f = &m.frame;
         const e = lane.enc;
@@ -111,7 +135,8 @@ pub const Stages = struct {
     fn keysOnly(s: *const Stages, index: usize) bool {
         return s.hooks.keys != null and s.head == .none and index + 1 == s.model.config.layers;
     }
-    pub fn mixer(s: *Stages, lane: *@import("core").segments.Lane, index: usize) !void {
+    pub fn mixer(s: *Stages, lane: *@import("core").segments.Lane, i: usize) !void {
+        const index = s.at(i);
         const m = s.model;
         if (s.keysOnly(index)) {
             try s.hooks.keys.?(s.hooks.ptr, lane.enc, index, m.weights.layers[index].mixer.attention, &m.frame, s.rows);
@@ -124,7 +149,8 @@ pub const Stages = struct {
         }
         lane.enc.barrier();
     }
-    pub fn post(s: *Stages, lane: *@import("core").segments.Lane, index: usize) !void {
+    pub fn post(s: *Stages, lane: *@import("core").segments.Lane, i: usize) !void {
+        const index = s.at(i);
         if (s.keysOnly(index)) return;
         const m = s.model;
         const f = &m.frame;
@@ -238,6 +264,12 @@ pub const Stages = struct {
     pub fn finish(s: *Stages, lane: *@import("core").segments.Lane) !void {
         const m = s.model;
         const f = &m.frame;
+        if (s.range) |r| if (!r.head(m.config.layers)) {
+            // the row that the next layer's norm would add up: hidden + the last layer's MLP output, widened to f32
+            const io = s.io orelse return error.StageIoMissing;
+            io.rows.encodeStore(lane.enc, s.hidden, s.pending orelse return error.StageIoMissing, io.output orelse return error.StageIoMissing, io.stamp_out, @intCast(m.config.hidden), s.rows);
+            return;
+        };
         // The head seam reopens the encoder, so it goes back in the lane; rank 0's half-vocab argmax is not a token.
         var e = lane.enc;
         if (s.keysOnly(m.config.layers - 1)) return if (s.tail) |tail| tail.encode(tail.ptr, e);
