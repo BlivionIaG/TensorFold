@@ -7,7 +7,6 @@ const Allocator = std.mem.Allocator;
 const Proposer = @import("proposer.zig").Proposer;
 const Reader = @import("recall.zig").Reader;
 const Sampling = @import("sampling.zig").Sampling;
-const Penalties = @import("sampling.zig").Penalties;
 const State = @import("depth.zig").State;
 const Row = @import("logprob.zig").Row;
 const long_loop = @import("long_loop.zig");
@@ -91,7 +90,6 @@ pub const Reuse = struct {
     pulled: bool = false, // pulled for this stream just now (a fresh remote prefix), not a kept remote state restored
     split: ?*anyopaque = null, // a layer-split feed (the family's): the pass enters from its streamed rows, not from `saved`
 };
-pub const SplitReport = @import("split_report.zig").SplitReport;
 
 /// Called between prompt chunks, the pass standing at `at` (the GPU done with the chunk that ends there).
 pub const MarkHook = struct {
@@ -128,7 +126,7 @@ pub const Spec = struct {
     max_new: u32,
     eos: []const u32 = &.{},
     sampling: ?Sampling = null,
-    penalties: Penalties = .{}, // where the backend applies them (Backend.VTable.penalties)
+    penalties: @import("sampling.zig").Penalties = .{}, // where the backend applies them (Backend.VTable.penalties)
     drafts: bool = true,
     proposer: ?Proposer = null,
     recall: ?*Reader = null, // copies and grafts from the record of earlier requests (lanes/recall.zig)
@@ -164,7 +162,7 @@ pub const Stream = struct {
     max_new: u32,
     eos: []const u32,
     sampling: ?Sampling,
-    penalties: Penalties = .{},
+    penalties: @import("sampling.zig").Penalties = .{},
     drafts: bool,
     proposer: ?Proposer,
     recall: ?*Reader,
@@ -193,7 +191,7 @@ pub const Stream = struct {
     prefill_widths: std.ArrayList(u32) = .empty, // completed target prompt passes, reported by an instrumented backend
     prefill_widths_failed: bool = false, // an allocation failure invalidates this observation without failing the reply
     reuse: Reuse = .{},
-    split_report: SplitReport = .{}, // a layer-split prompt's costs, written by the backend as the pass ends
+    split_report: @import("split_report.zig").SplitReport = .{}, // a layer-split prompt's costs, set as the pass ends
     decode_spans: []const [2]u32 = &.{},
     decide: ?u32 = null,
     untaught: bool = false,

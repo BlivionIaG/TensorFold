@@ -21,6 +21,11 @@ fn group(r: e.Rule) Group {
     return if (r.kind == .word or r.kind == .range or r.only.len > 0) .structured else .integers;
 }
 
+/// The layer split's TF_LS_ settings: their ranges are checked by name in the test below.
+fn layerSplit(r: e.Rule) bool {
+    return std.mem.startsWith(u8, r.name, "TF_LS_");
+}
+
 fn check(name: []const u8, raw: []const u8, valid: bool) !void {
     const fx: Fixture = .{ .name = name, .raw = raw };
     const why = try e.refusal(t.allocator, fx, .{ .dsv41 = true });
@@ -37,7 +42,7 @@ fn check(name: []const u8, raw: []const u8, valid: bool) !void {
 
 test "DeepSeek strict env: the shared table holds all 90 settings: 52 switches, 19 integers, 16 reals and 3 structured" {
     var counts: [4]usize = @splat(0);
-    for (e.rules) |r| if (r.scope == .dsv41) {
+    for (e.rules) |r| if (r.scope == .dsv41 and !layerSplit(r)) {
         try t.expect(std.mem.startsWith(u8, r.name, "TF_DSV41_"));
         counts[@backingInt(group(r))] += 1;
     };
@@ -86,7 +91,7 @@ test "DeepSeek strict env: the word forms belong to exactly the switches that re
 }
 
 test "DeepSeek strict env: every numeric refusal is named, not defaulted or clamped" {
-    for (e.rules) |r| if (r.scope == .dsv41) switch (group(r)) {
+    for (e.rules) |r| if (r.scope == .dsv41 and !layerSplit(r)) switch (group(r)) {
         .integers => {
             try check(r.name, if (r.min == 16) "16" else "1", true);
             for ([_][]const u8{ "nan", "inf", "-1", "1.5", "1x", "18446744073709551616", " bad " }) |raw| try check(r.name, raw, false);
@@ -109,6 +114,19 @@ test "DeepSeek strict env: every numeric refusal is named, not defaulted or clam
     try check("TF_DSV41_SAVE_QUEUE_MIB", "0", true);
     try check("TF_DSV41_SAVE_QUEUE_MIB", "1048576", true);
     try check("TF_DSV41_SAVE_QUEUE_MIB", "1048577", false);
+}
+
+test "DeepSeek strict env: the layer split's settings refuse values outside their ranges" {
+    for ([_][]const u8{ "2", "4", "64" }) |raw| try check("TF_LS_WINDOW", raw, true);
+    for ([_][]const u8{ "0", "1", "65", "bad" }) |raw| try check("TF_LS_WINDOW", raw, false);
+    for ([_][]const u8{ "2", "8", "14" }) |raw| try check("TF_LS_CUT", raw, true);
+    for ([_][]const u8{ "0", "5", "20", "bad" }) |raw| try check("TF_LS_CUT", raw, false);
+    for ([_][]const u8{ "1024", "1048576", "16777216" }) |raw| try check("TF_LS_MAX_TOKENS", raw, true);
+    for ([_][]const u8{ "1023", "16777217", "-1", "nan" }) |raw| try check("TF_LS_MAX_TOKENS", raw, false);
+    for ([_][]const u8{ "0", "1" }) |raw| try check("TF_LS_TRACE", raw, true);
+    for ([_][]const u8{ "2", "yes" }) |raw| try check("TF_LS_TRACE", raw, false);
+    try check("TF_LS_SPARKS_TPS", "2700", true);
+    try check("TF_LS_SPARKS_TPS", "0", false);
 }
 
 test "DeepSeek strict env: layer ranges, row buckets and image modes refuse ignored tails" {

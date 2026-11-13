@@ -264,8 +264,7 @@ pub const Early = struct {
     }
 };
 
-/// The early export of a split hand-off of `tokens` (the prompt but its last token) cut at `cut`: the manifest; its boundary
-/// rows are held `window` at a time (a whole stage when the prompt is not longer)
+/// The early export of a split hand-off of `tokens` cut at `cut`; boundary rows are held `window` at a time.
 pub fn early(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, cut: u32, window: u64, wait_ns: u64) !*Built {
     const b = try gpa.create(Built);
     errdefer gpa.destroy(b);

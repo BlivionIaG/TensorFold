@@ -19,7 +19,7 @@ pub const Transport = struct {
     release: *const fn (ptr: *anyopaque, id: [16]u8) void,
 };
 
-/// What `run` needs of the server: the cut (the route's choice, TF_LS_CUT forcing it), the checkpoint's name, the route to learn into.
+/// What `run` needs of the server: the cut (the route's choice; TF_LS_CUT forces it), the checkpoint's name, the route.
 pub const Spec = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -31,7 +31,7 @@ pub const Spec = struct {
     closing: *const std.atomic.Value(bool),
 };
 
-/// A frame's rows wait this long for the passes to take the window's oldest (the engine stalled: the split is given up).
+/// A frame's rows wait this long for the passes to take the window's oldest (a stalled engine gives the split up).
 const put_wait_ns: u64 = 120 * std.time.ns_per_s;
 
 /// One split's state, shared by the pulling thread and the engine thread through its `Feed`.

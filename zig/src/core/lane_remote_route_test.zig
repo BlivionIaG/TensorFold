@@ -393,7 +393,7 @@ test "measured: the host reports its own prompt pass, and the last-token pass af
     try t.expectEqual(@as(u64, 100), pulled.first.rows);
 }
 
-/// A route with the split opted in at its seeds: the pair 2700 a second at cut 14 (the cut it picks), 1.4 s fixed, a pull 2000 a second.
+/// A route with the split opted in at its seeds: pair 2700 a second at cut 14, 1.4 s fixed, a pull 2000 a second.
 fn splitting() Route {
     return Route.build(.{ .split = true });
 }

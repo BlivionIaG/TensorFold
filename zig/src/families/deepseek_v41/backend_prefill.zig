@@ -108,7 +108,7 @@ pub fn dropFeed(s: *Stream) void {
 }
 
 /// What the lane host reports of a layer-split pass (the feed's timings are read when it is finished).
-pub fn reportOf(r: *const split_run.Run) lanes.stream.SplitReport {
+pub fn reportOf(r: *const split_run.Run) @FieldType(lanes.stream.Stream, "split_report") {
     return .{
         .cut = r.feed.cut,
         .rows = r.stats.rows,

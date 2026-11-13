@@ -60,7 +60,7 @@ pub const Verdict = enum {
 
 /// A pass the lane host or a pull timed: this machine's own prompt pass, a pull end to end, or the last-token pass.
 pub const Pass = enum { local, remote, tail, split };
-/// `cut` and `wait_ns` (this machine's wait for rows) go with a split, which is timed from the trigger to the state landed.
+/// A split also gives `cut` and `wait_ns` (this machine's wait for rows); it is timed trigger to state landed.
 pub const Measured = struct { pass: Pass, rows: u64, ns: u64, cut: u32 = 0, wait_ns: u64 = 0 };
 
 /// A prompt's cost on each side in ns (a pull end to end, a split, its own prefill); `pinned`

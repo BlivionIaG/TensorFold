@@ -5,8 +5,7 @@ const split = @import("handoff/split.zig");
 /// Staging slots: chunk N's rows copy out while chunk N + 1 computes and N + 2 may queue behind it.
 pub const slots = 3;
 
-/// Where the rows go: the early export's stage (`rows` is the chunk's next region of it, which may end before the chunk does when
-/// the stage is a ring that wraps, and waits for room; `publish` makes rows [0
+/// Where the rows go: `rows` is the stage's next region (a ring may end it before the chunk), `publish` frees readers.
 pub const Sink = struct {
     ptr: *anyopaque,
     rows: *const fn (ptr: *anyopaque, row0: u64, n: u64) anyerror![]u8,
@@ -66,7 +65,7 @@ pub const Ring = struct {
         if (block) try r.be.wait(r.be.ptr, s);
         const c = r.chunk[s];
         if (c.row0 != r.end) return error.OutOfOrder;
-        // a row on the wire is the stream's 40,960 bytes then the pre's 16; a region of the stage may be a part of the chunk
+        // a row on the wire is the stream's 40,960 bytes then the pre's 16; a stage region may hold part of a chunk
         const stride: usize = @intCast(split.row_bytes);
         const xrow: usize = @intCast(split.stream_bytes);
         const prow: usize = @intCast(split.pre_bytes);

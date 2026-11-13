@@ -3,8 +3,7 @@ const std = @import("std");
 const words = @import("words.zig");
 const Allocator = std.mem.Allocator;
 
-/// Rows [0, `available`) are complete; the writer publishes, readers wait. A whole stage never changes a published
-/// row. A ring stage keeps `cap` rows at once: the writer waits for the readers to free the oldest (`release`, `served`).
+/// Rows [0, `available`) are complete; the writer publishes, readers wait. A ring holds `cap` rows; `release` frees.
 pub const Stage = struct {
     gpa: Allocator,
     bytes: []align(16) u8,
@@ -39,8 +38,7 @@ pub const Stage = struct {
         return initRing(gpa, rows, row_bytes, rows, 0);
     }
 
-    /// A stage of `rows` rows that holds `cap` of them at once (a whole stage when `cap` >= `rows`) and `mirror` more
-    /// rows after them, for readers that take a slice across the wrap.
+    /// A stage of `rows` rows holding `cap` at once (a whole stage if `cap` >= `rows`) and `mirror` more after them.
     pub fn initRing(gpa: Allocator, rows: u64, row_bytes: u64, cap: u64, mirror: u64) Error!Stage {
         if (cap == 0 and rows != 0) return error.BadStage;
         const held = @min(cap, rows);
@@ -63,8 +61,7 @@ pub const Stage = struct {
         return @intCast(row % s.cap * s.row_bytes);
     }
 
-    /// Rows [row0, row0 + n) as bytes, for the writer to fill or a reader to take; a ring's rows must still be held, and
-    /// either lie before the wrap or end within the mirror.
+    /// Rows [row0, row0 + n) as bytes; a ring's rows must still be held and lie before the wrap or end in the mirror.
     pub fn slice(s: *const Stage, row0: u64, n: u64) []u8 {
         std.debug.assert(row0 + n <= s.rows);
         if (s.isRing()) {
@@ -85,8 +82,7 @@ pub const Stage = struct {
         s.ready.store(end, .release);
     }
 
-    /// The writer's next region of a ring, rows from `row0`: as many as lie before the wrap (at most `n`), once the readers
-    /// have freed them; fill it, then `publish`. A whole stage's region is rows [row0, row0 + n).
+    /// A ring's next writable region from `row0`, as far as the wrap and the readers allow (<= `n`); then `publish`.
     pub fn reserve(s: *Stage, row0: u64, n: u64, timeout_ns: u64, abort: ?*const std.atomic.Value(bool)) Error![]u8 {
         if (row0 + n > s.rows) return error.OutOfRows;
         if (!s.isRing()) return s.slice(row0, n);
@@ -116,8 +112,7 @@ pub const Stage = struct {
         }
     }
 
-    /// Copy `src` (whole rows) in as rows from `row0`, which must follow the last published one, and publish them. A ring
-    /// waits up to `timeout_ns` (or until `abort`) for room: error.WindowFull.
+    /// Copy `src` (whole rows) in from `row0`, after the last published one, and publish; a ring waits for room.
     pub fn putWait(s: *Stage, row0: u64, src: []const u8, timeout_ns: u64, abort: ?*const std.atomic.Value(bool)) Error!void {
         if (s.row_bytes == 0 or src.len % s.row_bytes != 0) return error.BadStage;
         if (row0 != s.ready.load(.monotonic)) return error.OutOfOrder;
@@ -150,7 +145,7 @@ pub const Stage = struct {
         return s.putWait(row0, src, 0, null);
     }
 
-    /// Rows [start, start + count) copied into `out` (a ring may wrap); a ring's rows the readers already freed are gone.
+    /// Rows [start, start + count) copied into `out` (a ring may wrap); rows the readers already freed are gone.
     pub fn copyOut(s: *const Stage, start: u64, count: u64, out: []u8) Error!void {
         if (start + count > s.rows) return error.OutOfRows;
         if (!s.isRing()) {
@@ -175,8 +170,7 @@ pub const Stage = struct {
         while (end > cur) cur = s.released.cmpxchgWeak(cur, end, .release, .monotonic) orelse return;
     }
 
-    /// A ring's frame [start, start + count) went out: rows are freed as the served ones reach back to row 0, whatever the
-    /// order the frames were taken in (error.TooManyPending: more frames out of order than a link set has in flight).
+    /// A ring's frame [start, start + count) went out; rows are freed once served ones reach row 0, in any order.
     pub fn served(s: *Stage, start: u64, count: u64) Error!void {
         if (!s.isRing()) return;
         while (!s.lock.tryLock()) std.atomic.spinLoopHint();
