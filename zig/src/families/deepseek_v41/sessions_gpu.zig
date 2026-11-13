@@ -405,7 +405,10 @@ pub const Sessions = struct {
         const h = &s.hist[s.cur()];
         if (h.items.len != s.f.slot.pos or s.f.slot.pending != null) return error.BadWindow;
         if (pf.state(s.f).mode == .replay and s.f.slot.ced.hi != s.f.slot.pos) return error.BadWindow;
-        if (s.warm != 0 and s.f.leads() and !sessions_warm.canSave(s.f)) return null;
+        if (s.warm != 0 and s.f.leads() and !sessions_warm.canSave(s.f)) {
+            std.log.scoped(.dsv41).info("sessions: no entry at {d}: the exact replay cannot reach it (cone {d}..{d})", .{ s.f.slot.pos, pf.state(s.f).cone.lo(), pf.state(s.f).cone.hi });
+            return null;
+        }
         try writes.retire(s);
         try s.f.sendSess(.prompt, 0);
         if (h.items.len == 0) return null;
@@ -418,6 +421,7 @@ pub const Sessions = struct {
             return e;
         };
         try sessions_warm.after(s.f, s.warm, s.cone_roles, s.cone_bak, saved);
+        std.log.scoped(.dsv41).info("sessions: entry {any} at {d} tokens saved ({s})", .{ id, h.items.len, if (saved != null) "exact rings" else "replay point" });
         try s.store.settleAll();
         return id;
     }
