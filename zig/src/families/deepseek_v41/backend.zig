@@ -39,6 +39,8 @@ pub const Backend = struct {
     /// Drawn tokens by handle: every read waits for its forward anyway (one sub-forward a window).
     ring: [RING]u32 = undefined,
     puts: u64 = 0,
+    /// The stream whose cone replay is left to later prompt calls (backend_prefill.finishCone).
+    finishing: ?*Stream = null,
     first: []u32,
     /// Each slot's cache cursor before its in-flight verify, for the rollback-and-refeed keep.
     verify_len: []u32,
@@ -149,7 +151,7 @@ pub const Backend = struct {
 
     /// The lane vtable; `prefill_step` (one chunk a call, decode rounds between) unless TF_DSV41_PREFILL_INTERLEAVE=0.
     pub fn backend(b: *Backend) be.Backend {
-        return .{ .ptr = b, .penalties = true, .vtable = if (pass.interleaveOn()) &vtable_stepped else &vtable_whole };
+        return .{ .ptr = b, .penalties = true, .chunk_invariant = true, .vtable = if (pass.interleaveOn()) &vtable_stepped else &vtable_whole };
     }
 
     const vtable_whole: be.Backend.VTable = .{

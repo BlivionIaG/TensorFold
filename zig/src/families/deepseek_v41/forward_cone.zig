@@ -18,7 +18,7 @@ pub const cap: u32 = 4096;
 const min_rows: u32 = 17;
 /// The kept rows: the window ring's last rows.
 const kept: u32 = ft.ring;
-const max_chunks = 64;
+const max_chunks = 128;
 
 pub const Phase = enum { off, encoder, decoder };
 
@@ -49,6 +49,13 @@ pub const Cone = struct {
     next: u32 = 0,
     /// the decoder chunk's first position (loadStash)
     at: u32 = 0,
+    /// a replay in flight: the program's first layer, the chunk it is at, the logits its last chunk makes
+    rp: bool = false,
+    rp_lo: u32 = 20,
+    rp_ci: usize = 0,
+    rp_logits: Logits = .none,
+    /// the final chunk's replay is left to `replayStep` calls (the lane host runs rounds between them)
+    defer_final: bool = false,
 
     fn sectionOffset(i: usize) usize {
         var off: usize = 0;
@@ -120,9 +127,13 @@ pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
         // the slot's state was replaced under the pending run: nothing to replay
         if (segs.len != 1 or sg.p0 != c.next) {
             c.pending = false;
+            c.rp = false;
             return null;
         }
-        if (!ok or c.count == max_chunks) _ = try replay(m, .none);
+        if (c.rp or !ok) _ = try replay(m, .none);
+        // pieces a replay can no longer reach (older than the stash ring) are forgotten
+        if (c.count == max_chunks) dropOld(c);
+        if (c.count == max_chunks) _ = try replay(m, .none);
     }
     if (!ok) return null;
     const rows: u32 = @intCast(sg.ids.len);
@@ -144,46 +155,96 @@ pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
     c.count += 1;
     c.next = sg.p0 + rows;
     if (!final) return out;
+    if (c.defer_final) {
+        begin(m, logits);
+        return m.workspace.logits(0);
+    }
     return try replay(m, logits);
+}
+
+/// Forget the run's chunks that end before the ring's oldest row: the replay starts a cone back, inside the ring.
+fn dropOld(c: *Cone) void {
+    const keep_from = c.next -| cap;
+    var n: usize = 0;
+    for (c.chunks[0..c.count]) |ch| {
+        if (ch.pos + ch.rows <= keep_from) continue;
+        c.chunks[n] = ch;
+        n += 1;
+    }
+    c.count = n;
 }
 
 /// The decoder layers over the stashed rows, in programs of consecutive layers, ending the pending run.
 pub fn replay(m: *Model, logits: Logits) ![]const f32 {
     const c = &m.cone;
+    if (!c.rp) begin(m, logits);
+    var out: []const f32 = m.workspace.logits(0);
+    while (c.rp) out = try replayPiece(m);
+    return out;
+}
+
+/// Start the pending run's replay at the first decoder layer; `replayPiece` runs it a chunk of a program at a time.
+fn begin(m: *Model, logits: Logits) void {
+    const c = &m.cone;
+    c.rp = true;
+    c.rp_lo = c.d;
+    c.rp_ci = 0;
+    c.rp_logits = logits;
+}
+
+/// Whether a replay is begun and not finished (the run stays pending until then).
+pub fn replaying(m: *const Model) bool {
+    return m.cone.rp;
+}
+
+/// The next piece of a begun replay: one chunk of one program; true once the run is over.
+pub fn replayStep(m: *Model) !bool {
+    if (m.cone.rp) _ = try replayPiece(m);
+    return !m.cone.rp;
+}
+
+fn replayPiece(m: *Model) ![]const f32 {
+    const c = &m.cone;
     const end = c.next;
     const state = &m.caches[c.slot];
-    c.pending = false;
     c.phase = .decoder;
     defer c.phase = .off;
-    defer c.count = 0;
     var out: []const f32 = m.workspace.logits(0);
-    var lo = c.d;
-    while (lo < m.cfg.layers) {
-        c.lo = lo;
-        c.hi = programEnd(m, lo, end);
-        defer lo = c.hi;
-        const start = replayStart(end, c.first, rowsIn(m, lo));
-        const final = c.hi == m.cfg.layers;
-        for (c.chunks[0..c.count], 0..) |ch, i| {
-            const a = @max(ch.pos, start);
-            const b = ch.pos + ch.rows;
-            const row0 = m.taps_row;
-            // the drafter's tap ring advances as the full pass advances it, over rows the replay skips too
-            if (final and model.tapsOn()) {
-                const extra = @min(ch.rows, 128) - (if (a < b) @min(b - a, 128) else 0);
-                m.taps_row = (m.taps_row + extra) % 128;
-                m.taps_n = @min(m.taps_n + extra, 128);
-            }
-            if (a >= b) continue;
-            state.position = a;
-            c.at = a;
-            var ids: [cap]u32 = undefined;
-            for (0..b - a) |k| ids[k] = c.ids[(a + k) % cap];
-            const last = final and i + 1 == c.count;
-            out = try impl.forwardCore(m, &.{.{ .slot = c.slot, .ids = ids[0 .. b - a], .p0 = a }}, if (last) logits else .none);
-            // the ring's base is the full pass's chunk start, not the replay's
-            if (final and model.tapsOn() and model.tapsSharedBaseOn()) m.taps_base = if (model.condAlignOn()) ch.pos % 128 else row0;
-        }
+    if (c.rp_ci == 0) {
+        c.lo = c.rp_lo;
+        c.hi = programEnd(m, c.lo, end);
+    }
+    const start = replayStart(end, c.first, rowsIn(m, c.lo));
+    const final = c.hi == m.cfg.layers;
+    const i = c.rp_ci;
+    const ch = c.chunks[i];
+    const a = @max(ch.pos, start);
+    const b = ch.pos + ch.rows;
+    const row0 = m.taps_row;
+    // the drafter's tap ring advances as the full pass advances it, over rows the replay skips too
+    if (final and model.tapsOn()) {
+        const extra = @min(ch.rows, 128) - (if (a < b) @min(b - a, 128) else 0);
+        m.taps_row = (m.taps_row + extra) % 128;
+        m.taps_n = @min(m.taps_n + extra, 128);
+    }
+    if (a < b) {
+        state.position = a;
+        c.at = a;
+        var ids: [cap]u32 = undefined;
+        for (0..b - a) |k| ids[k] = c.ids[(a + k) % cap];
+        const last = final and i + 1 == c.count;
+        out = try impl.forwardCore(m, &.{.{ .slot = c.slot, .ids = ids[0 .. b - a], .p0 = a }}, if (last) c.rp_logits else .none);
+        // the ring's base is the full pass's chunk start, not the replay's
+        if (final and model.tapsOn() and model.tapsSharedBaseOn()) m.taps_base = if (model.condAlignOn()) ch.pos % 128 else row0;
+    }
+    c.rp_ci += 1;
+    if (c.rp_ci < c.count) return out;
+    c.rp_ci = 0;
+    c.rp_lo = c.hi;
+    if (final) {
+        c.rp = false;
+        c.pending = false;
+        c.count = 0;
     }
     return out;
 }
@@ -211,7 +272,10 @@ pub fn flush(m: *Model, slot: u32) !void {
 
 /// Forget a pending run on `slot` whose state is being replaced.
 pub fn drop(m: *Model, slot: u32) void {
-    if (m.cone.pending and m.cone.slot == slot) m.cone.pending = false;
+    if (m.cone.pending and m.cone.slot == slot) {
+        m.cone.pending = false;
+        m.cone.rp = false;
+    }
 }
 
 pub fn release(m: *Model) void {
@@ -306,4 +370,15 @@ test "the stash holds every section's rows for the whole ring" {
     for (sect) |b| row += b;
     try std.testing.expectEqual(@as(usize, 51296), row);
     try std.testing.expectEqual(row * cap, Cone.totalBytes());
+}
+
+test "chunks the stash ring no longer reaches are forgotten; the newest stay in order" {
+    var c: Cone = .{};
+    for (0..max_chunks) |i| c.chunks[i] = .{ .pos = @intCast(i * 256), .rows = 256 };
+    c.count = max_chunks;
+    c.next = max_chunks * 256;
+    dropOld(&c);
+    try std.testing.expectEqual(@as(usize, cap / 256), c.count);
+    try std.testing.expectEqual(c.next - cap, c.chunks[0].pos);
+    try std.testing.expectEqual(c.next - 256, c.chunks[c.count - 1].pos);
 }

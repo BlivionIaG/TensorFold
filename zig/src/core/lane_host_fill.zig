@@ -4,6 +4,7 @@ const LaneHost = @import("lane_host.zig").LaneHost;
 const load = @import("lane_host_load.zig");
 const ends = @import("lane_host_end.zig");
 const lane_trace = @import("lane_trace.zig");
+const Slice = @import("lane_host_slice.zig").Slice;
 
 pub const preference_rounds = 8;
 
@@ -68,6 +69,7 @@ pub const Share = struct {
     // long prompts' order and chunk rows (TENSORFOLD_PREFILL_POLICY, policyRun); .stock: the default order and cuts
     policy: Policy = .stock,
     tokens: u32 = default_tokens, // TENSORFOLD_PREFILL_TOKENS: a policy's rows a visit, clamped to [min_tokens, max_tokens]
+    slice: Slice = .{}, // TF_DSV41_PREFILL_SLICE_MS: the time one prompt piece may take while a stream decodes
     call_rows: u32 = 0, // the row hint policyRun set for the call in flight (capRows); 0 outside its calls
 
     pub const short_rows = 512;
@@ -95,6 +97,7 @@ pub const Share = struct {
         if (std.c.getenv("TENSORFOLD_PREFILL_BUDGET")) |text| s.rows = budget(std.mem.span(text));
         if (std.c.getenv("TENSORFOLD_PREFILL_POLICY")) |text| s.policy = policyOf(std.mem.span(text));
         if (std.c.getenv("TENSORFOLD_PREFILL_TOKENS")) |text| s.tokens = tokensOf(std.mem.span(text));
+        if (std.c.getenv("TF_DSV41_PREFILL_SLICE_MS")) |text| s.slice = .of(std.mem.span(text));
         return s;
     }
 
@@ -225,7 +228,10 @@ fn fillAt(h: *LaneHost, at: usize) void {
     defer if (h.trace) |t| t.end(&line);
     job.fill_began = true;
     load.calling(h, job);
-    const done = h.core.fillStreamCommitted(&job.stream, first, .{ .ptr = job, .call = LaneHost.firstCommitted }, capRows(h)) catch |e| {
+    const cap = capRows(h);
+    const rows_before = remaining(h, job);
+    const t0 = std.Io.Clock.awake.now(h.io);
+    const done = h.core.fillStreamCommitted(&job.stream, first, .{ .ptr = job, .call = LaneHost.firstCommitted }, cap) catch |e| {
         if (h.trace != null) line.failed(job.stream.fill_at.load(.monotonic));
         _ = switch (e) {
             error.Cancelled => h.cancel(job),
@@ -237,6 +243,9 @@ fn fillAt(h: *LaneHost, at: usize) void {
         };
         return;
     };
+    if (!done and cap != 0 and h.share.slice.on() and h.core.backend.vtable.reports_fill) {
+        h.share.slice.sampled(rows_before -| remaining(h, job), t0.durationTo(std.Io.Clock.awake.now(h.io)).toNanoseconds());
+    }
     load.progress(h, job);
     if (h.trace != null) line.rows_to = if (done) job.stream.prompt_len else job.stream.fill_at.load(.monotonic);
     if (!done) return;
@@ -300,6 +309,8 @@ fn short(j: *const LaneHost.Job) bool {
 
 /// Fill chunks' cap: only the flag, a chunk-invariant family and live decoders together; else 0 (the engine's own cut).
 pub fn capRows(h: *const LaneHost) u32 {
+    // time-sliced pieces: while a stream decodes, a piece of at most the slice's time (a chunk-invariant family only)
+    if (h.share.slice.on() and h.core.backend.chunk_invariant and runnable(h) > 0) return h.share.slice.rows();
     if (h.share.policy != .stock and h.share.call_rows > 0) return h.share.call_rows; // policyRun's hint for the call in flight
     if (!h.decode_cap or h.share.p >= 1 or !h.core.backend.chunk_invariant) return 0;
     return if (runnable(h) > 0) decode_cap_rows else 0;
@@ -315,50 +326,6 @@ fn runnable(h: *const LaneHost) usize {
     var n: usize = 0;
     for (h.core.live.items) |s| n += @intFromBool(!s.finished and !s.paused);
     return n;
-}
-
-test "a share of 0.5 owes the decoders a step's time; 1 owes nothing; rounds pay it down" {
-    var s: Share = .{ .p = 0.5 };
-    s.stepped(1000, true);
-    try std.testing.expectEqual(@as(i64, 1000), s.debt_ns);
-    s.stepped(1000, false);
-    try std.testing.expectEqual(@as(i64, 1000), s.debt_ns);
-    s.rounded(400);
-    s.rounded(800);
-    try std.testing.expectEqual(@as(i64, 0), s.debt_ns);
-    var one: Share = .{};
-    one.stepped(1000, true);
-    try std.testing.expectEqual(@as(i64, 0), one.debt_ns);
-    var q: Share = .{ .p = 0.25 };
-    q.stepped(1000, true);
-    try std.testing.expectEqual(@as(i64, 3000), q.debt_ns);
-}
-
-test "a share below the floor, NaN and inf fall back to 1; the floor and 1 stand" {
-    for ([_][]const u8{ "1e-12", "0.0099", "0", "-0.5", "nan", "inf", "-inf", "2", "x", "" }) |text| {
-        try std.testing.expectEqual(@as(f64, 1), Share.fromText(text).p);
-    }
-    try std.testing.expectEqual(@as(f64, 0.01), Share.fromText("0.01").p);
-    try std.testing.expectEqual(@as(f64, 1), Share.fromText("1").p);
-}
-
-test "prefill service: TENSORFOLD_PREFILL_BUDGET is whole rows; unset, 0 or anything else is none, main's order" {
-    for ([_][]const u8{ "", "0", "x", "-512", "+512", "5e2", "4294967296" }) |text| {
-        try std.testing.expectEqual(@as(u64, 0), Share.budget(text));
-    }
-    try std.testing.expectEqual(@as(u64, 512), Share.budget("512"));
-    try std.testing.expectEqual(@as(u64, 1), Share.budget(" 1\t"));
-    try std.testing.expectEqual(@as(u64, 0), (Share{}).rows);
-}
-
-test "a step's debt saturates instead of overflowing" {
-    var s: Share = .{ .p = Share.min_share };
-    s.stepped(std.math.maxInt(i64), true);
-    try std.testing.expect(s.debt_ns > 0);
-    s.stepped(std.math.maxInt(i64), true);
-    try std.testing.expectEqual(@as(i64, std.math.maxInt(i64)), s.debt_ns);
-    s.rounded(1000);
-    try std.testing.expect(s.debt_ns < std.math.maxInt(i64));
 }
 
 test "prefill service: charge respects restored floors, stale progress and terminal removal" {

@@ -4,6 +4,7 @@ const ds = @import("model.zig");
 const lanes = @import("lanes");
 const Stream = lanes.Stream;
 const Backend = @import("backend.zig").Backend;
+const forward_cone = ds.forward_cone;
 
 /// The stream's slot, taken, reset and (for a kept prompt state) restored on the first chunk; the pass's cursor.
 fn begin(b: *Backend, s: *Stream, prompt: []const u32) !u32 {
@@ -11,6 +12,7 @@ fn begin(b: *Backend, s: *Stream, prompt: []const u32) !u32 {
     const state = &b.model.caches[i];
     if (prompt.len + s.max_new + 1 > state.plan.capacity) return error.ContextFull;
     try b.by.put(b.gpa, s, i);
+    b.finishing = null;
     try b.model.resetSlot(i);
     b.history[i].clearRetainingCapacity();
     s.cached = 0;
@@ -43,7 +45,11 @@ pub fn step(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
         if (s.cached > 0) if (s.reuse.hook) |hook| if (std.mem.indexOfScalar(u32, s.reuse.marks, s.cached) != null) hook.at(hook.ptr, s, s.cached);
         break :blk slot;
     };
-    if (s.isCancelled()) return error.Cancelled;
+    if (s.isCancelled()) {
+        if (b.finishing == s) b.finishing = null;
+        return error.Cancelled;
+    }
+    if (b.finishing == s) return try finishCone(b, s, i, @intCast(prompt.len));
     const at: u32 = b.model.caches[i].position;
     const plan_rows = b.model.workspace.plan.rows;
     const rows = if (max_rows != 0) @min(plan_rows, max_rows) else plan_rows;
@@ -61,9 +67,13 @@ pub fn step(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
     if (!last) b.model.lookahead(i, prompt[end..@min(prompt.len, end + plan_rows)]);
     var merge: u32 = if (snap_at > at and snap_at < end and end - at >= 64) snap_at else 0;
     if (merge != 0 and !b.model.beginSnapTail(i, prompt[@max(0, @as(usize, merge) - 4)..merge], merge, at)) merge = 0;
+    // beside decoders (a capped piece) the cone's decoder replay runs a piece a call, rounds between
+    const cone = &b.model.cone;
     if (last) {
+        cone.defer_final = max_rows != 0 and merge == 0 and std.mem.indexOfScalar(u32, s.reuse.marks, end) == null;
+        defer cone.defer_final = false;
         _ = try b.model.forwardOn(i, prompt[at..end], .last);
-        b.first[i] = try b.draw(i, s, @intCast(prompt.len));
+        if (forward_cone.replaying(b.model)) b.finishing = s else b.first[i] = try b.draw(i, s, @intCast(prompt.len));
     } else {
         _ = try b.model.forwardOn(i, prompt[at..end], .none);
     }
@@ -75,7 +85,15 @@ pub fn step(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
     // The prompt cache's keep hook, at the chunk end it asked to see.
     if (s.reuse.hook) |hook| if (std.mem.indexOfScalar(u32, s.reuse.marks, end) != null) hook.at(hook.ptr, s, end);
     s.fill_at.store(end, .monotonic);
-    return last;
+    return last and b.finishing != s;
+}
+
+/// A deferred replay's next piece; true once it ends and the first token is drawn.
+fn finishCone(b: *Backend, s: *Stream, slot: u32, len: u32) !bool {
+    if (!try forward_cone.replayStep(b.model)) return false;
+    b.finishing = null;
+    b.first[slot] = try b.draw(slot, s, len);
+    return true;
 }
 
 /// The whole prompt pass in one call, as the lane host runs it when it has nothing to interleave.
