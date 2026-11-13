@@ -7,6 +7,7 @@ const LaneHost = @import("lane_host.zig").LaneHost;
 const Job = @import("lane_job.zig").Job;
 const Request = api.Request;
 const route = @import("lane_remote_route.zig");
+const host_fill = @import("lane_host_fill.zig");
 
 /// The gate and decider every remote source keeps: one pull at a time, and a prompt goes to the pair only when it pays.
 pub const Route = route.Route;
@@ -14,6 +15,8 @@ pub const Ask = route.Ask;
 pub const Verdict = route.Verdict;
 pub const Directive = route.Directive;
 pub const Measured = route.Measured;
+pub const Busy = route.Busy;
+pub const Span = route.Span;
 pub const Outcome = route.Outcome;
 pub const Door = route.Door;
 pub const Change = route.Change;
@@ -32,6 +35,8 @@ pub const Source = struct {
     running: *std.atomic.Value(u32),
     /// A pass the lane host timed (this engine's own prompt pass, or the last-token pass after a pull), if it learns.
     measured: ?*const fn (ptr: *anyopaque, m: Measured) void = null,
+    /// This machine's own prefill work and decode load, said before the queue is weighed, if the source plans by it.
+    busy: ?*const fn (ptr: *anyopaque, b: Busy) void = null,
 };
 
 /// A pull at its gate: ask the breaker, check a half-open pair is alive, run `p.run`, tell the breaker how it went.
@@ -94,6 +99,8 @@ pub const Ticket = struct {
     directive: Directive,
     host: *LaneHost,
     source: Source,
+    /// the gate sent it here: the pair's queue ahead of it is longer than prefilling here
+    shed: bool = false,
 
     const running: u8 = 0;
     const landed: u8 = 1;
@@ -112,6 +119,7 @@ pub fn queue(h: *LaneHost) void {
     keepWarm(h);
     var holding: usize = 0;
     const decoding: u32 = @intCast(h.admitted.items.len -| h.filling.items.len); // streams a prompt pass here would stall
+    say(h, source, decoding);
     for (h.queued.items) |job| holding += @intFromBool(if (job.ticket) |t| t.state.load(.acquire) == Ticket.running or t.filled != null else false);
     for (h.queued.items) |job| {
         if (holding >= ahead()) return; // the rest are weighed once one of these is admitted
@@ -126,6 +134,7 @@ pub fn queue(h: *LaneHost) void {
         if (verdict != .remote) {
             job.remote_looked = !verdict.later(); // busy, slower or down: weighed again at the next look
             said(job, verdict, cached);
+            say(h, source, decoding); // this prompt's prefill is the next one's work ahead
             continue;
         }
         const t = h.gpa.create(Ticket) catch continue;
@@ -145,6 +154,33 @@ pub fn queue(h: *LaneHost) void {
     }
 }
 
+/// The source learns this machine's own load: what its engine is prefilling or has queued for itself, and its decoders.
+fn say(h: *LaneHost, source: Source, decoding: u32) void {
+    const busy = source.busy orelse return;
+    var spans: [route.max_spans]Span = undefined;
+    var n: usize = 0;
+    for (h.filling.items) |job| {
+        if (n == spans.len) break;
+        const len: u64 = job.stream.prompt_len;
+        spans[n] = .{ .from = len -| host_fill.remaining(h, job), .to = len };
+        n += 1;
+    }
+    for (h.queued.items) |job| {
+        if (n == spans.len) break;
+        if (!keptHere(job)) continue;
+        spans[n] = .{ .from = 0, .to = job.request.prompt.len };
+        n += 1;
+    }
+    busy(source.ptr, .{ .decoding = decoding, .share = h.share.p, .spans = spans[0..n] });
+}
+
+/// Whether a queued job's prompt will be prefilled here: weighed and kept off the pair, or sent back by its gate.
+fn keptHere(job: *const Job) bool {
+    if (job.ticket) |t| return t.state.load(.acquire) == Ticket.landed and t.filled == null;
+    const v = job.verdict orelse return false;
+    return v != .remote;
+}
+
 /// A prompt kept off the pair for now, said once per reason (a `later` verdict only: the rest are the usual case).
 fn said(job: *Job, v: Verdict, cached: u64) void {
     if (!v.later() or job.remote_said == v) return;
@@ -158,14 +194,22 @@ pub fn prefilled(h: *LaneHost, job: *const Job, ns: i96) void {
     const learn = source.measured orelse return;
     const rows = job.request.prompt.len - job.stream.cached;
     const took: u64 = @intCast(@max(0, ns));
+    const end = job.request.prompt.len;
     if (job.stream.reuse.pulled) {
         std.log.info("remote prefill: {d} tokens pulled: gate {d:.2} s, trigger {d:.2} s, transfer {d:.2} s (landing {d:.2} s), {d:.1} MiB; the tail pass {d:.2} s", .{
             job.stream.cached,                                     secs(job.phases.queue_ns), secs(job.phases.trigger_ns), secs(job.phases.pull_ns), secs(job.phases.land_ns),
             @as(f64, @floatFromInt(job.phases.bytes)) / (1 << 20), secs(took),
         });
-        return learn(source.ptr, .{ .pass = .tail, .rows = rows, .ns = took });
+        return learn(source.ptr, .{ .pass = .tail, .rows = rows, .ns = took, .end = end });
     }
-    if (!job.stream.reuse.remote) learn(source.ptr, .{ .pass = .local, .rows = rows, .ns = took });
+    // the planner counts decoders and the engine's other prompts itself: only a pass that ran alone teaches the rate
+    if (!job.stream.reuse.remote and alone(h, job)) learn(source.ptr, .{ .pass = .local, .rows = rows, .ns = took, .end = end });
+}
+
+/// Whether `job`'s pass ran with no other prompt filling and no stream decoding: nothing else shared the engine.
+fn alone(h: *const LaneHost, job: *const Job) bool {
+    for (h.filling.items) |other| if (other != job) return false;
+    return h.admitted.items.len <= 1; // the job itself, admitted
 }
 
 fn secs(ns: u64) f64 {
@@ -195,7 +239,8 @@ fn fill(t: *Ticket) void {
     const h = t.host;
     const left = t.state.load(.acquire) == Ticket.left; // its job ended before this thread began: nothing to ask
     const got = if (left) null else source.fill(source.ptr, t.prompt, t.cached, t.directive, &t.gone) catch |err| blk: {
-        if (err != error.Aborted) std.log.warn("remote prefill failed ({s}); the prompt is prefilled here", .{@errorName(err)});
+        if (err == error.Shed) t.shed = true;
+        if (err != error.Aborted and err != error.Shed) std.log.warn("remote prefill failed ({s}); the prompt is prefilled here", .{@errorName(err)});
         break :blk null;
     };
     t.filled = if (got) |f| if (f.at > t.cached and f.at < t.prompt.len) f else drop: { // a row stays: the first token
@@ -256,6 +301,10 @@ pub fn use(h: *LaneHost, job: *Job, reuse: *lanes.stream.Reuse) void {
     defer if (reuse.remote and !reuse.pulled) ownFirst(h, job, reuse); // a kept remote state stands, pull or none
     const t = job.ticket orelse return;
     if (t.state.load(.acquire) != Ticket.landed) return;
+    if (t.shed) {
+        job.verdict = .busy; // the reply and the log say where the prompt was prefilled, and why
+        said(job, .busy, t.cached);
+    }
     job.ticket = null;
     job.remote = t.filled;
     t.filled = null;

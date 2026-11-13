@@ -16,6 +16,7 @@ const Ask = api.LaneHost.Remote.Ask;
 const Verdict = api.LaneHost.Remote.Verdict;
 const Directive = api.LaneHost.Remote.Directive;
 const Measured = api.LaneHost.Remote.Measured;
+const Busy = api.LaneHost.Remote.Busy;
 const Outcome = api.LaneHost.Remote.Outcome;
 
 /// The lane host's remote source over HTTP: one pull at a time, each into a blank Snapshot of this model's shape.
@@ -41,15 +42,21 @@ pub const Pull = struct {
     waited_ns: u64 = 0,
 
     pub fn source(p: *Pull) api.LaneHost.Remote.Source {
-        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running, .measured = measured };
+        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running, .measured = measured, .busy = busy };
     }
 
     /// A prefix of `prompt` beyond `cached` on a whole chunk, asked for, fetched and landed whole in a blank Snapshot.
     pub fn pull(p: *Pull, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool)) !?Filled {
         if (p.closing.load(.acquire) or p.off.load(.acquire)) return null;
         const upto = p.policy.upto(prompt.len, cached) orelse return null;
-        p.waited_ns = p.route.admit(p.io, p.route.estimateFor(upto, prompt.len - cached, directive), &p.closing, gone) orelse return null;
-        defer p.route.leave();
+        const gate = p.route.admit(p.io, p.route.estimateFor(upto, cached, prompt.len, directive), &p.closing, gone);
+        const entered = switch (gate) {
+            .entered => |e| e,
+            .local => return error.Shed, // the pair's queue ahead is longer than prefilling here
+            .stop => return null,
+        };
+        p.waited_ns = entered.waited_ns;
+        defer p.route.leave(entered.id);
         if (p.closing.load(.acquire) or p.off.load(.acquire) or gone.load(.acquire)) return null;
         return api.LaneHost.Remote.guarded(p, prompt, cached, upto, gone);
     }
@@ -125,6 +132,11 @@ pub const Pull = struct {
     fn measured(ptr: *anyopaque, m: Measured) void {
         const p: *Pull = @ptrCast(@alignCast(ptr));
         p.route.observe(m);
+    }
+
+    fn busy(ptr: *anyopaque, b: Busy) void {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        p.route.busy(Route.nowNs(p.io), b);
     }
 
     fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool)) anyerror!?Filled {

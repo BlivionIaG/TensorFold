@@ -13,7 +13,7 @@ const s: u64 = std.time.ns_per_s;
 
 /// The old seeds (950 a second here, 1000 a pull, 1 s of tail), for the tests whose numbers are written for them.
 fn slowMac() Route {
-    return .{ .local_tps = .{ .v = 950 }, .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } };
+    return .{ .local = .{ .base = .{ .v = 950 } }, .remote = .{ .base = .{ .v = 1000 } }, .tail_s = .{ .v = 1 } };
 }
 
 test "directive: the body's word names auto, force or never and nothing else" {
@@ -30,28 +30,32 @@ test "directive: force sends a prompt the weighing would keep here, busy pair or
     forced.directive = .force;
     try t.expectEqual(Verdict.slower, r.weigh(0, ask, 8191)); // 9.2 s pulled against 8.6 s here
     try t.expectEqual(Verdict.remote, r.weigh(0, forced, 8191));
-    try t.expectEqual(.entered, r.enter(0, 0, r.estimate(8191, 8192)));
+    const id = r.join(0, r.estimateFor(8191, 0, 8192, .force)).?;
+    try t.expectEqual(.entered, r.poll(0, id));
     try t.expectEqual(Verdict.busy, r.weigh(1 * s, ask, 8191));
     try t.expectEqual(Verdict.remote, r.weigh(1 * s, forced, 8191));
 }
 
 test "directive: a forced prompt waits for the pull under way however long it runs, an auto one goes local" {
     var r: Route = slowMac();
-    const e = r.estimate(8191, 8192);
-    try t.expectEqual(.entered, r.enter(0, 0, e));
-    const pinned = r.estimateFor(8191, 8192, .force);
-    try t.expect(pinned.pinned and !r.estimateFor(8191, 8192, .auto).pinned);
-    try t.expectEqual(.local, r.enter(1 * s, 1 * s, e));
-    try t.expectEqual(.wait, r.enter(1 * s, 1 * s, pinned));
-    try t.expectEqual(.wait, r.enter(1000 * s, 1 * s, pinned));
-    r.leave();
-    try t.expectEqual(.entered, r.enter(1001 * s, 1 * s, pinned));
+    const e = r.estimate(8191, 0, 8192);
+    const pinned = r.estimateFor(8191, 0, 8192, .force);
+    const first = r.join(0, pinned).?; // the pair has it, as the weighing would not have said
+    try t.expectEqual(.entered, r.poll(0, first));
+    try t.expect(pinned.pinned and !r.estimateFor(8191, 0, 8192, .auto).pinned);
+    const auto = r.join(1 * s, e).?;
+    const hold = r.join(1 * s, pinned).?;
+    try t.expectEqual(.local, r.poll(1 * s, auto));
+    try t.expectEqual(.wait, r.poll(1 * s, hold));
+    try t.expectEqual(.wait, r.poll(1000 * s, hold));
+    r.leave(first);
+    try t.expectEqual(.entered, r.poll(1001 * s, hold));
 }
 
 /// The pair as a source: the gate a family's pull keeps, `delay_ms` per pull, and what each fill was told.
 const Pair = struct {
     /// 6 tokens, a pull of 4: an idle pair is faster, a busy one is not (the old 1000 a second and 1 s tail)
-    route: Route = .{ .local_tps = .{ .v = 5 }, .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } },
+    route: Route = .{ .local = .{ .base = .{ .v = 5 } }, .remote = .{ .base = .{ .v = 1000 } }, .tail_s = .{ .v = 1 } },
     delay_ms: i64 = 600,
     fills: std.atomic.Value(u32) = .init(0),
     forced: std.atomic.Value(u32) = .init(0),
@@ -67,8 +71,12 @@ const Pair = struct {
 
     fn fill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool)) anyerror!?remote.Filled {
         const p: *Pair = @ptrCast(@alignCast(ptr));
-        _ = p.route.admit(t.io, p.route.estimateFor(4, prompt.len - cached, directive), &p.closing, gone) orelse return null;
-        defer p.route.leave();
+        const entered = switch (p.route.admit(t.io, p.route.estimateFor(4, cached, prompt.len, directive), &p.closing, gone)) {
+            .entered => |e| e,
+            .local => return error.Shed,
+            .stop => return null,
+        };
+        defer p.route.leave(entered.id);
         _ = p.fills.fetchAdd(1, .acq_rel);
         if (directive == .force) _ = p.forced.fetchAdd(1, .acq_rel);
         try std.Io.sleep(t.io, .fromMilliseconds(p.delay_ms), .awake);

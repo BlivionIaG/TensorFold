@@ -31,6 +31,8 @@ test {
     _ = @import("lane_activity_test.zig");
     _ = @import("lane_remote_test.zig");
     _ = @import("lane_remote_route_test.zig");
+    _ = @import("lane_remote_queue_test.zig");
+    _ = @import("lane_remote_curve.zig");
     _ = @import("lane_remote_directive_test.zig");
     _ = @import("lane_remote_breaker_test.zig");
     _ = @import("lane_export_cancel_test.zig");

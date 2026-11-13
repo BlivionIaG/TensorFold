@@ -77,8 +77,13 @@ pub const rules = [_]Rule{
     .{ .name = "TF_PREFILL_TIMEOUT_S", .scope = .metal, .kind = .u64, .min = 1, .max = std.time.s_per_day, .forms = "whole seconds from 1 to 86400 (default: DeepSeek V4.1 15 and three times the predicted pull, 30 to 1800; Qwen 60 and 1 per 400 tokens sent)" },
     .{ .name = "TF_DSV41_PROMPT_CACHE_GIB", .scope = .metal, .kind = .real, .trim = " \t", .forms = "a finite GiB budget of at least 0 for the DeepSeek V4.1 server's kept prompt states (0 keeps none; --prompt-cache-gib wins; default: the automatic budget)" },
     .{ .name = "TF_PREFILL_ROUTE", .scope = .metal, .kind = .word, .trim = " ", .words = &.{ "auto", "always" }, .forms = "auto or always (default auto): auto weighs each prompt against the pair's load and the predicted times, always pulls every prompt that qualifies, behind any pull under way" },
-    .{ .name = "TF_PREFILL_LOCAL_TPS", .scope = .metal, .kind = .positive_real, .trim = " ", .forms = "a finite prompt-token rate a second greater than 0 (default 1500): the Mac's own prefill, until it has timed its own" },
-    .{ .name = "TF_PREFILL_REMOTE_TPS", .scope = .metal, .kind = .positive_real, .trim = " ", .forms = "a finite prompt-token rate a second greater than 0 (default 2000): a pull end to end, until it has timed its own" },
+    .{ .name = "TF_PREFILL_LOCAL_TPS", .scope = .metal, .kind = .positive_real, .trim = " ", .forms = "a finite prompt-token rate a second greater than 0 (default 2050): the Mac's own prefill up to 32768 prompt tokens, until it has timed its own" },
+    .{ .name = "TF_PREFILL_REMOTE_TPS", .scope = .metal, .kind = .positive_real, .trim = " ", .forms = "a finite prompt-token rate a second greater than 0 (default 2400): a pull end to end up to 32768 prompt tokens, until it has timed its own" },
+    .{ .name = "TF_PREFILL_LOCAL_DECAY", .scope = .metal, .kind = .real, .max = 2, .trim = " ", .forms = "a finite exponent from 0 to 2 (default 0.07): the Mac's average prefill rate over a prompt of n > 32768 tokens is the rate times (32768 / n) to this power" },
+    .{ .name = "TF_PREFILL_REMOTE_DECAY", .scope = .metal, .kind = .real, .max = 2, .trim = " ", .forms = "a finite exponent from 0 to 2 (default 0.15): the same fall with context for a pull" },
+    .{ .name = "TF_PREFILL_LOCAL_CURVE", .scope = .metal, .kind = .path, .forms = "rows:seconds pairs, comma separated, 1 to 8 (text without control characters): measured seconds for this machine's prefill of a prompt of that many rows from empty; the route fits its rate and decay to them" },
+    .{ .name = "TF_PREFILL_REMOTE_CURVE", .scope = .metal, .kind = .path, .forms = "rows:seconds pairs, comma separated, 1 to 8 (text without control characters): measured seconds for a pull of that many rows (the producer's prefill and the transfer, not the queue wait or the tail)" },
+    .{ .name = "TF_PREFILL_STALL", .scope = .metal, .kind = .real, .trim = " ", .forms = "a finite weight of at least 0 (default 1): the cost, per second of prefill here, of each stream decoding on the Mac (0 ignores them)" },
     .{ .name = "TF_PREFILL_BREAKER", .scope = .metal, .kind = .u64, .trim = " ", .forms = "a whole count of failed pulls in a row from 0 (default 3) after which prompts are prefilled here for the cool-down; 0 never stops" },
     .{ .name = "TF_PREFILL_COOLDOWN_S", .scope = .metal, .kind = .u64, .min = 1, .max = std.time.s_per_day, .trim = " ", .forms = "whole seconds from 1 to 86400 (default 30) that prompts stay off an unreachable pair before one pull tries it" },
     .{ .name = "TF_FLASHNEXT_GROUPED_ROWS", .scope = .metal, .kind = .size, .forms = "0 (never) or the rows, 1 to 32, from which a window's experts run grouped", .max = 32 },
@@ -315,6 +320,11 @@ pub fn read(comptime T: type, name: [:0]const u8, default: T) Error!T {
 pub fn range(name: [:0]const u8, raw: ?[]const u8) Error!?[2]u32 {
     const n = (try checked(name, raw)) orelse return null;
     return .{ @intCast(n >> 32), @truncate(n) };
+}
+
+/// A setting's text as the process has it, for `path` and the other readers that take the raw text.
+pub fn setting(name: [:0]const u8) ?[]const u8 {
+    return sys.getenv(name);
 }
 
 /// A `.path` setting's text, or null when unset or blank; nothing is logged, so the caller words the refusal.

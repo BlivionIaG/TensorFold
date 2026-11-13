@@ -56,16 +56,16 @@ test "breaker: an open breaker keeps prompts here under route always too" {
 test "breaker: the pair is down for a missing link or a silent server, up for an answer" {
     try t.expect(breaker.pairDown(error.LinkDown) and breaker.pairDown(error.Timeout) and breaker.pairDown(error.TriggerTimedOut));
     try t.expect(breaker.pairDown(error.NoMailbox) and breaker.pairDown(error.ConnectionRefused) and breaker.pairDown(error.LinkLost));
-    for ([_]anyerror{ error.Refused, error.Mismatch, error.Protocol, error.PrefixTooLong, error.PartialPrefix, error.PartialState, error.OutOfMemory, error.NoEntropy, error.TriggerClosed, error.Aborted, error.TriggerUnauthorized, error.TriggerRefused, error.Corrupt, error.BadManifest, error.NotHeld, error.Unauthorized, error.WriteFailed }) |e|
+    for ([_]anyerror{ error.Refused, error.Mismatch, error.Protocol, error.PrefixTooLong, error.PartialPrefix, error.PartialState, error.OutOfMemory, error.NoEntropy, error.TriggerClosed, error.Aborted, error.Shed, error.TriggerUnauthorized, error.TriggerRefused, error.Corrupt, error.BadManifest, error.NotHeld, error.Unauthorized, error.WriteFailed }) |e|
         try t.expect(!breaker.pairDown(e));
 }
 
 test "deadline: TF_PREFILL_TIMEOUT_S as given, else 15 s and three times the predicted pull between 30 s and 30 min" {
-    var r: Route = .{ .remote_tps = .{ .v = 1000 }, .tail_s = .{ .v = 1 } };
+    var r: Route = .{ .remote = .{ .base = .{ .v = 1000 } }, .tail_s = .{ .v = 1 } };
     try t.expectEqual(@as(u64, 30), r.deadlineS(100)); // 15 + 3 * 1.1 = 18.3: the floor
     try t.expectEqual(@as(u64, 43), r.deadlineS(8191)); // 15 + 3 * (8.191 + 1) = 42.6
     try t.expectEqual(@as(u64, 1800), r.deadlineS(900000));
-    r.remote_tps.v = 2000; // a faster pair tightens it: 15 + 3 * (4.1 + 1) = 30.3
+    r.remote.base.v = 2000; // a faster pair tightens it: 15 + 3 * (4.1 + 1) = 30.3
     try t.expectEqual(@as(u64, 31), r.deadlineS(8191));
     var set: Route = .{ .timeout_s = 600 };
     try t.expectEqual(@as(u64, 600), set.deadlineS(100));
