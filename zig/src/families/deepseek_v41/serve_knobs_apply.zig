@@ -95,7 +95,7 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
         ps.cone_group = try pk.replayGroup(&env);
         ps.cone_overlap = try pk.replayOverlap(&env);
         ps.cone_on = exact orelse !f.opts.pf_tbo;
-        ps.cone_warm = ps.cone_on and try pk.replayWarm(&env);
+        ps.cone_warm = if (ps.cone_on) try pk.replayWarm(&env) else 0;
         if (ps.cone_on and f.opts.pf_tbo) {
             std.log.scoped(.dsv41).err("TF_DSV41_REPLAY_EXACT=1 does not run with TF_DSV41_PF_TBO=1 (the pair's segments do not fill the cone ring)", .{});
             return error.BadKnob;
@@ -113,7 +113,7 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
     if (f.opts.stream_rb == 1) log.info("stream top-k: _stream_pf (the next tile's key loads issued ahead)", .{});
     if (f.opts.stream_rb > 1) log.info("stream top-k: {d} rows a program (_stream_rb{d})", .{ f.opts.stream_rb, f.opts.stream_rb });
     if (f.opts.pf_tbo) log.info("prefill tbo: encoder segments two at a time on two streams, x3gm on at most {d} SMs (0: all){s}", .{ dk.exl3.gm_sms_cap, if (f.opts.pf_overlap > 0) "; TF_DSV41_PF_OVERLAP is off under it" else "" });
-    if (pf.state(f).cone_on) log.info("replay: exact decoder replay, programs of {d} layers over the last {d} rows, end fence {s} (TF_DSV41_REPLAY_EXACT, _GROUP, _OVERLAP), warm resume {s} (_WARM)", .{ pf.state(f).cone_group, @import("ced.zig").cone_keep, if (pf.state(f).cone_overlap) "on" else "off", if (pf.state(f).cone_warm) "on" else "off" });
+    if (pf.state(f).cone_on) log.info("replay: exact decoder replay, programs of {d} layers over the last {d} rows, end fence {s} (TF_DSV41_REPLAY_EXACT, _GROUP, _OVERLAP), warm resume {d} (_WARM)", .{ pf.state(f).cone_group, @import("ced.zig").cone_keep, if (pf.state(f).cone_overlap) "on" else "off", pf.state(f).cone_warm });
     if (f.opts.pf_overlap > 0) log.info("prefill overlap: a segment's exchanges in {d} row pieces on the side stream{s}", .{ f.opts.pf_overlap, if (f.opts.pf_overlap_site) ", every piece; the next mixing site in the same pieces, each after its own" else "" });
     log.info("serve knobs: pf_dense {s}, prefill rows {d}{s}, index budget {d} MiB, R1 {s}, prefetch ahead {s}, x3gm v2 {t}, prefill {t}, mhc pfdec {d}", .{ if (f.opts.pfd != null) "fused" else "off", if (big) pf4k_rows else @as(u32, @intCast(f.opts.prefill_rows)), if (big) " (4K: one x3gm block a segment, in the prefill's own workspace)" else "", f.opts.index_budget >> 20, if (f.opts.r1) "on" else "off", if (pf.state(f).ahead) "on" else "off", f.opts.gm_v2, pf.state(f).mode, f.opts.mhc_pf_rows });
 }

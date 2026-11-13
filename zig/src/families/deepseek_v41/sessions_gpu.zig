@@ -10,6 +10,7 @@ const eh = @import("engram_host.zig");
 const kvs = @import("cuda_kv.zig");
 const buffers = @import("buffers.zig");
 const ced = @import("ced.zig");
+const sessions_warm = @import("sessions_warm.zig");
 const rowmode = @import("rowmode.zig");
 const slots_mod = @import("slots.zig");
 const graphs = @import("graphs.zig");
@@ -88,8 +89,10 @@ pub const Sessions = struct {
     /// replay mode with drafts: the drafter's rings, outside the snapshot, read by the hand-off export at the cut
     drafter_rings: []Piece = &.{},
     ds_set: ?DsSet = null,
-    /// TF_DSV41_REPLAY_WARM: prompt entries hold exact decoder rings (`sessions_warm`), saved after the exact replay
-    warm: bool = false,
+    /// TF_DSV41_REPLAY_WARM (`sessions_warm`): 0 off; else entries hold exact decoder rings (level 1: a cone ring copy)
+    warm: u8 = 0,
+    cone_roles: []const sessions_warm.Role = &.{},
+    cone_bak: []u8 = &.{},
 
     pub const DsSet = struct { ctx: *anyopaque, set: *const fn (ctx: *anyopaque, slot: u32, valid: u64) void, get: ?*const fn (*anyopaque, u32) u64 = null };
 
@@ -159,12 +162,14 @@ pub const Sessions = struct {
         s.pieces = list.items;
         const roles = try la.allocator().alloc([]const u8, list.items.len);
         for (list.items, roles) |pc, *r| r.* = pc.role;
-        s.warm = @import("sessions_warm.zig").enabled(f, roles, layers);
+        s.warm = sessions_warm.level(f, roles, layers);
+        if (s.warm == 1) s.cone_roles = try sessions_warm.coneRoles(na, plan) orelse &.{};
+        if (s.warm == 1 and s.cone_roles.len == 0) s.warm = 0;
         s.drafter_rings = rings_out.items;
         // the snapshot as the RAM tier measures it (kv/sess.zig): replay keeps the rings below the decoder
         var rings: u64 = 0;
         var carries: u64 = 0;
-        const d = if (replay and !s.warm) try ced.decoderStart(f.cfg) else f.cfg.layers;
+        const d = if (replay and s.warm == 0) try ced.decoderStart(f.cfg) else f.cfg.layers;
         for (layers) |L| {
             if (L < d) rings += 1;
             if (f.cfg.isKvSource(L) and f.cfg.compressRatio(L) == 2) carries += 1;
@@ -400,10 +405,11 @@ pub const Sessions = struct {
         const h = &s.hist[s.cur()];
         if (h.items.len != s.f.slot.pos or s.f.slot.pending != null) return error.BadWindow;
         if (pf.state(s.f).mode == .replay and s.f.slot.ced.hi != s.f.slot.pos) return error.BadWindow;
-        if (s.warm and !try @import("sessions_warm.zig").beforeSave(s.f)) return null;
+        if (s.warm != 0 and s.f.leads() and !sessions_warm.canSave(s.f)) return null;
         try writes.retire(s);
         try s.f.sendSess(.prompt, 0);
         if (h.items.len == 0) return null;
+        const saved = try sessions_warm.before(s.f, s.gpa, s.warm, s.cone_roles, &s.cone_bak);
         const snap = try s.snapshot();
         var bounded = snap.bounded();
         bounded.logical_bytes = snap.measure;
@@ -411,6 +417,7 @@ pub const Sessions = struct {
             Snap.release(snap);
             return e;
         };
+        try sessions_warm.after(s.f, s.warm, s.cone_roles, s.cone_bak, saved);
         try s.store.settleAll();
         return id;
     }
@@ -420,7 +427,7 @@ pub const Sessions = struct {
 
     /// The entries' tag (sessions.Tag's CED field): replay entries never resume full ones, nor full ones replay's.
     fn tag(s: *const Sessions) u32 {
-        if (s.warm) return ced.tag_warm;
+        if (s.warm != 0) return ced.tag_warm;
         return if (pf.state(s.f).mode == .replay) ced.tag else ced.tag_fast;
     }
 
@@ -449,7 +456,7 @@ pub const Sessions = struct {
         for (ids, prompt) |*d, t| d.* = @intCast(t);
         const h = (try s.store.find(s.tag(), ids)) orelse return null;
         if (h.pos >= prompt.len) return null;
-        if (s.f.prefill_state != null and pf.state(s.f).cone_on and !(s.warm and s.store.entry(h.id).extra.kind == prompt_kind) and !ced.resumeExact(s.f.cfg, prompt.len - 1, h.pos)) return null;
+        if (s.f.prefill_state != null and pf.state(s.f).cone_on and !(s.warm != 0 and s.store.entry(h.id).extra.kind == prompt_kind) and !ced.resumeExact(s.f.cfg, prompt.len - 1, h.pos)) return null;
         return h;
     }
 
@@ -547,7 +554,7 @@ pub const Sessions = struct {
         } else try s.restoreDisk(id);
         if (s.f.slot.pos != pos) return error.RestoredPosition;
         // a warm prompt entry was saved after the exact replay: its decoder rings are a full prefill's at its position
-        s.f.slot.exact = s.warm and e.extra.kind == prompt_kind;
+        s.f.slot.exact = s.warm != 0 and e.extra.kind == prompt_kind;
         s.f.slot.exact_at = pos;
         const h = &s.hist[s.cur()];
         try h.resize(s.gpa, pos);
