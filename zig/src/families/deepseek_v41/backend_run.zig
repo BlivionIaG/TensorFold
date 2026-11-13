@@ -325,6 +325,7 @@ pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
         // The depth controller reads the round just verified: its drafts and the rows it kept, counts only.
         if (policy.depthRunOn() and b.gov_rows[i] > 0) if (r.rows) |kept| {
             const st = &b.ctl[i];
+            if (std.c.getenv("TF_DSV41_MTP_ADAPT_DEBUG") != null) std.log.info("depth ctl: slot {d} used {d} kept {d} rows {d}", .{ i, b.gov_rows[i] - 1, kept.len, b.gov_rows[i] });
             st.observe(b.gov_rows[i] - 1, @intCast(kept.len), @min(mtpDepthMax(), depth_run.max_depth));
             if (st.off() and b.by.count() == 1 and !b.gov_off[i]) {
                 b.gov_off[i] = true;
