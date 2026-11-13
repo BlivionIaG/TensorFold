@@ -199,11 +199,8 @@ pub fn draftOffAfterFor(b: *Backend, i: usize) u32 {
     return if (@as(f64, @floatFromInt(b.model.caches[i].position)) < gate) draftOffLow() else 24;
 }
 
-const depthRun = @import("depth_run.zig");
-pub const runDepth = depthRun.runDepth;
-
 var depth_run_on: ?bool = null;
-/// TF_DSV41_MTP_DEPTH_RUN=1: the window depth is the last round's accepted run plus one (omlx's controller, counts only).
+/// TF_DSV41_MTP_DEPTH_RUN=1: depth and the drafting cut from acceptance counts and a cost table (depth_run.zig), never a clock.
 pub fn depthRunOn() bool {
     if (depth_run_on) |v| return v;
     const raw = std.c.getenv("TF_DSV41_MTP_DEPTH_RUN") orelse {
@@ -218,7 +215,7 @@ const MtpPolicy = struct { on: bool, up: f64, down: f64 };
 var mtp_policy: ?MtpPolicy = null;
 /// The adaptive depth policy, shared with the early `draft` hook so the drafter sizes itself to the policy.
 pub fn mtpDepthFor(b: *Backend, slot: u32) u32 {
-    if (depthRunOn() and slot < b.run_depth.len) return @min(b.run_depth[slot], lookupDepth());
+    if (depthRunOn() and slot < b.ctl.len) return @min(@max(b.ctl[slot].depth, 1), lookupDepth());
     const p = mtp_policy orelse blk: {
         const raw = std.c.getenv("TF_DSV41_MTP_ADAPT");
         const single: ?f64 = if (raw) |v| (std.fmt.parseFloat(f64, std.mem.span(v)) catch null) else null;
@@ -244,6 +241,7 @@ pub fn mtpDepthFor(b: *Backend, slot: u32) u32 {
 }
 
 pub fn draftGovernorOff(b: *Backend, i: usize) bool {
+    if (depthRunOn()) return i < b.gov_off.len and b.gov_off[i];
     if (!draftOffArmed()) return false;
     // A shared round decodes plain by contract, so the governor runs only while it is the only admitted stream.
     if (b.by.count() > 1) return false;

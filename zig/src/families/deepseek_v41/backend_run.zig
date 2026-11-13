@@ -17,6 +17,7 @@ const batchMax = Backend.batchMax;
 const penBump = Backend.penBump;
 const sampleRow = Backend.sampleRow;
 const policy = @import("backend_policy.zig");
+const depth_run = @import("depth_run.zig");
 const fastArgmax = policy.fastArgmax;
 const lookupTokens = policy.lookupTokens;
 const lookupDepth = policy.lookupDepth;
@@ -323,7 +324,12 @@ pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
         b.held[i] = &.{};
         // The depth controller reads the round just verified: its drafts and the rows it kept, counts only.
         if (policy.depthRunOn() and b.gov_rows[i] > 0) if (r.rows) |kept| {
-            b.run_depth[i] = policy.runDepth(b.gov_rows[i] - 1, @intCast(kept.len), @min(mtpDepthMax(), 3));
+            const st = &b.ctl[i];
+            st.observe(b.gov_rows[i] - 1, @intCast(kept.len), @min(mtpDepthMax(), depth_run.max_depth));
+            if (st.off() and b.by.count() == 1 and !b.gov_off[i]) {
+                b.gov_off[i] = true;
+                std.log.info("dsv41: drafting off at round {d}: no depth beats plain on this request's acceptance", .{st.rounds});
+            }
         };
         if (r.depth == 0) continue;
         if (draftGovernorOff(b, i)) {
@@ -455,7 +461,7 @@ pub fn release(ptr: *anyopaque, s: *Stream) void {
     const entry = b.by.fetchRemove(s) orelse return;
     b.model.resetAcceptSlot(entry.value);
     if (entry.value < b.last_depth.len) b.last_depth[entry.value] = 0;
-    if (entry.value < b.run_depth.len) b.run_depth[entry.value] = std.math.maxInt(u32);
+    if (entry.value < b.ctl.len) b.ctl[entry.value] = .{};
     if (entry.value < b.shallow.len) {
         b.shallow[entry.value] = false;
         b.low_streak[entry.value] = 0;
