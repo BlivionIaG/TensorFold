@@ -189,7 +189,10 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         std.log.info("deepseek-v41: draft env raw: lookup={s} mtp={s} taps={s} facts.mtp={} facts.speculate={} facts.drafts={} exact_width={} family_mtp={} most_drafts={}", .{ lk, mp, tp, f.mtp, f.speculate, f.drafts, f.exact_width, h.cfg.family_mtp, h.cfg.most_drafts });
     }
     errdefer h.cfg.deinit(gpa);
-    h.core = lanes.Engine.init(gpa, &h.cfg, h.back.backend(), h.wall.clock());
+    var back = h.back.backend();
+    // The unset step's wide round gives way to the narrow one while a stream decodes: decode rounds wait less.
+    if (step_asked == null and chunk == round_wide) back.decoding_rows = round_narrow;
+    h.core = lanes.Engine.init(gpa, &h.cfg, back, h.wall.clock());
     errdefer h.core.deinit();
     h.host = api.LaneHost.init(gpa, io, &h.core, .{
         .name = "deepseek-v41-zig",
