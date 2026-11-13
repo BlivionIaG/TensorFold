@@ -323,7 +323,7 @@ pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
         b.held[i] = &.{};
         // The depth controller reads the round just verified: its drafts and the rows it kept, counts only.
         if (policy.depthRunOn() and b.gov_rows[i] > 0) if (r.rows) |kept| {
-            b.run_depth[i] = policy.runDepth(b.gov_rows[i] - 1, @intCast(kept.len), @min(mtpDepthMax(), 4));
+            b.run_depth[i] = policy.runDepth(b.gov_rows[i] - 1, @intCast(kept.len), @min(mtpDepthMax(), 3));
         };
         if (r.depth == 0) continue;
         if (draftGovernorOff(b, i)) {
