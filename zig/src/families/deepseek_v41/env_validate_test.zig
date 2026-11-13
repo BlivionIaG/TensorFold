@@ -40,13 +40,13 @@ fn check(name: []const u8, raw: []const u8, valid: bool) !void {
     try t.expect(std.mem.endsWith(u8, why.?, e.rule(name).forms));
 }
 
-test "DeepSeek strict env: the shared table holds all 90 settings: 52 switches, 19 integers, 16 reals and 3 structured" {
+test "DeepSeek strict env: the shared table holds all 91 settings: 53 switches, 19 integers, 16 reals and 3 structured" {
     var counts: [4]usize = @splat(0);
     for (e.rules) |r| if (r.scope == .dsv41 and !layerSplit(r)) {
         try t.expect(std.mem.startsWith(u8, r.name, "TF_DSV41_"));
         counts[@backingInt(group(r))] += 1;
     };
-    try t.expectEqual([4]usize{ 52, 19, 16, 3 }, counts);
+    try t.expectEqual([4]usize{ 53, 19, 16, 3 }, counts);
 }
 
 test "DeepSeek strict env: unset and blank settings both read as the caller's default" {
