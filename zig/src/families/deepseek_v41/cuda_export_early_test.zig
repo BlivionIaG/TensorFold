@@ -133,7 +133,7 @@ fn produce(p: *serve.Produce, run: *serve.Produce.Early, pause_ms: u32, fail_at:
     while (chunks.next()) |c| {
         if (pause_ms > 0) try std.Io.sleep(io, .fromMilliseconds(pause_ms), .awake);
         if (fail_at) |f| if (c.row0 >= f) return run.fail();
-        const dst = run.rows(c.row0, c.rows);
+        const dst = try run.rows(c.row0, c.rows);
         for (0..c.rows) |i| @memcpy(dst[i * split.row_bytes ..][0..split.row_bytes], &rowOf(c.row0 + i));
         try run.publish(c.row0 + c.rows);
     }
@@ -290,7 +290,7 @@ test "a decoder that releases the export mid-split ends the run, and the produce
     try std.testing.expect(p.discard(id)); // the decoder's CLOSE, rows still being produced
     try std.testing.expect(run.gone());
     // the stage is still the run's to write: the lease keeps it
-    const dst = run.rows(0, 4);
+    const dst = try run.rows(0, 4);
     @memset(dst, 1);
     try run.publish(4);
     var why: []const u8 = "";
@@ -316,7 +316,7 @@ test "an entry is not expired while its split runs, and its clock starts when th
     while (chunks.next()) |c| {
         try std.Io.sleep(io, .fromMilliseconds(60), .awake);
         elapsed += 60 * std.time.ns_per_ms;
-        const dst = run.rows(c.row0, c.rows);
+        const dst = try run.rows(c.row0, c.rows);
         for (0..c.rows) |i| @memcpy(dst[i * split.row_bytes ..][0..split.row_bytes], &rowOf(c.row0 + i));
         try run.publish(c.row0 + c.rows);
         try p.table.expire();

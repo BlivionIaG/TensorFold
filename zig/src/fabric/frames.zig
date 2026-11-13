@@ -80,7 +80,9 @@ pub const Source = struct {
             if (count == 0 or start + count > st.rows) return error.RowOutOfRange;
             if (count * st.row_bytes > out.len) return error.FrameTooLarge;
             try awaited(st, start + count, s.wait_ns);
-            @memcpy(out[0..@intCast(count * st.row_bytes)], st.slice(start, count));
+            try st.copyOut(start, count, out);
+            // a ring's rows are the producer's to reuse once served
+            try st.served(start, count);
             return count * st.row_bytes;
         }
         if (s.parts.len > 0) {

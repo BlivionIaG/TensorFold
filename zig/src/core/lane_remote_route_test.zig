@@ -393,7 +393,7 @@ test "measured: the host reports its own prompt pass, and the last-token pass af
     try t.expectEqual(@as(u64, 100), pulled.first.rows);
 }
 
-/// A route with the split opted in at its seeds: 3500 a second below the cut, 1.4 s fixed, a pull 2000 a second.
+/// A route with the split opted in at its seeds: the pair 2700 a second at cut 14 (the cut it picks), 1.4 s fixed, a pull 2000 a second.
 fn splitting() Route {
     return Route.build(.{ .split = true });
 }
@@ -410,13 +410,13 @@ test "split: off by default, so no prompt is ever split, and the old verdicts st
 test "split: a long prompt is split when that is predicted faster than a pull, a short one is not split" {
     var r = splitting();
     const e = r.estimate(32767, 32768);
-    try t.expectApproxEqAbs(@as(f64, 11.362), @as(f64, @floatFromInt(e.split_ns)) / 1e9, 0.001); // 32767 / 3500 + 1.4 + 0.6 s
+    try t.expectApproxEqAbs(@as(f64, 14.136), @as(f64, @floatFromInt(e.split_ns)) / 1e9, 0.001); // 32767 / 2700 + 1.4 + 0.6 s
     try t.expect(e.split_ns < e.remote_ns and e.split_ns < e.local_ns);
     try t.expectEqual(Verdict.split, weigh(&r, 0, 32768, 0));
-    try t.expectEqual(Verdict.split, weigh(&r, 0, 16384, 0)); // 6.68 s against 8.79 s pulled
+    try t.expectEqual(Verdict.split, weigh(&r, 0, 16384, 0)); // 8.07 s against 8.79 s pulled
     try t.expectEqual(Verdict.remote, weigh(&r, 0, 8192, 0)); // under the length gate: the pull as before
     try t.expectEqual(Verdict.slower, weigh(&r, 0, 2048, 0));
-    try t.expectEqual(Verdict.remote, weigh(&r, 0, 262144, 0)); // past what a split stages: the pull
+    try t.expectEqual(Verdict.remote, weigh(&r, 0, 2097152, 0)); // past what a split takes: the pull
     var always = splitting();
     always.mode = .always;
     try t.expectEqual(Verdict.split, weigh(&always, 0, 32768, 0)); // always means the pair; the pair's faster way is the split
@@ -427,15 +427,19 @@ test "split: a long prompt is split when that is predicted faster than a pull, a
 test "split: measured stages decide, a slow pair or a slow split sends the prompt back to the pull" {
     var r = splitting();
     try t.expectEqual(Verdict.split, weigh(&r, 0, 32768, 0));
-    r.observe(.{ .pass = .split, .rows = 32767, .ns = 33_000_000_000 }); // 1.0k a second over the fixed cost: clamped to a third
-    try t.expectApproxEqAbs(@as(f64, 3500) / 3, r.split.stage_tps.v, 1e-6);
-    try t.expectEqual(Verdict.remote, weigh(&r, 0, 32768, 0)); // 28 s against 17 s pulled
+    // 1.0k a second over the fixed cost, this machine starved for 20 s of it: the pair, a third of its seed speed
+    r.observe(.{ .pass = .split, .rows = 32767, .ns = 33_000_000_000, .cut = 14, .wait_ns = 20_000_000_000 });
+    try t.expectApproxEqAbs(@as(f64, 32767) / 31.6 * 0.370 / 1000, r.split.pair_speed.v, 1e-6);
+    try t.expectEqual(@as(u32, 2), r.splitCut()); // the pair's light first layers, this machine's 1754 a second
+    try t.expectEqual(Verdict.remote, weigh(&r, 0, 32768, 0)); // 20.7 s against 17 s pulled
     var m5 = splitting();
-    m5.observe(.{ .pass = .split_m5, .rows = 32767, .ns = 16_000_000_000 }); // this machine 2k a second: the bottleneck
-    try t.expectEqual(@as(f64, 32767) / 16.0, m5.split.m5_tps.v);
+    // this machine never waited and streamed 700 a second at cut 8: it is the bottleneck, at a third of its seed
+    m5.observe(.{ .pass = .split, .rows = 32767, .ns = 48_200_000_000, .cut = 8, .wait_ns = 0 });
+    try t.expectEqual(@as(f64, 1) / 3, m5.split.mac_speed.v);
+    try t.expectEqual(@as(u32, 14), m5.splitCut());
     const e = m5.estimate(32767, 32768);
-    try t.expectEqual(@as(u64, 1), @intFromBool(e.split_ns > 16_000_000_000 + 600_000_000)); // 16 s of rows, fixed, tail
-    try t.expectEqual(Verdict.remote, weigh(&m5, 0, 32768, 0)); // 18 s against 17 s pulled
+    try t.expectEqual(@as(u64, 1), @intFromBool(e.split_ns > 18_000_000_000 + 600_000_000)); // 18.7 s of rows, fixed, tail
+    try t.expectEqual(Verdict.remote, weigh(&m5, 0, 32768, 0)); // 20.7 s against 17 s pulled
 }
 
 test "split: a busy pair is waited for at the split's time, and the gate's pair time is the cheaper plan" {
@@ -445,8 +449,8 @@ test "split: a busy pair is waited for at the split's time, and the gate's pair 
     try t.expectEqual(Verdict.split, e.pairVerdict());
     try t.expectEqual(.entered, r.enter(0, 0, e));
     try t.expectEqual(r.ends, e.split_ns); // the pair is held for the split's time, not the pull's
-    try t.expectEqual(Verdict.split, weigh(&r, 11 * s, 32768, 0)); // 1 s of it left: worth waiting for
-    try t.expectEqual(Verdict.busy, weigh(&r, 0, 32768, 0)); // all of it still to go, and its own 11.4 s: 22.7 s against 21.8 s here
+    try t.expectEqual(Verdict.split, weigh(&r, 11 * s, 32768, 0)); // 3 s of it left: worth waiting for
+    try t.expectEqual(Verdict.busy, weigh(&r, 0, 32768, 0)); // all of it still to go, and its own 14.1 s: 28.3 s against 21.8 s here
 }
 
 test "split: the knobs reach the route, and a split's deadline is its predicted time with slack" {
@@ -459,7 +463,9 @@ test "split: the knobs reach the route, and a split's deadline is its predicted 
         .split_fixed_s = try env.value(f64, "TF_LS_FIXED_S", "2", 1.4),
     });
     try t.expect(k.split.enabled and k.split.allows(8192) and !k.split.allows(65537));
-    try t.expectEqual(@as(f64, 3000), k.split.stage_tps.v);
+    try t.expectApproxEqAbs(@as(f64, 3000), k.split.pairTps(2), 1e-6);
+    try t.expectEqual(@as(u32, 14), k.split.pick());
+    try t.expectEqual(@as(u32, 8), Route.build(.{ .split = true, .split_cut = 8 }).split.pick());
     try t.expectEqual(@as(f64, 2), k.split.fixed_s.v);
     const d = Route.build(.{});
     try t.expect(!d.split.enabled);
@@ -468,8 +474,8 @@ test "split: the knobs reach the route, and a split's deadline is its predicted 
     try t.expectError(error.InvalidEnvironment, env.value(u64, "TF_LS_MIN_TOKENS", "512", 16384));
     try t.expectError(error.InvalidEnvironment, env.value(bool, "TF_LS_SPLIT", "sometimes", false));
     var r = splitting();
-    // 32767 / 3500 + 1.4 + 0.6 = 11.4 s: 15 + 3 * 11.4 = 49.2 -> 50 s
-    try t.expectEqual(@as(u64, 50), r.splitDeadlineS(32767));
+    // 32767 / 2700 + 1.4 + 0.6 = 14.1 s: 15 + 3 * 14.1 = 57.4 -> 58 s
+    try t.expectEqual(@as(u64, 58), r.splitDeadlineS(32767));
     r.timeout_s = 90;
     try t.expectEqual(@as(u64, 90), r.splitDeadlineS(32767));
 }

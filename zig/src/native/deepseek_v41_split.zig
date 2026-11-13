@@ -19,7 +19,7 @@ pub const Transport = struct {
     release: *const fn (ptr: *anyopaque, id: [16]u8) void,
 };
 
-/// What `run` needs of the server: the cut (TF_LS_CUT), the checkpoint's name, the route to learn into.
+/// What `run` needs of the server: the cut (the route's choice, TF_LS_CUT forcing it), the checkpoint's name, the route to learn into.
 pub const Spec = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -31,10 +31,8 @@ pub const Spec = struct {
     closing: *const std.atomic.Value(bool),
 };
 
-/// TF_LS_CUT (2, 8 or 14; default 14): the layer the Mac enters at.
-pub fn cutFromEnv() !u32 {
-    return env.read(u32, "TF_LS_CUT", split.default_cut);
-}
+/// A frame's rows wait this long for the passes to take the window's oldest (the engine stalled: the split is given up).
+const put_wait_ns: u64 = 120 * std.time.ns_per_s;
 
 /// One split's state, shared by the pulling thread and the engine thread through its `Feed`.
 pub const Session = struct {
@@ -64,7 +62,10 @@ pub const Session = struct {
         const s = try spec.gpa.create(Session);
         errdefer spec.gpa.destroy(s);
         const at: u32 = std.math.cast(u32, upto) orelse return error.PrefixTooLong;
-        s.* = .{ .gpa = spec.gpa, .model = spec.model, .stage = try fabric.row_stage.Stage.init(spec.gpa, upto, split.row_bytes), .snap = undefined, .landing = undefined, .cut = spec.cut, .upto = upto, .t0 = fabric.words.nowNs(), .announce = announce, .feedv = undefined };
+        // a window of chunks, not the prompt: the pair waits when the passes have not taken what it streamed
+        const pass_rows: u32 = @intCast(spec.model.workspace.plan.rows);
+        const window = split.windowRows(pass_rows, try env.read(u32, "TF_LS_WINDOW", split.default_window));
+        s.* = .{ .gpa = spec.gpa, .model = spec.model, .stage = try fabric.row_stage.Stage.initRing(spec.gpa, upto, split.row_bytes, window, pass_rows), .snap = undefined, .landing = undefined, .cut = spec.cut, .upto = upto, .t0 = fabric.words.nowNs(), .announce = announce, .feedv = undefined };
         errdefer s.stage.deinit();
         s.snap = try spec.model.snapshotBlank(at);
         errdefer spec.model.snapshotDrop(s.snap);
@@ -95,7 +96,7 @@ pub const Session = struct {
         const s: *Session = @ptrCast(@alignCast(ptr));
         if (split.cutOfLayer(layer.index) == null) return s.landing.decoderSink().put_fn(s.landing.decoderSink().ptr, layer, row_start, rows, bytes);
         if (split.cutOfLayer(layer.index).? != s.cut or layer.rows() != s.upto) return error.Mismatch;
-        try s.stage.put(row_start, bytes);
+        try s.stage.putWait(row_start, bytes, put_wait_ns, &s.abort);
         const now = s.since();
         if (!s.announced) {
             s.announced = true;
@@ -150,7 +151,12 @@ pub const Session = struct {
         s.done.store(true, .release);
     }
 
-    const vtable: fd.Feed.VTable = .{ .ready = ready, .rows = rowsOf, .wait = wait, .state = stateOf, .pull = pullOf, .snapshot = snapshot, .finish = finish };
+    /// The engine's passes took rows [0, end): the window's room is the pair's again.
+    fn release(p: *anyopaque, end: u64) void {
+        self(p).stage.release(end);
+    }
+
+    const vtable: fd.Feed.VTable = .{ .ready = ready, .rows = rowsOf, .wait = wait, .state = stateOf, .pull = pullOf, .snapshot = snapshot, .finish = finish, .release = release };
 };
 
 /// The trigger on its own thread: it returns when the pair has finished its prefill, the pull runs meanwhile.
@@ -217,8 +223,7 @@ pub fn run(spec: Spec, prompt: []const u32, upto: u64, gone: *const std.atomic.V
     }
     if (s.ok) {
         const total = s.state_ns.load(.acquire);
-        spec.route.observe(.{ .pass = .split, .rows = upto, .ns = total });
-        spec.route.observe(.{ .pass = .split_m5, .rows = s.stats.rows, .ns = s.stats.compute_ns });
+        spec.route.observe(.{ .pass = .split, .rows = upto, .ns = total, .cut = s.cut, .wait_ns = s.stats.wait_ns });
         std.log.info("layer split: {d} rows at cut {d}: first row {d:.0} ms, last {d:.0} ms, state {d:.0} ms; Mac waited {d:.0} ms, computed {d:.0} ms", .{ upto, s.cut, ms(s.first_row_ns.load(.acquire)), ms(s.rows_ns.load(.acquire)), ms(total), ms(s.stats.wait_ns), ms(s.stats.compute_ns) });
         return;
     }
@@ -235,9 +240,4 @@ fn landed(s: *Session, prompt: []const u32) !void {
 
 fn ms(ns: u64) f64 {
     return @as(f64, @floatFromInt(ns)) / 1e6;
-}
-
-test "the cut comes from TF_LS_CUT, 14 unless set" {
-    if (std.c.getenv("TF_LS_CUT") != null) return error.SkipZigTest;
-    try std.testing.expectEqual(@as(u32, 14), try cutFromEnv());
 }

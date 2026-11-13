@@ -2,6 +2,7 @@
 const std = @import("std");
 const api = @import("engine_api");
 const lanes = @import("lanes");
+const fabric = @import("fabric");
 const model = @import("cuda_model.zig");
 const serve = @import("cuda_export_serve.zig");
 const gpu = @import("cuda_export_gpu.zig");
@@ -115,36 +116,52 @@ pub const Export = struct {
         if (!splitOk(x, cut)) return error.SplitRefused;
         if (ids.len < 2 or ids.len - 1 < split_lib.min_tail_rows) return error.SplitTooShort;
         const upto: u64 = ids.len - 1;
-        var run = try x.produce.openEarly(h.id, ids[0..upto], cut);
+        const max = try splitRows(x.f);
+        const env = @import("sys").environment;
+        const window = split_lib.windowRows(max, try env.read(u32, "TF_LS_WINDOW", split_lib.default_window));
+        var run = try x.produce.openEarly(h.id, ids[0..upto], cut, window);
         defer run.close();
-        x.splitBody(&run, h, ids, upto, cancel) catch |err| {
+        x.splitBody(&run, h, ids, upto, max, cancel) catch |err| {
             run.fail();
             return err;
         };
     }
 
-    fn splitBody(x: *Export, run: *serve.Produce.Early, h: Handoff, ids: []const u32, upto: u64, cancel: ?api.LaneHost.Export.Cancel) !void {
+    fn splitBody(x: *Export, run: *serve.Produce.Early, h: Handoff, ids: []const u32, upto: u64, max: u32, cancel: ?api.LaneHost.Export.Cancel) !void {
         // the slot, empty before and after: pages and reservation back whatever happens (a split keeps no state)
         defer x.f.release() catch |err| log.err("handoff {x}: the split's slot was not released ({t})", .{ &h.id, err });
         try x.source.ss.beginFresh(ids.len, 1);
-        const max = try splitRows(x.f);
         // the boundary rows copy out asynchronously into pinned slots and are published, in order, as copies finish
         try x.f.splitBegin(.{ .ptr = run, .rows = sinkRows, .publish = sinkPublish }, max);
         var ended = false;
         defer if (!ended) x.f.splitEnd(false) catch {};
         var chunks: split_lib.Chunks = .{ .n = upto, .max = max };
+        const trace = @import("sys").environment.read(bool, "TF_LS_TRACE", false) catch false;
+        const t0 = fabric.words.nowNs();
+        var issue_ns: u64 = 0;
         while (chunks.next()) |c| {
             if (cancel) |cc| if (cc.cancelled()) return error.Cancelled;
             if (run.gone()) return error.Released;
+            const t1 = fabric.words.nowNs();
             try x.f.prefillSplit(ids[c.row0..][0..c.rows], h.split_cut);
             try x.f.splitPoll();
+            const t2 = fabric.words.nowNs();
+            issue_ns += t2 - t1;
+            if (trace) log.info("split chunk {d}: rows {d}+{d}, issued in {d:.1} ms at {d:.0} ms, window waits {d:.1} ms", .{ chunks.i, c.row0, c.rows, nsMs(t2 - t1), nsMs(t2 - t0), nsMs(run.early.stage.blocked_ns.load(.monotonic)) });
         }
         ended = true;
+        const t3 = fabric.words.nowNs();
         try x.f.splitEnd(true);
+        const t4 = fabric.words.nowNs();
+        log.info("handoff {x}: split producer {d} rows in {d} chunks: {d:.0} ms (issuing {d:.0} ms, last copies {d:.0} ms, waiting on the window {d:.0} ms)", .{ &h.id, upto, chunks.i, nsMs(t4 - t0), nsMs(issue_ns), nsMs(t4 - t3), nsMs(run.early.stage.blocked_ns.load(.monotonic)) });
         run.land(try x.produce.saveCut(upto, h.split_cut));
     }
 
-    fn sinkRows(ptr: *anyopaque, row0: u64, n: u64) []u8 {
+    fn nsMs(ns: u64) f64 {
+        return @as(f64, @floatFromInt(ns)) / 1e6;
+    }
+
+    fn sinkRows(ptr: *anyopaque, row0: u64, n: u64) anyerror![]u8 {
         const run: *serve.Produce.Early = @ptrCast(@alignCast(ptr));
         return run.rows(row0, n);
     }

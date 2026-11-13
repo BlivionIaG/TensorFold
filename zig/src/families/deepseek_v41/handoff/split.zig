@@ -22,8 +22,15 @@ pub const layer_base: u32 = 1000;
 pub const default_cut: u32 = 14;
 /// The route's length gate (tokens): below it the pipeline's fill, hop and cone are not hidden.
 pub const default_min_tokens: u64 = 16384;
-/// The most boundary rows one export stages (host memory: 41 KB a row).
-pub const default_max_tokens: u64 = 131072;
+/// The longest prompt a split takes: the boundary rows are held a window at a time, so the pair's pool is the limit.
+pub const default_max_tokens: u64 = 1048576;
+/// Chunks of boundary rows each side holds in flight (TF_LS_WINDOW): the producer runs this far ahead of the rows taken.
+pub const default_window: u32 = 4;
+
+/// The rows of a window of `chunks` chunks of up to `chunk` rows: room for the chunk being filled and the ones in flight.
+pub fn windowRows(chunk: u32, chunks: u32) u64 {
+    return @as(u64, chunk) * @max(chunks, 2);
+}
 /// The first chunks of a split prompt, rows: a short ramp fills the pipeline before the full chunk.
 pub const ramp = [_]u32{ 512, 1024, 2048 };
 /// A chunk the engines may not leave behind a split chunk: the cone and the short path need more than this.

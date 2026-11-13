@@ -490,11 +490,11 @@ pub const Produce = struct {
     pub const early_wait_ns: u64 = 120 * std.time.ns_per_s;
 
     /// A layer-split export's entry added now, before anything is computed, so the decoder's OPEN finds it
-    pub fn openEarly(p: *Produce, id: [16]u8, tokens: []const u32, cut: u32) !Early {
+    pub fn openEarly(p: *Produce, id: [16]u8, tokens: []const u32, cut: u32, window: u64) !Early {
         if (p.opts.link == null and !p.opts.http) return error.SplitNeedsLink;
         if (p.opts.shards != 1) return error.SplitNeedsReplicatedPool;
         p.sweep(); // what expired or was released makes room under the cap
-        const built = try cx.early(p.gpa, id, tokens, cut, early_wait_ns);
+        const built = try cx.early(p.gpa, id, tokens, cut, window, early_wait_ns);
         var kept = false;
         defer if (!kept) built.deinit(p.gpa);
         const held = try p.gpa.create(Held);
@@ -516,7 +516,7 @@ pub const Produce = struct {
         };
         _ = p.streams.fetchAdd(1, .acq_rel);
         kept = true;
-        log.info("handoff {x}: layer split at {d}, {d} tokens, {d} MiB held (boundary rows {d} MiB)", .{ &id, cut, tokens.len, built.bytes >> 20, (tokens.len * split.row_bytes) >> 20 });
+        log.info("handoff {x}: layer split at {d}, {d} tokens, {d} MiB held (boundary rows {d} MiB of the window)", .{ &id, cut, tokens.len, built.bytes >> 20, (@min(tokens.len, window) * split.row_bytes) >> 20 });
         return .{ .p = p, .held = held, .early = built.early.?, .id = id, .leased = true };
     }
 
@@ -534,9 +534,10 @@ pub const Produce = struct {
         id: [16]u8,
         leased: bool,
 
-        /// Rows [row0, row0 + n) of the boundary stream, for the producer to fill before `publish`.
-        pub fn rows(e: Early, row0: u64, n: u64) []u8 {
-            return e.early.stage.slice(row0, n);
+        /// The next region of rows [row0, row0 + n) of the boundary stream, for the producer to fill before `publish`: all of
+        /// them, or those before a ring's wrap; a ring waits for the decoder to take the rows it holds (the window).
+        pub fn rows(e: Early, row0: u64, n: u64) ![]u8 {
+            return e.early.stage.reserve(row0, n, early_wait_ns, null);
         }
 
         /// Rows [0, end) are in: readers may take them. The entry's expiry clock restarts (it is not expired mid-run).

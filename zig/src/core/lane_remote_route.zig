@@ -59,8 +59,9 @@ pub const Verdict = enum {
 };
 
 /// A pass the lane host or a pull timed: this machine's own prompt pass, a pull end to end, or the last-token pass.
-pub const Pass = enum { local, remote, tail, split, split_m5 };
-pub const Measured = struct { pass: Pass, rows: u64, ns: u64 };
+pub const Pass = enum { local, remote, tail, split };
+/// `cut` and `wait_ns` (this machine's wait for rows) go with a split, which is timed from the trigger to the state landed.
+pub const Measured = struct { pass: Pass, rows: u64, ns: u64, cut: u32 = 0, wait_ns: u64 = 0 };
 
 /// A prompt's cost on each side in ns (a pull end to end, a split, its own prefill); `pinned`
 pub const Estimate = struct {
@@ -124,8 +125,9 @@ pub const Route = struct {
         timeout_s: u64 = 0,
         split: bool = false,
         split_min: u64 = 16384,
-        split_max: u64 = 131072,
-        split_tps: f64 = 3500,
+        split_max: u64 = 1048576,
+        split_cut: u64 = 0,
+        split_tps: f64 = 2700,
         split_fixed_s: f64 = 1.4,
     };
 
@@ -143,20 +145,23 @@ pub const Route = struct {
             .split = try env.read(bool, "TF_LS_SPLIT", d.split),
             .split_min = try env.read(u64, "TF_LS_MIN_TOKENS", d.split_min),
             .split_max = try env.read(u64, "TF_LS_MAX_TOKENS", d.split_max),
+            .split_cut = (try env.read(?u32, "TF_LS_CUT", null)) orelse d.split_cut,
             .split_tps = try env.read(f64, "TF_LS_SPARKS_TPS", d.split_tps),
             .split_fixed_s = try env.read(f64, "TF_LS_FIXED_S", d.split_fixed_s),
         });
     }
 
     pub fn build(k: Knobs) Route {
-        return .{
+        var r: Route = .{
             .mode = if (k.mode == 0) .auto else .always,
             .local_tps = .{ .v = k.local_tps },
             .remote_tps = .{ .v = k.remote_tps },
             .breaker = .{ .trip = k.trip, .cooldown_ns = k.cooldown_s * std.time.ns_per_s },
             .timeout_s = k.timeout_s,
-            .split = .{ .enabled = k.split, .min_tokens = k.split_min, .max_tokens = k.split_max, .stage_tps = .{ .v = k.split_tps }, .fixed_s = .{ .v = k.split_fixed_s } },
+            .split = .{ .enabled = k.split, .min_tokens = k.split_min, .max_tokens = k.split_max, .forced_cut = @intCast(k.split_cut), .fixed_s = .{ .v = k.split_fixed_s } },
         };
+        r.split.seedPair(k.split_tps);
+        return r;
     }
 
     fn acquire(r: *Route) void {
@@ -195,8 +200,7 @@ pub const Route = struct {
             .local => if (m.rows >= min_rows) r.local_tps.blend(per_s),
             .remote => if (m.rows >= min_rows) r.remote_tps.blend(per_s),
             .tail => r.tail_s.blend(s),
-            .split => r.split.observeTotal(m.rows, m.ns),
-            .split_m5 => r.split.observeM5(m.rows, m.ns),
+            .split => r.split.observeSplit(m.cut, m.rows, m.ns, m.wait_ns),
         }
     }
 
@@ -253,6 +257,13 @@ pub const Route = struct {
         defer r.lock.unlock();
         const predicted = @as(f64, @floatFromInt(tokens)) / r.remote_tps.v + r.tail_s.v;
         return @intFromFloat(std.math.clamp(@ceil(15 + 3 * predicted), 30, 1800));
+    }
+
+    /// The cut the next split takes: TF_LS_CUT, else the one the measured stage speeds make fastest.
+    pub fn splitCut(r: *Route) u32 {
+        r.acquire();
+        defer r.lock.unlock();
+        return r.split.pick();
     }
 
     /// A split's time limit: TF_PREFILL_TIMEOUT_S, else 15 s and three times its predicted time, 30 s to 30 min.

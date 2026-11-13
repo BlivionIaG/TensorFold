@@ -229,6 +229,7 @@ pub fn shell(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, shape: pla
     errdefer gpa.destroy(b);
     b.arena = .init(gpa);
     errdefer b.arena.deinit();
+    b.early = null;
     try lay(b, id, tokens, try ex.alloc(b.arena.allocator(), shape));
     return b;
 }
@@ -263,8 +264,9 @@ pub const Early = struct {
     }
 };
 
-/// The early export of a split hand-off of `tokens` (the prompt but its last token) cut at `cut`: the manifest
-pub fn early(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, cut: u32, wait_ns: u64) !*Built {
+/// The early export of a split hand-off of `tokens` (the prompt but its last token) cut at `cut`: the manifest; its boundary
+/// rows are held `window` at a time (a whole stage when the prompt is not longer)
+pub fn early(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, cut: u32, window: u64, wait_ns: u64) !*Built {
     const b = try gpa.create(Built);
     errdefer gpa.destroy(b);
     b.arena = .init(gpa);
@@ -275,7 +277,7 @@ pub fn early(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, cut: u32, 
     const sources = try a.alloc(fabric.frames.Source, layers.len);
     const e = try gpa.create(Early);
     errdefer gpa.destroy(e);
-    e.stage = try fabric.row_stage.Stage.init(gpa, upto, lsplit.row_bytes);
+    e.stage = try fabric.row_stage.Stage.initRing(gpa, upto, lsplit.row_bytes, window, 0);
     errdefer e.stage.deinit();
     e.latch = try fabric.row_stage.Stage.init(gpa, 1, 0);
     errdefer e.latch.deinit();
@@ -299,7 +301,7 @@ pub fn early(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, cut: u32, 
     e.upto = upto;
     e.buffers = buffers;
     b.exp = .{ .handoff = id, .tokens = try a.dupe(u32, tokens), .first_token = 0, .tokens_per_row = 1, .layers = layers, .sources = sources };
-    b.bytes = upto * lsplit.row_bytes + state_bytes;
+    b.bytes = e.stage.cap * lsplit.row_bytes + state_bytes;
     b.early = e;
     return b;
 }
