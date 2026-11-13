@@ -16,6 +16,9 @@ pub const tag_fast: u32 = 1 << 8;
 /// with the CED field (replay mode index << 4): replay entries never resume full ones
 pub const tag: u32 = tag_fast | 1 << 4;
 
+/// with the warm field (TF_DSV41_REPLAY_WARM): prompt entries hold exact decoder rings, so they resume short
+pub const tag_warm: u32 = tag | 1 << 5;
+
 pub const Error = error{ NoDecoder, EngramInDecoder, StashGap };
 
 /// The first ratio-1 layer: must be a kv source, and no decoder layer may be an Engram layer.
@@ -104,6 +107,12 @@ pub fn groupRows(window: u32, nd: u32, first: u32, avail: u64) u32 {
 /// The exact replay's stash rule: the stash from `lo` holds the cone of a prompt prefilled to `end`, or starts at 0.
 pub fn coneHeld(window: u32, nd: u32, end: u64, lo: u64) bool {
     return lo == 0 or end - lo >= groupRows(window, nd, 0, end);
+}
+
+/// The exact replay's rule with warm state: the cone is held, or the stash starts where the decoder's rings are exact.
+pub fn coneUsable(window: u32, nd: u32, end: u64, lo: u64, exact_at: ?u64) bool {
+    if (end <= lo) return false;
+    return coneHeld(window, nd, end, lo) or (exact_at != null and exact_at.? == lo);
 }
 
 /// Whether a prompt prefilled to `end` stays exact when it resumes a snapshot at `at` (its stash starts there).

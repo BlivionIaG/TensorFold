@@ -394,3 +394,24 @@ test "CED: a prompt resumed from a snapshot keeps the exact replay only when the
     // a resume at 0 is a cold prompt: exact for every length
     for (prompt_lengths) |n| try testing.expect(ced.resumeExact(&cfg, n - 1, 0));
 }
+
+test "warm resume: the cone is usable from exact rings at its first row, any number of rows after them" {
+    const W: u32 = 128;
+    const nd: u32 = 20;
+    // a fresh prompt (stash from 0) and a held cone behave as before
+    try testing.expect(ced.coneUsable(W, nd, 300, 0, null));
+    try testing.expect(ced.coneUsable(W, nd, 9000, 9000 - ced.cone_keep, null));
+    // a short run behind a resumed entry is usable only when the rings are exact at the entry
+    try testing.expect(!ced.coneUsable(W, nd, 8200, 8192, null));
+    try testing.expect(ced.coneUsable(W, nd, 8200, 8192, 8192));
+    try testing.expect(!ced.coneUsable(W, nd, 8200, 8192, 8000));
+    // no new rows: nothing to replay
+    try testing.expect(!ced.coneUsable(W, nd, 8192, 8192, 8192));
+    // the replay's rows are those since the entry, capped by each program's cone
+    try testing.expectEqual(@as(u32, 200), ced.groupRows(W, nd, 0, 200));
+    try testing.expectEqual(@as(u32, 200), ced.groupRows(W, nd, 16, 200));
+    try testing.expectEqual(ced.cone_keep, ced.groupRows(W, nd, 0, 5000));
+    try testing.expectEqual(@as(u32, 2541 - 127 * 16), ced.groupRows(W, nd, 16, 5000));
+    // warm entries carry their own tag: neither a bounded replay's nor a full-mode entry resumes as one
+    try testing.expect(ced.tag_warm != ced.tag and ced.tag_warm != ced.tag_fast and ced.tag_warm & ced.tag == ced.tag);
+}

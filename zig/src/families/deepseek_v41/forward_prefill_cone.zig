@@ -31,25 +31,44 @@ pub fn stashed(f: *Forward, start: u64, ids: []const u32) void {
     if (f.slot.cone_id == st.cone_id) st.cone.extend(start, ids);
 }
 
-/// Whether the slot's ring holds the cone of a prompt ending at `end` (all of it, or from position 0) and it can run.
+/// The slot's decoder rings are exact at the cone ring's first position (`warm`: a short follow-up replays from there).
+fn exactBase(f: *const Forward) ?u64 {
+    return if (pf.state(f).cone_warm and f.slot.exact) f.slot.exact_at else null;
+}
+
+/// Whether the slot's ring holds the cone of a prompt ending at `end`: all of it, from position 0, or from exact rings.
 pub fn usable(f: *const Forward, end: u64) bool {
     const st = pf.state(f);
     if (!st.cone_on or end <= ced.keep) return false;
     const nd = f.cfg.layers - (ced.decoderStart(f.cfg) catch return false);
-    const rows = ced.groupRows(f.cfg.window, nd, 0, end);
-    // a cone past the forward's rows runs in the workspace (this prompt call's agreement)
-    if (rows > f.opts.prefill_rows and !(st.k4 and st.ws_ok)) return false;
     if (f.slot.cone_id == 0 or f.slot.cone_id != st.cone_id or st.cone.hi != end) return false;
-    return ced.coneHeld(f.cfg.window, nd, end, st.cone.lo());
+    const lo = st.cone.lo();
+    if (!ced.coneUsable(f.cfg.window, nd, end, lo, exactBase(f))) return false;
+    // a cone past the forward's rows runs in the workspace (this prompt call's agreement)
+    const rows = ced.groupRows(f.cfg.window, nd, 0, end - lo);
+    return rows <= f.opts.prefill_rows or (st.k4 and st.ws_ok);
+}
+
+/// Whether `finish` runs the exact replay now, or the decoder's rings already equal the full prefill's at `end` (warm).
+pub fn exactAt(f: *const Forward, end: u64) bool {
+    return usable(f, end) or (exactBase(f) == end);
 }
 
 /// The exact decoder replay for the prompt ending at `f.slot.pos`; false (nothing run) when the cone cannot.
 pub fn finish(f: *Forward) !bool {
     const st = pf.state(f);
     const end = f.slot.pos;
+    // a restored entry's rows (or a replay that ended here) are the full prefill's already: nothing to run
+    if (exactBase(f) == end) {
+        f.slot.cone_id = 0;
+        st.replay_exact = true;
+        return true;
+    }
     const ok = usable(f, end);
     f.slot.cone_id = 0;
+    f.slot.exact = false;
     if (!ok) return false;
+    const avail = end - st.cone.lo();
     try settle(f, true);
     const t0 = pf_k4.nowMs();
     var sa = std.heap.ArenaAllocator.init(f.gpa);
@@ -60,7 +79,7 @@ pub fn finish(f: *Forward) !bool {
     var gbuf: [32]ced.Group = undefined;
     const gs = ced.groups(f.cfg, layers, st.cone_group, &gbuf);
     const W = f.cfg.window;
-    const n0 = ced.groupRows(W, nd, 0, end);
+    const n0 = ced.groupRows(W, nd, 0, avail);
     const all = st.tail_ids[0..n0];
     st.cone.tail(end - n0, end, all);
     // the programs all in the workspace or all in the forward's buffers: one set of candidates and taps
@@ -89,7 +108,7 @@ pub fn finish(f: *Forward) !bool {
             std.mem.swap(?cuda.DeviceBuffer, &f.gathered, &st.k4ws.gathered);
         };
         for (gs, 0..) |g, gi| {
-            const n = ced.groupRows(W, nd, g.first, end);
+            const n = ced.groupRows(W, nd, g.first, avail);
             const last = gi + 1 == gs.len;
             const ids = all[n0 - n ..];
             const o0 = image_opts.segmentOptions(f, ids);
@@ -119,6 +138,8 @@ pub fn finish(f: *Forward) !bool {
     st.taps_at = end - last_n;
     st.taps_rows = last_n;
     st.replay_exact = true;
+    f.slot.exact = true;
+    f.slot.exact_at = end;
     return true;
 }
 

@@ -38,6 +38,9 @@ pub const Slot = struct {
     ced: ft.Stash = .{},
     /// the exact replay's ticket (forward_prefill.State.cone_id): the cone ring holds this slot's prompt while equal
     cone_id: u64 = 0,
+    /// the decoder layers' SWA rings equal a full prefill's at `exact_at` (the exact replay ended there, or a restore)
+    exact: bool = false,
+    exact_at: u64 = 0,
 };
 
 pub const Forward = struct {
