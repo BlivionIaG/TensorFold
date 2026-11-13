@@ -12,6 +12,7 @@ const plan = @import("cuda_mtp_plan.zig");
 const roll = @import("cuda_mtp_roll.zig");
 const pieces = @import("cuda_mtp_pieces.zig");
 const draw = @import("cuda_mtp_draw.zig");
+const ple_prefetch = @import("cuda_ple_prefetch.zig");
 const module = @This();
 
 /// One group of lanes in the batched head's pass: the lanes' drafts, their rows and whether the head scores.
@@ -193,6 +194,13 @@ pub fn Ops(comptime Tri: type) type {
             out.n = 0;
             try o.absorb(d, next, rows, count > 0);
             var stop: mtp.Stop = .{ .c = confidence };
+            // advisory page-cache reads for the coming window's n-gram rows (the pending token, then each draft)
+            const ahead = count > 0 and next.len > 0 and ple_prefetch.on(&o.e.ngram);
+            var hist = d.chain_history;
+            if (ahead) {
+                ple_prefetch.rows(&o.e.ngram, &hist, next[next.len - 1]);
+                hist = .{ hist[1], next[next.len - 1] };
+            }
             var j: usize = 0;
             while (j < @min(count, max_chain)) : (j += 1) {
                 const got = try o.pick(d, position + j, sm);
@@ -201,10 +209,17 @@ pub fn Ops(comptime Tri: type) type {
                 out.tokens[out.n] = got.token;
                 out.probs[out.n] = got.prob;
                 out.n += 1;
-                if (!t.more) break;
+                if (!t.more) {
+                    if (ahead) ple_prefetch.rows(&o.e.ngram, &hist, got.token);
+                    break;
+                }
                 if (j + 1 < count) {
                     try o.forwardHead(d, &.{got.token}, d.out.ptr, true);
                     d.drafted += 1;
+                }
+                if (ahead) {
+                    ple_prefetch.rows(&o.e.ngram, &hist, got.token);
+                    hist = .{ hist[1], got.token };
                 }
             }
         }

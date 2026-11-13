@@ -41,6 +41,9 @@ pub const fillOwned = fill.fillOwned;
 pub const fillOwnedLayers = fill.fillOwnedLayers;
 pub const stageUsed = used.stageUsed;
 pub const stageUsedAt = used.stageUsedAt;
+pub const evictsLeastRecent = used.evictsLeastRecent;
+pub const evictsBefore = used.evictsBefore;
+pub const victimBy = used.victimBy;
 pub const scheduleUsed = used.scheduleUsed;
 pub const scheduleUsedAt = used.scheduleUsedAt;
 

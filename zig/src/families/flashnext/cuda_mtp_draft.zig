@@ -106,6 +106,8 @@ pub const Draft = struct {
     pending: u32 = 0,
     keep: batch.Keep = .{},
     history: [2]i64 = .{ 0, 0 },
+    /// The sequence's history before the next window's first row, for the n-gram prefetch (cuda_ple `Ngram.prefetch`).
+    chain_history: [2]i64 = .{ 0, 0 },
     unused_history: [2]i64 = .{ 0, 0 },
     fed0: usize = 0,
     rows: usize = 0,

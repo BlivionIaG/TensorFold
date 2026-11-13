@@ -25,6 +25,8 @@ pub const Spec = struct {
     lines: usize,
     /// Pinned staging lines (a ring); 0 when every copy is `direct`.
     staging: usize = 8,
+    /// Keep the table entries in a host shadow and upload the whole table once per stage (see `Lines.flush`).
+    batch: bool = false,
 };
 
 /// Byte offsets of gate, up and down inside a line, each 256-aligned.
@@ -73,6 +75,7 @@ pub const Stats = struct {
 };
 
 const release_ring = 64;
+const up_ring = 8;
 
 pub const Lines = struct {
     d: *const Driver,
@@ -97,6 +100,18 @@ pub const Lines = struct {
     done_epoch: u64 = 0, // highest epoch known finished
     stats: Stats = .{},
     gpa: std.mem.Allocator,
+    /// `Spec.batch`: entries go to a host shadow and the whole table uploads once per stage, not 18 memsets per expert.
+    batch: bool = false,
+    deferred: bool = false,
+    shadow: []u8 = &.{},
+    shadow_dirty: bool = false,
+    up_slots: ?HostBuffer = null,
+    up_ev: [up_ring]Event = undefined,
+    up_made: bool = false,
+    up_next: usize = 0,
+    up_used: [up_ring]bool = @splat(false),
+    pend: []u32 = &.{},
+    n_pend: usize = 0,
 
     pub fn init(gpa: std.mem.Allocator, d: *const Driver, spec: Spec) !Lines {
         if (spec.lines == 0 or spec.experts == 0) return error.Invalid;
@@ -131,7 +146,7 @@ pub const Lines = struct {
             e.* = try Event.init(d, false);
             made += 1;
         }
-        return .{
+        var out: Lines = .{
             .d = d,
             .spec = spec,
             .layout = layout,
@@ -148,6 +163,19 @@ pub const Lines = struct {
             .rel_ev = rel,
             .gpa = gpa,
         };
+        if (spec.batch) {
+            out.batch = true;
+            out.shadow = try gpa.alloc(u8, tlay.bytes);
+            errdefer gpa.free(out.shadow);
+            @memset(out.shadow, 0);
+            out.pend = try gpa.alloc(u32, spec.lines);
+            errdefer gpa.free(out.pend);
+            out.up_slots = try HostBuffer.alloc(d, up_ring * tlay.bytes);
+            errdefer if (out.up_slots) |*h| h.free();
+            for (&out.up_ev) |*e| e.* = try Event.init(d, false);
+            out.up_made = true;
+        }
+        return out;
     }
 
     fn makeEvents(gpa: std.mem.Allocator, d: *const Driver, n: usize) ![]Event {
@@ -171,6 +199,12 @@ pub const Lines = struct {
 
     pub fn deinit(l: *Lines) void {
         l.copy.synchronize() catch {};
+        if (l.up_made) {
+            for (&l.up_ev) |*e| e.deinit();
+            if (l.up_slots) |*h| h.free();
+            l.gpa.free(l.shadow);
+            l.gpa.free(l.pend);
+        }
         for (&l.rel_ev) |*e| e.deinit();
         freeEvents(l.gpa, l.line_ev);
         freeEvents(l.gpa, l.stage_ev);
@@ -222,6 +256,14 @@ pub const Lines = struct {
     /// One expert's projection `which`: its pointer (two 32-bit words) and width, on the copy stream.
     fn writeEntry(l: *Lines, id: usize, ptr: u64, k2: i32, which: usize) !void {
         const st = l.copy;
+        if (l.batch) {
+            std.mem.writeInt(u64, l.shadow[l.tlay.ptr[which] + id * 8 ..][0..8], ptr, .little);
+            std.mem.writeInt(i32, l.shadow[l.tlay.k2[which] + id * 4 ..][0..4], k2, .little);
+            if (l.deferred) {
+                l.shadow_dirty = true;
+                return;
+            }
+        }
         const p = l.table(which) + id * 8;
         try l.memset32(p, @truncate(ptr), st);
         try l.memset32(p + 4, @truncate(ptr >> 32), st);
@@ -271,12 +313,41 @@ pub const Lines = struct {
             l.stats.staged_bytes += src[0].len + src[1].len + src[2].len;
             moved = n;
         }
+        l.deferred = l.batch;
+        defer l.deferred = false;
         if (evicted) |old| for (0..3) |w| try l.writeEntry(old, 0, 0, w);
         for (0..3) |w| try l.writeEntry(id, dst + l.layout.off[w], k2[w], w);
-        try l.line_ev[line].record(l.copy);
+        if (l.batch) {
+            l.pend[l.n_pend] = @intCast(line);
+            l.n_pend += 1;
+        } else try l.line_ev[line].record(l.copy);
         l.line_pending[line] = true;
         l.stats.copies += 1;
         l.stats.bytes += moved;
+    }
+
+    /// Batch mode: one copy of the whole table after a stage's loads, then the loaded lines' events; no-op otherwise.
+    pub fn flush(l: *Lines) !void {
+        if (!l.batch) return;
+        if (l.shadow_dirty) {
+            const slot = l.up_next;
+            l.up_next = (l.up_next + 1) % up_ring;
+            if (l.up_used[slot]) try l.up_ev[slot].synchronize();
+            const buf = l.up_slots.?.bytes[slot * l.tlay.bytes ..][0..l.tlay.bytes];
+            @memcpy(buf, l.shadow);
+            try l.d.check(l.d.api.cuMemcpyHtoDAsync_v2(l.tables.ptr, buf.ptr, l.tlay.bytes, l.copy.handle), "cuMemcpyHtoDAsync");
+            try l.up_ev[slot].record(l.copy);
+            l.up_used[slot] = true;
+            l.shadow_dirty = false;
+        }
+        for (l.pend[0..l.n_pend]) |line| try l.line_ev[line].record(l.copy);
+        l.n_pend = 0;
+    }
+
+    /// Batch mode: the copy stream waits for the pass released last, so the table upload queued next meets no reader.
+    pub fn afterRelease(l: *Lines) !void {
+        if (!l.batch or l.epoch == 0) return;
+        try l.copy.wait(l.rel_ev[l.epoch % release_ring]);
     }
 
     /// True once the line's last copy finished (or it never had one); clears the pending flag.

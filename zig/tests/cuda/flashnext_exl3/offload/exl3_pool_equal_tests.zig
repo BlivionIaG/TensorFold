@@ -71,9 +71,9 @@ fn verifyPool(gpu: Gpu, pool: *fpool.Pool, ld: *const LayerData) !usize {
 
 const Script = struct { rows: usize, combine: bool };
 
-pub fn equalRun(gpu: Gpu, ex: *const exl3e.Experts, s: cuda.Stream, ld: *const LayerData, lines: usize, prefetch_lines: usize, seed: u64) !void {
+pub fn equalRun(gpu: Gpu, ex: *const exl3e.Experts, s: cuda.Stream, ld: *const LayerData, lines: usize, prefetch_lines: usize, seed: u64, hit_first: usize) !void {
     const gpa = gpu.gpa;
-    var pool = try fpool.Pool.init(gpa, gpu.io, gpu.d, ld.source(), ld.scales(), .{ .layer = @intCast(ld.layer), .lines = lines, .prefetch_bytes = 0 }, null);
+    var pool = try fpool.Pool.init(gpa, gpu.io, gpu.d, ld.source(), ld.scales(), .{ .layer = @intCast(ld.layer), .lines = lines, .prefetch_bytes = 0, .hit_first = hit_first }, null);
     defer pool.deinit();
     pool.opt.prefetch_bytes = prefetch_lines * pool.lineBytes();
     var vp = try Io.init(gpu, pool.tables());
@@ -147,6 +147,8 @@ pub fn equalRun(gpu: Gpu, ex: *const exl3e.Experts, s: cuda.Stream, ld: *const L
     try check.expect(ls.bytes == ledger_h2d, "H2D bytes {d} vs plan ledger {d}", .{ ls.bytes, ledger_h2d });
     try check.expect(ps.evictions > 0 and ps.miss_slots > 0 and ps.hit_slots > 0 and split_rounds > 0, "a path was not exercised (evictions {d}, misses {d}, hits {d}, split {d})", .{ ps.evictions, ps.miss_slots, ps.hit_slots, split_rounds });
     if (prefetch_lines > 0) try check.expect(ps.prefetches > 0, "no prefetch happened", .{});
+    if (hit_first > 0) std.debug.print("  hit first from {d} held: {d} of {d} rounds computed their held experts while their misses copied\n", .{ hit_first, ps.hit_first, ps.rounds });
+    try check.expect((hit_first > 0) == (ps.hit_first > 0), "hit first {d}: {d} rounds split", .{ hit_first, ps.hit_first });
     check.pass("layer {d}, {d} lines: every round's runSlots/run output is byte-identical to the fully resident layer; {d} lines and 513 table entries match the checkpoint; staged bytes match the plans", .{ ld.layer, lines, lines_checked });
 }
 

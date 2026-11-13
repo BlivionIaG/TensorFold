@@ -13,12 +13,12 @@ pub const hot_slots: usize = 4096;
 pub const hot_cap: usize = 176;
 
 pub const Read = enum { map, pread };
-pub const Options = struct { read: Read = .map };
+pub const Options = struct { read: Read = .map, prefetch: bool = false };
 
-/// TF_FLASHNEXT_PLE_READ (map | pread, the rule's words in this order); unset keeps the default.
+/// TF_FLASHNEXT_PLE_READ (map | pread, the rule's words in this order) and TF_FLASHNEXT_PLE_PREFETCH; unset: defaults.
 pub fn optionsFromEnv() !Options {
     const pread = try @import("sys").environment.read(bool, "TF_FLASHNEXT_PLE_READ", false);
-    return .{ .read = if (pread) .pread else .map };
+    return .{ .read = if (pread) .pread else .map, .prefetch = try @import("sys").environment.read(bool, "TF_FLASHNEXT_PLE_PREFETCH", false) };
 }
 
 // ---- the row codec ----------------------------------------------------------------------------------------------
@@ -221,6 +221,19 @@ pub const Table = struct {
         if (t.hot) |h| t.gpa.destroy(h);
         t.gpa.free(t.bias);
         t.gpa.destroy(t);
+    }
+
+    /// Advisory only: asks the kernel to read row `local` of `shard` into the page cache; nothing is read or changed.
+    pub fn advise(t: *const Table, shard: usize, local: usize) void {
+        if (comptime @import("builtin").os.tag != .linux) return;
+        const f = t.file orelse return;
+        if (f.map.section == null or shard >= t.shards or local >= t.rows[shard]) return;
+        const at = t.offset[shard] + @as(u64, local) * t.rowBytes();
+        const page = std.heap.pageSize();
+        const base = @intFromPtr(f.map.memory.ptr);
+        const lo = std.mem.alignBackward(usize, base + at, page);
+        const hi = std.mem.alignForward(usize, base + at + t.rowBytes(), page);
+        _ = std.os.linux.madvise(@ptrFromInt(lo), hi - lo, std.os.linux.MADV.WILLNEED);
     }
 
     pub fn rowBytes(t: *const Table) usize {

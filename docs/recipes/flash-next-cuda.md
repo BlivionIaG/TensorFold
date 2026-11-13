@@ -127,6 +127,9 @@ starts a rank. These switches tune it:
 | `TF_FLASHNEXT_EXPERT_RESERVE_MB` | the server's reserve (`TENSORFOLD_MEMORY_RESERVE_GIB`) | A whole number of MiB left free after the pools (0 to 17592186044415). |
 | `TF_FLASHNEXT_EXL3_STREAMS` | 1 | A positive whole number of streams whose caches the pool leaves room for, when `--parallel` does not say. |
 | `TF_FLASHNEXT_EXL3_LINE_DELTAS` | unset | `POOL:+N,POOL:-N` lines added to or removed from single pools of the uniform count, as many added as removed; no control characters. |
+| `TF_FLASHNEXT_EXL3_HIT_FIRST` | `0` | A whole number N; a decode round that holds at least N of its experts and misses others computes the held ones while the missed ones copy, then the missed ones. Same plan, copies and victims, same outputs; `0` never splits a round. |
+| `TF_FLASHNEXT_EVICT` | `count` | `count` or `lru`; `lru` makes a full pool evict the line unused for the longest time instead of the one with the lowest lifetime count. It changes which experts stay on the device, not what is computed. |
+| `TF_FLASHNEXT_TABLE_BATCH` | `0` | `0` or `1`; `1` keeps each pool's expert table in a host copy and uploads it once per stage instead of 18 one-word writes per loaded expert. Same table bytes on the device. Rounds the host plans only (`TF_FLASHNEXT_EXL3_GRAPH=0`): with the device planner it is ignored. |
 | `TF_FLASHNEXT_EXL3_PROFILE_DIR` | unset | A directory path, without control characters, where expert-use profiles persist between runs. |
 | `TF_FLASHNEXT_EXL3_PROFILE_SIZING` | `0` | `0` or `1`; `1` sizes the pools from the stored profile and is ignored with `TF_FLASHNEXT_EXPERT_LINES`. |
 | `TF_FLASHNEXT_EXL3_ROUTED` | `host` | `host` or `device`; `device` keeps every routed expert on the device. |
@@ -147,6 +150,7 @@ starts a rank. These switches tune it:
 | `TF_FLASHNEXT_KV_SLOTS` | 128 | With the host tier: frames lent to a stream, 64 four-row slots a frame for each attention layer. |
 | `TF_FLASHNEXT_EXL3_UNIFORM_LINES` | `0` | `0` or `1`; `1` with `TF_FLASHNEXT_EXPERT_LINES` gives every rank exactly that many lines instead of using spare room. `0`, unset or blank keeps automatic sizing; other text is refused. |
 | `TF_FLASHNEXT_EXL3_GRAPH`, `_GRAPH_ASYNC` | `0`, `1` | `GRAPH=0`: host planner; `eager`: device planner without graphs; `1`: device planner with graph replay. See [graph ownership and retries](../flash-next-exl3-graphs.md). |
+| `TF_FLASHNEXT_PLE_PREFETCH` | `0` | `0` or `1`; `1` lets the host draft chain ask the kernel (`MADV_WILLNEED`) to read the n-gram rows of the coming verify window into the page cache while the head steps run; EXL3 table with mapped reads. Same bytes, read earlier; `0` reads each row when the window gathers it. |
 | `TF_FLASHNEXT_PLE_READ` | `map` | `map` or `pread`; `pread` reads the n-gram embedding rows by positional read. |
 | `TF_FLASHNEXT_SNAP_HOST` | `1` above 32,768 tokens of context, else `0` | `0` or `1`: whether kept prompt-cache states live in pinned host memory. |
 | `TF_FLASHNEXT_CACHE_TELEMETRY` | `0` | Diagnostics only: `0` or `1`; `1` logs `EXL3-CACHE` expert-cache counters per phase, with a sync at each boundary. |

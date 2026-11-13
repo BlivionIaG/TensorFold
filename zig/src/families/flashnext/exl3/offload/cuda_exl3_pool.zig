@@ -10,6 +10,7 @@ const telemetry = @import("../model/exl3_telemetry.zig");
 pub const offload = @import("exl3_offload.zig");
 pub const round = round_;
 pub const graph = @import("../graph/exl3_graph.zig");
+const graph_mode = @import("../graph/cuda_exl3_graph.zig");
 pub const Round = round_.Round;
 pub const linesFor = round_.linesFor;
 pub const shape = offload.shape;
@@ -19,6 +20,8 @@ pub const min_lines: usize = 10;
 
 test {
     _ = @import("exl3_frequency_seed.zig");
+    _ = @import("../model/exl3_hit_first.zig");
+    _ = @import("cuda_exl3_pool_order_test.zig");
 }
 
 /// The layer's experts in host memory: routed [512] gate/up/down trellis bytes (stored layout), the shared expert's.
@@ -52,6 +55,8 @@ pub const Options = struct {
     double_buffer: bool = true,
     /// Masked-pick buffers for this many passes of a split round (0: the round's own bound, uniq + 1).
     max_passes: usize = 0,
+    /// `planHitFirst`: a one-pass round holding this many of its experts computes them while its misses copy (0: off).
+    hit_first: usize = 0,
 };
 
 /// Passes a round of a `lines`-line pool can split into when nothing prefetches (`prefetch_bytes` 0): pass 0 and one
@@ -73,6 +78,7 @@ pub const Stats = struct {
     evictions: u64 = 0,
     busy: u64 = 0, // plans that had to drain in-flight copies first
     protected: u64 = 0, // rounds that spared the previous round's lines
+    hit_first: u64 = 0, // rounds that computed their held experts while their misses copied
 };
 
 pub const Pool = struct {
@@ -98,6 +104,7 @@ pub const Pool = struct {
     picks_ev: cuda.Event,
     picks_pending: bool = false,
     picks_n: usize = 0, // the planned round's picks (rows * slots)
+    hit_first: bool = false, // the planned round was split: pass 0 its held experts, pass 1 its misses and every copy
     prev: []u16, // the previous round's routed experts (double buffering)
     prev_n: usize = 0,
     stats: Stats = .{},
@@ -130,7 +137,9 @@ pub const Pool = struct {
         }
         if (held == 0) return error.Invalid;
         const table_e: usize = if (src.shared != null) shape.experts + 1 else shape.experts;
-        var lines = try Lines.init(gpa, d, .{ .experts = table_e, .bytes = bytes, .lines = opt.lines, .staging = if (opt.direct) 0 else opt.staging });
+        // the table's host shadow only fits rounds the host plans: the device planner writes the table itself
+        const batch = try @import("sys").environment.read(bool, "TF_FLASHNEXT_TABLE_BATCH", false) and try graph_mode.mode() == .off;
+        var lines = try Lines.init(gpa, d, .{ .experts = table_e, .bytes = bytes, .lines = opt.lines, .staging = if (opt.direct) 0 else opt.staging, .batch = batch });
         errdefer lines.deinit();
         lines.pinned_bank = if (opt.direct) src.pinned_bank else null;
         if (src.shared) |sh| {
@@ -245,14 +254,19 @@ pub const Pool = struct {
 
     /// Host step of a round: `picks` [rows * slots] (int32, -1 skipped, 512 the shared expert), as the device holds
     pub fn plan(p: *Pool, picks: []const i32, rows: usize) !*const Round {
-        return p.planInternal(picks, rows, true);
+        return p.planInternal(picks, rows, true, 0);
     }
 
     pub fn planUnobserved(p: *Pool, picks: []const i32, rows: usize) !*const Round {
-        return p.planInternal(picks, rows, false);
+        return p.planInternal(picks, rows, false, 0);
     }
 
-    fn planInternal(p: *Pool, picks: []const i32, rows: usize, observe: bool) !*const Round {
+    /// `plan` for decode, which runs every pass: `Options.hit_first` may split a one-pass round (exl3_hit_first.zig).
+    pub fn planHitFirst(p: *Pool, picks: []const i32, rows: usize) !*const Round {
+        return p.planInternal(picks, rows, true, p.opt.hit_first);
+    }
+
+    fn planInternal(p: *Pool, picks: []const i32, rows: usize, observe: bool, hit_first: usize) !*const Round {
         if (rows == 0 or rows > p.opt.max_rows or picks.len != rows * p.opt.slots) return error.Invalid;
         p.now += 1;
         p.round_no += 1;
@@ -276,11 +290,13 @@ pub const Pool = struct {
             else => return e,
         };
         const r = &p.round;
+        p.hit_first = @import("../model/exl3_hit_first.zig").split(r, hit_first);
         if (r.n_passes * p.opt.max_rows * p.opt.slots * 4 > p.picks_dev.len) return error.PoolPasses;
         p.picks_n = picks.len;
         p.prev_n = r.n_ids;
         @memcpy(p.prev[0..r.n_ids], r.ids[0..r.n_ids]);
         if (r.protected) p.stats.protected += 1;
+        if (p.hit_first) p.stats.hit_first += 1;
         if (r.masked()) {
             if (p.picks_pending) try p.picks_ev.synchronize(); // the previous round's uploads read these bytes
             p.picks_pending = false;
@@ -314,7 +330,17 @@ pub const Pool = struct {
 
     /// Device step of pass `j`: its copies and table rewrites on the copy stream, its masked picks (if any) on `s`
     pub fn stage(p: *Pool, r: *const Round, j: usize, s: cuda.Stream) !void {
-        for (r.passCopies(j)) |c| try p.loadCopy(c);
+        if (!p.hit_first) {
+            for (r.passCopies(j)) |c| try p.loadCopy(c);
+            try p.lines.flush();
+        } else if (j == 0) {
+            // pass 0 reads none of the misses' lines or table words: their copies start now and run beside it
+            for (r.passCopies(1)) |c| try p.loadCopy(c);
+        } else {
+            // the copies are queued; batch mode's whole-table upload follows pass 0, then the lines' events
+            try p.lines.afterRelease();
+            try p.lines.flush();
+        }
         if (r.masked()) {
             const stride = p.opt.max_rows * p.opt.slots * 4;
             const n = p.picks_n * 4;
@@ -336,6 +362,7 @@ pub const Pool = struct {
         try p.lines.release(s, r.passLines(j));
         if (j + 1 == r.n_passes) {
             for (r.prefetch()) |c| try p.loadCopy(c);
+            try p.lines.flush();
             p.stats.prefetches += r.n_prefetch;
         }
     }
