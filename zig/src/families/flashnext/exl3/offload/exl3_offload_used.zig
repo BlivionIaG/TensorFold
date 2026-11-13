@@ -24,12 +24,50 @@ const countAt = counts_.countAt;
 const UsedOrder = counts_.UsedOrder;
 const usedFirst = counts_.usedFirst;
 
-/// Lowest `counts[layer][id]`, then oldest stamp, then the higher slot index.
+/// A test's override of the environment: the policy a test checks, whatever TF_FLASHNEXT_EVICT says.
+pub var force_lru: ?bool = null;
+
+/// TF_FLASHNEXT_EVICT=lru: a full pool evicts the line unused for the longest time, not the lowest lifetime count.
+pub fn evictsLeastRecent() bool {
+    if (force_lru) |f| return f;
+    const S = struct {
+        var state: i8 = -1;
+    };
+    // the startup check refused every malformed value already, so a plain default stands here
+    if (S.state < 0) S.state = if ((@import("sys").environment.read(u1, "TF_FLASHNEXT_EVICT", 0) catch 0) == 1) 1 else 0;
+    return S.state == 1;
+}
+
+/// Line `i` was used before line `b`: the older stamp, then the higher slot index.
+fn usedBefore(v: Vram, i: usize, b: usize) bool {
+    return v.stamp[i] < v.stamp[b] or (v.stamp[i] == v.stamp[b] and i > b);
+}
+
+/// The swap-round prefetch's victim order of line `i` against line `b` of `layer`, as `vramCold` picks.
+pub fn evictsBefore(v: Vram, layer: u8, counts: *const [shape.layers][shape.experts]u32, i: usize, b: usize) bool {
+    if (evictsLeastRecent()) return usedBefore(v, i, b);
+    const ci = countAt(counts, layer, v.slots[i]);
+    const cb = countAt(counts, layer, v.slots[b]);
+    return ci < cb or (ci == cb and v.stamp[i] < v.stamp[b]) or (ci == cb and v.stamp[i] == v.stamp[b] and i > b);
+}
+
+/// Lowest `counts[layer][id]`, then oldest stamp, then the higher slot index (with `evictsLeastRecent`: oldest stamp).
 fn vramCold(
     v: Vram,
     counts: *const [shape.layers][shape.experts]u32,
     keep_layer: u8,
     keep_ids: []const u16,
+) ?usize {
+    return victimBy(v, counts, keep_layer, keep_ids, evictsLeastRecent());
+}
+
+/// `vramCold` with the policy given: `lru` ignores the counts.
+pub fn victimBy(
+    v: Vram,
+    counts: *const [shape.layers][shape.experts]u32,
+    keep_layer: u8,
+    keep_ids: []const u16,
+    lru: bool,
 ) ?usize {
     std.debug.assert(v.layer.len == v.slots.len);
     var best: ?usize = null;
@@ -37,6 +75,10 @@ fn vramCold(
         if (state != .resident) continue;
         if (v.layer[i] == keep_layer and indexOf(keep_ids, v.slots[i]) != null) continue;
         if (best) |b| {
+            if (lru) {
+                if (usedBefore(v, i, b)) best = i;
+                continue;
+            }
             const ci = countAt(counts, v.layer[i], v.slots[i]);
             const cb = countAt(counts, v.layer[b], v.slots[b]);
             const colder = ci < cb or

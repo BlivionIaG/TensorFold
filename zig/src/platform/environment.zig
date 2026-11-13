@@ -75,6 +75,7 @@ pub const rules = [_]Rule{
     .{ .name = "TENSORFOLD_MEMORY_RESERVE_GIB", .scope = .cuda, .kind = .real, .trim = " ", .forms = "a finite GiB count of at least 0.5 (2 on unified memory) and at most the memory's size" },
     .{ .name = "TF_FLASHNEXT_EXL3_LINE_DELTAS", .scope = .cuda, .kind = .path, .forms = "POOL:+N,POOL:-N entries without control characters that move expert lines between decoder pools, as many added as removed" },
     .{ .name = "TF_FLASHNEXT_EXL3_PROFILE_SIZING", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (1 sizes the expert pools from the stored profile)" },
+    .{ .name = "TF_FLASHNEXT_EVICT", .scope = .cuda, .kind = .word, .words = &.{ "count", "lru" }, .forms = "count or lru (default count: a full pool evicts the line with the lowest lifetime count; lru evicts the line unused for the longest time)" },
     .{ .name = "TF_FLASHNEXT_TABLE_BATCH", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (1 uploads an expert pool's table once per stage instead of one word at a time; host-planned rounds only)" },
     .{ .name = "TF_FLASHNEXT_EXL3_STREAMS", .scope = .cuda, .kind = .size, .min = 1, .forms = "a positive whole stream count the expert pools leave room for (default 1; --parallel wins)" },
     .{ .name = "TF_FLASHNEXT_EXPERT_LINES", .scope = .cuda, .kind = .size, .forms = "a whole count of expert lines a layer keeps on the device (the pool refuses fewer than 10)" },
