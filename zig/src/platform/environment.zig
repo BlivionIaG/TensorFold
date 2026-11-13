@@ -103,6 +103,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_DSV41_LOOKUP_PLAN", .scope = .dsv41, .kind = .toggle, .trim = " \t", .forms = "0, 1, true, false, on, off, yes or no (any case)" },
     .{ .name = "TF_DSV41_GM_V3", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_CONE", .scope = .dsv41, .kind = .u32, .forms = "0, 1 or 2" },
+    .{ .name = "TF_DSV41_CONE_STEP", .scope = .dsv41, .kind = .u32, .min = 0, .max = 127, .forms = "a whole row count from 0 to 127 (127 is the exact cone)" },
     .{ .name = "TF_DSV41_OWN_PREFILL", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_DRAFTS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_GRAPHS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },

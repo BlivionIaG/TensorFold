@@ -71,7 +71,11 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     const state = &m.caches[slot];
     const cone_phase = m.cone.phase;
     const cone_d = m.cone.d;
-    defer m.attention_workspace.cone = .full;
+    defer {
+        m.attention_workspace.cone = .full;
+        m.attention_workspace.ring_floor = 0;
+    }
+    m.attention_workspace.ring_floor = if (cone_phase == .decoder) m.cone.floor else 0;
     const rows: u32 = total_rows;
     if (segs.len > 1 and std.c.getenv("TF_DSV41_BATCH_DEBUG") != null) std.log.info("forwardSegs: segs={d} rows={d}", .{ segs.len, rows });
     // A forward starts from the embedding: its stream lives in `.stream` and no sublayer branch is pending.

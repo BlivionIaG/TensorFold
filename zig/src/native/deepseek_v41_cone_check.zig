@@ -180,6 +180,55 @@ fn compare(m: *const ds.Model, n: usize, mode: u32, full: Run, cone: Run, decode
     });
 }
 
+/// KL(p || q) in nats of two logit rows.
+fn klDiv(p: []const f32, q: []const f32) f64 {
+    var mp: f64 = -std.math.inf(f64);
+    var mq: f64 = -std.math.inf(f64);
+    for (p, q) |x, y| {
+        mp = @max(mp, x);
+        mq = @max(mq, y);
+    }
+    var sp: f64 = 0;
+    var sq: f64 = 0;
+    for (p, q) |x, y| {
+        sp += @exp(@as(f64, x) - mp);
+        sq += @exp(@as(f64, y) - mq);
+    }
+    const lp = mp + @log(sp);
+    const lq = mq + @log(sq);
+    var kl: f64 = 0;
+    for (p, q) |x, y| {
+        const lpi = @as(f64, x) - lp;
+        kl += @exp(lpi) * (lpi - (@as(f64, y) - lq));
+    }
+    return kl;
+}
+
+/// An approximate cone against the full pass: last-token KL and top-1, then teacher-forced decode KL and top-1, time.
+fn approx(m: *ds.Model, a: std.mem.Allocator, io: std.Io, ids: []const u32, full: Run, step: u32) !void {
+    ds.forward_cone.setStep(m, step);
+    ds.forward_cone.force(m, 2);
+    const pre = try prefill(m, a, io, ids);
+    const first_kl = klDiv(full.logits, pre[0]);
+    const first_same = argmax(full.logits) == argmax(pre[0]);
+    var sum: f64 = 0;
+    var worst: f64 = 0;
+    var same: usize = 0;
+    for (full.picks, 0..) |tok, k| {
+        const lg = try m.forward(&[1]u32{tok}, .last);
+        const row = full.steps[k * vocab ..][0..vocab];
+        const kl = klDiv(row, lg);
+        sum += kl;
+        worst = @max(worst, kl);
+        same += @intFromBool(argmax(row) == argmax(lg));
+    }
+    const nf: f64 = @floatFromInt(full.picks.len);
+    log.info("n={d} step {d}: prefill {d:.2} s ({d:.0} tok/s) vs full {d:.2} s; first-token KL {e} top-1 {s}; {d} forced steps: KL mean {e} worst {e}, top-1 {d}/{d}", .{
+        ids.len, step, pre[1], @as(f64, @floatFromInt(ids.len)) / pre[1], full.prefill_s, first_kl, if (first_same) "same" else "DIFFERS", full.picks.len, sum / nf, worst, same, full.picks.len,
+    });
+    ds.forward_cone.setStep(m, null);
+}
+
 /// Where the kept state differs: storage by owner and kind, live by ring layer, then the scratch behind the rings.
 fn regions(plan: ds.kv.cache.Plan, full: *const Kept, cone: *const Kept) void {
     const cache = ds.kv.cache;
@@ -249,7 +298,13 @@ pub fn runSizes(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const 
         const a = arena.allocator();
         const ids = try tokens(a, io, n);
         const full = try run(m, a, io, ids, decode_steps, 0);
-        for ([_]u32{ 1, 2 }) |mode| compare(m, n, mode, full, try run(m, a, io, ids, decode_steps, mode), decode_steps);
+        const only = envText("TF_DSV41_CONE_APPROX_ONLY") != null;
+        if (!only) for ([_]u32{ 1, 2 }) |mode| compare(m, n, mode, full, try run(m, a, io, ids, decode_steps, mode), decode_steps);
+        if (envText("TF_DSV41_CONE_APPROX")) |list| {
+            var steps = std.mem.tokenizeScalar(u8, list, ',');
+            while (steps.next()) |w| try approx(m, a, io, ids, full, try std.fmt.parseInt(u32, w, 10));
+        }
+        if (only) continue;
         const rb_full = try rollbackRun(m, a, io, ids, 0, 24);
         for ([_]u32{ 1, 2 }) |mode| {
             const rb = try rollbackRun(m, a, io, ids, mode, 24);
@@ -273,4 +328,13 @@ pub fn runSizes(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const 
     ds.forward_cone.force(m, 0);
     try m.reset();
     log.info("done", .{});
+}
+
+test "KL of a row with itself is zero, with a shifted row it is positive and matches the closed form" {
+    const a = [_]f32{ 0, 0 };
+    const b = [_]f32{ 0, std.math.ln2 };
+    try std.testing.expectEqual(@as(f64, 0), klDiv(&a, &a));
+    // p = (1/2, 1/2), q = (1/3, 2/3): KL = 1/2 ln(3/2) + 1/2 ln(3/4)
+    const want = 0.5 * @log(1.5) + 0.5 * @log(0.75);
+    try std.testing.expectApproxEqAbs(want, klDiv(&a, &b), 1e-9);
 }

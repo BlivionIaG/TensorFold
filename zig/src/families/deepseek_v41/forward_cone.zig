@@ -18,6 +18,8 @@ pub const cap: u32 = 4096;
 const min_rows: u32 = 17;
 /// The kept rows: the window ring's last rows.
 const kept: u32 = ft.ring;
+/// The step that keeps the cone exact: a layer's window reaches this many rows behind its query.
+const exact_step: u32 = ft.ring - 1;
 const max_chunks = 64;
 
 pub const Phase = enum { off, encoder, decoder };
@@ -38,6 +40,12 @@ pub const Cone = struct {
     grouped: bool = false,
     /// the rows the decoder replays at most
     rows: u32 = 0,
+    /// rows each decoder layer drops from the program before it; the window less one is the exact cone
+    step: u32 = exact_step,
+    /// a harness override of the step (null: the environment's)
+    step_override: ?u32 = null,
+    /// the window floor of the replay chunk in flight (0: the ring is whole)
+    floor: u32 = 0,
     stash: ?mtl.Buffer = null,
     ids: [cap]u32 = undefined,
     chunks: [max_chunks]Chunk = undefined,
@@ -78,7 +86,8 @@ fn configure(m: *Model, mode: u32) bool {
     c.grouped = mode >= 2;
     if (mode == 0) return false;
     const d = ced.decoderStart(&m.cfg) catch return false;
-    const rows = ced.suffixRows(&m.cfg, kept) catch return false;
+    c.step = c.step_override orelse @min(@import("sys").environment.read(u32, "TF_DSV41_CONE_STEP", exact_step) catch exact_step, exact_step);
+    const rows = rowsFor(m.cfg.layers, d, c.step);
     if (rows > cap) return false;
     // the decoder layers read the first one's pool: no other kv source among them
     for (d + 1..m.cfg.layers) |l| if (m.cfg.isKvSource(@intCast(l))) return false;
@@ -93,6 +102,11 @@ fn configure(m: *Model, mode: u32) bool {
 /// The check harness's switch between the modes (no run pending).
 pub fn force(m: *Model, mode: u32) void {
     _ = configure(m, mode);
+}
+
+/// The check harness's step override for the next `force` (null: the environment's; no run pending).
+pub fn setStep(m: *Model, step: ?u32) void {
+    m.cone.step_override = step;
 }
 
 fn eligible(m: *Model, segs: []const Seg, logits: Logits) bool {
@@ -163,6 +177,9 @@ pub fn replay(m: *Model, logits: Logits) ![]const f32 {
         c.hi = programEnd(m, lo, end);
         defer lo = c.hi;
         const start = replayStart(end, c.first, rowsIn(m, lo));
+        // an approximate cone's first rows see a truncated window; the exact cone never reads behind its start
+        c.floor = floorOf(c.step, start, c.first);
+        defer c.floor = 0;
         const final = c.hi == m.cfg.layers;
         for (c.chunks[0..c.count], 0..) |ch, i| {
             const a = @max(ch.pos, start);
@@ -201,7 +218,17 @@ fn programEnd(m: *const Model, lo: u32, end: u32) u32 {
 
 /// The rows layer `lo`'s program starts from: what the kept rows depend on through the layers from `lo` on.
 fn rowsIn(m: *const Model, lo: u32) u32 {
-    return kept + (m.cfg.layers - lo) * (m.cfg.window - 1);
+    return rowsFor(m.cfg.layers, lo, m.cone.step);
+}
+
+/// The rows the program that starts at layer `lo` of `layers` replays, at `step` rows less per layer.
+fn rowsFor(layers: u32, lo: u32, step: u32) u32 {
+    return kept + (layers - lo) * step;
+}
+
+/// The first window position a replay program that starts at `start` may read: none below it unless the cone is exact.
+fn floorOf(step: u32, start: u32, first: u32) u32 {
+    return if (step < exact_step and start > first) start else 0;
 }
 
 /// Replay a pending run on `slot` so its state is exact at the position it stands at.
@@ -299,6 +326,18 @@ test "the replay starts a cone back, or at the run's first position" {
     try std.testing.expectEqual(@as(u32, 4096), replayStart(8000, 4096, 4000));
     try std.testing.expectEqual(@as(u32, 0), replayStart(2000, 0, 2668));
     try std.testing.expectEqual(@as(u32, 1000), replayStart(2000, 1000, 2668));
+}
+
+test "the cone's rows at each step and where an approximate replay's window starts" {
+    try std.testing.expectEqual(@as(u32, 2668), rowsFor(40, 20, exact_step));
+    try std.testing.expectEqual(@as(u32, 636), rowsFor(40, 36, exact_step));
+    try std.testing.expectEqual(@as(u32, 128), rowsFor(40, 20, 0));
+    try std.testing.expectEqual(@as(u32, 128 + 20 * 32), rowsFor(40, 20, 32));
+    // the exact cone never reads behind its start; an approximate one truncates there, but not at the run's own start
+    try std.testing.expectEqual(@as(u32, 0), floorOf(exact_step, 5332, 0));
+    try std.testing.expectEqual(@as(u32, 5332), floorOf(0, 5332, 0));
+    try std.testing.expectEqual(@as(u32, 0), floorOf(0, 4096, 4096));
+    try std.testing.expectEqual(@as(u32, 0), floorOf(64, 0, 0));
 }
 
 test "the stash holds every section's rows for the whole ring" {

@@ -192,6 +192,8 @@ pub const Workspace = struct {
     publish_stash: ?View = null,
     /// The cone prefill's mode for the next attention pass (forward_cone.zig).
     cone: ConeMode = .full,
+    /// The first window position the next attention pass may read (an approximate cone replay's floor; 0: all).
+    ring_floor: u32 = 0,
 
     /// The selection scratch of batch segment `s`; the one-stream path is segment 0.
     pub fn selectionFor(w: *Workspace, s: usize) *index.Scratch {

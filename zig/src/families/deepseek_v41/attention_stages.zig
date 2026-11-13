@@ -472,7 +472,7 @@ pub const Stage = struct {
                 }
             }
         }
-        try p.sparse.encode(e, q, ring, chunk, main, work.selection.positions(), tensor(w.sink), q, work.dense(), work.splitPartials(), .{ .rows = rows, .q_stride = q_width, .position = position, .chunk_rows = rows, .ratio = ratio, .compressed_rows = compressed_rows, .topk = @min(c.index_topk, compressed_rows), .splits = if (rows <= 8) splitScan() else 1 });
+        try p.sparse.encode(e, q, ring, chunk, main, work.selection.positions(), tensor(w.sink), q, work.dense(), work.splitPartials(), .{ .rows = rows, .q_stride = q_width, .position = position, .chunk_rows = rows, .ratio = ratio, .compressed_rows = compressed_rows, .topk = @min(c.index_topk, compressed_rows), .splits = if (rows <= 8) splitScan() else 1, .ring_floor = work.ring_floor });
         if (scan_probe.active(layer)) {
             e.barrier();
             scan_probe.record(e, &p.plain, q, rows, @intCast(q_width), .q_post, layer);
@@ -485,7 +485,7 @@ pub const Stage = struct {
                 if (scan_probe.stage) |stg| {
                     ops.encodeCopy(e, &p.plain, .{ .buffer = stg, .offset = 0 }, q, .{ .rows = rows, .width = @intCast(q_width), .x_stride = @intCast(q_width), .y_stride = @intCast(q_width) });
                     e.barrier();
-                    try p.sparse.encode(e, q, ring, chunk, main, work.selection.positions(), tensor(w.sink), q, work.dense(), work.splitPartials(), .{ .rows = rows, .q_stride = q_width, .position = position, .chunk_rows = rows, .ratio = ratio, .compressed_rows = compressed_rows, .topk = @min(c.index_topk, compressed_rows), .splits = if (rows <= 8) splitScan() else 1 });
+                    try p.sparse.encode(e, q, ring, chunk, main, work.selection.positions(), tensor(w.sink), q, work.dense(), work.splitPartials(), .{ .rows = rows, .q_stride = q_width, .position = position, .chunk_rows = rows, .ratio = ratio, .compressed_rows = compressed_rows, .topk = @min(c.index_topk, compressed_rows), .splits = if (rows <= 8) splitScan() else 1, .ring_floor = work.ring_floor });
                     e.barrier();
                     scan_probe.record(e, &p.plain, q, rows, @intCast(q_width), .q_post2, layer);
                 }

@@ -5,8 +5,9 @@ struct Dsv41Attention {
     float scale;
     uint splits; // 1 unless a decode layer's key scan is split across threadgroups
     uint chunk_all; // Every row sits at p.position and sees every chunk row (the drafter's form)
+    uint ring_floor; // Window positions below this are not keys (an approximate cone replay's truncated window)
 };
-static_assert(sizeof(Dsv41Attention) == 72, "Dsv41Attention must mirror csa2.zig's Params");
+static_assert(sizeof(Dsv41Attention) == 76, "Dsv41Attention must mirror csa2.zig's Params");
 // BF16 query/key products are exact in FP32; compensate accumulation and lane reduction.
 inline void dsv41_dot_add(thread float &sum, thread float &error, float value) {
     float next = sum + value;
@@ -43,6 +44,7 @@ inline device const uchar *dsv41_attn_key(uint slot, uint row, device const ucha
             pos = begin + slot;
         }
         if (!p.chunk_all && pos > query) return nullptr;
+        if (pos < p.ring_floor) return nullptr;
         kind = 0;
         return pos >= p.position ? chunk + (pos - p.position) * p.chunk_stride
                                 : ring + (pos % p.window) * p.ring_stride;

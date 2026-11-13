@@ -44,6 +44,7 @@ inline int dsv41_slot_at(constant Dsv41Attention &p, uint row, uint query, uint 
       pos = begin + slot;
     }
     if (!p.chunk_all && pos > query) return -1;
+    if (pos < p.ring_floor) return -1;
     return int(pos);
   }
   if (!p.ratio) return -1;

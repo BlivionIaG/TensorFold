@@ -5,7 +5,7 @@ cand.metal TfCandArgs 12
 compress.metal TfCPackArgs 24
 compress.metal TfCPoolArgs 8
 compress.metal TfCRtArgs 12
-csa2.metal Dsv41Attention 72
+csa2.metal Dsv41Attention 76
 csa2_attn.metal TfAcc 76
 csa2_attn.metal TfAttnArgs 16
 csa2_attn.metal TfAttnMeta 32

@@ -33,6 +33,8 @@ pub const Params = extern struct {
     splits: u32 = 1, // >1 only on a decode layer, where one threadgroup would scan every key alone
     /// The drafter's form -- every row sits at `position` and sees every chunk row.
     chunk_all: u32 = 0,
+    /// Window positions below this are not keys: the truncated window of an approximate cone replay (0: none).
+    ring_floor: u32 = 0,
     comptime {
         @import("metal/index_mirror.zig").check(Params, sources.deepseek_v41_csa2, "Dsv41Attention");
     }
