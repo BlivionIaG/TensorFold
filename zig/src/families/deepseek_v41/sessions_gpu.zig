@@ -433,6 +433,11 @@ pub const Sessions = struct {
         s.ds_valid[s.cur()] = 0;
         return (try s.resumeHit(prompt, hit)).at;
     }
+    pub fn beginFresh(s: *Sessions, n: usize, max_new: u64) !void { // a split prompt enters the empty slot: nothing is restored
+        if (s.f.slot.pos != 0 or s.kx.slot.len != 0) return error.SlotNotEmpty;
+        s.ds_valid[s.cur()] = 0;
+        try s.admit(null, n, max_new);
+    }
 
     /// The longest saved entry strictly prefixing `prompt`; under the exact replay, none short of the cone.
     pub fn find(s: *Sessions, prompt: []const u32) !?sessions.store.Hit {

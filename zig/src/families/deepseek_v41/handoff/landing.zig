@@ -38,6 +38,14 @@ pub const Landing = struct {
         for (l.shards[0..shards], 0..) |*s, k| s.* = .{ .imp = &l.imp, .shard = @intCast(k) };
     }
 
+    /// `init` for a layer-split state (layers [0, cut) only, no drafter rings)
+    pub fn initCut(l: *Landing, gpa: std.mem.Allocator, upto: u64, cut: u32, layout: metal.Layout) !void {
+        const shape: plan.Shape = .{ .upto = upto, .cut = cut };
+        l.* = .{ .imp = try import_metal.Import.init(gpa, shape, layout, .{}), .sink = undefined, .upto = upto };
+        l.sink = .{ .imp = &l.imp, .shard = 0 };
+        l.shards[0] = l.sink;
+    }
+
     pub fn deinit(l: *Landing) void {
         l.imp.deinit();
     }

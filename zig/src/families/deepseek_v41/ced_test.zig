@@ -141,6 +141,66 @@ test "CED: the encoder pass + the decoder pass are the whole segment's calls, la
     };
 }
 
+/// The layer number of a role that belongs to one ("L13.attn.wq_a.suh", "w.L13.proj", "s.L13.swa.v"), else null.
+fn layerOfRole(role: []const u8) ?u32 {
+    var rest = role;
+    for ([_][]const u8{ "w.", "s." }) |p| if (std.mem.startsWith(u8, rest, p)) {
+        rest = rest[p.len..];
+    };
+    if (rest.len < 2 or rest[0] != 'L' or !std.ascii.isDigit(rest[1])) return null;
+    var end: usize = 1;
+    while (end < rest.len and std.ascii.isDigit(rest[end])) end += 1;
+    return std.fmt.parseInt(u32, rest[1..end], 10) catch null;
+}
+
+test "layer split: a cut's program runs the layers below it as the whole segment does, then ends on the boundary rows" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const cfg: Config = .{};
+    var w = try widths(a);
+    var layers: [25]u32 = undefined;
+    for (&layers, 0..) |*l, i| l.* = @intCast(i);
+    for ([_]?block.Pool{ null, poolOf(false) }) |pool| for ([_]u32{ 2, 8, 14 }) |cut| for ([_]i64{ 33, 100, 300 }) |n| for ([_]i64{ 0, 1008 }) |start| {
+        var o: block.Options = .{ .limit = limit, .rope_rows = limit + 2048 };
+        o.pool = pool;
+        const whole = try bp.emitPrefill(a, &cfg, &w, o, &layers, n, start, false);
+        const cs = try bp.emitReplay(a, &cfg, &w, o, layers[0..cut], n, start, .split);
+        // it ends on the boundary glue: the residual (post applied, 4 x 5120 a row), the pre, the layer
+        const last = cs[cs.len - 1];
+        try testing.expectEqualStrings("glue.split_rows", last.name);
+        try testing.expectEqual(@as(usize, 3), last.args.len);
+        try testing.expectEqualStrings("w.trace", roleOf(last.args[0].arg));
+        try testing.expectEqual(n, last.args[0].arg.t.shape[0]);
+        try testing.expectEqual(@as(i64, 4 * 5120), last.args[0].arg.t.shape[1]);
+        try testing.expectEqual(n, last.args[1].arg.t.shape[0]);
+        try testing.expectEqual(@as(i64, 4), last.args[1].arg.t.shape[1]);
+        try testing.expectEqual(@as(i64, cut - 1), last.args[2].arg.i);
+        // the whole segment's calls up to the cut layer's last, then only the post and the boundary glue differ
+        var common: usize = 0;
+        while (common < cs.len and common < whole.len and same(cs[common], whole[common])) common += 1;
+        try testing.expect(common + 5 >= cs.len and whole.len > cs.len);
+        // no layer from the cut on is touched: no weight, buffer or state role of it, no head, no final norm, no stash
+        var splits: usize = 0;
+        var holds: usize = 0;
+        for (cs) |c| {
+            if (std.mem.eql(u8, c.name, "glue.split_rows")) splits += 1;
+            if (std.mem.eql(u8, c.name, "glue.split_hold")) holds += 1;
+            try testing.expect(!std.mem.startsWith(u8, c.name, "glue.ced_") and !std.mem.startsWith(u8, c.name, "glue.cone_"));
+            for (c.args) |x| {
+                if (x.arg != .t) continue;
+                const role = roleOf(x.arg);
+                if (layerOfRole(role)) |L| try testing.expect(L < cut);
+                try testing.expect(!std.mem.eql(u8, role, "norm") and !std.mem.startsWith(u8, role, "head") and !std.mem.eql(u8, role, "w.logits"));
+            }
+        }
+        try testing.expectEqual(@as(usize, 1), splits);
+        try testing.expectEqual(@as(usize, 1), holds); // the previous chunk's copy is awaited before the boundary is rewritten
+        // a prefix that is not run whole (a layer past the list) has no cut to end on
+        try testing.expectError(error.Unsupported, bp.emitReplay(a, &cfg, &w, o, &.{}, n, start, .split));
+    };
+}
+
 test "CED: the decoder pass needs the decoder's first layer first, the encoder ends on a kv source" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();

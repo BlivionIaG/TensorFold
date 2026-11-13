@@ -113,6 +113,20 @@ pub fn build(arena: std.mem.Allocator, shape: plan.Shape, cuda: Cuda) Error![]Pa
     return parts;
 }
 
+/// `build` into buffers that exist already (`into[i]` is plan part i, of exactly its bytes)
+pub fn buildInto(arena: std.mem.Allocator, shape: plan.Shape, cuda: Cuda, into: []const []u8) Error![]Part {
+    const list = try plan.specs(arena, shape);
+    if (into.len != list.len) return error.BadShape;
+    for (list, into) |spec, b| if (b.len != spec.bytes()) return error.BadShape;
+    try checkRings(shape, cuda);
+    const parts = try arena.alloc(Part, list.len);
+    for (list, into, parts) |spec, b, *p| {
+        p.* = .{ .spec = spec, .bytes = b };
+        try fill(p, shape, cuda);
+    }
+    return parts;
+}
+
 fn pages(p: *Part, shape: plan.Shape, cuda: Cuda, src: SourceState) Error!void {
     const si = shape.geo.sourceIndex(src.layer).?;
     const page_rows = shape.geo.pageRows(si);

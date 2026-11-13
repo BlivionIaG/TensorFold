@@ -1,6 +1,8 @@
 //! Remote prefill's gate and decider: one pull at a time reaches the pair, and a prompt goes there only when it pays.
 const std = @import("std");
 const breaker = @import("lane_remote_breaker.zig");
+const Rate = @import("lane_remote_rate.zig").Rate;
+const split = @import("lane_split_route.zig");
 
 /// TF_PREFILL_ROUTE: `auto` weighs each prompt (see `Route.weigh`); `always` sends every long prompt, behind any pull.
 pub const Mode = enum { auto, always };
@@ -27,6 +29,8 @@ pub const Ask = struct { len: u64, cached: u64, decoding: u32, directive: Direct
 /// A source's answer for a queued prompt: the pair takes it, it never qualifies (`small`, `off`), or not now (`later`).
 pub const Verdict = enum {
     remote,
+    /// the pair runs the layers below the cut and streams the boundary rows, this machine the rest (TF_LS_SPLIT)
+    split,
     small,
     off,
     busy,
@@ -37,13 +41,14 @@ pub const Verdict = enum {
     pub fn later(v: Verdict) bool {
         return switch (v) {
             .busy, .slower, .down => true,
-            .remote, .small, .off => false,
+            .remote, .split, .small, .off => false,
         };
     }
 
     pub fn why(v: Verdict) []const u8 {
         return switch (v) {
             .remote => "the pair takes it",
+            .split => "the pair splits it with this machine",
             .small => "it is too short to pull",
             .off => "remote prefill is off",
             .busy => "the pair is busy with another prompt",
@@ -54,11 +59,27 @@ pub const Verdict = enum {
 };
 
 /// A pass the lane host or a pull timed: this machine's own prompt pass, a pull end to end, or the last-token pass.
-pub const Pass = enum { local, remote, tail };
+pub const Pass = enum { local, remote, tail, split, split_m5 };
 pub const Measured = struct { pass: Pass, rows: u64, ns: u64 };
 
-/// A prompt's cost on each side in ns (a pull end to end, its own prefill); `pinned` (forced) waits out any pull.
-pub const Estimate = struct { remote_ns: u64, local_ns: u64, pinned: bool = false };
+/// A prompt's cost on each side in ns (a pull end to end, a split, its own prefill); `pinned`
+pub const Estimate = struct {
+    remote_ns: u64,
+    local_ns: u64,
+    pinned: bool = false,
+    /// a layer split's time to its landed state plus the tail; maxInt where the route may not split this prompt
+    split_ns: u64 = std.math.maxInt(u64),
+
+    /// What the pair costs this prompt: its pull, or its split when that is faster.
+    pub fn pairNs(e: Estimate) u64 {
+        return @min(e.remote_ns, e.split_ns);
+    }
+
+    /// The verdict for a prompt the pair takes.
+    pub fn pairVerdict(e: Estimate) Verdict {
+        return if (e.split_ns < e.remote_ns) .split else .remote;
+    }
+};
 
 /// What `enter` says to a prompt: the pair is its own now, wait a little for it, or prefill here.
 pub const Gate = enum { entered, wait, local };
@@ -67,20 +88,6 @@ pub const Gate = enum { entered, wait, local };
 const poll_ms = 5;
 /// A pass of fewer rows says little about a rate: a fixed cost of 0.5 s or more a forward dominates it.
 const min_rows = 1024;
-
-/// A rate or time, seeded and then blended with what is measured.
-const Rate = struct {
-    v: f64,
-    seen: bool = false,
-
-    /// A sample within a third to three times the standing value: the first replaces the seed, then 70% / 30%.
-    fn blend(r: *Rate, sample: f64) void {
-        if (!std.math.isFinite(sample) or sample <= 0) return;
-        const s = std.math.clamp(sample, r.v / 3, r.v * 3);
-        r.v = if (r.seen) 0.7 * r.v + 0.3 * s else s;
-        r.seen = true;
-    }
-};
 
 /// One pair, one pull at a time. Several threads may ask; the lock only guards the bookkeeping, never a pull.
 pub const Route = struct {
@@ -95,6 +102,8 @@ pub const Route = struct {
     remote_tps: Rate = .{ .v = 2000 },
     /// the Mac's pass after the pull, in seconds: restore, the last token, its first reply (seed: 0.6)
     tail_s: Rate = .{ .v = 0.6 },
+    /// the layer split's costs (TF_LS_*): off unless opted in
+    split: split.Model = .{},
     /// closed, open or half-open: failures of the pair or its link keep prompts here for a cool-down
     breaker: breaker.Breaker = .{},
     /// TF_PREFILL_TIMEOUT_S (0: `deadlineS` derives one from the predicted pull)
@@ -106,7 +115,19 @@ pub const Route = struct {
     }
 
     /// The knobs, as their values: `mode` is the word's index in TF_PREFILL_ROUTE's list.
-    pub const Knobs = struct { mode: u64 = 0, local_tps: f64 = 1500, remote_tps: f64 = 2000, trip: u64 = 3, cooldown_s: u64 = 30, timeout_s: u64 = 0 };
+    pub const Knobs = struct {
+        mode: u64 = 0,
+        local_tps: f64 = 1500,
+        remote_tps: f64 = 2000,
+        trip: u64 = 3,
+        cooldown_s: u64 = 30,
+        timeout_s: u64 = 0,
+        split: bool = false,
+        split_min: u64 = 16384,
+        split_max: u64 = 131072,
+        split_tps: f64 = 3500,
+        split_fixed_s: f64 = 1.4,
+    };
 
     /// TF_PREFILL_ROUTE, _LOCAL_TPS, _REMOTE_TPS, _BREAKER, _COOLDOWN_S and _TIMEOUT_S, each checked by name.
     pub fn fromEnv() !Route {
@@ -119,6 +140,11 @@ pub const Route = struct {
             .trip = try env.read(u64, "TF_PREFILL_BREAKER", d.trip),
             .cooldown_s = try env.read(u64, "TF_PREFILL_COOLDOWN_S", d.cooldown_s),
             .timeout_s = try env.read(u64, "TF_PREFILL_TIMEOUT_S", d.timeout_s),
+            .split = try env.read(bool, "TF_LS_SPLIT", d.split),
+            .split_min = try env.read(u64, "TF_LS_MIN_TOKENS", d.split_min),
+            .split_max = try env.read(u64, "TF_LS_MAX_TOKENS", d.split_max),
+            .split_tps = try env.read(f64, "TF_LS_SPARKS_TPS", d.split_tps),
+            .split_fixed_s = try env.read(f64, "TF_LS_FIXED_S", d.split_fixed_s),
         });
     }
 
@@ -129,6 +155,7 @@ pub const Route = struct {
             .remote_tps = .{ .v = k.remote_tps },
             .breaker = .{ .trip = k.trip, .cooldown_ns = k.cooldown_s * std.time.ns_per_s },
             .timeout_s = k.timeout_s,
+            .split = .{ .enabled = k.split, .min_tokens = k.split_min, .max_tokens = k.split_max, .stage_tps = .{ .v = k.split_tps }, .fixed_s = .{ .v = k.split_fixed_s } },
         };
     }
 
@@ -139,7 +166,8 @@ pub const Route = struct {
     fn cost(r: *const Route, prefix: u64, rest: u64) Estimate {
         const s: f64 = std.time.ns_per_s;
         const pulled = @as(f64, @floatFromInt(prefix)) / r.remote_tps.v + r.tail_s.v;
-        return .{ .remote_ns = @intFromFloat(pulled * s), .local_ns = @intFromFloat(@as(f64, @floatFromInt(rest)) / r.local_tps.v * s) };
+        const splits: u64 = if (r.split.allows(rest)) @intFromFloat((r.split.seconds(prefix) + r.tail_s.v) * s) else std.math.maxInt(u64);
+        return .{ .remote_ns = @intFromFloat(pulled * s), .local_ns = @intFromFloat(@as(f64, @floatFromInt(rest)) / r.local_tps.v * s), .split_ns = splits };
     }
 
     /// A prefix of `prefix` tokens pulled, against `rest` tokens the engine's cache lacks prefilled here.
@@ -167,6 +195,8 @@ pub const Route = struct {
             .local => if (m.rows >= min_rows) r.local_tps.blend(per_s),
             .remote => if (m.rows >= min_rows) r.remote_tps.blend(per_s),
             .tail => r.tail_s.blend(s),
+            .split => r.split.observeTotal(m.rows, m.ns),
+            .split_m5 => r.split.observeM5(m.rows, m.ns),
         }
     }
 
@@ -178,7 +208,7 @@ pub const Route = struct {
     /// Whether a prompt that came at `arrived` and looks again at `now` is better off here than behind the pull.
     fn goesLocal(r: *const Route, now: u64, arrived: u64, e: Estimate) bool {
         if (r.mode == .always or e.pinned) return false;
-        return (now -| arrived) +| (r.ends -| now) +| e.remote_ns > e.local_ns;
+        return (now -| arrived) +| (r.ends -| now) +| e.pairNs() > e.local_ns;
     }
 
     /// Where a queued prompt goes: not behind a costly pull; else to the pair if a stream decodes or it is no slower.
@@ -186,10 +216,10 @@ pub const Route = struct {
         r.acquire();
         defer r.lock.unlock();
         if (r.breaker.shut(now)) return .down;
-        if (r.mode == .always or ask.directive == .force) return .remote;
         const e = r.cost(prefix, ask.len - ask.cached);
+        if (r.mode == .always or ask.directive == .force) return e.pairVerdict();
         if (r.held and r.goesLocal(now, now, e)) return .busy;
-        return if (ask.decoding > 0 or e.remote_ns <= e.local_ns) .remote else .slower;
+        return if (ask.decoding > 0 or e.pairNs() <= e.local_ns) e.pairVerdict() else .slower;
     }
 
     /// The pair for this prompt (`entered`, until `leave`), a short wait for the pull under way, or the Mac's prefill.
@@ -198,7 +228,7 @@ pub const Route = struct {
         defer r.lock.unlock();
         if (r.held) return if (r.goesLocal(now, arrived, e)) .local else .wait;
         r.held = true;
-        r.ends = now +| e.remote_ns;
+        r.ends = now +| e.pairNs();
         return .entered;
     }
 
@@ -222,6 +252,15 @@ pub const Route = struct {
         r.acquire();
         defer r.lock.unlock();
         const predicted = @as(f64, @floatFromInt(tokens)) / r.remote_tps.v + r.tail_s.v;
+        return @intFromFloat(std.math.clamp(@ceil(15 + 3 * predicted), 30, 1800));
+    }
+
+    /// A split's time limit: TF_PREFILL_TIMEOUT_S, else 15 s and three times its predicted time, 30 s to 30 min.
+    pub fn splitDeadlineS(r: *Route, tokens: u64) u64 {
+        if (r.timeout_s != 0) return r.timeout_s;
+        r.acquire();
+        defer r.lock.unlock();
+        const predicted = r.split.seconds(tokens) + r.tail_s.v;
         return @intFromFloat(std.math.clamp(@ceil(15 + 3 * predicted), 30, 1800));
     }
 

@@ -89,7 +89,9 @@ pub const Reuse = struct {
     hook: ?MarkHook = null,
     remote: bool = false, // built on another machine's prefix, pulled or kept (#1594 step 2b): not the engine's own
     pulled: bool = false, // pulled for this stream just now (a fresh remote prefix), not a kept remote state restored
+    split: ?*anyopaque = null, // a layer-split feed (the family's): the pass enters from its streamed rows, not from `saved`
 };
+pub const SplitReport = @import("split_report.zig").SplitReport;
 
 /// Called between prompt chunks, the pass standing at `at` (the GPU done with the chunk that ends there).
 pub const MarkHook = struct {
@@ -191,6 +193,7 @@ pub const Stream = struct {
     prefill_widths: std.ArrayList(u32) = .empty, // completed target prompt passes, reported by an instrumented backend
     prefill_widths_failed: bool = false, // an allocation failure invalidates this observation without failing the reply
     reuse: Reuse = .{},
+    split_report: SplitReport = .{}, // a layer-split prompt's costs, written by the backend as the pass ends
     decode_spans: []const [2]u32 = &.{},
     decide: ?u32 = null,
     untaught: bool = false,

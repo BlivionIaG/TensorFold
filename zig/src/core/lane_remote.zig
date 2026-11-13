@@ -32,12 +32,53 @@ pub const Source = struct {
     running: *std.atomic.Value(u32),
     /// A pass the lane host timed (this engine's own prompt pass, or the last-token pass after a pull), if it learns.
     measured: ?*const fn (ptr: *anyopaque, m: Measured) void = null,
+    /// A layer split (verdict `.split`; null: this family has none and the pair's pull is used). Blocking like `fill`
+    split: ?*const fn (ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool), announce: Announce) anyerror!void = null,
+};
+
+/// The family's side of a split tells the ticket its feed is open: the engine may begin passes over the arriving rows.
+pub const Announce = struct {
+    ctx: *anyopaque,
+    call: *const fn (ctx: *anyopaque, feed: *anyopaque) void,
+
+    pub fn feed(a: Announce, f: *anyopaque) void {
+        a.call(a.ctx, f);
+    }
 };
 
 /// A pull at its gate: ask the breaker, check a half-open pair is alive, run `p.run`, tell the breaker how it went.
 pub fn guarded(p: anytype, prompt: []const u32, cached: u64, upto: u64, gone: *const std.atomic.Value(bool)) !?Filled {
+    const Run = struct {
+        prompt: []const u32,
+        cached: u64,
+        upto: u64,
+        gone: *const std.atomic.Value(bool),
+
+        fn call(r: @This(), q: @TypeOf(p), outcome: *route.Outcome) !?Filled {
+            return q.run(r.prompt, r.cached, r.upto, r.gone, outcome);
+        }
+    };
+    return (try gated(p, ?Filled, null, Run{ .prompt = prompt, .cached = cached, .upto = upto, .gone = gone }, Run.call));
+}
+
+/// A layer split at the same gate (`p.runSplit`): the breaker's door and verdict as for a pull; returns when it ends.
+pub fn guardedSplit(p: anytype, prompt: []const u32, upto: u64, gone: *const std.atomic.Value(bool), announce: Announce) !void {
+    const Run = struct {
+        prompt: []const u32,
+        upto: u64,
+        gone: *const std.atomic.Value(bool),
+        announce: Announce,
+
+        fn call(r: @This(), q: @TypeOf(p), outcome: *route.Outcome) !void {
+            return q.runSplit(r.prompt, r.upto, r.gone, r.announce, outcome);
+        }
+    };
+    return gated(p, void, {}, Run{ .prompt = prompt, .upto = upto, .gone = gone, .announce = announce }, Run.call);
+}
+
+fn gated(p: anytype, comptime T: type, none: T, ctx: anytype, comptime call: anytype) !T {
     const door = p.route.door(Route.nowNs(p.io));
-    if (door == .local) return null;
+    if (door == .local) return none;
     var outcome: route.Outcome = .other;
     defer switch (p.route.finish(Route.nowNs(p.io), outcome)) {
         .none => {},
@@ -46,9 +87,9 @@ pub fn guarded(p: anytype, prompt: []const u32, cached: u64, upto: u64, gone: *c
     };
     if (door == .probe and !p.alive()) {
         outcome = .down;
-        return null;
+        return none;
     }
-    return p.run(prompt, cached, upto, gone, &outcome) catch |err| {
+    return call(ctx, p, &outcome) catch |err| {
         outcome = if (route.pairDown(err)) .down else .other;
         return err;
     };
@@ -90,6 +131,9 @@ pub const Ticket = struct {
     gone: std.atomic.Value(bool) = .init(false),
     filled: ?Filled = null,
     prompt: []u32, // the thread's own copy: the request may go before the fill does
+    /// a layer split: the family's feed once its stream is open (the job is admitted then, not at `landed`)
+    feed: std.atomic.Value(?*anyopaque) = .init(null),
+    split: bool = false,
     cached: u64,
     directive: Directive,
     host: *LaneHost,
@@ -123,7 +167,7 @@ pub fn queue(h: *LaneHost) void {
         const cached = @max(kept, if (h.resume_peek) |p| p.at(p.ctx, r.prompt, h.spans(r)) else 0);
         const verdict = source.wants(source.ptr, .{ .len = r.prompt.len, .cached = cached, .decoding = decoding, .directive = r.prefill });
         job.verdict = verdict;
-        if (verdict != .remote) {
+        if (verdict != .remote and verdict != .split) {
             job.remote_looked = !verdict.later(); // busy, slower or down: weighed again at the next look
             said(job, verdict, cached);
             continue;
@@ -132,9 +176,9 @@ pub fn queue(h: *LaneHost) void {
         t.* = .{ .prompt = h.gpa.dupe(u32, r.prompt) catch {
             h.gpa.destroy(t);
             continue;
-        }, .cached = cached, .directive = r.prefill, .host = h, .source = source };
+        }, .cached = cached, .directive = r.prefill, .host = h, .source = source, .split = verdict == .split and source.split != null };
         _ = source.running.fetchAdd(1, .acq_rel);
-        const thread = std.Thread.spawn(.{}, fill, .{t}) catch {
+        const thread = (if (t.split) std.Thread.spawn(.{}, fillSplit, .{t}) else std.Thread.spawn(.{}, fill, .{t})) catch {
             _ = source.running.fetchSub(1, .acq_rel);
             free(t);
             continue;
@@ -156,6 +200,7 @@ fn said(job: *Job, v: Verdict, cached: u64) void {
 pub fn prefilled(h: *LaneHost, job: *const Job, ns: i96) void {
     const source = h.remote orelse return;
     const learn = source.measured orelse return;
+    if (job.stream.reuse.split != null or job.stream.split_report.cut != 0) return; // a split's family learns its own stages
     const rows = job.request.prompt.len - job.stream.cached;
     const took: u64 = @intCast(@max(0, ns));
     if (job.stream.reuse.pulled) {
@@ -175,6 +220,23 @@ fn secs(ns: u64) f64 {
 /// A finished job's remote verdict and, if its prefix was pulled, its phases, for the reply's runtime block.
 pub fn report(job: *const Job) @FieldType(api.Stats, "remote") {
     var out: @FieldType(api.Stats, "remote") = .{ .route = if (job.verdict) |v| @tagName(v) else "" };
+    if (job.stream.split_report.cut != 0) {
+        const x = job.stream.split_report;
+        out.split_cut = x.cut;
+        out.split_rows = x.rows;
+        out.split_passes = x.passes;
+        out.split_first_row_s = secs(x.first_row_ns);
+        out.split_rows_s = secs(x.rows_ns);
+        out.split_state_s = secs(x.state_ns);
+        out.split_wait_s = secs(x.wait_ns);
+        out.split_compute_s = secs(x.compute_ns);
+        out.split_state_wait_s = secs(x.state_wait_ns);
+        out.split_restore_s = secs(x.restore_ns);
+        out.split_fell_back = x.fell_back;
+        out.bytes = x.bytes;
+        if (job.prefilled) |done| out.tail_s = secs(@intCast(@max(0, done - job.began)));
+        return out;
+    }
     if (!job.stream.reuse.pulled) return out;
     const p = job.phases;
     out.queue_s = secs(p.queue_ns);
@@ -184,6 +246,13 @@ pub fn report(job: *const Job) @FieldType(api.Stats, "remote") {
     out.bytes = p.bytes;
     if (job.prefilled) |done| out.tail_s = secs(@intCast(@max(0, done - job.began)));
     return out;
+}
+
+/// The prompt tokens a reply's prefix covers that another machine computed: a pulled or kept state's
+pub fn prefix(job: *const Job) u32 {
+    const x = job.stream.split_report;
+    if (x.cut != 0 and !x.fell_back) return @intCast(x.rows);
+    return if (job.stream.reuse.remote) job.stream.cached else 0;
 }
 
 fn ahead() usize {
@@ -209,6 +278,32 @@ fn fill(t: *Ticket) void {
     _ = source.running.fetchSub(1, .acq_rel);
 }
 
+/// A layer split's thread: the family pulls (and the engine's passes consume) through `announce`'s feed until done.
+fn fillSplit(t: *Ticket) void {
+    const source = t.source;
+    const h = t.host;
+    const left = t.state.load(.acquire) == Ticket.left;
+    if (!left) source.split.?(source.ptr, t.prompt, t.cached, t.directive, &t.gone, .{ .ctx = t, .call = opened }) catch |err| {
+        if (err != error.Aborted) std.log.warn("layer split failed ({s}); the prompt is prefilled here", .{@errorName(err)});
+    };
+    if (t.state.cmpxchgStrong(Ticket.running, Ticket.landed, .acq_rel, .acquire) != null) free(t); // its job took the feed or ended
+    wake(h);
+    _ = source.running.fetchSub(1, .acq_rel);
+}
+
+/// The family's stream is open: the job is admitted from now on, and its passes run on the rows as they arrive.
+fn opened(ctx: *anyopaque, feed: *anyopaque) void {
+    const t: *Ticket = @ptrCast(@alignCast(ctx));
+    t.feed.store(feed, .release);
+    wake(t.host);
+}
+
+fn wake(h: *LaneHost) void {
+    h.mutex.lockUncancelable(h.io); // the engine reads held() under this lock before it waits: no lost wake-up
+    h.wake.signal(h.io);
+    h.mutex.unlock(h.io);
+}
+
 fn free(t: *Ticket) void {
     if (t.filled) |f| t.source.drop(t.source.ptr, f.saved);
     t.host.gpa.free(t.prompt);
@@ -218,7 +313,7 @@ fn free(t: *Ticket) void {
 /// Whether queued `job` waits for its fill (admission passes it over meanwhile).
 pub fn held(job: *const Job) bool {
     const t = job.ticket orelse return false;
-    return t.state.load(.acquire) == Ticket.running;
+    return t.state.load(.acquire) == Ticket.running and t.feed.load(.acquire) == null;
 }
 
 /// Whether a landed remote prefix beats the cache's own (a peek): then the lookup, which reserves room, is skipped.
@@ -255,6 +350,7 @@ pub fn resumeAt(h: *LaneHost, job: *const Job) u32 {
 pub fn use(h: *LaneHost, job: *Job, reuse: *lanes.stream.Reuse) void {
     defer if (reuse.remote and !reuse.pulled) ownFirst(h, job, reuse); // a kept remote state stands, pull or none
     const t = job.ticket orelse return;
+    if (t.split and t.feed.load(.acquire) != null) return adoptSplit(h, job, reuse, t);
     if (t.state.load(.acquire) != Ticket.landed) return;
     job.ticket = null;
     job.remote = t.filled;
@@ -268,6 +364,17 @@ pub fn use(h: *LaneHost, job: *Job, reuse: *lanes.stream.Reuse) void {
     // TF_PREFILL_KEEP: marks at or past the prefix keep remote states; else no marks, no hook, nothing kept
     const marks = if (h.keep_remote) marksFrom(reuse.marks, f.at) else &.{};
     reuse.* = .{ .saved = f.saved, .at = f.at, .remote = true, .pulled = true, .marks = marks, .snap_at = if (h.keep_remote) reuse.snap_at else 0, .hook = if (h.keep_remote) .{ .ptr = job, .at = Job.kept } else null };
+}
+
+/// A split's open feed becomes the stream's way in, unless the cache holds a prefix already: then the split is let go.
+fn adoptSplit(h: *LaneHost, job: *Job, reuse: *lanes.stream.Reuse, t: *Ticket) void {
+    const feed = t.feed.load(.acquire).?;
+    if (reuse.saved != null) return drop(job); // a kept state's prefix is the engine's own: the feed ends with the ticket
+    job.ticket = null;
+    if (job.entry) |e| if (h.cache) |store| store.release(e);
+    job.entry = null;
+    reuse.* = .{ .split = feed, .remote = true, .pulled = true };
+    if (t.state.cmpxchgStrong(Ticket.running, Ticket.left, .acq_rel, .acquire) != null) free(t); // the thread already ended
 }
 
 /// A kept remote state slot 0's exact state reaches is let go; if a stream takes slot 0 first, the pass starts at 0.

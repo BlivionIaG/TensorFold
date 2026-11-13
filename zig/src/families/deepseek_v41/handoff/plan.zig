@@ -72,6 +72,8 @@ pub const Shape = struct {
     ds_rows: u32 = 0,
     /// the part size both ends agree on (the format's constant; tests shrink it to cut many windows from small states)
     chunk: u64 = chunk_bytes,
+    /// a layer-split state: only layers [0, cut) are exported (0: all), and no drafter rings ride
+    cut: u32 = 0,
 
     pub fn check(s: Shape) error{ BadGeometry, BadShape }!void {
         try s.geo.check();
@@ -79,6 +81,12 @@ pub const Shape = struct {
         if (s.shards == 0 or s.shards > max_world or s.shard >= s.shards) return error.BadShape;
         if (s.split != (s.shards > 1)) return error.BadShape;
         if (s.ds_rows > @min(s.upto, s.geo.window)) return error.BadShape;
+        if (s.cut > s.geo.layers or (s.cut != 0 and s.ds_rows != 0)) return error.BadShape;
+    }
+
+    /// The backbone layers exported: every one, or those below the layer-split cut.
+    pub fn layers(s: Shape) u32 {
+        return if (s.cut == 0) s.geo.layers else s.cut;
     }
 
     pub fn windowRows(s: Shape) u32 {
@@ -153,7 +161,7 @@ pub fn specs(gpa: std.mem.Allocator, shape: Shape) ![]Spec {
     const geo = shape.geo;
     const lead = shape.shard == 0;
     var layer: u32 = 0;
-    while (layer < geo.layers) : (layer += 1) {
+    while (layer < shape.layers()) : (layer += 1) {
         if (lead) try out.append(gpa, .{ .layer = layer, .kind = .swa, .rows = shape.windowRows(), .cols = geo.head_dim, .dtype = .bf16 });
         const src = geo.sourceIndex(layer) orelse continue;
         if (lead and geo.sources[src].ratio == 2) try out.append(gpa, .{ .layer = layer, .kind = .carry, .rows = 2, .cols = geo.head_dim, .dtype = .f32 });
@@ -178,10 +186,11 @@ pub fn find(shape: Shape, layer: u32, name: []const u8) ?Spec {
     const geo = shape.geo;
     const lead = shape.shard == 0;
     switch (p.kind) {
-        .swa => if (lead and layer < geo.layers) return .{ .layer = layer, .kind = .swa, .rows = shape.windowRows(), .cols = geo.head_dim, .dtype = .bf16 },
-        .carry => if (lead) if (geo.sourceIndex(layer)) |s| if (geo.sources[s].ratio == 2) return .{ .layer = layer, .kind = .carry, .rows = 2, .cols = geo.head_dim, .dtype = .f32 },
+        .swa => if (lead and layer < shape.layers()) return .{ .layer = layer, .kind = .swa, .rows = shape.windowRows(), .cols = geo.head_dim, .dtype = .bf16 },
+        .carry => if (lead and layer < shape.layers()) if (geo.sourceIndex(layer)) |s| if (geo.sources[s].ratio == 2) return .{ .layer = layer, .kind = .carry, .rows = 2, .cols = geo.head_dim, .dtype = .f32 },
         .ring => if (lead and shape.ds_rows > 0 and layer >= geo.layers and layer < geo.layers + geo.mtp_layers) return .{ .layer = layer, .kind = .ring, .rows = shape.ds_rows, .cols = geo.head_dim, .dtype = .bf16 },
         .comp, .ixk => {
+            if (layer >= shape.layers()) return null;
             const s = geo.sourceIndex(layer) orelse return null;
             if (p.split != shape.split) return null;
             const rows = partRows(shape, s, p.kind, p.first_page);

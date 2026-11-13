@@ -4,9 +4,14 @@ const ds = @import("model.zig");
 const lanes = @import("lanes");
 const Stream = lanes.Stream;
 const Backend = @import("backend.zig").Backend;
+const split_feed = @import("split_feed.zig");
+const split_run = @import("split_run.zig");
+const entry_async = @import("entry_async.zig");
 
 /// The stream's slot, taken, reset and (for a kept prompt state) restored on the first chunk; the pass's cursor.
 fn begin(b: *Backend, s: *Stream, prompt: []const u32) !u32 {
+    // a split feed the stream cannot start on is over, as a failed one (the prompt is a local pass if it runs again)
+    errdefer dropFeed(s);
     const i = b.free() orelse return error.NoFreeSlot;
     const state = &b.model.caches[i];
     if (prompt.len + s.max_new + 1 > state.plan.capacity) return error.ContextFull;
@@ -14,6 +19,17 @@ fn begin(b: *Backend, s: *Stream, prompt: []const u32) !u32 {
     try b.model.resetSlot(i);
     b.history[i].clearRetainingCapacity();
     s.cached = 0;
+    b.runs[i] = null;
+    // A LAYER-SPLIT FEED IS THE PASS'S WAY IN: the slot stays blank until its rows enter and its state restores.
+    if (s.reuse.split) |p| {
+        const feed: split_feed.Feed = @as(*const split_feed.Feed, @ptrCast(@alignCast(p))).*;
+        s.reuse.split = null;
+        b.runs[i] = split_run.Run.init(feed);
+        if (!split_run.admits(feed, prompt.len)) b.runs[i].?.refuse();
+        s.split_report = reportOf(&b.runs[i].?);
+        s.fill_at.store(0, .monotonic);
+        return i;
+    }
     // A KEPT PROMPT STATE RESUMES THE PASS WHERE IT STOOD.
     if (s.reuse.saved) |saved| {
         const snap: *ds.Model.Snapshot = @ptrCast(@alignCast(saved));
@@ -43,7 +59,11 @@ pub fn step(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
         if (s.cached > 0) if (s.reuse.hook) |hook| if (std.mem.indexOfScalar(u32, s.reuse.marks, s.cached) != null) hook.at(hook.ptr, s, s.cached);
         break :blk slot;
     };
-    if (s.isCancelled()) return error.Cancelled;
+    if (s.isCancelled()) {
+        endSplit(b, s, i);
+        return error.Cancelled;
+    }
+    if (b.runs[i]) |*run| if (!run.finished and !try splitStep(b, s, i, run, prompt, max_rows)) return false;
     const at: u32 = b.model.caches[i].position;
     const plan_rows = b.model.workspace.plan.rows;
     const rows = if (max_rows != 0) @min(plan_rows, max_rows) else plan_rows;
@@ -76,6 +96,94 @@ pub fn step(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
     if (s.reuse.hook) |hook| if (std.mem.indexOfScalar(u32, s.reuse.marks, end) != null) hook.at(hook.ptr, s, end);
     s.fill_at.store(end, .monotonic);
     return last;
+}
+
+/// A split feed no pass adopted (the stream could not start, or ended first) is over, as a failed one, exactly once.
+pub fn dropFeed(s: *Stream) void {
+    const p = s.reuse.split orelse return;
+    const feed = @as(*const split_feed.Feed, @ptrCast(@alignCast(p))).*;
+    s.reuse.split = null;
+    feed.finish(false, .{});
+    s.split_report = .{ .cut = feed.cut, .fell_back = true };
+}
+
+/// What the lane host reports of a layer-split pass (the feed's timings are read when it is finished).
+pub fn reportOf(r: *const split_run.Run) lanes.stream.SplitReport {
+    return .{
+        .cut = r.feed.cut,
+        .rows = r.stats.rows,
+        .passes = r.stats.passes,
+        .first_row_ns = r.pull.first_row_ns,
+        .rows_ns = r.pull.rows_ns,
+        .state_ns = r.pull.state_ns,
+        .wait_ns = r.stats.wait_ns,
+        .compute_ns = r.stats.compute_ns,
+        .state_wait_ns = r.stats.state_wait_ns,
+        .restore_ns = r.stats.restore_ns,
+        .bytes = r.pull.bytes,
+        .fell_back = r.fell_back,
+    };
+}
+
+/// The stream's split feed, if it still holds one, is over (a cancel): the puller may stop.
+fn endSplit(b: *Backend, s: *Stream, slot: u32) void {
+    const run = &(b.runs[slot] orelse return);
+    run.abort();
+    s.split_report = reportOf(run);
+}
+
+/// The model's calls for the split machine, for one step of the pass.
+const Calls = struct {
+    b: *Backend,
+    slot: u32,
+    prompt: []const u32,
+    cut: u32,
+
+    fn ops(c: *Calls) split_run.Ops {
+        return .{ .ptr = c, .reset = reset, .position = position, .enter = enter, .sync = sync, .restore = restore };
+    }
+    fn self(ptr: *anyopaque) *Calls {
+        return @ptrCast(@alignCast(ptr));
+    }
+    fn reset(ptr: *anyopaque) anyerror!void {
+        const c = self(ptr);
+        try c.b.model.resetSlot(c.slot);
+        c.b.history[c.slot].clearRetainingCapacity();
+    }
+    fn position(ptr: *anyopaque) u32 {
+        const c = self(ptr);
+        return c.b.model.caches[c.slot].position;
+    }
+    fn enter(ptr: *anyopaque, at: u32, n: u32, rows: []const u8) anyerror!void {
+        const c = self(ptr);
+        try c.b.model.forwardEntered(c.slot, c.prompt[at..][0..n], rows, c.cut);
+    }
+    fn sync(ptr: *anyopaque) anyerror!void {
+        try entry_async.settle(self(ptr).b.model);
+    }
+    fn restore(ptr: *anyopaque, snap: *anyopaque) anyerror!void {
+        const c = self(ptr);
+        try c.b.model.snapshotRestoreLayers(c.slot, @ptrCast(@alignCast(snap)), c.cut);
+    }
+};
+
+/// One slice of a layer-split pass: false while its rows or state are still coming; true once it restored
+fn splitStep(b: *Backend, s: *Stream, slot: u32, run: *split_run.Run, prompt: []const u32, max_rows: u32) !bool {
+    var calls: Calls = .{ .b = b, .slot = slot, .prompt = prompt, .cut = run.feed.cut };
+    const plan_rows = b.model.workspace.plan.rows;
+    const cap = @min(plan_rows, @max(if (max_rows != 0) max_rows else plan_rows, 64));
+    const next = run.advance(calls.ops(), cap) catch |err| {
+        run.abort();
+        s.split_report = reportOf(run);
+        return err;
+    };
+    s.split_report = reportOf(run);
+    s.fill_at.store(switch (next) {
+        .more => run.at,
+        .restored => run.upto,
+        .fell_back => 0,
+    }, .monotonic);
+    return next != .more;
 }
 
 /// The whole prompt pass in one call, as the lane host runs it when it has nothing to interleave.

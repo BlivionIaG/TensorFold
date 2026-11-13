@@ -3,10 +3,20 @@ const std = @import("std");
 const json = @import("json");
 const Handoff = @import("engine_api").LaneHost.Export.Handoff;
 
-/// The request's handoff, or null without one; a malformed one is refused with `why`.
+/// The request's handoff, or null without one; a malformed one is refused with `why`. A layer-split request
 pub fn parse(f: json.Value, why: *[]const u8) error{BadHandoff}!?Handoff {
+    const produce = @import("sys").environment.read(bool, "TF_LS_PRODUCE", false) catch false;
+    return parseWith(f, why, produce);
+}
+
+/// `parse` with the server's layer-split opt-in given (TF_LS_PRODUCE).
+pub fn parseWith(f: json.Value, why: *[]const u8, produce_split: bool) error{BadHandoff}!?Handoff {
     const params = f.field("kv_transfer_params") orelse return null;
-    const h = params.field("mcdma_handoff") orelse return null;
+    const cut_field = params.field("mcdma_split_cut");
+    const h = params.field("mcdma_handoff") orelse {
+        if (cut_field != null) return bad(why, "kv_transfer_params.mcdma_split_cut: needs kv_transfer_params.mcdma_handoff");
+        return null;
+    };
     if (h != .object) return bad(why, "kv_transfer_params.mcdma_handoff: expected an object with id and export_from");
     const text = (h.field("id") orelse return bad(why, "kv_transfer_params.mcdma_handoff.id: missing")).str() orelse
         return bad(why, "kv_transfer_params.mcdma_handoff.id: expected 32 hex digits");
@@ -19,7 +29,14 @@ pub fn parse(f: json.Value, why: *[]const u8) error{BadHandoff}!?Handoff {
         from = std.fmt.parseInt(u64, v.int, 10) catch return bad(why, "kv_transfer_params.mcdma_handoff.export_from: expected an integer");
     }
     if (from != 0) return bad(why, "kv_transfer_params.mcdma_handoff.export_from: this server exports from token 0 only");
-    return .{ .id = id, .export_from = from };
+    var cut: u32 = 0;
+    if (cut_field) |v| {
+        if (v != .int) return bad(why, "kv_transfer_params.mcdma_split_cut: expected an integer layer");
+        cut = std.fmt.parseInt(u32, v.int, 10) catch return bad(why, "kv_transfer_params.mcdma_split_cut: expected an integer layer");
+        if (cut == 0 or cut > 63) return bad(why, "kv_transfer_params.mcdma_split_cut: expected a layer from 1 to 63");
+        if (!produce_split) return bad(why, "kv_transfer_params.mcdma_split_cut: this server does not produce layer-split prefills (TF_LS_PRODUCE=1)");
+    }
+    return .{ .id = id, .export_from = from, .split_cut = cut };
 }
 
 fn bad(why: *[]const u8, text: []const u8) error{BadHandoff} {
@@ -94,4 +111,40 @@ test "a handoff that is not an object, has no id, or has a non-integer export_fr
         try std.testing.expectError(error.BadHandoff, parse(.{ .object = body }, &why));
         try std.testing.expectEqualStrings("kv_transfer_params.mcdma_handoff.export_from: expected an integer", why);
     }
+}
+
+test "a layer-split cut is read beside the handoff, and refused unless the server produces splits or with no handoff" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var why: []const u8 = "";
+    const body = try json.newObject(a);
+    const params = try json.newObject(a);
+    const handoff = try json.newObject(a);
+    try body.put(a, "kv_transfer_params", .{ .object = params });
+    try params.put(a, "mcdma_handoff", .{ .object = handoff });
+    try handoff.put(a, "id", .{ .string = "00112233445566778899aabbccddeeff" });
+    try handoff.put(a, "export_from", .{ .int = "0" });
+    // no cut: a plain handoff, whatever the opt-in
+    try std.testing.expectEqual(@as(u32, 0), (try parseWith(.{ .object = body }, &why, false)).?.split_cut);
+    try std.testing.expectEqual(@as(u32, 0), (try parseWith(.{ .object = body }, &why, true)).?.split_cut);
+    try params.put(a, "mcdma_split_cut", .{ .int = "14" });
+    try std.testing.expectEqual(@as(u32, 14), (try parseWith(.{ .object = body }, &why, true)).?.split_cut);
+    // a producer that did not opt in names the knob rather than running a full prefill
+    try std.testing.expectError(error.BadHandoff, parseWith(.{ .object = body }, &why, false));
+    try std.testing.expectEqualStrings("kv_transfer_params.mcdma_split_cut: this server does not produce layer-split prefills (TF_LS_PRODUCE=1)", why);
+    for ([_]json.Value{ .{ .string = "14" }, .{ .float = 14.5 }, .{ .bool = true } }) |v| {
+        try params.put(a, "mcdma_split_cut", v);
+        try std.testing.expectError(error.BadHandoff, parseWith(.{ .object = body }, &why, true));
+        try std.testing.expectEqualStrings("kv_transfer_params.mcdma_split_cut: expected an integer layer", why);
+    }
+    for ([_][]const u8{ "0", "64", "-1" }) |n| {
+        try params.put(a, "mcdma_split_cut", .{ .int = n });
+        try std.testing.expectError(error.BadHandoff, parseWith(.{ .object = body }, &why, true));
+    }
+    // a cut with no handoff is not a plain request
+    _ = params.swapRemove("mcdma_handoff");
+    try params.put(a, "mcdma_split_cut", .{ .int = "14" });
+    try std.testing.expectError(error.BadHandoff, parseWith(.{ .object = body }, &why, true));
+    try std.testing.expectEqualStrings("kv_transfer_params.mcdma_split_cut: needs kv_transfer_params.mcdma_handoff", why);
 }

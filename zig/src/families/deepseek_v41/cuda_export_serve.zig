@@ -5,6 +5,7 @@ const fabric = @import("fabric");
 const cx = @import("cuda_export.zig");
 const stream_mod = @import("cuda_export_stream.zig");
 const plan = @import("handoff/plan.zig");
+const split = @import("handoff/split.zig");
 const file = @import("handoff_file.zig");
 const producer = fabric.producer;
 const log = std.log.scoped(.dsv41);
@@ -483,6 +484,116 @@ pub const Produce = struct {
             return err;
         };
         kept = true;
+    }
+
+    /// How long a reader waits on a layer-split export's producer for a frame's rows or the state before it stalls.
+    pub const early_wait_ns: u64 = 120 * std.time.ns_per_s;
+
+    /// A layer-split export's entry added now, before anything is computed, so the decoder's OPEN finds it
+    pub fn openEarly(p: *Produce, id: [16]u8, tokens: []const u32, cut: u32) !Early {
+        if (p.opts.link == null and !p.opts.http) return error.SplitNeedsLink;
+        if (p.opts.shards != 1) return error.SplitNeedsReplicatedPool;
+        p.sweep(); // what expired or was released makes room under the cap
+        const built = try cx.early(p.gpa, id, tokens, cut, early_wait_ns);
+        var kept = false;
+        defer if (!kept) built.deinit(p.gpa);
+        const held = try p.gpa.create(Held);
+        errdefer p.gpa.destroy(held);
+        held.* = .{ .built = built, .name = undefined, .pins = 1 }; // the run's lease
+        _ = std.fmt.bufPrint(&held.name, "{x}", .{&id}) catch unreachable;
+        {
+            while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+            defer p.lock.unlock();
+            const slot = try p.held.getOrPut(p.gpa, id);
+            if (slot.found_existing) return error.HandoffHeld; // a reused id: the export already held stays
+            slot.value_ptr.* = held;
+        }
+        p.table.addSized(id, &held.name, .{ .ready = &built.exp }, built.bytes) catch |err| {
+            while (!p.lock.tryLock()) std.atomic.spinLoopHint();
+            _ = p.held.remove(id);
+            p.lock.unlock();
+            return err;
+        };
+        _ = p.streams.fetchAdd(1, .acq_rel);
+        kept = true;
+        log.info("handoff {x}: layer split at {d}, {d} tokens, {d} MiB held (boundary rows {d} MiB)", .{ &id, cut, tokens.len, built.bytes >> 20, (tokens.len * split.row_bytes) >> 20 });
+        return .{ .p = p, .held = held, .early = built.early.?, .id = id, .leased = true };
+    }
+
+    /// The engine's state of layers [0, cut) at `at` tokens, read back (the slot stands there
+    pub fn saveCut(p: *Produce, at: u64, cut: u32) !cx.Captured {
+        const take = p.source.take_cut orelse return error.SplitNeedsDevice;
+        return take(p.source.ptr, p.gpa, at, cut);
+    }
+
+    /// A layer-split export under way on the engine thread.
+    pub const Early = struct {
+        p: *Produce,
+        held: *Held,
+        early: *cx.Early,
+        id: [16]u8,
+        leased: bool,
+
+        /// Rows [row0, row0 + n) of the boundary stream, for the producer to fill before `publish`.
+        pub fn rows(e: Early, row0: u64, n: u64) []u8 {
+            return e.early.stage.slice(row0, n);
+        }
+
+        /// Rows [0, end) are in: readers may take them. The entry's expiry clock restarts (it is not expired mid-run).
+        pub fn publish(e: Early, end: u64) !void {
+            try e.early.stage.publish(end);
+            e.p.table.touch(e.id);
+        }
+
+        /// The decoder released the export, or it expired, while it ran: nobody is left to read it.
+        pub fn gone(e: Early) bool {
+            while (!e.p.lock.tryLock()) std.atomic.spinLoopHint();
+            defer e.p.lock.unlock();
+            return e.held.gone;
+        }
+
+        /// No rows or state will come: readers are told by the stage and latch (the lane host reports `failed` once).
+        pub fn fail(e: Early) void {
+            e.early.fail();
+        }
+
+        /// The run ends without handing the state over (`fail` first when it failed): the lease goes back.
+        pub fn close(e: *Early) void {
+            if (!e.leased) return;
+            e.leased = false;
+            e.p.unlease(e.held);
+        }
+
+        /// `cap` (a `saveCut` state, now this export's) lands in the early buffers on its own thread when one is free
+        pub fn land(e: *Early, cap: cx.Captured) void {
+            e.leased = false;
+            const job = e.*;
+            if (job.p.building.load(.acquire) >= max_building) return landRun(job, cap);
+            _ = job.p.building.fetchAdd(1, .acq_rel);
+            const t = std.Thread.spawn(.{}, landThread, .{ job, cap }) catch {
+                _ = job.p.building.fetchSub(1, .acq_rel);
+                return landRun(job, cap);
+            };
+            t.detach();
+        }
+    };
+
+    fn landThread(e: Early, cap: cx.Captured) void {
+        landRun(e, cap);
+        _ = e.p.building.fetchSub(1, .acq_rel);
+    }
+
+    fn landRun(e: Early, cap: cx.Captured) void {
+        const p = e.p;
+        defer p.unlease(e.held);
+        defer p.source.release(cap.ctx);
+        const t0 = fabric.words.nowNs();
+        cx.land(p.gpa, e.held.built, cap.state) catch |err| { // the run already returned: nobody else tells the decoder
+            e.fail();
+            return p.failed(e.id, @errorName(err));
+        };
+        p.table.touch(e.id); // the clock starts now: the decoder has the TTL to pull what is held
+        log.info("handoff {x}: layer-split state landed in {d} ms", .{ &e.id, (fabric.words.nowNs() - t0) / std.time.ns_per_ms });
     }
 
     /// `<dir>/<id>.mkvh2`, written whole under a `.part` name and renamed after `<id>.tokens.json`: present = complete.

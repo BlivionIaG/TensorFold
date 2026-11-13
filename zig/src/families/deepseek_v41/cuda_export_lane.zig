@@ -8,6 +8,8 @@ const gpu = @import("cuda_export_gpu.zig");
 const cx = @import("cuda_export.zig");
 const split = @import("cuda_export_split.zig");
 const ff = @import("forward_follow.zig");
+const split_lib = @import("handoff/split.zig");
+const geometry = @import("handoff/geometry.zig");
 const pc = api.prompt_cache;
 const Handoff = api.LaneHost.Export.Handoff;
 const log = std.log.scoped(.dsv41);
@@ -81,7 +83,75 @@ pub const Export = struct {
 
     pub fn exporter(x: *Export) api.LaneHost.Export.Exporter {
         const over_http = x.produce.opts.http;
-        return .{ .ptr = x, .snapshots = .{ .ptr = x, .vtable = &snapshots }, .exported = exported, .failed = failed, .serve = if (over_http) .{ .ptr = x, .open = readOpen, .release = readRelease } else null, .begin = begin, .progress = progress, .save_for = saveFor };
+        return .{ .ptr = x, .snapshots = .{ .ptr = x, .vtable = &snapshots }, .exported = exported, .failed = failed, .serve = if (over_http) .{ .ptr = x, .open = readOpen, .release = readRelease } else null, .begin = begin, .progress = progress, .save_for = saveFor, .split = .{ .ok = splitOk, .run = splitRun } };
+    }
+
+    /// The token a layer-split trigger's reply carries: the split drew none, and the decoder ignores it.
+    pub const split_reply_token: u32 = 0;
+
+    /// TF_LS_PRODUCE=1, one replicated KV pool on one slot, a link or HTTP to serve the early export
+    fn splitOk(ptr: *anyopaque, cut: u32) bool {
+        const x = self(ptr);
+        const on = @import("sys").environment.read(bool, "TF_LS_PRODUCE", false) catch false;
+        if (!on or x.split or x.produce.opts.shards != 1) return false;
+        if (x.produce.opts.link == null and !x.produce.opts.http) return false;
+        return x.source.ss.slot_set == null and split_lib.cutOk(geometry.release, cut);
+    }
+
+    fn splitRun(ptr: *anyopaque, h: Handoff, prompt: []const u32, cancel: ?api.LaneHost.Export.Cancel) anyerror!u32 {
+        try self(ptr).splitPrefill(h, prompt, cancel);
+        return split_reply_token;
+    }
+
+    /// The most rows of a split chunk: the forward's own segment rows (the 4K workspace has no split program), or less.
+    fn splitRows(f: *const @import("forward.zig").Forward) !u32 {
+        const seg: u32 = @intCast(f.opts.prefill_rows);
+        return @min(seg, try @import("sys").environment.read(u32, "TF_LS_CHUNK", seg));
+    }
+
+    /// A layer-split prefill of `ids` (the whole prompt; its last token stays unexported) under `h` (`split_cut`)
+    pub fn splitPrefill(x: *Export, h: Handoff, ids: []const u32, cancel: ?api.LaneHost.Export.Cancel) !void {
+        const cut = h.split_cut;
+        if (!splitOk(x, cut)) return error.SplitRefused;
+        if (ids.len < 2 or ids.len - 1 < split_lib.min_tail_rows) return error.SplitTooShort;
+        const upto: u64 = ids.len - 1;
+        var run = try x.produce.openEarly(h.id, ids[0..upto], cut);
+        defer run.close();
+        x.splitBody(&run, h, ids, upto, cancel) catch |err| {
+            run.fail();
+            return err;
+        };
+    }
+
+    fn splitBody(x: *Export, run: *serve.Produce.Early, h: Handoff, ids: []const u32, upto: u64, cancel: ?api.LaneHost.Export.Cancel) !void {
+        // the slot, empty before and after: pages and reservation back whatever happens (a split keeps no state)
+        defer x.f.release() catch |err| log.err("handoff {x}: the split's slot was not released ({t})", .{ &h.id, err });
+        try x.source.ss.beginFresh(ids.len, 1);
+        const max = try splitRows(x.f);
+        // the boundary rows copy out asynchronously into pinned slots and are published, in order, as copies finish
+        try x.f.splitBegin(.{ .ptr = run, .rows = sinkRows, .publish = sinkPublish }, max);
+        var ended = false;
+        defer if (!ended) x.f.splitEnd(false) catch {};
+        var chunks: split_lib.Chunks = .{ .n = upto, .max = max };
+        while (chunks.next()) |c| {
+            if (cancel) |cc| if (cc.cancelled()) return error.Cancelled;
+            if (run.gone()) return error.Released;
+            try x.f.prefillSplit(ids[c.row0..][0..c.rows], h.split_cut);
+            try x.f.splitPoll();
+        }
+        ended = true;
+        try x.f.splitEnd(true);
+        run.land(try x.produce.saveCut(upto, h.split_cut));
+    }
+
+    fn sinkRows(ptr: *anyopaque, row0: u64, n: u64) []u8 {
+        const run: *serve.Produce.Early = @ptrCast(@alignCast(ptr));
+        return run.rows(row0, n);
+    }
+
+    fn sinkPublish(ptr: *anyopaque, end: u64) anyerror!void {
+        const run: *serve.Produce.Early = @ptrCast(@alignCast(ptr));
+        return run.publish(end);
     }
 
     /// `GET /v1/handoff/<id>`: the held export's replies, a message at a time.

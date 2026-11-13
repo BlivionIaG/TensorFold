@@ -348,6 +348,13 @@ pub const Seg = struct {
                 try s.postOnly(y);
                 try e.glue("trace", &.{ y, .{ .i = L } });
             }
+            if (s.part == .split and i + 1 == layers.len) {
+                // layer-split producer: the cut layer's true residual (post applied) and the next site's pre
+                const y = try e.buf("w.trace", .{}, .bf16, &.{ n, 4 * D });
+                try e.glue("split_hold", &.{});
+                try s.postOnly(y);
+                return e.glue("split_rows", &.{ y, (try Seg.coefs(e, e.coef))[0], .{ .i = L } });
+            }
             if (!s.short and s.multi == null and dumpHas(L)) {
                 // private gate instrumentation: the layer's true residual (post applied) and the next site's pre
                 const y = try e.buf("w.trace", .{}, .bf16, &.{ n, 4 * D });
@@ -428,6 +435,8 @@ pub const Part = enum {
     decoder,
     cone_mid,
     cone_last,
+    /// the layer-split producer's chunk: `layers` are those below the cut, run whole, then the boundary rows go out
+    split,
 
     pub fn encoding(p: Part) bool {
         return p == .encoder or p == .encoder_cone;

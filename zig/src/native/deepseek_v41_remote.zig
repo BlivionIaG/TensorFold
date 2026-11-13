@@ -10,6 +10,7 @@ const q27 = @import("qwen27_remote.zig");
 const trigger = @import("remote_trigger.zig");
 const Filled = api.LaneHost.Remote.Filled;
 const http = @import("deepseek_v41_http.zig");
+const lsplit = @import("deepseek_v41_split.zig");
 const Flags = api.LaneHost.Remote.Flags;
 const Route = api.LaneHost.Remote.Route;
 const Ask = api.LaneHost.Remote.Ask;
@@ -58,7 +59,7 @@ pub const Pull = struct {
     gens: u64 = 0,
 
     pub fn source(p: *Pull) api.LaneHost.Remote.Source {
-        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running, .measured = measured };
+        return .{ .ptr = p, .wants = wants, .fill = fill, .drop = drop, .running = &p.running, .measured = measured, .split = if (p.remote.peers.len == 0) splitFill else null };
     }
 
     /// A prefix of `prompt` beyond `cached` on a whole chunk, filled remotely and landed whole in a blank Snapshot.
@@ -80,16 +81,7 @@ pub const Pull = struct {
 
     /// The pull, the gate held: the link (mapped again if the daemon restarted), the trigger, the stream, the landing.
     pub fn run(p: *Pull, prompt: []const u32, cached: u64, upto: u64, gone: *const std.atomic.Value(bool), outcome: *Outcome) !?Filled {
-        const event = p.renewLinks() catch |err| {
-            if (p.linked) std.log.warn("remote prefill: the link is not usable ({s}); prompts are prefilled here", .{@errorName(err)});
-            p.linked = false;
-            outcome.* = .down;
-            return null;
-        };
-        p.gens = p.generations();
-        if (event == .reopened) std.log.info("remote prefill: the connect daemon's mailbox was replaced; the link was re-opened", .{});
-        if (!p.linked) std.log.info("remote prefill: the link is back", .{});
-        p.linked = true;
+        if (!p.linkUsable(outcome)) return null;
         p.remote.reason.len = 0;
         const src = p.remote.source();
         const offer = src.offer(prompt, cached) orelse return null;
@@ -120,6 +112,65 @@ pub const Pull = struct {
         outcome.* = .ok;
         if (p.remote.peers.len > 0) std.log.info("remote prefill: {d} tokens pulled over {d} links in {d:.0} ms", .{ at, 1 + p.remote.peers.len, @as(f64, @floatFromInt(pulled_ns)) / 1e6 });
         return .{ .saved = snap, .at = at, .phases = .{ .queue_ns = p.waited_ns, .trigger_ns = p.remote.trigger_ns, .pull_ns = took -| p.remote.trigger_ns, .land_ns = landing.land_ns, .bytes = p.remote.bytes } };
+    }
+
+    /// The link mapped again if the daemon restarted; false (outcome `down`) when it cannot be used.
+    fn linkUsable(p: *Pull, outcome: *Outcome) bool {
+        const event = p.renewLinks() catch |err| {
+            if (p.linked) std.log.warn("remote prefill: the link is not usable ({s}); prompts are prefilled here", .{@errorName(err)});
+            p.linked = false;
+            outcome.* = .down;
+            return false;
+        };
+        p.gens = p.generations();
+        if (event == .reopened) std.log.info("remote prefill: the connect daemon's mailbox was replaced; the link was re-opened", .{});
+        if (!p.linked) std.log.info("remote prefill: the link is back", .{});
+        p.linked = true;
+        return true;
+    }
+
+    /// A layer split of `prompt`'s first `upto` tokens, the gate held: see deepseek_v41_split.zig.
+    pub fn runSplit(p: *Pull, prompt: []const u32, upto: u64, gone: *const std.atomic.Value(bool), announce: api.LaneHost.Remote.Announce, outcome: *Outcome) !void {
+        if (!p.linkUsable(outcome)) return;
+        const cut = try lsplit.cutFromEnv();
+        const spec: lsplit.Spec = .{ .gpa = p.gpa, .io = p.io, .model = p.model, .route = &p.route, .checkpoint = p.remote.model, .transport = p.transport(), .cut = cut, .closing = &p.closing };
+        return lsplit.run(spec, prompt, upto, gone, p.route.splitDeadlineS(upto), announce, outcome);
+    }
+
+    fn transport(p: *Pull) lsplit.Transport {
+        return .{ .ptr = p, .trigger = splitTrigger, .pull = splitPull, .release = splitRelease };
+    }
+
+    fn splitTrigger(ptr: *anyopaque, id: [16]u8, tokens: []const u32, cut: u32, gone: *const std.atomic.Value(bool), limit_s: u64) anyerror!void {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        p.http.limit_s = limit_s;
+        p.http.gone = gone;
+        p.http.split_cut = cut;
+        defer {
+            p.http.gone = null;
+            p.http.split_cut = 0;
+        }
+        return p.http.trigger().start_fn(p.http.trigger().ptr, id, tokens);
+    }
+
+    fn splitPull(ptr: *anyopaque, arena: std.mem.Allocator, id: [16]u8, expect: fabric.decoder.Expect, sink: fabric.decoder.Sink, reason: *fabric.decoder.Reason) anyerror!u64 {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        const got = try fabric.decoder.pull(arena, p.remote.client, id, expect, sink, reason);
+        if (got.manifest.first_token != 0) return error.PartialPrefix;
+        return got.bytes;
+    }
+
+    fn splitRelease(_: *anyopaque, _: [16]u8) void {} // the decoder's CLOSE already released the export
+
+    /// A split of `prompt`: the same gate and breaker as a pull, the engine fed through `announce` meanwhile.
+    fn splitFill(ptr: *anyopaque, prompt: []const u32, cached: u64, directive: Directive, gone: *const std.atomic.Value(bool), announce: api.LaneHost.Remote.Announce) anyerror!void {
+        const p: *Pull = @ptrCast(@alignCast(ptr));
+        if (p.closing.load(.acquire) or p.off.load(.acquire)) return;
+        const upto = p.remote.policy.upto(prompt.len, cached) orelse return;
+        p.waited_ns = p.route.admit(p.io, p.route.estimateFor(upto, prompt.len - cached, directive), &p.closing, gone) orelse return;
+        defer p.route.leave();
+        if (p.closing.load(.acquire) or p.off.load(.acquire) or gone.load(.acquire)) return;
+        return api.LaneHost.Remote.guardedSplit(p, prompt, upto, gone, announce);
     }
 
     /// Every link of the pull usable again: a restarted daemon's mailbox mapped, a producer's new generation made.

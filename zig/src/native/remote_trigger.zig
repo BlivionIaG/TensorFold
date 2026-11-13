@@ -13,6 +13,7 @@ pub const Http = struct {
     gone: ?*const std.atomic.Value(bool) = null, // the pull's request ended: the exchange under way is cut off (`Aborted`)
     cached: u64 = 0, // the last reply's usage.prompt_tokens_details.cached_tokens: what the GB10 did not compute (0: none said)
     limit_s: u64 = 0, // the exchange's bound, set by the pull before each trigger; 0: `seconds` of the tokens sent
+    split_cut: u32 = 0, // a layer split's cut (TF_LS_CUT), sent as `mcdma_split_cut`; 0: an ordinary hand-off
 
     pub fn trigger(h: *Http) fabric.prefill_source.Trigger {
         return .{ .ptr = h, .start_fn = start };
@@ -21,7 +22,7 @@ pub const Http = struct {
     /// The exchange, bounded by `limit_s` (the pull's own deadline) or `seconds`: the GB10 prefills the tokens first.
     fn start(ptr: *anyopaque, handoff: [16]u8, tokens: []const u32) anyerror!void {
         const h: *Http = @ptrCast(@alignCast(ptr));
-        const body = try request(h.gpa, h.model, handoff, tokens);
+        const body = try request(h.gpa, h.model, handoff, tokens, h.split_cut);
         defer h.gpa.free(body);
         var x: Exchange = .{ .h = h, .body = body };
         h.cached = 0;
@@ -154,14 +155,16 @@ test "the producer's cached tokens come from the reply's usage, and are 0 when i
     try std.testing.expectEqual(@as(u64, 0), cachedIn(gpa, "not json"));
 }
 
-/// The request's JSON: the prefix's ids, one greedy token and the handoff MCDMA reads (no model field: the default).
-pub fn request(gpa: std.mem.Allocator, model: []const u8, handoff: [16]u8, tokens: []const u32) ![]u8 {
+/// The request's JSON: the prefix's ids, one greedy token and the handoff MCDMA reads (no model field: the default)
+pub fn request(gpa: std.mem.Allocator, model: []const u8, handoff: [16]u8, tokens: []const u32, cut: u32) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(gpa);
     errdefer out.deinit();
     const w = &out.writer;
     if (model.len > 0) try w.print("{{\"model\": {f}, \"prompt\": [", .{std.json.fmt(model, .{})}) else try w.writeAll("{\"prompt\": [");
     for (tokens, 0..) |t, i| try w.print("{s}{d}", .{ if (i == 0) "" else ", ", t });
-    try w.print("], \"max_tokens\": 1, \"temperature\": 0, \"kv_transfer_params\": {{\"mcdma_handoff\": {{\"id\": \"{x}\", \"export_from\": 0}}}}}}", .{&handoff});
+    try w.print("], \"max_tokens\": 1, \"temperature\": 0, \"kv_transfer_params\": {{\"mcdma_handoff\": {{\"id\": \"{x}\", \"export_from\": 0}}", .{&handoff});
+    if (cut != 0) try w.print(", \"mcdma_split_cut\": {d}", .{cut});
+    try w.writeAll("}}");
     return out.toOwnedSlice();
 }
 
@@ -169,14 +172,19 @@ test "the trigger's request names the prefix's ids, one token, and the handoff a
     const gpa = std.testing.allocator;
     var id: [16]u8 = undefined;
     for (&id, 0..) |*b, i| b.* = @intCast(i * 17);
-    const got = try request(gpa, "Qwen3.8-27B", id, &.{ 5, 6, 7 });
+    const got = try request(gpa, "Qwen3.8-27B", id, &.{ 5, 6, 7 }, 0);
     defer gpa.free(got);
     try std.testing.expectEqualStrings("{\"model\": \"Qwen3.8-27B\", \"prompt\": [5, 6, 7], \"max_tokens\": 1, \"temperature\": 0, \"kv_transfer_params\": {\"mcdma_handoff\": {\"id\": \"00112233445566778899aabbccddeeff\", \"export_from\": 0}}}", got);
     const parsed = try std.json.parseFromSlice(std.json.Value, gpa, got, .{});
     defer parsed.deinit();
-    const bare = try request(gpa, "", id, &.{9});
+    const bare = try request(gpa, "", id, &.{9}, 0);
     defer gpa.free(bare);
     try std.testing.expect(std.mem.startsWith(u8, bare, "{\"prompt\": [9], "));
+    const cut = try request(gpa, "", id, &.{9}, 14); // a layer split asks for its cut beside the handoff
+    defer gpa.free(cut);
+    try std.testing.expectEqualStrings("{\"prompt\": [9], \"max_tokens\": 1, \"temperature\": 0, \"kv_transfer_params\": {\"mcdma_handoff\": {\"id\": \"00112233445566778899aabbccddeeff\", \"export_from\": 0}, \"mcdma_split_cut\": 14}}", cut);
+    const parsed_cut = try std.json.parseFromSlice(std.json.Value, gpa, cut, .{});
+    defer parsed_cut.deinit();
 }
 
 /// One HTTP peer on 127.0.0.1 for the tests: it reads one request's head, keeps it, and answers `status`.

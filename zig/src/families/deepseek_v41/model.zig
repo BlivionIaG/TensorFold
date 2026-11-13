@@ -196,6 +196,8 @@ pub const Model = struct {
     gate: @import("layersplit_gate.zig").Gate = .{},
     /// The cone prefill's state (forward_cone.zig).
     cone: forward_cone.Cone = .{},
+    /// The layer-split passes left running on the GPU and their entry buffers (entry_async.zig).
+    pipe: @import("entry_async.zig").State = .{},
     pub const Observer = struct {
         ctx: *anyopaque,
         encode: *const fn (*anyopaque, mtl.ComputeEncoder, u32, gpu_counters.Stage, *const Model) void,
@@ -260,6 +262,14 @@ pub const Model = struct {
     }
     pub fn snapshotSeal(m: *const Model, snap: *Snapshot, tokens: []const u32, upto: u32) !void {
         return model_import.seal(m, snap, tokens, upto);
+    }
+    /// Layers [0, cut) of a landed layer-split Snapshot into `slot` (model_import.zig).
+    pub fn snapshotRestoreLayers(m: *Model, slot: u32, snap: *const Snapshot, cut: u32) !void {
+        return model_import.restoreLayers(m, slot, snap, cut);
+    }
+    /// A layer-split chunk: layers `cut`.. over `ids`, entered from the producer's boundary `rows` (model_import.zig).
+    pub fn forwardEntered(m: *Model, slot: u32, ids: []const u32, rows: []const u8, cut: u32) !void {
+        return model_import.forwardEntered(m, slot, ids, rows, cut);
     }
     pub fn beginSlot(m: *Model, slot: u32) !void {
         return model_lifecycle.beginSlot(m, slot);

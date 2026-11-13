@@ -9,7 +9,25 @@ const Job = @import("lane_job.zig").Job;
 const Request = api.Request;
 
 /// kv_transfer_params.mcdma_handoff on a completion request: its prompt state exported under `id` for another machine.
-pub const Handoff = struct { id: [16]u8, export_from: u64 = 0 };
+pub const Handoff = struct { id: [16]u8, export_from: u64 = 0, split_cut: u32 = 0 };
+
+/// Whether the request that runs a layer split has gone away (the client left, the server closes): the split stops.
+pub const Cancel = struct {
+    ptr: *anyopaque,
+    is: *const fn (ptr: *anyopaque) bool,
+
+    pub fn cancelled(c: Cancel) bool {
+        return c.is(c.ptr);
+    }
+};
+
+/// A layer-split producer: the exporter runs the prefill itself (it owns the slot and the early export).
+pub const Split = struct {
+    /// Whether this exporter takes a split cut at `cut` (the server opted in, the cut is one of its model's).
+    ok: *const fn (ptr: *anyopaque, cut: u32) bool,
+    /// Runs the split of `prompt` (all its tokens, `h.split_cut` the cut) on the engine thread with the slot empty
+    run: *const fn (ptr: *anyopaque, h: Handoff, prompt: []const u32, cancel: ?Cancel) anyerror!u32,
+};
 
 /// A producer's exports: the family saves a handoff stream's state at its mark, and the exporter records it.
 pub const Exporter = struct {
@@ -27,6 +45,8 @@ pub const Exporter = struct {
     progress: ?*const fn (ptr: *anyopaque, h: Handoff, at: u64) void = null,
     /// `snapshots.save` for `h` at its cut: the state that goes with `begin`'s export (null: `snapshots.save`).
     save_for: ?*const fn (ptr: *anyopaque, h: Handoff, s: *lanes.Stream, at: u32) anyerror!pc.Saved = null,
+    /// Layer-split prefills (null: a request with `split_cut` is refused at submit).
+    split: ?Split = null,
 };
 
 /// The host's held exports, when it serves them over HTTP (the engine's `handoff` hook).
@@ -66,8 +86,34 @@ pub fn serving(e: api.Engine) ?Serve {
 
 /// A handoff request needs an exporter, and a prompt with a token past its mark.
 pub fn exportable(h: *const LaneHost, r: *const Request) bool {
-    if (r.handoff == null) return true;
-    return h.exporter != null and r.prompt.len >= 2 and r.images.len == 0 and !r.promptOnly();
+    const k = r.handoff orelse return true;
+    const x = h.exporter orelse return false;
+    if (k.split_cut != 0) {
+        const s = x.split orelse return false;
+        if (!s.ok(x.ptr, k.split_cut)) return false;
+    }
+    return r.prompt.len >= 2 and r.images.len == 0 and !r.promptOnly();
+}
+
+/// A layer-split handoff is run here by the exporter on the engine thread (slot empty); true: the job was finished.
+pub fn runSplit(h: *LaneHost, job: *Job) bool {
+    const k = job.request.handoff orelse return false;
+    const x = h.exporter orelse return false;
+    const s = x.split orelse return false;
+    if (k.split_cut == 0) return false;
+    job.exported = true; // the split reports its own state or failure to the decoder
+    const cancel: Cancel = .{ .ptr = job, .is = LaneHost.cancelled };
+    const token = s.run(x.ptr, k, job.request.prompt, cancel) catch |err| {
+        x.failed(x.ptr, k, @errorName(err));
+        _ = if (err == error.Cancelled) h.cancel(job) else @import("lane_host_end.zig").dropFailed(h, job, err);
+        return true;
+    };
+    h.remove(job);
+    LaneHost.emit(job, .{ .prefilled = 0 });
+    const reply = [1]u32{token};
+    LaneHost.emit(job, .{ .tokens = &reply });
+    h.finish(job, .length, "");
+    return true;
 }
 
 /// A handoff stream cuts before the prompt's last token (its row stays pending) and exports there; its marks keep.

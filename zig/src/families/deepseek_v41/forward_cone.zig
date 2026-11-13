@@ -95,6 +95,7 @@ pub fn force(m: *Model, mode: u32) void {
     _ = configure(m, mode);
 }
 
+/// A pass entered from memory (`gate.entry_buf`) has no entry dir, so it is as eligible as a pass from the embedding.
 fn eligible(m: *Model, segs: []const Seg, logits: Logits) bool {
     return segs.len == 1 and logits != .all and m.profile == null and m.observer == null and
         m.attention_observer == null and m.gate.entry_dir == null and m.gate.stop_dir == null and

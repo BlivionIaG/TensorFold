@@ -49,9 +49,14 @@ pub fn usedRows(position: u32, ratio: u32, capacity: u32) usize {
 
 /// Copy the rows `position` uses from a pool laid out for `src_capacity` into one laid out for `dst_capacity`.
 pub fn copy(l: Layout, dst: []u8, dst_capacity: u32, src: []const u8, src_capacity: u32, position: u32) Error!void {
-    if (position > dst_capacity or position > src_capacity) return error.SnapshotLayout;
+    return copyOwners(l, l.ratios.len, dst, dst_capacity, src, src_capacity, position);
+}
+
+/// `copy` for the first `owners` owners only (a layer-split restore: the owners below the cut)
+pub fn copyOwners(l: Layout, owners: usize, dst: []u8, dst_capacity: u32, src: []const u8, src_capacity: u32, position: u32) Error!void {
+    if (position > dst_capacity or position > src_capacity or owners > l.ratios.len) return error.SnapshotLayout;
     if (dst.len != l.storageBytes(dst_capacity) or src.len != l.storageBytes(src_capacity)) return error.SnapshotLayout;
-    for (l.ratios, 0..) |r, id| {
+    for (l.ratios[0..owners], 0..) |r, id| {
         const rows = @min(usedRows(position, r, src_capacity), usedRows(position, r, dst_capacity));
         var from = l.blockOffset(id, src_capacity);
         var to = l.blockOffset(id, dst_capacity);
