@@ -46,6 +46,12 @@ tf-offload demo --order metal_first --level b --split 7
 
 `plan` loads no weights and runs no model. `demo` splits the toy model between the mock device and the CPU and exits 1 if its tokens differ from the unsplit run.
 
+## The Metal half
+
+`metal.HostWindow` (`zig/src/metal/window.zig`) wraps the window's pinned, 16 KiB aligned memory as a zero-copy shared Metal buffer; `createShm` makes an unlinked POSIX shared mapping for tests. A resident Metal kernel does not reliably see CPU or DMA stores and GPU stores reach the CPU only when the command buffer completes, so `metal.Relay` makes each step one command buffer, committed ahead and parked on a shared event: the host stores its data, opens the gate and waits for the done signal. `split/metal_toy.zig` is the toy model's host stage over a `Relay` and a `HostWindow`; `zig build test-split-metal` splits the toy model at several layers with Metal on either side of the mock device and requires the unsplit run's tokens, and `zig build test-metal-relay` runs the window and relay tests.
+
+`split/metal_probe.zig` is the probe's Mac side on Metal: the GPU's name, working set and OS build, a streaming read by a kernel over a 512 MiB buffer, the wake of a parked command buffer (`metal.wake_probe`) and the cost of wrapping a 64 MiB window. On a Mac `zig build tf-offload` builds `tf-offload` with that host (`offload_metal_main.zig`), so `tf-offload probe --device mock` reports this Mac and `tf-offload demo` splits the toy model between the mock device and Metal; elsewhere it keeps the CPU stand-in host.
+
 ## Not here
 
-The Metal window and relay, the Metal probe host, the HIP device and the model families' layer ranges are separate changes.
+The HIP device and the model families' layer ranges are separate changes.
