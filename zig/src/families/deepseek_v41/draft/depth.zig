@@ -16,7 +16,7 @@ pub const Settings = struct {
     mode: Mode = .cost,
     cap: usize = 5,
     skip: bool = true,
-    joint: u2 = 1,
+    joint: u2 = 2, // TF_DSV41_DEPTH_JOINT: 0 off, 1 joint, 2 adaptive (a slot may draft nothing below break-even)
     fair: f64 = joint.fair,
     host_ms: f64 = joint.host_ms,
     max_rows: u64 = 64,
@@ -419,7 +419,7 @@ test "high acceptance fills paid padding and preserves cold, prose, context and 
         .{ .slot = 3, .conf = &.{ 0.95, 0.95, 0.95, 0.95, 0.95 }, .most = 5, .position = 100 },
     };
     for (0..7) |case| {
-        var d = try Depth.init(gpa, .{ .verify = &verify, .draft = 4 }, 5, .{ .code_accept = true });
+        var d = try Depth.init(gpa, .{ .verify = &verify, .draft = 4 }, 5, .{ .code_accept = true, .joint = 1 });
         defer d.deinit();
         d.forward_rows = if (case == 1) 16 else 64;
         if (case == 2) d.set.max_rows = 20;
