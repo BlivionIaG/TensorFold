@@ -267,7 +267,7 @@ pub fn call(ex: *const exl3e.Experts, s: cuda.Stream, l: exl3e.Layer, v: Io, pic
 
 /// One round through the pool: plan, then each pass staged, computed and released.
 pub fn poolRound(pool: *fpool.Pool, ex: *const exl3e.Experts, s: cuda.Stream, v: Io, picks: []const i32, rows: usize, combine: bool) !*const fpool.Round {
-    const r = try pool.plan(picks, rows);
+    const r = try pool.planHitFirst(picks, rows);
     const l = pool.tables();
     for (0..r.n_passes) |j| {
         try pool.stage(r, j, s);

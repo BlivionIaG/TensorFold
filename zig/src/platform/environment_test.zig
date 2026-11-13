@@ -89,6 +89,7 @@ const valid = [_]Case{
     .{ .name = "TENSORFOLD_MEMORY_RESERVE_GIB", .raw = " 0.5 ", .n = @bitCast(@as(f64, 0.5)) },
     .{ .name = "TF_FLASHNEXT_EXL3_LINE_DELTAS", .raw = "20:+1,15:-1", .n = 0 },
     .{ .name = "TF_FLASHNEXT_EXL3_PROFILE_SIZING", .raw = "1", .n = 1 },
+    .{ .name = "TF_FLASHNEXT_EXL3_HIT_FIRST", .raw = "4", .n = 4 },
     .{ .name = "TF_FLASHNEXT_EVICT", .raw = "lru", .n = 1 },
     .{ .name = "TF_FLASHNEXT_TABLE_BATCH", .raw = "1", .n = 1 },
     .{ .name = "TF_FLASHNEXT_EXL3_STREAMS", .raw = "8", .n = 8 },

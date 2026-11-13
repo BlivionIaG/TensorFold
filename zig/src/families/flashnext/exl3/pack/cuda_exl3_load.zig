@@ -437,6 +437,7 @@ pub const Experts = struct {
             .codebook = .mul1,
             .act_mode = l.act_mode,
             .max_passes = pool_.passesFor(pool_.min_lines),
+            .hit_first = try @import("sys").environment.read(usize, "TF_FLASHNEXT_EXL3_HIT_FIRST", 0),
         }, counts);
         x.pool = p;
         x.layer = p.tables();

@@ -344,6 +344,12 @@ pub const Lines = struct {
         l.n_pend = 0;
     }
 
+    /// Batch mode: the copy stream waits for the pass released last, so the table upload queued next meets no reader.
+    pub fn afterRelease(l: *Lines) !void {
+        if (!l.batch or l.epoch == 0) return;
+        try l.copy.wait(l.rel_ev[l.epoch % release_ring]);
+    }
+
     /// True once the line's last copy finished (or it never had one); clears the pending flag.
     pub fn landed(l: *Lines, line: usize) !bool {
         if (!l.line_pending[line]) return true;
