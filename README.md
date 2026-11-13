@@ -177,7 +177,7 @@ Conversions are explicitly marked: their upstream weights need the linked conver
 
 | Model / format | Download | Machine and memory scope | Native recipe / limits |
 | --- | --- | --- | --- |
-| dots.mocr, BF16 OCR | Use the local `dots-studio/dots.mocr` checkpoint. | Native HIP; AMD R9700 (`gfx1201`) checked, one GPU. | [Native OCR recipe](docs/recipes/dots-mocr-hip.md); full model-card demo matches HF tokens. No video, MTP head, CUDA, or Metal qualification. |
+| dots.mocr, BF16 OCR | Use the local `dots-studio/dots.mocr` checkpoint. | Native HIP; AMD R9700 (`gfx1201`) checked, one GPU. | [Native OCR recipe](docs/recipes/dots-mocr-hip.md); full model-card demo matches HF tokens. Native CUDA serves text prompts only ([CUDA recipe](docs/recipes/dots-mocr-cuda.md)). No video, MTP head, or Metal qualification. |
 | Qwen3.5-2B, MLX 4-bit | `tensorfold pull mlx-community/Qwen3.5-2B-MLX-4bit@93760be4f1f69842a46bc13dbdc0f19e291392a3` | One Mac (M5 Max checked), or one GB10; no RAM minimum published. | [2B](docs/recipes/qwen3.5-2b-native.md); [CUDA release checks](CHANGELOG.md#110). Text only. |
 | Qwen3.8-27B, MLX 4-bit | `tensorfold pull TensorFold/Qwen3.8-27B-MLX-4bit`<br>`tensorfold pull z-lab/Qwen3.8-27B-DFlash2` | One Mac (M5 Max/M3 Ultra), or one GB10; a 32 GB Mac needs `iogpu.wired_limit_mb` raised (the startup refusal names the value). | [27B](docs/recipes/qwen3.8-27b.md). Add `--drafter z-lab/Qwen3.8-27B-DFlash2`; without it decoding is plain. |
 | Nemotron 3.5 Lightning 30B-A3B, MLX 4-bit | `tensorfold pull TensorFold/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit` | One Mac (M1-M5), or one GB10; also checked on RTX 3090 / RTX PRO 6000. | [Lightning](docs/recipes/nemotron-3.5.md). Includes MTP. |
@@ -303,6 +303,7 @@ The binary's `capabilities --json` response lists its supported flags and platfo
 | `--metrics-open` | Allow `/metrics`, `/v1/metrics` and `/v1/load` without a key when API authentication is enabled. |
 | `--dashboard` | Enable the local `/dashboard` page and `/stats` endpoint. |
 | `--max-inflight N`, `--max-inflight-per-key N` | Refuse model requests past N in progress at once, overall or per key, with 429; 0, the default, is off. See [admission](docs/api.md#admission). |
+| `--max-connections N`, `--max-connections-per-address N`, `--trusted-proxy ADDRESS` | Open connections at most (default 128); from three quarters full, one address's share (default a quarter, 0 off); addresses never counted for that share, as loopback is not, such as a reverse proxy or Docker's bridge gateway. See [admission](docs/api.md#admission). |
 | `--requests-per-second N`, `--request-burst N` | Refuse a key's model requests past N a second, after a burst; 0, the default, is off. |
 | `--context N` | Bound prompt plus reply tokens; the model's window and memory checks still apply. Qwen3.8-27B defaults to 32,768 and takes up to 262,144. |
 | `--rope-yarn F` | YaRN context extension with this factor over the checkpoint's trained window, for Qwen3.5 and 3.6 on a CUDA build; other builds refuse the flag. |
@@ -323,6 +324,8 @@ The binary's `capabilities --json` response lists its supported flags and platfo
 | `--drafter DRAFTER` | An external drafter, as a directory or a repo id in the Hugging Face cache, for models that take one: Qwen3.8-27B uses DFlash2 and Gemma 4 31B the drafter named in its recipe. Without one they decode plain. |
 | `--drafter-bits 0\|4` | Drafter weight precision where the model offers a choice: 4 bits (the default), or 0 to keep bf16. Qwen3.8-27B on CUDA takes 4 only. |
 | `--record DIR` | Write each stream's committed tokens, positions and tapped rows under DIR, for drafter training. CUDA Nemotron only; a single stream runs through the lane rounds, and recording stops below 25 GiB free disk. |
+| `--glp FILE` | A GLP control vector whose directions are added to the residual stream, one per layer; off unless given. Qwen3.8-27B on Metal takes one; the file's width and base model must match the checkpoint, and a Gemma checkpoint, CUDA and ROCm are refused. Only add vectors are applied. |
+| `--glp-alpha ALPHA` | The strength the vector applies with, above 0; the file's own `glp.alpha_default` by default. |
 | `--keep-warm SECONDS` | Keep the Metal GPU active while idle for this long after a request, default 900; zero disables it. |
 | `--cfg-gamma GAMMA` | Metal Drama speech: semantic guidance strength, finite 1–5; 0/default disables it. Only reference-conditioned requests are guided. Enabled replies report `X-Cfg-Gamma`; codec heads stay conditional. |
 | `--cfg-allow-request-gamma` | Metal Drama speech: allow a finite 1–5 `X-Cfg-Gamma` request header; invalid values return 400 before engine submission. Without this opt-in, the server's gamma is fixed. |
@@ -374,6 +377,12 @@ when the prompt cache holds nothing as far: the turn reads only its new tokens, 
 a long conversation. Where the cache cannot keep a whole context, the server also keeps that slot's DeltaNet states
 at each prompt's history end, so a turn whose template drops the last reply's reasoning resumes there. Replies are
 the same tokens as a fresh prompt pass; `TF_QWEN27_SLOT_RESUME=0` turns both off.
+
+`--glp` reads its file once at startup, and the startup line names the file (escaped), the SHA-256 of its exact bytes and
+that replies are steered, with the strength in force, the layers the file names, the checkpoint the vector was derived from
+and whether the file's own tensor digest matched; a vector derived at another site is reported as a warning, not refused.
+The [control vector guide](docs/control-vectors.md) covers the format, the layer a direction names, the files the server
+refuses and how a vector is brought.
 
 Sampling defaults come from the checkpoint's `generation_config.json`, then serve flags and request fields override them.
 `--context 0` is family-specific; use a positive limit for GLM and inspect the capacity reported at startup.

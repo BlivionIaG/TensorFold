@@ -14,8 +14,11 @@ const slot_state = @import("qwen27_slots.zig");
 const Resident = @import("resident.zig").Resident;
 const lb = @import("qwen27_lanes.zig");
 pub const lanes_backend = lb;
+const startup = @import("qwen27_startup.zig");
+const StartupLine = startup.StartupLine;
 const disk = @import("qwen27_disk.zig");
 const images = @import("qwen27_images.zig");
+const steer_served = @import("qwen27_steer_served.zig");
 const Allocator = std.mem.Allocator;
 
 pub const Options = struct {
@@ -31,6 +34,7 @@ pub const Options = struct {
     learn: ?disk.Learn = null, // --learn-conversations: kept states written behind to disk and read back
     vision: ?api.VisionOpen = null, // --vision: open loads the image tower, and requests may hold images
     images: ?*images.Vision = null, // the loaded tower attach serves (and the host then owns)
+    glp: ?api.glp.Glp = null, // the control vector the model steers with (null: none)
 };
 
 pub const Host = struct {
@@ -303,6 +307,7 @@ pub fn open(gpa: Allocator, io: std.Io, dir: []const u8, o: Options, a: Allocato
     };
     const model = try q.model.Model.loadDeferred(gpa, io, dir, 128);
     errdefer model.deinit();
+    if (o.glp) |g| try steer_served.apply(gpa, model, dir, g, a, why);
     var with = o;
     // the tower before the slots: their room and the cache's budget count it as taken
     if (o.vision) |v| with.images = try images.open(gpa, io, model, dir, v, a, why);
@@ -440,7 +445,7 @@ pub fn attach(parent: Allocator, io: std.Io, model: *q.model.Model, drafter: ?*q
     if (slot_state.rewindInit(h.back, rewind_room, if (o.cache_gib) |g| gibBytes(g) else cache_fit.defaultBudget(rewind_room))) |buf| if (h.resident) |*r| r.addNow(&.{buf});
     try enableCache(h, o.cache_gib, o.cache_over_cap, a, why);
     errdefer if (h.cache) |*store| store.deinit();
-    if (o.learn) |l| try disk.attach(h, io, a, l);
+    if (o.learn) |l| try disk.attach(h, io, a, l, if (o.glp) |*g| g else null);
     errdefer if (h.cache) |*store| if (store.disk) |r| r.deinit();
     // a wide prompt pass commits its buffers at once: the probe keeps the sets in use while it runs
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick, .probe = mtl.keepalive.Target.busy };
@@ -448,50 +453,48 @@ pub fn attach(parent: Allocator, io: std.Io, model: *q.model.Model, drafter: ?*q
     try h.host.start();
     tf.startup_receipt.span(.model_ready).end();
     std.log.info("{f}", .{StartupLine{ .streams = slots, .context = capacity, .draft_slots = if (h.draft != null) h.back.draft_slots else 0, .images = o.images != null }});
+    if (o.glp) |g| {
+        if (model.steer != null) steer_served.report(g);
+    }
     return h;
 }
-
-const StartupLine = struct {
-    streams: u32,
-    context: u32,
-    draft_slots: u32,
-    images: bool,
-
-    pub fn format(line: StartupLine, w: *std.Io.Writer) std.Io.Writer.Error!void {
-        try w.print("Qwen3.8-27B: {d} stream{s} of {d} tokens", .{ line.streams, if (line.streams == 1) "" else "s", line.context });
-        const drafts = @min(line.streams, line.draft_slots);
-        if (drafts > 0) try w.print(", DFlash2 drafts for {d} stream{s}", .{ drafts, if (drafts == 1) "" else "s" });
-        if (line.images) try w.writeAll(", images read");
-    }
-};
 
 test "qwen27 startup: draft stream count, singular text and optional suffixes" {
     const limit = try lb.draftSlots();
     const limited = platform.c.getenv("TF_Q27_DRAFT_SLOTS") != null;
     try std.testing.expectEqual(@as(u32, if (limited) 1 else 8), limit);
-    const cases = [_]struct { u32, []const u8, []const u8 }{
-        .{ 1, "1 stream", "1 stream" },
-        .{ 2, "2 streams", "2 streams" },
-        .{ 9, "9 streams", "8 streams" },
-        .{ 16, "16 streams", "8 streams" },
+    // the wording: the smaller of the stream count and the draft-slot setting
+    const wording = [_]struct { streams: u32, slots: u32, want: []const u8 }{
+        .{ .streams = 1, .slots = 0, .want = "" },
+        .{ .streams = 1, .slots = 1, .want = "DFlash2 drafts for the only stream" },
+        .{ .streams = 1, .slots = 8, .want = "DFlash2 drafts for the only stream" },
+        .{ .streams = 1, .slots = 99, .want = "DFlash2 drafts for the only stream" },
+        .{ .streams = 2, .slots = 0, .want = "" },
+        .{ .streams = 2, .slots = 1, .want = "DFlash2 drafts for 1 of 2 streams" },
+        .{ .streams = 2, .slots = 8, .want = "DFlash2 drafts for both streams" },
+        .{ .streams = 2, .slots = 99, .want = "DFlash2 drafts for both streams" },
+        .{ .streams = 4, .slots = 1, .want = "DFlash2 drafts for 1 of 4 streams" },
+        .{ .streams = 4, .slots = 8, .want = "DFlash2 drafts for all 4 streams" },
+        .{ .streams = 4, .slots = 99, .want = "DFlash2 drafts for all 4 streams" },
+        .{ .streams = 16, .slots = 1, .want = "DFlash2 drafts for 1 of 16 streams" },
+        .{ .streams = 16, .slots = 8, .want = "DFlash2 drafts for 8 of 16 streams" },
+        .{ .streams = 16, .slots = 99, .want = "DFlash2 drafts for all 16 streams" },
     };
-    var mismatches: usize = 0;
-    for (cases) |case| {
-        for ([_]bool{ false, true }) |drafter| {
-            for ([_]bool{ false, true }) |with_images| {
-                var draft: [64]u8 = undefined;
-                const suffix = if (drafter) try std.fmt.bufPrint(&draft, ", DFlash2 drafts for {s}", .{if (limited) "1 stream" else case[2]}) else "";
-                var expected: [192]u8 = undefined;
-                const want = try std.fmt.bufPrint(&expected, "Qwen3.8-27B: {s} of 4096 tokens{s}{s}", .{ case[1], suffix, if (with_images) ", images read" else "" });
-                var actual: [192]u8 = undefined;
-                const got = try std.fmt.bufPrint(&actual, "{f}", .{StartupLine{ .streams = case[0], .context = 4096, .draft_slots = if (drafter) limit else 0, .images = with_images }});
-                std.testing.expectEqualStrings(want, got) catch {
-                    mismatches += 1;
-                };
-            }
-        }
+    var buf: [64]u8 = undefined;
+    for (wording) |case| try std.testing.expectEqualStrings(case.want, try startup.draftWording(&buf, case.streams, case.slots));
+    // the whole line: the wording, a drafter's absence and the optional suffixes
+    const lines = [_]struct { streams: u32, slots: u32, images: bool, want: []const u8 }{
+        .{ .streams = 1, .slots = 8, .images = false, .want = "Qwen3.8-27B: 1 stream of 4096 tokens, DFlash2 drafts for the only stream" },
+        .{ .streams = 2, .slots = 8, .images = true, .want = "Qwen3.8-27B: 2 streams of 4096 tokens, DFlash2 drafts for both streams, images read" },
+        .{ .streams = 4, .slots = 8, .images = false, .want = "Qwen3.8-27B: 4 streams of 4096 tokens, DFlash2 drafts for all 4 streams" },
+        .{ .streams = 16, .slots = 8, .images = false, .want = "Qwen3.8-27B: 16 streams of 4096 tokens, DFlash2 drafts for 8 of 16 streams" },
+        .{ .streams = 2, .slots = 0, .images = false, .want = "Qwen3.8-27B: 2 streams of 4096 tokens" },
+    };
+    var actual: [192]u8 = undefined;
+    for (lines) |case| {
+        const got = try std.fmt.bufPrint(&actual, "{f}", .{StartupLine{ .streams = case.streams, .context = 4096, .draft_slots = case.slots, .images = case.images }});
+        try std.testing.expectEqualStrings(case.want, got);
     }
-    try std.testing.expectEqual(@as(usize, 0), mismatches);
 }
 
 /// TF_Q27_PROFILE's rounds between log reports, or null (off); a value it cannot read leaves profiling off.
