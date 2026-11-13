@@ -191,6 +191,7 @@ pub const Served = struct {
         o.pf_overlap = try knobs.pfOverlap(&knobs.env);
         o.pf_overlap_site = o.pf_overlap > 0 and try knobs.pfOverlapSite(&knobs.env); // the site pieces' `_finish_k`
         o.stream_rb = try knobs.streamRb(&knobs.env); // TF_DSV41_STREAM_RB: the twin's variants
+        o.index_split = try knobs.indexSplit(&knobs.env); // TF_DSV41_INDEX_SPLIT: each rank's half-row `_stream` blocks
         o.index_bound = try knobs.indexBound(&knobs.env); // TF_DSV41_INDEX_BOUND: `_scores_b` / `_dtopk_b` variants
         o.mhc_site_rows = try knobs.mhcSiteRows(&knobs.env); // the site pieces' `_finish_k` rows
         if (o.pf_overlap > 0) o.branches = (try @import("branches.zig").settings()).on;
