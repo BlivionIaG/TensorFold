@@ -27,6 +27,21 @@ const sect = [5]usize{ 20480 * 2, 5120 * 2, 4 * 4, 4 * 4, 16 * 4 };
 
 const Chunk = struct { pos: u32, rows: u32 };
 
+/// Other prompts' runs that wait behind the active one (a prompt's chunks may alternate with another prompt's).
+pub const parked_max = 3;
+
+/// A prompt's run set aside while another prompt's chunks use the stash: the active run's fields, same names.
+const Parked = struct {
+    used: bool = false,
+    slot: u32 = 0,
+    stash: ?mtl.Buffer = null,
+    ids: [cap]u32 = undefined,
+    chunks: [max_chunks]Chunk = undefined,
+    count: usize = 0,
+    first: u32 = 0,
+    next: u32 = 0,
+};
+
 pub const Cone = struct {
     on: ?bool = null,
     phase: Phase = .off,
@@ -49,6 +64,9 @@ pub const Cone = struct {
     next: u32 = 0,
     /// the decoder chunk's first position (loadStash)
     at: u32 = 0,
+    /// other prompts' runs, set aside while the active one's chunks run; `park` places may be used (TF_DSV41_CONE_PARK)
+    parked: [parked_max]Parked = @splat(.{}),
+    park: u32 = parked_max,
 
     fn sectionOffset(i: usize) usize {
         var off: usize = 0;
@@ -76,6 +94,7 @@ fn configure(m: *Model, mode: u32) bool {
     const c = &m.cone;
     c.on = false;
     c.grouped = mode >= 2;
+    c.park = @min(parked_max, @import("sys").environment.read(u32, "TF_DSV41_CONE_PARK", 0) catch 0);
     if (mode == 0) return false;
     const d = ced.decoderStart(&m.cfg) catch return false;
     const rows = ced.suffixRows(&m.cfg, kept) catch return false;
@@ -109,32 +128,37 @@ pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
     const c = &m.cone;
     if (segs.len == 0 or segs[0].slot >= m.lanes) return null;
     const sg = segs[0];
-    var mine = false;
-    if (c.pending) for (segs) |s| if (s.slot == c.slot) {
-        mine = true;
-    };
-    // another prompt is half done in the stash: this call takes the full path
-    if (c.pending and !mine) return null;
+    if (segs.len != 1) {
+        // a shared round over a slot with a run: its state is replaced, nothing to replay
+        for (segs) |s| drop(m, s.slot);
+        return null;
+    }
     const ok = eligible(m, segs, logits);
-    if (mine) {
+    const rows: u32 = @intCast(sg.ids.len);
+    const final = logits != .none;
+    const starts = ok and rows >= min_rows and !(final and rows <= c.rows);
+    const has = hasRun(c, sg.slot);
+    // this prompt's own run becomes the active one, the active run of another prompt parking behind it
+    if (has or (c.pending and starts)) {
+        if (!activate(c, sg.slot)) return null; // every parking place holds a prompt: this call takes the full path
+    }
+    if (c.pending and c.slot == sg.slot) {
         // the slot's state was replaced under the pending run: nothing to replay
-        if (segs.len != 1 or sg.p0 != c.next) {
+        if (sg.p0 != c.next) {
             c.pending = false;
             return null;
         }
         if (!ok or c.count == max_chunks) _ = try replay(m, .none);
     }
     if (!ok) return null;
-    const rows: u32 = @intCast(sg.ids.len);
-    const final = logits != .none;
     if (!c.pending) {
-        if (rows < min_rows or (final and rows <= c.rows)) return null;
+        if (!starts) return null;
         c.pending = true;
         c.slot = sg.slot;
         c.first = sg.p0;
         c.next = sg.p0;
         c.count = 0;
-    }
+    } else if (c.slot != sg.slot) return null;
     try ensureStash(m);
     c.phase = .encoder;
     defer c.phase = .off;
@@ -204,19 +228,79 @@ fn rowsIn(m: *const Model, lo: u32) u32 {
     return kept + (m.cfg.layers - lo) * (m.cfg.window - 1);
 }
 
+/// Whether `slot` has a run: the active one's or a parked one.
+fn hasRun(c: *const Cone, slot: u32) bool {
+    if (c.pending and c.slot == slot) return true;
+    for (c.parked) |p| if (p.used and p.slot == slot) return true;
+    return false;
+}
+
+/// The active run and a parked one change places.
+fn swapRun(c: *Cone, p: *Parked) void {
+    std.mem.swap(?mtl.Buffer, &c.stash, &p.stash);
+    std.mem.swap([cap]u32, &c.ids, &p.ids);
+    std.mem.swap([max_chunks]Chunk, &c.chunks, &p.chunks);
+    std.mem.swap(usize, &c.count, &p.count);
+    std.mem.swap(u32, &c.slot, &p.slot);
+    std.mem.swap(u32, &c.first, &p.first);
+    std.mem.swap(u32, &c.next, &p.next);
+}
+
+/// Makes the stash's active run `slot`'s: its parked run comes forward (or none: a new run may start), and another
+/// prompt's active run parks. False when that run has no parking place.
+fn activate(c: *Cone, slot: u32) bool {
+    if (c.pending and c.slot == slot) return true;
+    var mine: ?*Parked = null;
+    var free: ?*Parked = null;
+    for (&c.parked, 0..) |*p, i| {
+        if (p.used and p.slot == slot) mine = p else if (i < c.park and !p.used and free == null) free = p;
+    }
+    if (mine) |p| {
+        // both runs pending: they trade places; an idle active run leaves its spare stash in the vacated place
+        swapRun(c, p);
+        if (!c.pending) {
+            c.pending = true;
+            p.used = false;
+        }
+        return true;
+    }
+    if (!c.pending) return true;
+    const p = free orelse return false;
+    swapRun(c, p);
+    p.used = true;
+    c.pending = false;
+    return true;
+}
+
 /// Replay a pending run on `slot` so its state is exact at the position it stands at.
 pub fn flush(m: *Model, slot: u32) !void {
-    if (m.cone.pending and m.cone.slot == slot) _ = try replay(m, .none);
+    const c = &m.cone;
+    if (!hasRun(c, slot)) return;
+    _ = activate(c, slot); // its own run is active or parked: no parking place is needed
+    _ = try replay(m, .none);
 }
 
 /// Forget a pending run on `slot` whose state is being replaced.
 pub fn drop(m: *Model, slot: u32) void {
-    if (m.cone.pending and m.cone.slot == slot) m.cone.pending = false;
+    dropRuns(&m.cone, slot);
+}
+
+fn dropRuns(c: *Cone, slot: u32) void {
+    if (c.pending and c.slot == slot) c.pending = false;
+    for (&c.parked) |*p| if (p.used and p.slot == slot) {
+        p.used = false;
+    };
 }
 
 pub fn release(m: *Model) void {
-    if (m.cone.stash) |b| b.deinit();
-    m.cone.stash = null;
+    const c = &m.cone;
+    if (c.stash) |b| b.deinit();
+    c.stash = null;
+    for (&c.parked) |*p| {
+        if (p.stash) |b| b.deinit();
+        p.stash = null;
+        p.used = false;
+    }
 }
 
 fn ensureStash(m: *Model) !void {
@@ -306,4 +390,37 @@ test "the stash holds every section's rows for the whole ring" {
     for (sect) |b| row += b;
     try std.testing.expectEqual(@as(usize, 51296), row);
     try std.testing.expectEqual(row * cap, Cone.totalBytes());
+}
+
+test "a prompt's run parks behind another's and comes back with its own chunks" {
+    var c: Cone = .{};
+    // prompt 1 starts a run and takes two chunks
+    try std.testing.expect(activate(&c, 1));
+    c.pending = true;
+    c.slot = 1;
+    c.count = 2;
+    c.next = 8192;
+    try std.testing.expect(hasRun(&c, 1));
+    // prompt 2's chunk parks prompt 1's run
+    try std.testing.expect(activate(&c, 2));
+    try std.testing.expect(!c.pending);
+    try std.testing.expect(hasRun(&c, 1) and !hasRun(&c, 2));
+    c.pending = true;
+    c.slot = 2;
+    c.count = 1;
+    c.next = 4096;
+    // prompt 1 returns with its chunks; prompt 2 now waits parked
+    try std.testing.expect(activate(&c, 1));
+    try std.testing.expect(c.pending and c.slot == 1 and c.count == 2 and c.next == 8192);
+    try std.testing.expect(hasRun(&c, 2));
+    dropRuns(&c, 2);
+    try std.testing.expect(!hasRun(&c, 2));
+    // the parking places are bounded: a fourth prompt finds none
+    var other: u32 = 10;
+    while (other < 10 + parked_max) : (other += 1) {
+        try std.testing.expect(activate(&c, other));
+        c.pending = true;
+        c.slot = other;
+    }
+    try std.testing.expect(!activate(&c, 99));
 }
