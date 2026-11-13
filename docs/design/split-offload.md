@@ -29,6 +29,23 @@ Two levels protect the hidden row the host hands to the device:
 
 `toy.zig` is a small dense model in exact integer arithmetic (an embedding, twelve layers with per-layer recurrent state, a head, a greedy draw). Its tests split it at several layers in both orders, at both levels (level B with the row landing late and out of order), and with the device alone, and require the tokens of the unsplit run; a stuck device and a pulled cable end in `Timeout` and `DeviceLost`, and the next run is clean.
 
+## The planner, the probe and `tf-offload`
+
+`geometry.zig` reads a Hugging Face `config.json` (Qwen3.5 dense and MoE, MLX affine layout) into per-layer resident bytes, bytes read per decoded token, routed-expert bytes, KV bytes per context token, recurrent-state bytes and launches. `planner.zig` combines it with the Mac (working set, decode bandwidth), the external device (VRAM, peak bandwidth, a decode efficiency, launch cost) and the link (hop times) into every placement the model admits (`all_metal`, `resident`, `layer_split`, `layer_split_pipelined`, `expert_split`, `reverse_expert_split`) with a predicted decode rate and memory use, or the quantity that is missing when nothing fits. `choose` is `auto`: the fastest fitting placement the request can use; all-Metal is a candidate, so a placement predicted slower than all-Metal is never chosen while all-Metal fits. Only the placements the pipeline can run are executable (`all_metal`, `resident`, the dense layer splits); the rest is reported for information.
+
+`probe.zig` measures the link through `ExternalDevice` alone (window round trips, bulk copies each way) and takes the Mac's half through `probe.Host` (working set, a streaming read, the wake of an event-gated command buffer, a window wrap). Its result is the receipt (`receipt.zig`, schema `tensorfold-offload-probe/1`): every number carries a source label (`documented`, `measured`, `probed`, `assumed`), and the planner reads link constants from the receipt and nowhere else. The planner's output is `placement.json` (`placement.zig`, schema `tensorfold-split/1`): the owner of each layer, the embedding and the head, who prefills, the fallback, the timeouts and the prediction. Both files are read strictly (`strict.zig`): every field required, unknown keys refused, errors name the path.
+
+`tf-offload` has three commands and, in this series' first form, opens only the mock device and a CPU stand-in for the Mac (`cpu_host.zig`), so its receipts say nothing about a Mac or a card:
+
+```
+zig build tf-offload
+tf-offload probe --device mock --out receipt.json
+tf-offload plan --config CONFIG.JSON --receipt receipt.json --streams 2 --out placement.json
+tf-offload demo --order metal_first --level b --split 7
+```
+
+`plan` loads no weights and runs no model. `demo` splits the toy model between the mock device and the CPU and exits 1 if its tokens differ from the unsplit run.
+
 ## Not here
 
-The planner, the probe and `tf-offload`, the Metal window and relay, the HIP device and the model families' layer ranges are separate changes.
+The Metal window and relay, the Metal probe host, the HIP device and the model families' layer ranges are separate changes.

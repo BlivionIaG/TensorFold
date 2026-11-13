@@ -8,6 +8,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Split offload core: `zig/src/split` has the external-device interface, the slot protocol (plain and stamped hidden rows), a CPU mock device and a two-stage layer pipeline, and `zig build test-split` checks a toy model split at several layers, both orders and both protocol levels against its unsplit run, token for token; no GPU is involved and no serving path changes.
 
+- Split offload planner: `zig/src/split` reads a model's `config.json`, takes a probe receipt of the Mac, the external device and the link (every number labelled documented, measured, probed or assumed), and lists every placement the model admits with a predicted decode rate and memory use, or what is missing when nothing fits; `tf-offload probe | plan | demo` writes the receipt and `placement.json` and runs a toy split over the CPU mock device. No GPU is involved and no serving path changes.
+
 - Tests: `tf-cuda-test flashnext-rank RANK PORT timeout` passes again on two GPUs. NCCL start-up keeps its 30 s bound and only the stalled collective gets 200 ms, and both ranks meet once their communicators are up, so `timeout` and `eof` fail the collective under test, not the start-up (#2976, fixes #2975). Thanks to @swbiggart.
 
 - Tokenizer: a split pattern is held to a work allowance per piece (2,048 instructions a byte, counted, not timed) and refused at load when too deep or too large, so a crafted tokenizer or prompt can't hang the pre-tokenizer; every split of the patterns we serve is unchanged (#3071).
