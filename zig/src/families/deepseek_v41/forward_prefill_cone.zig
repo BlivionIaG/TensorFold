@@ -33,7 +33,7 @@ pub fn stashed(f: *Forward, start: u64, ids: []const u32) void {
 
 /// The slot's decoder rings are exact at the cone ring's first position (`warm`: a short follow-up replays from there).
 fn exactBase(f: *const Forward) ?u64 {
-    return if (pf.state(f).cone_warm and f.slot.exact) f.slot.exact_at else null;
+    return if (pf.state(f).cone_warm != 0 and f.slot.exact) f.slot.exact_at else null;
 }
 
 /// Whether the slot's ring holds the cone of a prompt ending at `end`: all of it, from position 0, or from exact rings.

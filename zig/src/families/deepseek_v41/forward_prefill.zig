@@ -66,8 +66,8 @@ pub const State = struct {
     cone_on: bool = false,
     /// TF_DSV41_REPLAY_GROUP: the layers a program of the exact replay runs
     cone_group: u32 = 4,
-    /// TF_DSV41_REPLAY_WARM: a prompt entry's decoder rings are exact, so a short follow-up replays from them
-    cone_warm: bool = false,
+    /// TF_DSV41_REPLAY_WARM: 0 off; 1 entries keep exact decoder rings; 2 as 1, the prompt replays from them too
+    cone_warm: u8 = 0,
     /// the cone ring's prompt: its positions and ids, the ticket the slot holding them carries (`Slot.cone_id`)
     cone: ft.ConeStash = .{},
     cone_id: u64 = 0,

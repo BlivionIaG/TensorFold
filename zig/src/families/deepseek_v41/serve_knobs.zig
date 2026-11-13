@@ -173,9 +173,9 @@ pub fn replayExact(get: Get) !?bool {
     return @import("sys").environment.value(?bool, "TF_DSV41_REPLAY_EXACT", get("TF_DSV41_REPLAY_EXACT"), null);
 }
 
-/// TF_DSV41_REPLAY_WARM (0 / 1, default 1): under the exact replay, prompt entries keep exact decoder rings.
-pub fn replayWarm(get: Get) !bool {
-    return @import("sys").environment.value(bool, "TF_DSV41_REPLAY_WARM", get("TF_DSV41_REPLAY_WARM"), true);
+/// TF_DSV41_REPLAY_WARM (0 to 2, default 1): under the exact replay, prompt entries keep exact decoder rings.
+pub fn replayWarm(get: Get) !u8 {
+    return @intCast(try @import("sys").environment.value(u32, "TF_DSV41_REPLAY_WARM", get("TF_DSV41_REPLAY_WARM"), 1));
 }
 
 /// TF_DSV41_REPLAY_GROUP (1-20, default 4): the decoder layers a program of the exact replay runs (to index sources).
