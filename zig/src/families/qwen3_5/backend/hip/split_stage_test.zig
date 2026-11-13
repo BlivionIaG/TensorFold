@@ -104,7 +104,7 @@ const Recorder = struct {
 const Host = struct {
     steps: usize = 0,
 
-    fn step(ptr: *anyopaque, seq: u32, _: []const u8, out: []u8, _: pipeline.Level) anyerror!usize {
+    fn step(ptr: *anyopaque, seq: u32, _: []const u8, _: u32, _: []const u8, out: []u8, _: pipeline.Level) anyerror!usize {
         const h: *Host = @ptrCast(@alignCast(ptr));
         h.steps += 1;
         if (out.len >= wire.stampedLen(4 * 2560)) {
@@ -186,6 +186,13 @@ test "split stage: a stage refuses a step that does not fit its range" {
     var bad = io;
     bad.hidden_bytes = 4 * 2048;
     try T.expectError(error.BadStep, st.record(bad));
+    // a step of several rows or several sequences is refused: the stage decodes one position of one sequence
+    var wide = io;
+    wide.rows = 2;
+    try T.expectError(error.BadStep, st.record(wide));
+    var two = io;
+    two.slots = &.{ 0, 1 };
+    try T.expectError(error.BadStep, st.record(two));
     // the caches hold 4 positions: the fifth step is refused by name, and nothing advanced
     for (0..3) |_| try st.record(io);
     try T.expectError(error.ContextFull, st.record(io));

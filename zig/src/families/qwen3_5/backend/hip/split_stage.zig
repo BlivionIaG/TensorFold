@@ -95,7 +95,7 @@ pub const HipLayerStage = struct {
         const embeds = m.range.embeds();
         const heads = m.headed();
         const hidden_bytes = 4 * m.spec.hidden;
-        if (io.hidden_bytes != hidden_bytes) return error.BadStep;
+        if (io.hidden_bytes != hidden_bytes or io.rows != 1 or io.slots.len != 1) return error.BadStep;
         // a token is not a stamped row, and every other stage has a hidden row to read
         if (embeds and io.stamped) return error.BadStep;
         const in = io.in.data();
