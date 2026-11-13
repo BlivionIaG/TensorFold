@@ -110,7 +110,7 @@ pub const Pull = struct {
 
     /// A layer split of `prompt`'s first `upto` tokens, the gate held: see deepseek_v41_split.zig.
     pub fn runSplit(p: *Pull, prompt: []const u32, upto: u64, gone: *const std.atomic.Value(bool), announce: api.LaneHost.Remote.Announce, outcome: *Outcome) !void {
-        const spec: lsplit.Spec = .{ .gpa = p.gpa, .io = p.io, .model = p.model, .route = &p.route, .checkpoint = p.checkpoint, .transport = .{ .ptr = p, .trigger = splitTrigger, .pull = splitPull, .release = splitRelease }, .cut = try lsplit.cutFromEnv(), .closing = &p.closing };
+        const spec: lsplit.Spec = .{ .gpa = p.gpa, .io = p.io, .model = p.model, .route = &p.route, .checkpoint = p.checkpoint, .transport = .{ .ptr = p, .trigger = splitTrigger, .pull = splitPull, .release = splitRelease }, .cut = p.route.splitCut(), .closing = &p.closing };
         return lsplit.run(spec, prompt, upto, gone, p.route.splitDeadlineS(upto), announce, outcome);
     }
 

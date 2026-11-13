@@ -250,12 +250,16 @@ state of layers 0 to `TF_LS_CUT` - 1 into the same slot. Layers 20 to 39 never r
 **mixed CUDA/Metal arithmetic**: no exact cache keeps it, the reply says `exact_mode: "remote_prefix"`, `remote_route:
 "split"` and `remote_arithmetic`. Switch it on with `TF_LS_SPLIT=1` on the Mac (the route then picks a split for a prompt of
 `TF_LS_MIN_TOKENS` (16384) or more when its predicted time beats the pull and the Mac's own prefill) and `TF_LS_PRODUCE=1` on
-the pair. The cut is 2, 8 or 14 (default 14): a layer that reuses an index source's selection must sit on the same side
-as it, and the index sources are layers 2, 8, 14 and 20, so the boundary rows alone cannot carry a cut in between. At 14 the
-Sparks stage is the slower one (0.28 ms a row against the Mac's 0.22), at 8 the Mac's is; both come to about 9.5 s for a 32k
-prompt plus a fixed 1.4 s, against 15.9 s on the pair alone (arithmetic from measured stage costs; the pipeline itself is
-not yet measured on the machines). The route learns the rates from its own splits (`TF_LS_SPARKS_TPS` and `TF_LS_FIXED_S`
-seed them). A split that fails at any point is prefilled again on the Mac from the first row. The reply's `tensorfold` block
+the pair. The cut is one of 2, 8 or 14: a layer that reuses an index source's selection must sit on the same side
+as it, and the index sources are layers 2, 8, 14 and 20, so the boundary rows alone cannot carry a cut in between. The route
+picks the cut whose slower stage is fastest from a speed per machine against per-cut stage costs (at 14 the Sparks stage is
+the slower one, at 8 the Mac's) and learns the speed of whichever stage was the bottleneck from the Mac's wait for rows;
+`TF_LS_CUT` forces one. Both machines keep only a window of `TF_LS_WINDOW` chunks (default 4) of boundary rows, not the
+prompt: the pair waits for the Mac to take the oldest before it copies the next, so a prompt is bounded by the pair's pool
+(`TF_LS_MAX_TOKENS`, default 1048576), not by host memory. The route learns the pair's rate from its own splits
+(`TF_LS_SPARKS_TPS` and `TF_LS_FIXED_S` seed them) and stays on the Mac's own prefill when that is predicted faster.
+`TF_LS_TRACE=1` logs a line per chunk and per pass. A split that fails at any point is prefilled again on the Mac from the
+first row. The reply's `tensorfold` block
 adds `split_cut_layer`, `split_rows`, `split_passes`, `split_first_row_seconds`, `split_rows_seconds`, `split_state_seconds`,
 `split_wait_seconds`, `split_compute_seconds`, `split_state_wait_seconds`, `split_restore_seconds`, `split_boundary_bytes` and
 `split_fell_back` (see `docs/api.md`). A pair with `TF_DSV41_KV_SPLIT` is never split.
