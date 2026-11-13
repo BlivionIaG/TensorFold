@@ -246,8 +246,7 @@ fn swapRun(c: *Cone, p: *Parked) void {
     std.mem.swap(u32, &c.next, &p.next);
 }
 
-/// Makes the stash's active run `slot`'s: its parked run comes forward (or none: a new run may start), and another
-/// prompt's active run parks. False when that run has no parking place.
+/// Makes `slot`'s run the active one (or none: a new run may start); another prompt's run parks; false: no place.
 fn activate(c: *Cone, slot: u32) bool {
     if (c.pending and c.slot == slot) return true;
     var mine: ?*Parked = null;
