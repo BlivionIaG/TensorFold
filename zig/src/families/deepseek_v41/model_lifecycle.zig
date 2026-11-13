@@ -412,8 +412,7 @@ pub fn beginSlot(m: *Model, slot: u32) !void {
     return beginWindow(m, slot, 2);
 }
 
-/// Open the slot's transaction for a window of `rows`. A one-row window is kept whole (the lane only rolls back and
-/// restores a rejected row), so it stashes neither the ring rows nor the partial state, and skips the stash's sync wait.
+/// Open the slot transaction for `rows`; a one-row window is kept whole, so it stashes no ring or partial state.
 pub fn beginWindow(m: *Model, slot: u32, rows: u32) !void {
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const view = try m.workspace.historyView(slot);

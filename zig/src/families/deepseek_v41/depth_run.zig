@@ -1,10 +1,9 @@
-//! The acceptance depth controller (counts only, never a clock; after omlx's AcceptanceDepthController): a stream's
-//! per-position acceptance is a decayed hit count, and the depth maximising tokens a millisecond under a fixed cost table wins.
+//! Acceptance depth controller (counts only, never a clock; after omlx AcceptanceDepthController), cost-table depth.
 const std = @import("std");
 
 pub const max_depth = 3; // a window of five rows is slow and not bit-exact on this engine (m5-verify.md)
 
-/// A round in ms by drafts held (plain, 1, 2, 3): the verify window, the drafter's forward and the host's 0.5 ms (M5 Ultra).
+/// A round in ms by drafts held (plain, 1, 2, 3): verify window, drafter forward and 0.5 ms host (M5 Ultra).
 pub const round_ms = [max_depth + 1]f64{ 19.35, 29.9, 39.7, 44.3 };
 
 /// A drafted depth must beat plain's tokens a ms by this much to stay on.

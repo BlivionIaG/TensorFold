@@ -194,9 +194,7 @@ inline void tf_exl3_t_routed_kernel(const device half* x, const device uchar* tr
   else tf_exl3_t_halves<T, 1, false>(x, job, sums, a, table, row, 0u, nb, lane, sg, red);
 }
 
-// The routed body for slots that name the same expert: the first slot of each pair of equal routes decodes the
-// expert once for both rows (each row keeps its own accumulators, so every sum equals the one-row body's), and the
-// second slot of a pair returns. A slot's rank is the count of earlier slots with its expert; even ranks lead.
+// Routed body: an even-rank slot decodes its expert once for two rows with their own accumulators; odd ranks return.
 template <uint T>
 inline void tf_exl3_t_routed_pair_kernel(const device half* x, const device uchar* trellis, device float* sums,
                                          constant TfExl3Args& a, const device uint* routes,

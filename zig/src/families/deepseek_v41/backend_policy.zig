@@ -200,7 +200,7 @@ pub fn draftOffAfterFor(b: *Backend, i: usize) u32 {
 }
 
 var depth_run_on: ?bool = null;
-/// TF_DSV41_MTP_DEPTH_RUN=1: depth and the drafting cut from acceptance counts and a cost table (depth_run.zig), never a clock.
+/// TF_DSV41_MTP_DEPTH_RUN=1: depth and the drafting cut from acceptance counts and a cost table (depth_run.zig).
 pub fn depthRunOn() bool {
     if (depth_run_on) |v| return v;
     const raw = std.c.getenv("TF_DSV41_MTP_DEPTH_RUN") orelse {
