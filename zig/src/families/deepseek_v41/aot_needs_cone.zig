@@ -48,8 +48,8 @@ pub fn programs(gpa: std.mem.Allocator, n: *needs.Needs, cfg: *const Config, w: 
     const variants: []const block.Options = if (sv.o.pf4k) &.{ fwd, k4 } else &.{fwd};
     for (variants) |o| for (gs, 0..) |g, gi| {
         const full: i64 = ced.groupRows(cfg.window, nd, g.first, std.math.maxInt(u64));
-        // the workspace runs only cones past the forward's rows; its later programs sit at their full rows then
-        const lo: i64 = @min(full, if (o.pf4k) rows_fwd + 1 else ced.keep + 1);
+        // the workspace runs cones past the forward's rows; a warm resume's replay runs from one row in the forward's
+        const lo: i64 = @min(full, if (o.pf4k) rows_fwd + 1 else 1);
         const hi: i64 = @min(full, o.prefill_rows);
         var c: Ctx = .{ .cfg = cfg, .w = w, .o = o, .layers = dec[g.first .. g.first + g.count + @intFromBool(gi + 1 < gs.len)], .n = 0, .part = if (gi + 1 == gs.len) .cone_last else .cone_mid, .cand = if (gi == 0) null else 0 };
         var rows = lo;

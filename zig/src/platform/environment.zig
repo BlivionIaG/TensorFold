@@ -143,6 +143,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_DSV41_PIECE_RUNS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_REPLAY_RUNS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_REPLAY_EXACT", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
+    .{ .name = "TF_DSV41_REPLAY_WARM", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
     .{ .name = "TF_DSV41_REPLAY_GROUP", .scope = .dsv41, .kind = .u32, .min = 1, .max = 20, .forms = "a whole layer count from 1 to 20" },
     .{ .name = "TF_DSV41_REPLAY_OVERLAP", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
     .{ .name = "TF_DSV41_JOIN_DRAFTS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },

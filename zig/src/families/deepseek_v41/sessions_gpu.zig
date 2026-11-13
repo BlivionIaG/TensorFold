@@ -88,6 +88,8 @@ pub const Sessions = struct {
     /// replay mode with drafts: the drafter's rings, outside the snapshot, read by the hand-off export at the cut
     drafter_rings: []Piece = &.{},
     ds_set: ?DsSet = null,
+    /// TF_DSV41_REPLAY_WARM: prompt entries hold exact decoder rings (`sessions_warm`), saved after the exact replay
+    warm: bool = false,
 
     pub const DsSet = struct { ctx: *anyopaque, set: *const fn (ctx: *anyopaque, slot: u32, valid: u64) void, get: ?*const fn (*anyopaque, u32) u64 = null };
 
@@ -155,11 +157,14 @@ pub const Sessions = struct {
             }
         }
         s.pieces = list.items;
+        const roles = try la.allocator().alloc([]const u8, list.items.len);
+        for (list.items, roles) |pc, *r| r.* = pc.role;
+        s.warm = @import("sessions_warm.zig").enabled(f, roles, layers);
         s.drafter_rings = rings_out.items;
         // the snapshot as the RAM tier measures it (kv/sess.zig): replay keeps the rings below the decoder
         var rings: u64 = 0;
         var carries: u64 = 0;
-        const d = if (replay) try ced.decoderStart(f.cfg) else f.cfg.layers;
+        const d = if (replay and !s.warm) try ced.decoderStart(f.cfg) else f.cfg.layers;
         for (layers) |L| {
             if (L < d) rings += 1;
             if (f.cfg.isKvSource(L) and f.cfg.compressRatio(L) == 2) carries += 1;
@@ -395,6 +400,7 @@ pub const Sessions = struct {
         const h = &s.hist[s.cur()];
         if (h.items.len != s.f.slot.pos or s.f.slot.pending != null) return error.BadWindow;
         if (pf.state(s.f).mode == .replay and s.f.slot.ced.hi != s.f.slot.pos) return error.BadWindow;
+        if (s.warm and !try @import("sessions_warm.zig").beforeSave(s.f)) return null;
         try writes.retire(s);
         try s.f.sendSess(.prompt, 0);
         if (h.items.len == 0) return null;
@@ -414,6 +420,7 @@ pub const Sessions = struct {
 
     /// The entries' tag (sessions.Tag's CED field): replay entries never resume full ones, nor full ones replay's.
     fn tag(s: *const Sessions) u32 {
+        if (s.warm) return ced.tag_warm;
         return if (pf.state(s.f).mode == .replay) ced.tag else ced.tag_fast;
     }
 
@@ -442,7 +449,7 @@ pub const Sessions = struct {
         for (ids, prompt) |*d, t| d.* = @intCast(t);
         const h = (try s.store.find(s.tag(), ids)) orelse return null;
         if (h.pos >= prompt.len) return null;
-        if (s.f.prefill_state != null and pf.state(s.f).cone_on and !ced.resumeExact(s.f.cfg, prompt.len - 1, h.pos)) return null;
+        if (s.f.prefill_state != null and pf.state(s.f).cone_on and !(s.warm and s.store.entry(h.id).extra.kind == prompt_kind) and !ced.resumeExact(s.f.cfg, prompt.len - 1, h.pos)) return null;
         return h;
     }
 
@@ -539,6 +546,9 @@ pub const Sessions = struct {
             try s.uploadSnap(@ptrCast(@alignCast(b.ptr)));
         } else try s.restoreDisk(id);
         if (s.f.slot.pos != pos) return error.RestoredPosition;
+        // a warm prompt entry was saved after the exact replay: its decoder rings are a full prefill's at its position
+        s.f.slot.exact = s.warm and e.extra.kind == prompt_kind;
+        s.f.slot.exact_at = pos;
         const h = &s.hist[s.cur()];
         try h.resize(s.gpa, pos);
         // RAM: the path's indexed tokens; NVMe: the ids the leader sent (its prompt's prefix)
