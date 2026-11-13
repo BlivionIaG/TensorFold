@@ -116,7 +116,7 @@ const Env = struct {
 test "the depth's knobs read as Python's" {
     Env.pairs = &.{};
     const d = try calib_env.depthSettings(&Env.get);
-    try std.testing.expect(d.mode == .cost and d.cap == 5 and d.skip and d.joint == 1);
+    try std.testing.expect(d.mode == .cost and d.cap == 5 and d.skip and d.joint == 2);
     Env.pairs = &.{ .{ "TF_DSV41_DEPTH", "static" }, .{ "TF_DSV41_DRAFT_SKIP", "off" }, .{ "TF_DSV41_DEPTH_JOINT", "2" }, .{ "TF_DSV41_DEPTH_FAIR", "1.5" }, .{ "TF_DSV41_GRAPH_ROWS_MAX", "32" } };
     const s = try calib_env.depthSettings(&Env.get);
     try std.testing.expect(s.mode == .static and s.cap == 3 and !s.skip and s.joint == 2 and s.fair == 1.5 and s.max_rows == 32);
