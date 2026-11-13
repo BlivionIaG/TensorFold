@@ -10,6 +10,7 @@ const telemetry = @import("../model/exl3_telemetry.zig");
 pub const offload = @import("exl3_offload.zig");
 pub const round = round_;
 pub const graph = @import("../graph/exl3_graph.zig");
+const graph_mode = @import("../graph/cuda_exl3_graph.zig");
 pub const Round = round_.Round;
 pub const linesFor = round_.linesFor;
 pub const shape = offload.shape;
@@ -130,7 +131,9 @@ pub const Pool = struct {
         }
         if (held == 0) return error.Invalid;
         const table_e: usize = if (src.shared != null) shape.experts + 1 else shape.experts;
-        var lines = try Lines.init(gpa, d, .{ .experts = table_e, .bytes = bytes, .lines = opt.lines, .staging = if (opt.direct) 0 else opt.staging });
+        // the table's host shadow only fits rounds the host plans: the device planner writes the table itself
+        const batch = try @import("sys").environment.read(bool, "TF_FLASHNEXT_TABLE_BATCH", false) and try graph_mode.mode() == .off;
+        var lines = try Lines.init(gpa, d, .{ .experts = table_e, .bytes = bytes, .lines = opt.lines, .staging = if (opt.direct) 0 else opt.staging, .batch = batch });
         errdefer lines.deinit();
         lines.pinned_bank = if (opt.direct) src.pinned_bank else null;
         if (src.shared) |sh| {
@@ -315,6 +318,7 @@ pub const Pool = struct {
     /// Device step of pass `j`: its copies and table rewrites on the copy stream, its masked picks (if any) on `s`
     pub fn stage(p: *Pool, r: *const Round, j: usize, s: cuda.Stream) !void {
         for (r.passCopies(j)) |c| try p.loadCopy(c);
+        try p.lines.flush();
         if (r.masked()) {
             const stride = p.opt.max_rows * p.opt.slots * 4;
             const n = p.picks_n * 4;
@@ -336,6 +340,7 @@ pub const Pool = struct {
         try p.lines.release(s, r.passLines(j));
         if (j + 1 == r.n_passes) {
             for (r.prefetch()) |c| try p.loadCopy(c);
+            try p.lines.flush();
             p.stats.prefetches += r.n_prefetch;
         }
     }
