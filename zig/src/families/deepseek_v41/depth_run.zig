@@ -49,7 +49,7 @@ pub const State = struct {
         var top: f64 = margin / round_ms[0];
         var expected: f64 = 1;
         var chain: f64 = 1;
-        for (1..@min(cap, max_depth) + 1) |d| {
+        for (1..@as(usize, @min(cap, max_depth)) + 1) |d| {
             chain *= s.rate(d - 1);
             expected += chain;
             const per_ms = expected / round_ms[d];
