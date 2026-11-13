@@ -94,7 +94,7 @@ fn configure(m: *Model, mode: u32) bool {
     const c = &m.cone;
     c.on = false;
     c.grouped = mode >= 2;
-    c.park = @min(parked_max, @import("sys").environment.read(u32, "TF_DSV41_CONE_PARK", 0) catch 0);
+    c.park = @min(parked_max, @import("sys").environment.read(u32, "TF_DSV41_CONE_PARK", parked_max) catch parked_max);
     if (mode == 0) return false;
     const d = ced.decoderStart(&m.cfg) catch return false;
     const rows = ced.suffixRows(&m.cfg, kept) catch return false;
