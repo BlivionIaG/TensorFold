@@ -158,7 +158,7 @@ fn pullBoth(upto: u64, fail: ?u32, flap: Flap) !void {
         try std.testing.expectEqualStrings("the shard's export failed", remote.reason.text());
         return;
     }
-    if (flap == .stale or flap == .never) {
+    if (flap == .never) {
         try std.testing.expectError(error.LinkDown, remote.source().fill(prompt, offer, land.state()));
         return;
     }
@@ -184,7 +184,7 @@ test "a Remote pulls a KV_SPLIT export from two links at once, landing the direc
 }
 
 test "links that re-linked while the producers prefilled are renewed before the pull, and one that is coming back is waited for" {
-    try pullBoth(300, null, .stale); // the old clients' generation is gone: the pull fails, as the long prompts' did
+    try pullBoth(300, null, .stale); // no renew hook and the old clients' generation is gone: the pull's own requests wait for the new one
     try pullBoth(300, null, .renewed);
     try pullBoth(1301, null, .late);
     try pullBoth(300, null, .never);

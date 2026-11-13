@@ -65,7 +65,47 @@ const Trigger = struct {
     }
 };
 
-fn pullStreamed(upto: u64, fail: bool) !void {
+/// A link that drops under the pull: after every `every`-th landed part (so with no request in flight) it goes down,
+/// and comes back as a new generation unless `stay`.
+const Flapping = struct { every: u32, stay: bool = false };
+
+/// The pull's sink, wrapped: parts go on to the landing, then the link flaps as `Flapping` says.
+const Flapper = struct {
+    inner: ps.StateSink,
+    link: *fabric.link_fake.Link,
+    how: Flapping,
+    puts: u32 = 0,
+    flaps: u32 = 0,
+
+    fn state(f: *Flapper) ps.StateSink {
+        return .{ .ptr = f, .put_fn = put, .commit_fn = commit, .abort_fn = abort };
+    }
+
+    fn put(ptr: *anyopaque, layer: *const fabric.manifest.Layer, row_start: u64, rows: u64, bytes: []const u8) anyerror!void {
+        const f: *Flapper = @ptrCast(@alignCast(ptr));
+        try f.inner.put_fn(f.inner.ptr, layer, row_start, rows, bytes);
+        f.puts += 1;
+        if (f.puts % f.how.every != 0 or (f.how.stay and f.flaps > 0)) return;
+        f.link.down();
+        if (!f.how.stay) {
+            f.link.up();
+            fabric.words.pause(3 * std.time.ns_per_ms); // a real re-link takes longer than the serving loop's tick, which sees the zeroed request word
+        }
+        f.flaps += 1;
+    }
+
+    fn commit(ptr: *anyopaque, upto: u64, provenance: ps.Provenance) void {
+        const f: *Flapper = @ptrCast(@alignCast(ptr));
+        f.inner.commit_fn(f.inner.ptr, upto, provenance);
+    }
+
+    fn abort(ptr: *anyopaque) void {
+        const f: *Flapper = @ptrCast(@alignCast(ptr));
+        f.inner.abort_fn(f.inner.ptr);
+    }
+};
+
+fn pullStreamed(upto: u64, fail: bool, flap: ?Flapping) !void {
     const a = std.testing.allocator;
     var arena_state: std.heap.ArenaAllocator = .init(a);
     defer arena_state.deinit();
@@ -107,20 +147,32 @@ fn pullStreamed(upto: u64, fail: bool) !void {
 
     var client = try fabric.mailbox.Client.init(&mac, fabric.words.native, 30 * std.time.ns_per_s);
     var remote: ps.Remote = .{ .gpa = a, .policy = .{ .enabled = true, .min_prefix = 0, .tail = 1 }, .client = &client, .trigger = .{ .ptr = &trig, .start_fn = Trigger.start }, .model = model, .protocol = 2, .stream = true };
+    if (flap) |f| if (f.stay) {
+        remote.link_wait_ns = 200 * std.time.ns_per_ms;
+    };
     const offer = remote.source().offer(prompt, 0).?;
     try std.testing.expectEqual(upto, offer.upto);
     const via = try target(arena, 2048);
     var land: landing.Landing = undefined;
     try land.init(a, upto, .{ .@"packed" = via });
     defer land.deinit();
+    var flapper: Flapper = .{ .inner = land.state(), .link = &link, .how = flap orelse .{ .every = 1 } };
+    const sink = if (flap != null) flapper.state() else land.state();
     if (fail) {
         // the producer's failure is the fill's error: not the pull's Aborted or Refused
-        try std.testing.expectError(error.PrefillFailed, remote.source().fill(prompt, offer, land.state()));
+        try std.testing.expectError(error.PrefillFailed, remote.source().fill(prompt, offer, sink));
         return;
     }
-    try remote.source().fill(prompt, offer, land.state());
+    if (flap) |f| if (f.stay) {
+        // the link never comes back: the pull's wait runs out and the fill ends with the link's error
+        try std.testing.expectError(error.LinkDown, remote.source().fill(prompt, offer, sink));
+        try std.testing.expectEqual(@as(u32, 1), flapper.flaps);
+        return;
+    };
+    try remote.source().fill(prompt, offer, sink);
     try std.testing.expectEqual(@as(u32, 1), trig.asked);
     try std.testing.expect(remote.trigger_ns > 0 and remote.bytes > 0);
+    if (flap != null) try std.testing.expect(flapper.flaps > 0);
     _ = try land.complete();
 
     const direct = try target(arena, 2048);
@@ -133,9 +185,18 @@ fn pullStreamed(upto: u64, fail: bool) !void {
 }
 
 test "a Remote with stream on pulls while the producer's prefill runs and lands the direct import's bytes" {
-    try pullStreamed(300, false);
+    try pullStreamed(300, false, null);
 }
 
 test "a producer whose prefill fails half way is the fill's error" {
-    try pullStreamed(300, true);
+    try pullStreamed(300, true, null);
+}
+
+test "a link that re-links under the pull is waited for, and every part still lands once, even when the last one's CLOSE is lost" {
+    try pullStreamed(300, false, .{ .every = 1 }); // a new generation after every part, the last included
+    try pullStreamed(1301, false, .{ .every = 7 });
+}
+
+test "a link that drops under the pull and does not come back ends the fill with LinkDown after the wait" {
+    try pullStreamed(300, false, .{ .every = 5, .stay = true });
 }

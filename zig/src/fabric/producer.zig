@@ -5,6 +5,7 @@ const manifest = @import("manifest.zig");
 const frames = @import("frames.zig");
 const mailbox = @import("mailbox.zig");
 const words = @import("words.zig");
+const layout = @import("layout.zig");
 const Allocator = std.mem.Allocator;
 
 /// Whether one part of a streamed export may be served yet.
@@ -273,6 +274,8 @@ pub const Serving = struct {
     pub fn run(s: *Serving) void {
         while (!s.stop.load(.acquire)) {
             s.responder.table.expire() catch {};
+            // a new connection's HELLO zeroes the request word and its client counts from 1 again (as the served lanes' loops do)
+            if (words.load(s.service.box.wordAt(layout.request_word)) == 0) s.service.last = 0;
             const req = (s.service.next(std.time.ns_per_ms) catch return) orelse continue;
             s.responder.handle(req.seq, req.payload) catch |err| s.responder.failed(req.seq, err) catch return;
         }

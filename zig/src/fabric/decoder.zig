@@ -24,6 +24,9 @@ pub const Expect = struct {
     streaming: ?*const std.atomic.Value(bool) = null,
     /// Set when the producer's prefill failed: the pull stops as if its request were gone.
     broken: ?*const std.atomic.Value(bool) = null,
+    /// The longest a request waits for its link to come back when the link dropped under it (the same mailbox, a new
+    /// generation) before the pull fails; the request is then asked again. 0 fails at once, as a pull always did.
+    relink_ns: u64 = 0,
 
     pub fn aborted(e: Expect) bool {
         if (e.broken) |b| if (b.load(.acquire)) return true;
@@ -65,15 +68,54 @@ pub fn pull(arena: Allocator, client: *mailbox.Client, handoff: [16]u8, expect: 
         if (!client.poisoned) close(client, handoff) catch {};
         return err;
     };
-    try close(client, handoff);
+    // every frame landed: a CLOSE the link dropped under only leaves the export to age out on the producer
+    close(client, handoff) catch |err| if (!lost(err)) return err;
     return got;
 }
 
-fn request(client: *mailbox.Client, kind: wire.Kind, handoff: [16]u8, frame: u32, payload: []const u8, most: u16) Error!wire.Header {
+const log = std.log.scoped(.decoder);
+const relink_poll_ns = 100 * std.time.ns_per_ms;
+
+/// The errors of a link that dropped: its client works again once the mailbox's next generation is up.
+fn lost(err: anyerror) bool {
+    return err == error.LinkDown or err == error.LinkLost or err == error.Poisoned;
+}
+
+/// `client.call`; a call the link dropped under waits up to `expect.relink_ns` for the link to come back and asks again.
+/// OPEN and PULL are answered the same each time and a frame lands only from a reply, so none lands twice or is skipped.
+fn call(client: *mailbox.Client, expect: ?*const Expect, msg: []const u8) mailbox.Error![]const u8 {
+    const e = expect orelse return client.call(msg);
+    var deadline: u64 = 0;
+    while (true) {
+        const reply = client.call(msg) catch |err| {
+            if (e.relink_ns == 0 or !lost(err)) return err;
+            if (deadline == 0) deadline = words.nowNs() +| e.relink_ns;
+            try relinked(client, e, deadline, err);
+            continue;
+        };
+        return reply;
+    }
+}
+
+/// The client made afresh for the link's new generation, or `err` (what the drop was) when the wait ran out or the pull is over.
+fn relinked(client: *mailbox.Client, expect: *const Expect, deadline: u64, err: mailbox.Error) mailbox.Error!void {
+    while (!expect.aborted() and words.nowNs() < deadline) {
+        client.renew() catch |again| {
+            if (again != error.LinkDown) return err; // a request still owed a reply, or a mailbox gone: not this link's flap
+            words.pause(relink_poll_ns);
+            continue;
+        };
+        log.info("a link re-linked during the pull ({s}); the request is asked again", .{@errorName(err)});
+        return;
+    }
+    return err;
+}
+
+fn request(client: *mailbox.Client, expect: ?*const Expect, kind: wire.Kind, handoff: [16]u8, frame: u32, payload: []const u8, most: u16) Error!wire.Header {
     var msg: [wire.header_bytes + 32]u8 = undefined;
     msg[0..wire.header_bytes].* = wire.pack(.{ .kind = kind, .handoff = handoff, .frame = frame, .nbytes = payload.len });
     @memcpy(msg[wire.header_bytes..][0..payload.len], payload);
-    const reply = try client.call(msg[0 .. wire.header_bytes + payload.len]);
+    const reply = try call(client, expect, msg[0 .. wire.header_bytes + payload.len]);
     const h = switch (wire.unpackUpTo(reply, most)) {
         .ok => |h| h,
         .bad => return error.Protocol,
@@ -87,7 +129,7 @@ fn open(arena: Allocator, client: *mailbox.Client, handoff: [16]u8, expect: Expe
     var deadline = words.nowNs() + expect.open_timeout_ns;
     var nap: u64 = std.time.ns_per_ms;
     while (true) {
-        const h = try request(client, .open, handoff, 0, options, expect.protocol);
+        const h = try request(client, &expect, .open, handoff, 0, options, expect.protocol);
         const reply = client.box.replyPayload();
         switch (h.kind) {
             .wait => {
@@ -158,7 +200,7 @@ fn frames(arena: Allocator, client: *mailbox.Client, handoff: [16]u8, m: manifes
             if (done[i]) continue;
             if (expect.aborted()) return error.Aborted;
             const frame: u32 = @intCast(i);
-            const h = try request(client, .pull, handoff, frame, "", m.protocol);
+            const h = try request(client, &expect, .pull, handoff, frame, "", m.protocol);
             const reply = client.box.replyPayload();
             if (h.kind == .wait) {
                 waits += 1;
@@ -217,6 +259,6 @@ test "a frame's rows fit its layer only when their end does, however large a pee
 }
 
 fn close(client: *mailbox.Client, handoff: [16]u8) Error!void {
-    const h = try request(client, .close, handoff, 0, "", wire.recurrent_version);
+    const h = try request(client, null, .close, handoff, 0, "", wire.recurrent_version);
     if (h.kind != .ack) return error.Protocol;
 }

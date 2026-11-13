@@ -129,7 +129,7 @@ pub const Remote = struct {
     bytes: u64 = 0,
     /// called between the trigger and the pull, when set
     renew: ?Renew = null,
-    /// the longest wait for a link to come back after the trigger
+    /// the longest wait for a link to come back: after the trigger, and under a request of the pull that the link dropped under
     link_wait_ns: u64 = link_wait_ns,
 
     pub fn source(r: *Remote) PrefillSource {
@@ -177,7 +177,7 @@ pub const Remote = struct {
             r.trigger_ns = trig.ns;
             try trig.result;
         }
-        r.renewLinks() catch |err| { // streaming: the links as they stand now; one that drops during the prefill fails the pull
+        r.renewLinks() catch |err| { // streaming: the links as they stand now; one that drops later is waited for by the pull itself
             if (thread) |t| t.join();
             return err;
         };
@@ -203,7 +203,7 @@ pub const Remote = struct {
     }
 
     fn expect(r: *const Remote, tokens: []const u32, rank: u64, size: u64, trig: *const Trigger.Run) decoder.Expect {
-        return .{ .model = r.model, .tokens = tokens, .protocol = r.protocol, .tp_rank = rank, .tp_size = size, .abort = r.abort, .streaming = if (r.stream) &trig.live else null, .broken = if (r.stream) &trig.broken else null };
+        return .{ .model = r.model, .tokens = tokens, .protocol = r.protocol, .tp_rank = rank, .tp_size = size, .abort = r.abort, .streaming = if (r.stream) &trig.live else null, .broken = if (r.stream) &trig.broken else null, .relink_ns = r.link_wait_ns };
     }
 
     /// One shard's pull on its own link; the thread's result and the producer's reason stay in the job.
