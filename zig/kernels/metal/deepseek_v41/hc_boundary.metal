@@ -16,12 +16,19 @@ static_assert(sizeof(HcArgs) == 12, "HcArgs must mirror mhc.zig's BoundaryArgs")
 
 inline float hc_round(float v) { return float(bfloat(v)); }
 
+// One thread's four adjacent columns of the 24 hc_fn rows, loaded ahead of the values they multiply.
+inline void hc_load_fn(const device float* fn, int col, thread float* f) {
+  for (int q = 0; q < kMixes; q++) {
+    const device float* p = fn + size_t(q) * kStream + col;
+    for (int i = 0; i < 4; i++) f[q * 4 + i] = p[i];
+  }
+}
+
 // One thread's four adjacent columns of a slice: the stream's squares and its products against the 24 hc_fn rows.
-inline void hc_mix_column(const float* v, const device float* fn, int col, float* out) {
+inline void hc_mix_column(const float* v, const thread float* f, float* out) {
   out[kMixes] = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
   for (int q = 0; q < kMixes; q++) {
-    const device float* f = fn + size_t(q) * kStream + col;
-    out[q] = f[0] * v[0] + f[1] * v[1] + f[2] * v[2] + f[3] * v[3];
+    out[q] = f[q * 4] * v[0] + f[q * 4 + 1] * v[1] + f[q * 4 + 2] * v[2] + f[q * 4 + 3] * v[3];
   }
 }
 
@@ -50,10 +57,12 @@ inline void hc_publish_slice(threadgroup float* warp, device float* part, const 
   const uint t = tpos.x;
   const int col = 1024 * j + 4 * int(t);
   const device bfloat* x = X + size_t(r) * kStream + col;
+  float f[kMixes * 4];
+  hc_load_fn(FN, col, f);
   float v[4];
   for (int i = 0; i < 4; i++) v[i] = float(x[i]);
   float parts[kParts];
-  hc_mix_column(v, FN, col, parts);
+  hc_mix_column(v, f, parts);
   hc_publish_slice(&warp[0], PART, parts, lane, sg, t, uint(r), uint(j));
 }
 
@@ -71,6 +80,8 @@ inline void hc_publish_slice(threadgroup float* warp, device float* part, const 
   const int k = col / kWidth, d0 = col % kWidth;
   const device bfloat* x = X + size_t(r) * kStream;
   const device float* comb = COMB + r * kCopies * kCopies;
+  float f[kMixes * 4];
+  hc_load_fn(FN, col, f);
   float v[4];
   for (int i = 0; i < 4; i++) {
     const int d = d0 + i;
@@ -84,7 +95,7 @@ inline void hc_publish_slice(threadgroup float* warp, device float* part, const 
     v[i] = float(out);
   }
   float parts[kParts];
-  hc_mix_column(v, FN, col, parts);
+  hc_mix_column(v, f, parts);
   hc_publish_slice(&warp[0], PART, parts, lane, sg, t, uint(r), uint(j));
 }
 
@@ -135,6 +146,12 @@ template <bool MIXES>
   threadgroup float slice[kParts];
   threadgroup float pre[kCopies];
   const device bfloat* x = X + size_t(r) * kStream;
+  // The stream's columns load first: they do not wait on the slices' totals or the barrier below.
+  float xv[5][kCopies];
+  for (int i = 0; i < 5; i++) {
+    const int d = int(t) + 1024 * i;
+    for (int s = 0; s < kCopies; s++) xv[i][s] = float(x[s * kWidth + d]);
+  }
   // The slices' totals beside the lagged collapse, which overlaps the norm's reduction.
   if (MIXES && int(t) <= kMixes) {
     float s = 0.0f;
@@ -146,9 +163,8 @@ template <bool MIXES>
   float y[5];
   float squares = 0.0f;
   for (int i = 0; i < 5; i++) {
-    const int d = int(t) + 1024 * i;
     float v = 0.0f;
-    for (int s = 0; s < kCopies; s++) v += pre[s] * float(x[s * kWidth + d]);
+    for (int s = 0; s < kCopies; s++) v += pre[s] * xv[i][s];
     y[i] = hc_round(v);
     squares += y[i] * y[i];
   }
