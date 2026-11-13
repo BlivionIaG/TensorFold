@@ -27,7 +27,7 @@ pub const Queue = struct {
     next_id: u64 = 1,
     load: Load = .{},
     /// each decoding stream's lost decode time counts this much against prefilling here (seconds per second)
-    stall: f64 = 0.25,
+    stall: f64 = 1,
 
     /// The prompt joins the end of the queue; null: it is full, the prompt is prefilled here.
     pub fn join(q: *Queue, now: u64, est: Estimate) ?u64 {

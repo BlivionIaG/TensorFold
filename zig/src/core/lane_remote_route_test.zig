@@ -23,10 +23,10 @@ fn slowMac() Route {
 
 test "seeds: with the default priors an idle pair takes a 16k prompt and a 2k prompt stays here" {
     var r: Route = .{};
-    try t.expectEqual(Verdict.remote, weigh(&r, 0, 16384, 0)); // 7.4 s pulled against 8.2 s here
+    try t.expectEqual(Verdict.remote, weigh(&r, 0, 16384, 0)); // 7.4 s pulled against 8.0 s here
     try t.expectEqual(Verdict.slower, weigh(&r, 0, 2048, 0)); // 1.5 s pulled against 1.0 s here
-    try t.expectEqual(Verdict.slower, weigh(&r, 0, 4096, 0)); // break-even is about 7.2k tokens
-    try t.expectEqual(Verdict.remote, weigh(&r, 0, 8192, 0)); // 4.0 s pulled against 4.1 s here
+    try t.expectEqual(Verdict.slower, weigh(&r, 0, 4096, 0)); // break-even is about 8k tokens
+    try t.expectEqual(Verdict.remote, weigh(&r, 0, 12288, 0)); // 5.7 s pulled against 6.0 s here
 }
 
 test "route: a prompt that finds the pair busy goes elsewhere unless waiting for it is faster, and a wait is bounded" {
@@ -91,7 +91,7 @@ const Holder = struct {
     gone: std.atomic.Value(bool) = .init(false),
 
     fn run(h: *Holder) void {
-        const id = switch (h.route.admit(t.io, h.route.estimate(8191, 0, 8192), &h.closing, &h.gone)) {
+        const id = switch (h.route.admit(t.io, h.route.estimateFor(8191, 0, 8192, .force), &h.closing, &h.gone)) {
             .entered => |e| e.id,
             else => return,
         };
@@ -196,9 +196,9 @@ test "knobs: the route's knobs default to auto, the measured curves and a breake
     const env = @import("sys").environment;
     const d = Route.build(.{
         .mode = try env.value(u64, "TF_PREFILL_ROUTE", null, 0),
-        .local_tps = try env.value(f64, "TF_PREFILL_LOCAL_TPS", null, 2000),
+        .local_tps = try env.value(f64, "TF_PREFILL_LOCAL_TPS", null, 2050),
         .remote_tps = try env.value(f64, "TF_PREFILL_REMOTE_TPS", "", 2400),
-        .stall = try env.value(f64, "TF_PREFILL_STALL", null, 0.25),
+        .stall = try env.value(f64, "TF_PREFILL_STALL", null, 1),
     });
     try t.expectEqual(route.Mode.auto, d.mode);
     try t.expectEqual((Route{}).local.base.v, d.local.base.v);

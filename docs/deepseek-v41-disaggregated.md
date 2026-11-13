@@ -220,13 +220,13 @@ pair's gate. A prompt goes where its first token comes sooner:
   length plus the Mac's last-token pass.
 * **On the Mac**: behind the prefill the Mac already has: the prompts its engine is filling, the ones kept off the pair, and
   the ones the gate sent back. Its cost is the prompt's rows from the cache's end at the Mac's rate for that length. Each
-  stream decoding on the Mac adds `TF_PREFILL_STALL` (0.25) seconds per second of that prefill, because a prompt pass here
+  stream decoding on the Mac adds `TF_PREFILL_STALL` (1) seconds per second of that prefill, because a prompt pass here
   stalls it, and when the engine shares its wall time with decoders (`TENSORFOLD_PREFILL_SHARE`, `--decode-share`) the pass
   takes that much longer.
 * **Rates fall with context on both machines**, so both are curves, not numbers: up to 32768 prompt tokens the rate is flat
-  (`TF_PREFILL_LOCAL_TPS` 2000 and `TF_PREFILL_REMOTE_TPS` 2400), beyond it the average over a prompt of n tokens is that
-  rate times (32768 / n) to the power `TF_PREFILL_LOCAL_DECAY` (0.44) or `TF_PREFILL_REMOTE_DECAY` (0.15). The defaults
-  reproduce the measured passes: 784 s for 480k tokens on the Mac, 677 s for 968k on the pair. The rates are running
+  (`TF_PREFILL_LOCAL_TPS` 2050 and `TF_PREFILL_REMOTE_TPS` 2400), beyond it the average over a prompt of n tokens is that
+  rate times (32768 / n) to the power `TF_PREFILL_LOCAL_DECAY` (0.07) or `TF_PREFILL_REMOTE_DECAY` (0.15). The defaults
+  reproduce the measured passes: 1.70k a second over 491k tokens on the Mac, 677 s for 968k on the pair. The rates are running
   averages of what this server timed (a pass under 1024 rows says too little; a sample moves a rate by a third to three
   times at most), normalised to the 32k rate; a Mac pass that shared the engine with another prompt or a decoder teaches
   nothing, since the decode load is counted on its own.

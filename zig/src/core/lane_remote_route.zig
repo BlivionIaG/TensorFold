@@ -94,8 +94,8 @@ pub const Route = struct {
     lock: std.atomic.Mutex = .unlocked,
     /// the pulls at the gate and the prompts sent here, in arrival order
     queue: queue.Queue = .{},
-    /// this machine's prompt prefill by length (seed 2000 a second to 32k rows; 610 over 480k, so `decay` 0.44)
-    local: Curve = .{ .base = .{ .v = 2000 }, .decay = 0.44 },
+    /// this machine's prompt prefill by length (seed 2050 a second to 32k rows; 1860 at 131k, 1695 at 491k: decay 0.07)
+    local: Curve = .{ .base = .{ .v = 2050 }, .decay = 0.07 },
     /// a pull's prefix tokens a second, end to end (seed 2400 to 32k rows; 1430 over 968k: `decay` 0.15)
     remote: Curve = .{ .base = .{ .v = 2400 }, .decay = 0.15 },
     /// the Mac's pass after the pull, in seconds: restore, the last token, its first reply (seed: 0.6)
@@ -113,11 +113,11 @@ pub const Route = struct {
     /// The knobs, as their values: `mode` is the word's index in TF_PREFILL_ROUTE's list.
     pub const Knobs = struct {
         mode: u64 = 0,
-        local_tps: f64 = 2000,
+        local_tps: f64 = 2050,
         remote_tps: f64 = 2400,
-        local_decay: f64 = 0.44,
+        local_decay: f64 = 0.07,
         remote_decay: f64 = 0.15,
-        stall: f64 = 0.25,
+        stall: f64 = 1,
         trip: u64 = 3,
         cooldown_s: u64 = 30,
         timeout_s: u64 = 0,

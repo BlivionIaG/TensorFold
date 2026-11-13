@@ -61,79 +61,78 @@ fn plan(r: *Route, lens: []const u64, b: route.Busy) !Plan {
     return out;
 }
 
-test "queue: one long prompt goes to the pair, and two 1M prompts both do: the second is done before this machine could" {
+test "queue: a 128k prompt alone goes to the pair, a 1M prompt alone is done sooner here, and two 1M prompts take one each" {
     var r: Route = .{};
-    const one = try plan(&r, &.{1000 * k}, .{});
-    try t.expectEqual(@as(usize, 1), one.pulled);
+    try t.expectEqual(@as(usize, 1), (try plan(&r, &.{128 * k}, .{})).pulled); // 66 s pulled against 69 s here
+    var r1: Route = .{};
+    const one = try plan(&r1, &.{1000 * k}, .{});
+    try t.expectEqual(@as(usize, 1), one.here); // 620 s here against 695 s pulled (1.43k a second at 968k)
     var r2: Route = .{};
     const two = try plan(&r2, &.{ 1000 * k, 1000 * k }, .{});
-    try t.expectEqual(@as(usize, 2), two.pulled); // 1.4k s behind the first against 2.25k s here
-    try t.expect(two.done[0] > 600 and two.done[0] < 800); // the pair's 677 s at 968k, and 0.6 s of tail
-    try t.expect(two.done[1] > 1300 and two.done[1] < 1500);
+    try t.expectEqual(@as(usize, 1), two.pulled); // the second would wait 1.24k s behind the first here
+    try t.expect(two.done[1] > 650 and two.done[1] < 750);
 }
 
-test "queue: four 1M prompts at once, the fourth is prefilled here (finishes sooner than behind three pulls)" {
+test "queue: four 1M prompts at once split two and two, and the last one's first token comes in half the time" {
     var auto: Route = .{};
     const p = try plan(&auto, &.{ 1000 * k, 1000 * k, 1000 * k, 1000 * k }, .{});
-    try t.expectEqual(@as(usize, 3), p.pulled);
-    try t.expectEqual(@as(usize, 1), p.here);
+    try t.expectEqual(@as(usize, 2), p.pulled);
+    try t.expectEqual(@as(usize, 2), p.here);
     var always: Route = .{ .mode = .always };
     const a = try plan(&always, &.{ 1000 * k, 1000 * k, 1000 * k, 1000 * k }, .{});
     try t.expectEqual(@as(usize, 4), a.pulled);
-    try t.expect(p.last(4) < a.last(4) * 0.85); // the last request's TTFT falls by well over 15 %
+    try t.expect(p.last(4) < a.last(4) * 0.6); // 1.39k s against 2.78k s
     try t.expect(p.mean(4) < a.mean(4));
 }
 
-test "queue: four 256k prompts, the third goes here and the fourth does not (two local prefills would end after the pulls)" {
+test "queue: four 256k prompts: this machine takes some, and the last first token comes sooner than behind four pulls" {
     var r: Route = .{};
     const p = try plan(&r, &.{ 256 * k, 256 * k, 256 * k, 256 * k }, .{});
-    try t.expectEqual(@as(usize, 3), p.pulled);
-    try t.expectEqual(@as(usize, 1), p.here);
+    try t.expect(p.here >= 1 and p.pulled >= 2); // a pull and a local prefill take about the same time at 256k
     var always: Route = .{ .mode = .always };
     const a = try plan(&always, &.{ 256 * k, 256 * k, 256 * k, 256 * k }, .{});
-    try t.expect(p.last(4) < a.last(4));
+    try t.expect(p.last(4) < a.last(4) * 0.75);
+    try t.expect(p.mean(4) < a.mean(4));
 }
 
-test "queue: a mixed burst keeps the short prompts here and the long ones on the pair" {
+test "queue: a mixed burst keeps the short prompts on the pair or here in seconds, behind no long pull" {
     var r: Route = .{};
-    // 1M, 16k, 1M, 24k: the shorts finish here in seconds; the longs go to the pair in turn
-    const p = try plan(&r, &.{ 1000 * k, 16 * k, 1000 * k, 24 * k }, .{});
-    try t.expectEqual(@as(usize, 2), p.pulled);
-    try t.expectEqual(@as(usize, 2), p.here);
-    try t.expect(p.done[1] < 20 and p.done[3] < 40); // the 16k and the 24k wait for nothing
+    // 16k, 1M, 24k, 1M: this machine takes the first 1M; the shorts and the other 1M go to the pair in turn
+    const p = try plan(&r, &.{ 16 * k, 1000 * k, 24 * k, 1000 * k }, .{});
+    try t.expectEqual(@as(usize, 3), p.pulled);
+    try t.expectEqual(@as(usize, 1), p.here);
+    try t.expect(p.done[0] < 20 and p.done[2] < 40); // the 16k and the 24k wait for nothing long
+    try t.expect(p.last(4) < 760);
 }
 
-test "queue: this machine's own work ahead counts: a 1M prefill under way here keeps the next prompt on the pair" {
+test "queue: this machine's own work ahead counts: a 1M prefill under way here keeps the next 1M on the pair" {
     var r: Route = .{};
-    const p = try plan(&r, &.{ 1000 * k, 1000 * k, 1000 * k }, .{ .spans = &.{.{ .from = 0, .to = 1000 * k }} });
-    try t.expectEqual(@as(usize, 3), p.pulled); // 2.25k s of local work ahead; three pulls end at 2.1k s
+    const p = try plan(&r, &.{1000 * k}, .{ .spans = &.{.{ .from = 0, .to = 1000 * k }} });
+    try t.expectEqual(@as(usize, 1), p.pulled); // 1.24k s here behind it against 695 s pulled
     var idle: Route = .{};
-    try t.expectEqual(@as(usize, 1), (try plan(&idle, &.{ 1000 * k, 1000 * k, 1000 * k, 1000 * k }, .{})).here);
+    try t.expectEqual(@as(usize, 1), (try plan(&idle, &.{1000 * k}, .{})).here);
 }
 
 test "queue: decoding streams on this machine make a local prefill cost more, a smaller share makes it slower still" {
     const four = [_]u64{ 1000 * k, 1000 * k, 1000 * k, 1000 * k };
+    var idle: Route = .{};
+    try t.expectEqual(@as(usize, 2), (try plan(&idle, &four, .{})).here);
     var r: Route = .{};
-    const p = try plan(&r, &four, .{ .decoding = 3 }); // 3 streams decoding: 0.25 x 3 x 2.25k s lost to a local prefill
-    try t.expectEqual(@as(usize, 4), p.pulled);
+    const p = try plan(&r, &four, .{ .decoding = 3 }); // each local prefill costs 4 x 620 s: only the fourth pull would be later
+    try t.expectEqual(@as(usize, 1), p.here);
     var free: Route = .{ .queue = .{ .stall = 0 } };
-    try t.expectEqual(@as(usize, 1), (try plan(&free, &four, .{ .decoding = 3 })).here); // no weight, no cost
+    try t.expectEqual(@as(usize, 2), (try plan(&free, &four, .{ .decoding = 3 })).here); // no weight, no cost
     var half: Route = .{ .queue = .{ .stall = 0 } };
     const q = try plan(&half, &four, .{ .decoding = 3, .share = 0.5 }); // a prompt pass gets half the wall time beside them
-    try t.expectEqual(@as(usize, 4), q.pulled); // 4.5k s here against 2.8k s of pulls
+    try t.expectEqual(@as(usize, 1), q.here); // 1.24k s here for each
 }
 
-test "queue: weigh counts the pair's queue: a prompt behind three long pulls is kept here, and says so" {
+test "queue: weigh counts the pair's queue: behind four forced 64k pulls a prompt is kept here, and says so" {
     var r: Route = .{};
-    for (0..3) |_| _ = r.join(0, r.estimate(1000 * k - 1, 0, 1000 * k));
-    const ask: remote.Ask = .{ .len = 1000 * k, .cached = 0, .decoding = 0 };
-    try t.expectEqual(Verdict.busy, r.weigh(0, ask, 1000 * k - 1));
-    var short = ask;
-    short.len = 20 * k;
-    try t.expectEqual(Verdict.busy, r.weigh(0, short, 20 * k - 1)); // 20k pulled behind them, or here in 10 s
-    var two: Route = .{};
-    for (0..2) |_| _ = two.join(0, two.estimate(1000 * k - 1, 0, 1000 * k));
-    try t.expectEqual(Verdict.remote, two.weigh(0, ask, 1000 * k - 1)); // behind two it still pays
+    const ask: remote.Ask = .{ .len = 64 * k, .cached = 0, .decoding = 0 };
+    try t.expectEqual(Verdict.remote, r.weigh(0, ask, 64 * k - 1)); // 30 s pulled against 33 s here
+    for (0..4) |_| _ = r.join(0, r.estimateFor(64 * k - 1, 0, 64 * k, .force));
+    try t.expectEqual(Verdict.busy, r.weigh(0, ask, 64 * k - 1)); // 150 s behind the pulls, or 33 s here
 }
 
 test "queue: a prompt sent here stays counted until the host's own count includes it, then no longer" {
@@ -142,11 +141,11 @@ test "queue: a prompt sent here stays counted until the host's own count include
     var ids: [4]u64 = undefined;
     for (&ids) |*id| id.* = r.join(0, e).?;
     for (ids) |id| _ = r.poll(0, id);
-    try t.expectEqual(@as(usize, 4), r.queue.len); // three waiting or pulling, one sent here and reserved
+    try t.expectEqual(@as(usize, 4), r.queue.len); // two waiting or pulling, two sent here and reserved
     for (ids) |id| r.leave(id);
-    try t.expectEqual(@as(usize, 1), r.queue.len); // the reservation outlives the pull's leaving
-    r.busy(100 * std.time.ns_per_ms, .{}); // a count taken inside the grace does not free it
-    try t.expectEqual(@as(usize, 1), r.queue.len);
+    try t.expectEqual(@as(usize, 2), r.queue.len); // the reservations outlive the pull's leaving
+    r.busy(100 * std.time.ns_per_ms, .{}); // a count taken inside the grace does not free them
+    try t.expectEqual(@as(usize, 2), r.queue.len);
     r.busy(600 * std.time.ns_per_ms, .{});
     try t.expectEqual(@as(usize, 0), r.queue.len);
 }
