@@ -22,6 +22,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
   See [scope and qualification limits](docs/deepseek-v41.md#exl3-optimization-follow-up)
   and [full-window fidelity](docs/receipts/dsv41-exl3-metal/fidelity-128.json).
 - Docs: an operator guide for DeepSeek-V4.1 prefill on a GB10 pair with decode on a Mac (#3600).
+- DeepSeek-V4.1 on Metal: prompt attention runs two heads a simdgroup over one load of each key, widens bf16 keys through the bfloat type and reads selected indices four at a time. Output bits are unchanged and still equal decode's. On an M5 Ultra, release layer 2's attention core at 4096 prompt rows drops from 28.6 to 19.0 ms at position 16384 and from 27.5 to 17.1 ms at position 0, and the whole layer from 197 to 188 ms.
 
 - DeepSeek V4.1 remote prefill: a pulled hand-off's drafter rings land in the slot when it holds them, and `TF_DSV41_HANDOFF_CHECK=synth` writes a synthetic hand-off for timing (#3599).
 
