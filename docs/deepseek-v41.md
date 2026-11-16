@@ -49,7 +49,7 @@ The 256 GB streamed line the campaign receipts use (drafts on; the `TF_DSV41_` p
 the draft flags is mandatory — the shorthand names silently serve plain):
 
 ```sh
-GLM_LOAD_LIMIT_GB=240 TF_DSV41_MTP_DRAFTS=1 TF_DSV41_TAPS=1 TF_DSV41_LOOKUP_DRAFTS=3 \
+GLM_LOAD_LIMIT_GB=240 TF_DSV41_MTP_DRAFTS=1 TF_DSV41_LOOKUP_DRAFTS=3 \
 tensorfold-native serve <pack> \
   --engram-stream-dir <orig> --chat-template <pack>/chat_template.jinja \
   --context 65536 --parallel 1 --prompt-cache-gib 4 \
