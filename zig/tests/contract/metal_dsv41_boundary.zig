@@ -12,6 +12,7 @@ const width = mhc.boundary_width;
 const stream_width = 4 * width;
 const slices = mhc.boundary_slices;
 const parts = 25;
+const unit_groups = stream_width / 128;
 const base = "dsv41-native-boundary ";
 const hc_eps: f32 = 1e-6;
 const iterations = 20;
@@ -71,6 +72,8 @@ pub const Proj = struct {
     rig: rig_.Rig,
     ctl: u8,
     name: []const u8,
+    /// The decode-sized norm and split launch, whose partials are 160 units of 128 columns a row.
+    rows_kernel: bool = false,
     production: ?mhc.BoundaryPipelines = null,
     pipe: mtl.Pipeline = undefined,
     unfused: ?mhc.Pipelines = null,
@@ -83,7 +86,7 @@ pub const Proj = struct {
     inverse: rig_.Ref = undefined,
 
     pub fn init(a: std.mem.Allocator, device: mtl.Device, queue: mtl.Queue, ctl: u8, name: []const u8) !Proj {
-        var p = Proj{ .a = a, .arena = std.heap.ArenaAllocator.init(a), .rig = .{ .a = a, .device = device, .queue = queue }, .ctl = ctl, .name = name };
+        var p = Proj{ .a = a, .arena = std.heap.ArenaAllocator.init(a), .rig = .{ .a = a, .device = device, .queue = queue }, .ctl = ctl, .name = name, .rows_kernel = std.mem.indexOf(u8, name, "norm-split") != null };
         if (ctl == 0) {
             p.production = try mhc.BoundaryPipelines.load(device);
             errdefer p.production.?.deinit();
@@ -164,8 +167,12 @@ pub const Proj = struct {
         @memset(zero, 0);
         const scale = [_]f32{ 1, 1, 1 };
         const bias: [24]f32 = @splat(0);
+        // The unit launch adds eight unit partials a slice from zero; one unit carrying the slice's partial and seven zeros give it back.
+        const units = try a.alloc(f32, shape.rows * mhc.boundary_width / 128 * 4 * parts);
+        @memset(units, 0);
+        for (0..shape.rows) |r| for (0..slices) |j| @memcpy(units[(r * unit_groups + 8 * j) * parts ..][0..parts], p.partials[(r * slices + j) * parts ..][0..parts]);
         p.inputs = .{
-            try p.rig.input(zero),                          try p.rig.input(std.mem.sliceAsBytes(p.partials)),
+            try p.rig.input(zero),                          try p.rig.input(std.mem.sliceAsBytes(if (p.rows_kernel) units else p.partials)),
             try p.rig.input(std.mem.sliceAsBytes(&bias)),   try p.rig.input(std.mem.sliceAsBytes(&scale)),
             try p.rig.input(zero[0 .. shape.rows * 4 * 4]), try p.rig.input(zero[0 .. width * 2]),
         };
@@ -185,6 +192,7 @@ pub const Proj = struct {
     }
 
     pub fn encode(p: *Proj, e: mtl.ComputeEncoder, first: usize, rows: usize) void {
+        if (p.rows_kernel) return p.encodeRows(e, first, rows);
         e.setPipeline(if (p.production) |v| v.boundary else p.pipe);
         inline for (0..6) |i| e.setBuffer(p.inputs[i].buf, p.inputs[i].off + switch (i) {
             0 => first * stream_width * 2,
@@ -197,6 +205,21 @@ pub const Proj = struct {
         inline for (p.outputs, .{ 4, 4, 16 }, 7..) |v, n, i| e.setBuffer(v.buf, v.off + first * n * 4, i);
         e.setBuffer(p.normed.buf, p.normed.off + first * width * 2, 10);
         e.dispatchGroups(.{ .width = rows }, .{ .width = 1024 });
+    }
+
+    fn encodeRows(p: *Proj, e: mtl.ComputeEncoder, first: usize, rows: usize) void {
+        e.setPipeline(p.production.?.boundary_rows);
+        e.setBuffer(p.normed.buf, p.normed.off + first * width * 2, 0);
+        e.setBuffer(p.inputs[1].buf, p.inputs[1].off + first * unit_groups * parts * 4, 1);
+        e.setBuffer(p.inputs[2].buf, p.inputs[2].off, 2);
+        e.setBuffer(p.inputs[3].buf, p.inputs[3].off, 3);
+        e.setBuffer(p.inputs[5].buf, p.inputs[5].off, 4);
+        const args = mhc.BoundaryArgs{ .eps = 1, .hc_eps = hc_eps, .iters = iterations };
+        e.setBytes(std.mem.asBytes(&args), 5);
+        inline for (p.outputs, .{ 4, 4, 16 }, 6..) |v, n, i| e.setBuffer(v.buf, v.off + first * n * 4, i);
+        const row_count: u32 = @intCast(rows);
+        e.setBytes(std.mem.asBytes(&row_count), 9);
+        e.dispatchGroups(.{ .width = 2 * rows }, .{ .width = 1024 });
     }
 
     pub fn run(p: *Proj) !void {
@@ -263,11 +286,11 @@ pub const Suite = struct {
         const s = try a.create(Suite);
         s.* = .{ .a = a };
         errdefer s.destroy();
-        const names = [_][]const u8{ base ++ "coefficients tf_hc_boundary_mix", base ++ "control: flush nonfinite partials", base ++ "control: omit Sinkhorn", base ++ "control: fp16 partial accumulator", base ++ "control: comb overrun" };
+        const names = [_][]const u8{ base ++ "coefficients tf_hc_boundary_mix", base ++ "control: flush nonfinite partials", base ++ "control: omit Sinkhorn", base ++ "control: fp16 partial accumulator", base ++ "control: comb overrun", base ++ "norm-split tf_hc_boundary_rows" };
         for (names, 0..) |name, ctl| {
             if (only) |needle| if (std.mem.indexOf(u8, name, needle) == null) continue;
             const p = try a.create(Proj);
-            p.* = Proj.init(a, device, queue, @intCast(ctl), name) catch |err| {
+            p.* = Proj.init(a, device, queue, if (ctl == names.len - 1) 0 else @intCast(ctl), name) catch |err| {
                 a.destroy(p);
                 return err;
             };
