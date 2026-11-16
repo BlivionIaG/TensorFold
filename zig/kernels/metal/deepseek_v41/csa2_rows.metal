@@ -188,17 +188,17 @@ kernel void dsv41_dense_kv_rows(device const ulong *addr [[buffer(0)]], device c
     threadgroup_barrier(mem_flags::mem_threadgroup);
   }
   if (p.splits > 1) {
-    device float *part = parts + ((((ulong(tg.y) * ulong(p.splits) + ulong(split)) * ulong(p.heads / GROUP) + ulong(tg.x)) * 4 + ulong(s)) * 32 + ulong(lane)) * 68;
-    part[0] = m[0];
-    part[1] = m[1];
-    part[2] = l[0];
-    part[3] = l[1];
+    device float *part = parts + ((((ulong(tg.y) * ulong(p.splits) + ulong(split)) * ulong(p.heads / GROUP) + ulong(tg.x)) * 4 + ulong(s)) * (68 * 32) + ulong(lane));
+    part[(0) * 32] = m[0];
+    part[(1) * 32] = m[1];
+    part[(2) * 32] = l[0];
+    part[(3) * 32] = l[1];
     TF_UNROLL
     for (short c = 0; c < 4; c++)
       TF_UNROLL
       for (short j = 0; j < 2; j++)
         TF_UNROLL
-        for (short e = 0; e < 8; e++) part[4 + c * 16 + j * 8 + e] = acc[c][j][e];
+        for (short e = 0; e < 8; e++) part[(4 + c * 16 + j * 8 + e) * 32] = acc[c][j][e];
     return;
   }
   device ushort *obase = out + ulong(row) * p.q_stride + ulong(h0) * RANK + uint(d0);

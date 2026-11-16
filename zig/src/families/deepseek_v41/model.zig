@@ -85,6 +85,8 @@ pub const Model = struct {
     gate_dump_l: ?mtl.Buffer = null,
     queue: mtl.Queue,
     residency: mtl.ResidencySet,
+    /// A few bytes the idle keepalive's tick copies within, so its command buffer reaches the GPU and touches the set.
+    warm_scratch: mtl.Buffer,
     checkpoint: checkpoint.Checkpoint,
     weights: weights.Model,
     mtp_enabled: bool = false,

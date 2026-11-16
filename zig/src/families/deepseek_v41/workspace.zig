@@ -46,14 +46,17 @@ pub const Field = enum {
     fused_sources,
     /// The hyper-connection boundary's second stream buffer: the fused expand writes here and the views swap.
     stream_next,
-    /// The boundary's partial sums: 20 slices of 1024 columns x 25 (24 mixes and the squares) a row.
+    /// The boundary's partial sums: 20 slices of 1024 columns x 25 (24 mixes and the squares) a row; a window of
+    /// `hc_unit_rows` rows or fewer takes 160 units of 128 columns instead.
     hc_part,
 };
 const count = std.enums.values(Field).len;
 
 /// Rows the vocabulary head can score in one call (`.all` logits): prompt chunks only ever need the last row.
 pub const head_rows_max: u32 = 1024;
-
+/// The windows whose boundary adds 160 unit partials a row (hc_boundary.metal's tf_hc_expand_collapse).
+pub const hc_unit_rows: u32 = 8;
+pub const hc_unit_row_bytes: usize = 160 * 25 * 4;
 pub const Plan = struct {
     rows: u32,
     lanes: u32,
@@ -80,12 +83,12 @@ pub const Plan = struct {
         const fused_scratch = if (fused_group) |g| @max(try exl3.scratchBytes(5120, 2304, g.padded), try exl3.scratchBytes(2304, 5120, g.padded)) else 0;
         const projection_bytes = @max(dense_scratch, @max(grouped_scratch, fused_scratch));
         const sizes = [_]usize{
-            t * 4,                  hash.raw_vocab * 4, @as(usize, lanes) * 16,          t * 20480 * 2,                       t * 5120 * 2, t * 5120 * 2, t * 5120 * 2,
-            t * 4 * 4,              t * 4 * 4,          t * 4 * 4,                       t * 16 * 4,                          t * 24 * 4,   t * 4,        t * 24 * 4,
-            t * 24 * 4,             t * 6144 * 2,       t * 25600 * 2,                   t * 384 * 4,                         t * 7 * 4,    t * 6 * 4,    t * 6 * 2304 * 2,
-            t * 6 * 2304 * 2,       t * 6 * 2304 * 2,   t * 7 * 5120 * 2,                t * 2304 * 2,                        t * 2304 * 2, t * 2304 * 2, t * 5120 * 2,
-            head_rows * 129280 * 4, projection_bytes,   if (grouped) |g| g.bytes else 0, if (fused_group) |g| g.bytes else 0, t * 12 * 4,   t * 12 * 4,   t * 20480 * 2,
-            t * 2000,
+            t * 4,                                                                    hash.raw_vocab * 4, @as(usize, lanes) * 16,          t * 20480 * 2,                       t * 5120 * 2, t * 5120 * 2, t * 5120 * 2,
+            t * 4 * 4,                                                                t * 4 * 4,          t * 4 * 4,                       t * 16 * 4,                          t * 24 * 4,   t * 4,        t * 24 * 4,
+            t * 24 * 4,                                                               t * 6144 * 2,       t * 25600 * 2,                   t * 384 * 4,                         t * 7 * 4,    t * 6 * 4,    t * 6 * 2304 * 2,
+            t * 6 * 2304 * 2,                                                         t * 6 * 2304 * 2,   t * 7 * 5120 * 2,                t * 2304 * 2,                        t * 2304 * 2, t * 2304 * 2, t * 5120 * 2,
+            head_rows * 129280 * 4,                                                   projection_bytes,   if (grouped) |g| g.bytes else 0, if (fused_group) |g| g.bytes else 0, t * 12 * 4,   t * 12 * 4,   t * 20480 * 2,
+            @max(t * 2000, @as(usize, @min(rows, hc_unit_rows)) * hc_unit_row_bytes),
         };
         var out = Plan{ .rows = rows, .lanes = lanes, .offsets = undefined, .bytes = 0 };
         for (sizes, 0..) |size, i| {

@@ -3,6 +3,7 @@ const std = @import("std");
 const mtl = @import("metal");
 const sources = @import("kernel_sources");
 pub const View = @import("view.zig").View;
+const workspace = @import("workspace.zig");
 pub const Pipelines = struct {
     rms: mtl.Pipeline,
     split: mtl.Pipeline,
@@ -62,6 +63,9 @@ pub const BoundaryPipelines = struct {
     mix_part: mtl.Pipeline,
     boundary: mtl.Pipeline,
     plain: mtl.Pipeline,
+    /// The decode-sized pair: expand with collapse and unit partials, then the norm beside the split.
+    expand_collapse: mtl.Pipeline,
+    boundary_rows: mtl.Pipeline,
     /// The launch-overhead probe (a dependent, work-free dispatch).
     probe: mtl.Pipeline,
     /// The INDEPENDENT form of the same probe.
@@ -81,6 +85,11 @@ pub const BoundaryPipelines = struct {
         const boundary = try mtl.Pipeline.init(device, lib, "tf_hc_boundary_mix", false);
         errdefer boundary.deinit();
         const plain = try mtl.Pipeline.init(device, lib, "tf_hc_boundary_plain", false);
+        errdefer plain.deinit();
+        const expand_collapse = try mtl.Pipeline.init(device, lib, "tf_hc_expand_collapse", false);
+        errdefer expand_collapse.deinit();
+        const boundary_rows = try mtl.Pipeline.init(device, lib, "tf_hc_boundary_rows", false);
+        errdefer boundary_rows.deinit();
         const probe = try mtl.Pipeline.init(device, lib, "tf_hc_probe", false);
         const probe_indep = try mtl.Pipeline.init(device, lib, "tf_hc_probe_indep", false);
         var sinks: [64]mtl.Buffer = undefined;
@@ -93,6 +102,8 @@ pub const BoundaryPipelines = struct {
             .mix_part = mix_part,
             .boundary = boundary,
             .plain = plain,
+            .expand_collapse = expand_collapse,
+            .boundary_rows = boundary_rows,
             .probe = probe,
             .probe_indep = probe_indep,
             .probe_sinks = sinks,
@@ -103,6 +114,8 @@ pub const BoundaryPipelines = struct {
         p.mix_part.deinit();
         p.boundary.deinit();
         p.plain.deinit();
+        p.expand_collapse.deinit();
+        p.boundary_rows.deinit();
         p.probe.deinit();
         p.probe_indep.deinit();
         for (p.probe_sinks) |b| b.deinit();
@@ -114,6 +127,7 @@ pub const boundary_slices: u32 = 20;
 pub const Boundary = struct { rows: u32, expand: bool, mixes: bool = true, eps: f32, hc_eps: f32, iters: u32 };
 /// One boundary: expand the pending branch into `x_new` (or the mixes of `x_old` alone).
 pub fn encodeBoundary(e: mtl.ComputeEncoder, p: *const BoundaryPipelines, d: Boundary, v: anytype) void {
+    if (d.expand and d.mixes and d.rows <= workspace.hc_unit_rows and !debugKnobs()) return encodeBoundaryRows(e, p, d, v);
     const expand_passes: u32 = if (std.c.getenv("TF_DSV41_DOUBLE_HC_EXPAND") != null) 2 else 1;
     for (0..expand_passes) |_| {
         if (d.expand) {
@@ -156,6 +170,32 @@ pub fn encodeBoundary(e: mtl.ComputeEncoder, p: *const BoundaryPipelines, d: Bou
     e.barrier();
 }
 pub const BoundaryArgs = extern struct { eps: f32, hc_eps: f32, iters: i32 };
+
+/// The decode-sized boundary: expand + collapse + unit partials, then the norm beside the split. The collapse lands in
+/// `normed` and the second launch norms it in place; the partials are `workspace.hc_unit_row_bytes` a row.
+fn encodeBoundaryRows(e: mtl.ComputeEncoder, p: *const BoundaryPipelines, d: Boundary, v: anytype) void {
+    e.setPipeline(p.expand_collapse);
+    inline for (.{ v.x_old, v.branch, v.post, v.comb, v.fn_, v.part, v.x_new, v.pre_in, v.normed }, 0..) |r, i| e.setBuffer(r.buffer, r.offset, i);
+    e.dispatchGroups(.{ .width = boundary_width / 128, .height = d.rows }, .{ .width = 128 });
+    e.barrier();
+    e.setPipeline(p.boundary_rows);
+    inline for (.{ v.normed, v.part, v.base, v.scale }, 0..) |r, i| e.setBuffer(r.buffer, r.offset, i);
+    e.setBuffer(v.norm.buffer, v.norm.offset, 4);
+    e.setValue(BoundaryArgs{ .eps = d.eps, .hc_eps = d.hc_eps, .iters = @intCast(d.iters) }, 5);
+    inline for (.{ v.pre_out, v.post_out, v.comb_out }, 6..) |r, i| e.setBuffer(r.buffer, r.offset, i);
+    e.setValue(d.rows, 9);
+    e.dispatchGroups(.{ .width = 2 * d.rows }, .{ .width = 1024 });
+    e.barrier();
+}
+
+/// The diagnostics that act on the original two launches (a skipped or repeated pass, the launch-overhead probe).
+var debug_knobs_cache: ?bool = null;
+fn debugKnobs() bool {
+    if (debug_knobs_cache == null) debug_knobs_cache = std.c.getenv("TF_DSV41_DOUBLE_HC_EXPAND") != null or
+        std.c.getenv("TF_DSV41_DOUBLE_HC_SPLIT") != null or std.c.getenv("TF_DSV41_SKIP_HC_EXPAND") != null or
+        std.c.getenv("TF_DSV41_SKIP_HC_SPLIT") != null or probeDispatches() != null;
+    return debug_knobs_cache.?;
+}
 
 /// The probe's dispatch count (zero = off) and its threadgroup size.
 var probe_count: ?u32 = null;

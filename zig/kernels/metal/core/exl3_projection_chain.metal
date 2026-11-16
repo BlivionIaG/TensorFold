@@ -53,7 +53,7 @@ kernel void tf_exl3_rotate_out_in(const device float* sums [[buffer(0)]],
     reinterpret_cast<device bfloat*>(y)[ulong(dest) * a.y_stride + n] = stored;
     v[j] = tf_exl3_chain_bf(as_type<ushort>(stored));
   }
-  tf_exl3_chain_rotate_in(v, lane, su_next, next.su_signs, uint(first % next.k) + lane, rotated, first + lane);
+  tf_exl3_chain_rotate_in(v, lane, su_next, next.su_signs, (uint(first) % next.k) + lane, rotated, first + lane);
 }
 
 struct TfExl3RmsRot {
@@ -142,6 +142,8 @@ kernel void tf_exl3_rotate_out_rope(const device float* sums [[buffer(0)]],
   for (uint j = 0; j < 4; ++j) v[j] = sums[ulong(row) * a.n + base + lane + 32 * j];
   tf_exl3_hadamard(v, lane);
   const uint dest = a.output_ids ? output_ids[row] : row;
+  // The head width is a multiple of 128, so a block never straddles a head: one modulo a SIMDgroup.
+  const uint head_base = base % rp.width;
   for (uint j = 0; j < 4; ++j) {
     const uint n = base + lane + 32 * j;
     float out = (v[j] * 0.08838834764831845f) * tf_exl3_scale(scales, n, signs);
@@ -149,7 +151,7 @@ kernel void tf_exl3_rotate_out_rope(const device float* sums [[buffer(0)]],
     ushort bits = as_type<ushort>(bfloat(out));
     // The pair's other element, fetched by every lane (the rotary columns are SIMDgroup uniform).
     const float other = tf_exl3_chain_bf(ushort(simd_shuffle_xor(uint(bits), 1)));
-    const uint d = n % rp.width;
+    const uint d = head_base + lane + 32 * j;
     if (d >= rp.width - rp.rotary) {
       const float2 rotation = factors[(ulong(rp.position) + ulong(dest) * rp.step) * (rp.rotary / 2) + (d - (rp.width - rp.rotary)) / 2];
       const float c = rotation.x, s = rp.inverse ? -rotation.y : rotation.y;
@@ -190,15 +192,19 @@ kernel void tf_exl3_rope_rotate_in(device ushort* x [[buffer(0)]],
   if (base >= a.k) return;
   float v[4];
   ushort bits[4];
+  // x_stride, the head stride and the head width are multiples of 128 (the host checks), so a block sits inside one
+  // head of one row: the division and the modulo run once a SIMDgroup.
+  const ulong at0 = ulong(source) * a.x_stride + base;
+  const ulong z = at0 / rp.stride;
+  const uint head_base = uint(at0 % rp.stride) % rp.width;
   for (uint j = 0; j < 4; ++j) {
     const uint k = base + lane + 32 * j;
-    const ulong at = ulong(source) * a.x_stride + k;
+    const ulong at = at0 + lane + 32 * j;
     bits[j] = x[at];
     // The pair's other element, fetched by every lane (the rotary columns are SIMDgroup uniform).
     const float other = tf_exl3_chain_bf(ushort(simd_shuffle_xor(uint(bits[j]), 1)));
-    const uint d = uint(at % rp.stride) % rp.width;
+    const uint d = head_base + lane + 32 * j;
     if (d >= rp.width - rp.rotary) {
-      const ulong z = at / rp.stride;
       const float2 rotation = factors[(ulong(rp.position) + z * rp.step) * (rp.rotary / 2) + (d - (rp.width - rp.rotary)) / 2];
       const float c = rotation.x, s = rp.inverse ? -rotation.y : rotation.y;
       const float own = tf_exl3_chain_bf(bits[j]);

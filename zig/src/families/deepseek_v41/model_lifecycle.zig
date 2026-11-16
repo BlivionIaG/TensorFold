@@ -152,6 +152,8 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     const ring_stash = try device.buffer(ring_stash_bytes, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
     errdefer ring_stash.deinit();
     @memset(ring_stash.contents()[0..ring_stash_bytes], 0);
+    const warm_scratch = try device.buffer(64, mtl.ResourceOptions.shared);
+    errdefer warm_scratch.deinit();
     for (caches) |*state| {
         state.* = try kv.cache.State.init(device, kp);
         errdefer state.deinit();
@@ -208,11 +210,12 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     aw.registerResidency(residency);
     if (stream_stage) |buf| residency.add(buf);
     residency.add(ring_stash);
+    residency.add(warm_scratch);
     pipelines.attention.registerResidency(residency);
     residency.commit();
     residency.requestResidency();
     queue.addResidencySet(residency);
-    return .{ .gpa = gpa, .io = io, .device = device, .queue = queue, .residency = residency, .checkpoint = cp, .weights = bound, .mtp_enabled = mtp_enabled, .cfg = c, .cfg_arena = arena, .lanes = lanes, .caches = caches, .cache = &caches[0], .engram_stash = engram_stash, .partial_stash = partial_stash, .ring_stash = ring_stash, .snap_ring = snap_ring, .taps_stash = taps_stash, .stream = stream_rows, .stream_stage = stream_stage, .workspace = workspace, .attention_workspace = aw, .taps = taps, .cond = cond, .cond_wkv = cond_wkv, .mtp_logits = mtp_logits, .pipelines = pipelines, .admitted_bytes = needed, .load_seconds = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .awake).toNanoseconds() - load_started.toNanoseconds())) / 1e9 };
+    return .{ .gpa = gpa, .io = io, .device = device, .queue = queue, .residency = residency, .warm_scratch = warm_scratch, .checkpoint = cp, .weights = bound, .mtp_enabled = mtp_enabled, .cfg = c, .cfg_arena = arena, .lanes = lanes, .caches = caches, .cache = &caches[0], .engram_stash = engram_stash, .partial_stash = partial_stash, .ring_stash = ring_stash, .snap_ring = snap_ring, .taps_stash = taps_stash, .stream = stream_rows, .stream_stage = stream_stage, .workspace = workspace, .attention_workspace = aw, .taps = taps, .cond = cond, .cond_wkv = cond_wkv, .mtp_logits = mtp_logits, .pipelines = pipelines, .admitted_bytes = needed, .load_seconds = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .awake).toNanoseconds() - load_started.toNanoseconds())) / 1e9 };
 }
 pub fn deinit(m: *Model) void {
     forward_cone.release(m);
@@ -235,6 +238,7 @@ pub fn deinit(m: *Model) void {
     m.gpa.free(m.engram_stash);
     m.gpa.free(m.partial_stash);
     m.ring_stash.deinit();
+    m.warm_scratch.deinit();
     m.snap_ring.deinit();
     m.taps_stash.deinit();
     m.taps.deinit();

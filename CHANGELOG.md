@@ -326,6 +326,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
   GPU profiling starts deferred mHC spans only when work is encoded, avoiding empty counter samples.
   Last-row logits expand the selected final stream row rather than row zero of a multi-row window.
   Fused mHC Sinkhorn uses the unfused split's FP32 row and column reduction order.
+  Decode windows of eight rows or fewer run the mHC boundary as an expand-and-collapse launch plus a norm-and-split launch with the same bits, the Sinkhorn stopping once its state repeats, and the host Engram hash for a step overlaps the GPU's first layer.
   Stacked on #2373; whole-model qualification is still incomplete.
   See [scope and qualification limits](docs/deepseek-v41.md#exl3-optimization-follow-up)
   and [full-window fidelity](docs/receipts/dsv41-exl3-metal/fidelity-128.json).

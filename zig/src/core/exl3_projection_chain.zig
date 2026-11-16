@@ -80,7 +80,7 @@ pub fn encodeIndexed(p: *const Pipelines, e: mtl.ComputeEncoder, experts: Expert
     if (f.rope_in) |rin| {
         const kernel = p.chain.rope_rotate_in orelse return error.UnsupportedExl3Chain;
         if (r.prerotated or r.grouped or rin.width % 128 != 0 or rin.rotary == 0 or rin.rotary % 32 != 0 or rin.rotary > 128 or
-            rin.stride % rin.width != 0 or experts.k % 128 != 0) return error.InvalidExl3Chain;
+            rin.stride % rin.width != 0 or experts.k % 128 != 0 or a.x_stride % 128 != 0) return error.InvalidExl3Chain;
         e.setPipeline(kernel);
         bind(e, x, 0);
         bind(e, scratch, 1);

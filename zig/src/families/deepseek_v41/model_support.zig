@@ -291,10 +291,13 @@ pub const Pipelines = struct {
 };
 
 pub var taps_on: ?bool = null;
-/// TF_DSV41_TAPS: capture the drafter's three hidden-state taps (the draft forward reads them; nothing else does).
+/// The drafter's three hidden-state taps are captured whenever the trained drafter runs (TF_DSV41_MTP_DRAFTS) or
+/// TF_DSV41_TAPS asks for them: the draft forward reads them and nothing else does. Without them it conditions on
+/// stale rows and almost never matches the target, so the drafter's switch cannot be left without its inputs.
 pub fn tapsOn() bool {
     if (taps_on) |v| return v;
-    taps_on = std.c.getenv("TF_DSV41_TAPS") != null;
+    const mtp = @import("sys").environment.read(bool, "TF_DSV41_MTP_DRAFTS", false) catch false;
+    taps_on = mtp or std.c.getenv("TF_DSV41_TAPS") != null;
     return taps_on.?;
 }
 

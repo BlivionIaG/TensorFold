@@ -333,3 +333,45 @@ test "the fused SwiGLU + down rotate writes the two-pass rotated rows bit for bi
     const fused_rows = fused.slice(u16, count * n);
     for (0..count) |r| try std.testing.expectEqualSlices(u16, plain_rows[inverse[r] * n ..][0..n], fused_rows[r * n ..][0..n]);
 }
+
+test "row-tiled dense windows of 9 to 31 rows reproduce the eight-row bodies bit for bit" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
+    defer p.deinit();
+    if (p.matmul_rows == null) return error.RowTiledUnavailable;
+    var legacy = p;
+    legacy.matmul_rows = null;
+    const queue = try device.queue();
+    defer queue.deinit();
+    // Whole-bit and half-bit widths, every codebook; below 32 rows the plain body, from 32 the shared body that stays.
+    for ([_]u16{ 2, 3, 4, 5, 6, 8, 10, 12, 14, 16 }) |halves| for ([_]ex.format.Codebook{ .mul1, .mcg, .inst3 }) |book| for ([_]usize{ 9, 10, 15, 16, 17, 25, 30, 31, 32, 63 }) |count| {
+        if (halves % 2 == 1 and book != .mul1) continue;
+        const w = try Owned.init(device, halves, book, @as(u64, 0x726f7773) + halves);
+        defer w.deinit();
+        const x = try input(device, count);
+        defer x.deinit();
+        const scratch_bytes = @max(try ex.scratchBytes(k, n, count), try ex.scratchBytes(k, n, 64));
+        const scratch = try device.buffer(scratch_bytes + 32, mtl.ResourceOptions.shared);
+        defer scratch.deinit();
+        for ([_]ex.Output{ .bf16, .f32 }) |kind| {
+            const size: usize = if (kind == .bf16) 2 else 4;
+            const bytes = count * (n + 8) * size;
+            const actual = try device.buffer(bytes + 64, mtl.ResourceOptions.shared);
+            defer actual.deinit();
+            const original = try device.buffer(bytes + 64, mtl.ResourceOptions.shared);
+            defer original.deinit();
+            @memset(actual.slice(u8, bytes + 64), 0xa5);
+            @memset(original.slice(u8, bytes + 64), 0xa5);
+            @memset(scratch.slice(u8, scratch_bytes + 32), 0xcd);
+            const r: ex.Rows = .{ .count = count, .x_stride = k + 16, .y_stride = n + 8, .output = kind };
+            const cb = queue.commandBuffer();
+            const e = cb.compute(.concurrent);
+            try ex.encode(&p, e, w.matrix, .{ .buffer = x, .offset = 32 }, .{ .buffer = actual, .offset = 32 }, .{ .buffer = scratch, .offset = 16 }, r);
+            e.barrier();
+            try ex.encode(&legacy, e, w.matrix, .{ .buffer = x, .offset = 32 }, .{ .buffer = original, .offset = 32 }, .{ .buffer = scratch, .offset = 16 }, r);
+            try complete(cb, e);
+            try std.testing.expectEqualSlices(u8, original.slice(u8, bytes + 64), actual.slice(u8, bytes + 64));
+        }
+    };
+}
