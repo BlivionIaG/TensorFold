@@ -9,8 +9,11 @@ pub const kv = @import("kv.zig");
 pub const rope = @import("rope.zig");
 /// One section of the dense KV pre-pass: a packed source, its stride, and where its rows land.
 pub const DenseKv = extern struct { rows: u32, width: u32, stride: u32, first_row: u32, source: u32 };
+/// One pass over the ring, the chunk rows and the compressed rows (or the picks) of a layer's dense key table.
+pub const DenseKvAll = extern struct { ring_rows: u32, chunk_rows: u32, comp_rows: u32, width: u32, ring_stride: u32, chunk_stride: u32, main_stride: u32, window: u32, comp_first: u32, picked: u32 };
 comptime {
     @import("metal/index_mirror.zig").check(DenseKv, sources.deepseek_v41_csa2_nax, "DenseKv");
+    @import("metal/index_mirror.zig").check(DenseKvAll, sources.deepseek_v41_csa2_nax, "DenseKvAll");
 }
 
 pub const Params = extern struct {
@@ -95,11 +98,10 @@ pub const Pipelines = struct {
     tensor_units: bool,
     nax_min_rows: u32,
 
-    dense_kv: mtl.Pipeline = undefined,
     /// The batched decode window's pair (null where the tensor-unit scan is not the compiled path).
     dense_rows: ?mtl.Pipeline = null,
     nax_rows: ?mtl.Pipeline = null,
-    dense_picked: mtl.Pipeline = undefined,
+    dense_all: mtl.Pipeline = undefined,
     merge: mtl.Pipeline = undefined,
     /// The merge with one accumulator chunk a threadgroup (four times the grid).
     merge_split: mtl.Pipeline = undefined,
@@ -119,10 +121,8 @@ pub const Pipelines = struct {
         if (std.c.getenv("TF_DSV41_NAX_MIN_ROWS")) |v| min_rows = std.fmt.parseInt(u32, std.mem.span(v), 10) catch 1;
         const attention = try mtl.Pipeline.init(device, lib, "dsv41_sparse_attention", false);
         errdefer attention.deinit();
-        const dense_kv = try mtl.Pipeline.init(device, lib, "dsv41_dense_kv", false);
-        errdefer dense_kv.deinit();
-        const dense_picked = try mtl.Pipeline.init(device, lib, "dsv41_dense_kv_picked", false);
-        errdefer dense_picked.deinit();
+        const dense_all = try mtl.Pipeline.init(device, lib, "dsv41_dense_kv_all", false);
+        errdefer dense_all.deinit();
         const merge = try mtl.Pipeline.init(device, lib, "dsv41_sparse_merge", false);
         const merge_split = try mtl.Pipeline.init(device, lib, "dsv41_sparse_merge_split", false);
         errdefer merge.deinit();
@@ -134,8 +134,7 @@ pub const Pipelines = struct {
             .attention = attention,
             .nax = nax,
             .tensor_units = device.tensorUnits(),
-            .dense_kv = dense_kv,
-            .dense_picked = dense_picked,
+            .dense_all = dense_all,
             .dense_rows = dense_rows,
             .nax_rows = nax_rows,
             .merge = merge,
@@ -146,10 +145,9 @@ pub const Pipelines = struct {
     pub fn deinit(p: *Pipelines) void {
         p.attention.deinit();
         p.nax.deinit();
-        p.dense_kv.deinit();
         if (p.dense_rows) |x| x.deinit();
         if (p.nax_rows) |x| x.deinit();
-        p.dense_picked.deinit();
+        p.dense_all.deinit();
         p.merge.deinit();
         p.merge_split.deinit();
     }
@@ -168,34 +166,35 @@ pub const Pipelines = struct {
         // Prompt chunks go through the tensor-unit kernel: its fragment layout wants width 512 and 16-head groups.
         const use_nax = p.tensor_units and args.width == 512 and args.heads % 16 == 0 and args.rows >= p.nax_min_rows;
         if (use_nax) {
-            // Decode every visible key once: the window ring, this chunk, then the compressed picks.
-            const sections = [_]struct { src: View, rows: u32, stride: u32, first: u32, source: u32 }{
-                .{ .src = ring, .rows = @min(args.position, args.window), .stride = args.ring_stride, .first = 0, .source = 0 },
-                .{ .src = chunk, .rows = args.rows, .stride = args.chunk_stride, .first = args.window, .source = 0 },
-                .{ .src = compressed, .rows = args.compressed_rows, .stride = args.main_stride, .first = args.window + args.chunk_rows, .source = 1 },
-            };
-            enc.setPipeline(p.dense_kv);
+            // Decode every visible key once: the window ring, this chunk, then the compressed picks, in one dispatch.
             const repeats: u32 = if (std.c.getenv("TF_DSV41_DOUBLE_DENSEKV") != null) 2 else 1;
             if (std.c.getenv("TF_DSV41_SKIP_DENSEKV") == null) {
+                // A one-row window reads only its picks, so the compressed section decodes those and no more.
+                const picked = args.rows == 1 and args.ratio != 0 and args.topk != 0 and args.compressed_rows > args.topk;
+                const ring_rows = @min(args.position, args.window);
+                const comp_rows: u32 = if (picked) @min(args.topk, args.compressed_rows) else args.compressed_rows;
+                const total = ring_rows + args.rows + comp_rows;
+                const call: DenseKvAll = .{
+                    .ring_rows = ring_rows,
+                    .chunk_rows = args.rows,
+                    .comp_rows = comp_rows,
+                    .width = args.width,
+                    .ring_stride = args.ring_stride,
+                    .chunk_stride = args.chunk_stride,
+                    .main_stride = args.main_stride,
+                    .window = args.window,
+                    .comp_first = args.window + args.chunk_rows,
+                    .picked = @intFromBool(picked),
+                };
                 for (0..repeats) |_| {
-                    // A one-row window reads only its picks, so the compressed section decodes those and no more.
-                    const picked = args.rows == 1 and args.ratio != 0 and args.topk != 0 and args.compressed_rows > args.topk;
-                    for (sections) |sec| {
-                        if (sec.source == 1 and picked) {
-                            enc.setPipeline(p.dense_picked);
-                            enc.setBuffer(sec.src.buffer, sec.src.offset, 0);
-                            enc.setBuffer(dense.buffer, dense.offset, 1);
-                            enc.setValue(DenseKv{ .rows = @min(args.topk, args.compressed_rows), .width = args.width, .stride = sec.stride, .first_row = sec.first, .source = 1 }, 2);
-                            enc.setBuffer(positions.buffer, positions.offset, 3);
-                            enc.dispatchThreads(mtl.Size.of(@min(args.topk, args.compressed_rows), args.width / 4, 1), mtl.Size.of(32, 4, 1));
-                            continue;
-                        }
-                        if (sec.rows == 0) continue;
-                        enc.setBuffer(sec.src.buffer, sec.src.offset, 0);
-                        enc.setBuffer(dense.buffer, dense.offset, 1);
-                        enc.setValue(DenseKv{ .rows = sec.rows, .width = args.width, .stride = sec.stride, .first_row = sec.first, .source = sec.source }, 2);
-                        enc.dispatchThreads(mtl.Size.of(sec.rows, args.width / 4, 1), mtl.Size.of(32, 4, 1));
-                    }
+                    enc.setPipeline(p.dense_all);
+                    enc.setBuffer(ring.buffer, ring.offset, 0);
+                    enc.setBuffer(chunk.buffer, chunk.offset, 1);
+                    enc.setBuffer(compressed.buffer, compressed.offset, 2);
+                    enc.setBuffer(dense.buffer, dense.offset, 3);
+                    enc.setValue(call, 4);
+                    enc.setBuffer(positions.buffer, positions.offset, 5);
+                    enc.dispatchThreads(mtl.Size.of(total, args.width / 4, 1), mtl.Size.of(32, 4, 1));
                 }
             }
             if (std.c.getenv("TF_DSV41_SKIP_SPARSE") != null) return;
