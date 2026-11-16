@@ -109,29 +109,15 @@ kernel void tf_exl3_down_combine(const device float* sums [[buffer(0)]],
                                 uint lane [[thread_index_in_simdgroup]],
                                 uint sg [[simdgroup_index_in_threadgroup]],
                                 uint3 tg [[threadgroup_position_in_grid]]) {
-  threadgroup uint slots[8];
-  threadgroup uint invalid;
   threadgroup float values[8][128];
   const uint token = tg.y, base = tg.x * 128u;
+  if (base >= d.width || token >= d.rows) return;
   const ulong id_row = ulong(token) * d.picks;
   // The picks in ascending expert id, ties by slot, as the combine orders them; any id past 383 poisons the row.
-  if (sg == 0u && lane == 0u) {
-    invalid = 0u;
-    for (uint a = 0; a < d.picks; a++) slots[a] = a;
-    for (uint a = 1; a < d.picks; a++) {
-      const uint slot = slots[a];
-      uint j = a;
-      while (j > 0 && ids[id_row + slots[j - 1]] > ids[id_row + slot]) {
-        slots[j] = slots[j - 1];
-        j--;
-      }
-      slots[j] = slot;
-    }
-    for (uint a = 0; a < d.picks; a++) if (ids[id_row + a] >= 384u) invalid = 1u;
-  }
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-  if (base >= d.width || token >= d.rows) return;
-  if (invalid != 0u) {
+  // Every simdgroup ranks the picks from one parallel load, so no serial id walk and no barrier precede the sums.
+  const bool pick_lane = lane < d.picks;
+  const uint my_id = pick_lane ? ids[id_row + lane] : 0u;
+  if (simd_any(pick_lane && my_id >= 384u)) {
     if (sg == 0u)
       for (uint j = 0; j < 4; ++j) y[ulong(token) * d.y_stride + base + lane + 32u * j] = tf_exl3_round_bf16(NAN);
     return;
@@ -139,9 +125,14 @@ kernel void tf_exl3_down_combine(const device float* sums [[buffer(0)]],
   // Simdgroup r finishes the r-th pick in id order, simdgroup `picks` the shared expert's row.
   if (sg <= d.picks) {
     const bool shared = sg == d.picks;
-    const uint slot = shared ? 0u : slots[sg];
+    uint rank = 0u;
+    for (uint b = 0; b < d.picks; ++b) {
+      const uint other = simd_shuffle(my_id, ushort(b));
+      rank += (other < my_id || (other == my_id && b < lane)) ? 1u : 0u;
+    }
+    const uint slot = shared ? 0u : uint(ctz(static_cast<ulong>(simd_ballot(pick_lane && rank == sg))));
     const ulong row = shared ? ulong(d.shared_row) + token : id_row + slot;
-    const uint id = shared ? d.experts : ids[id_row + slot];
+    const uint id = shared ? d.experts : simd_shuffle(my_id, ushort(slot));
     float v[4];
     for (uint j = 0; j < 4; ++j) v[j] = sums[row * d.sums_stride + base + lane + 32u * j];
     tf_exl3_hadamard(v, lane);
