@@ -24,6 +24,7 @@ const expert_groups = @import("core").expert_groups;
 const scan_probe = @import("scan_probe.zig");
 const model = @import("model.zig");
 const lookahead = @import("model_lookahead.zig");
+const model_hash = @import("model_hash.zig");
 const Model = model.Model;
 const View = model.View;
 const Logits = model.Logits;
@@ -44,6 +45,16 @@ pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     if (!m.valid) return error.InvalidModelState;
     if (try forward_cone.route(m, segs, logits)) |out| return out;
     return forwardCore(m, segs, logits);
+}
+
+/// The host pass of one forward's Engram rows: the n-gram ids and their staged table rows.
+fn hashRows(m: *Model, segs: []const Seg, slot: u32, rows: u32) !void {
+    const hash_start: u64 = if (m.host_prof) nowNs() else 0;
+    m.host_stage_ns = 0;
+    m.host_stage_misses = 0;
+    m.host_stage_faults = 0;
+    if (segs.len == 1) try m.hashPass(slot, rows) else try m.hashPassSegs(segs, rows);
+    if (m.host_prof) m.host_hash_ns = nowNs() - hash_start;
 }
 
 /// The forward itself; `m.cone.phase` makes it the cone's encoder half (stops at the decoder) or decoder half (replay).
@@ -115,20 +126,22 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         scan_probe.reset();
     }
     m.look_slot = slot;
-    if (m.stream != null and cone_phase != .decoder and std.c.getenv("TF_DSV41_SKIP_ENGRAM") == null) {
-        const hash_start: u64 = if (m.host_prof) nowNs() else 0;
-        m.host_stage_ns = 0;
-        m.host_stage_misses = 0;
-        m.host_stage_faults = 0;
-        if (segs.len == 1) try m.hashPass(slot, rows) else try m.hashPassSegs(segs, rows);
-        if (m.host_prof) m.host_hash_ns = nowNs() - hash_start;
+    // A few rows hash and stage their Engram rows on the host (about half a millisecond a token), which the first
+    // Engram layer reads. The layers before it are committed first so the GPU runs them during that pass.
+    const hash_overlap = m.stream != null and cone_phase == .off and rows <= model_hash.cpuHashRows() and
+        engram.hash.layers[0].layer_id > 0 and std.c.getenv("TF_DSV41_SKIP_ENGRAM") == null and
+        std.c.getenv("TF_DSV41_LAYER_CB") == null and std.c.getenv("TF_DSV41_STAGE_CB") == null and
+        std.c.getenv("TF_DSV41_ATTN_PROF") == null and m.profile == null and m.observer == null;
+    const hash_layer: usize = engram.hash.layers[0].layer_id;
+    if (m.stream != null and cone_phase != .decoder and !hash_overlap and std.c.getenv("TF_DSV41_SKIP_ENGRAM") == null) {
+        try hashRows(m, segs, slot, rows);
     }
     const host_enc_start: u64 = nowNs();
     const dispatches_before = mtl.command.dispatch_count.load(.monotonic);
     // TF_DSV41_LAYER_CB: one command buffer a layer, with the GPU's own seconds for each.
     const layer_cb = std.c.getenv("TF_DSV41_LAYER_CB") != null;
     // THE PIPELINED FORWARD: commit the first n layers before waiting, so the GPU runs while the host encodes.
-    const pipe_layers: u32 = if (rows <= 8 and m.profile == null and m.observer == null and
+    const pipe_layers: u32 = if (!hash_overlap and rows <= 8 and m.profile == null and m.observer == null and
         std.c.getenv("TF_DSV41_LAYER_CB") == null and std.c.getenv("TF_DSV41_STAGE_CB") == null and
         std.c.getenv("TF_DSV41_ATTN_PROF") == null)
         (if (std.c.getenv("TF_DSV41_PIPE_LAYERS")) |v|
@@ -193,6 +206,18 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
             e = m.queue.commandBufferUnretained();
             enc = e.compute(if (concurrentOn()) .concurrent else .serial);
             for (m.checkpoint.shards.items) |shard| enc.useResource(shard.buffer, mtl.ResourceUsage.read);
+        }
+        if (hash_overlap and (index == hash_layer or index == hash_layer + 2)) {
+            // The first commit is the layers before the Engram layer; the second the Engram layer and the next, so the
+            // GPU is never waiting for the rest of the encode.
+            enc.end();
+            e.commit();
+            engram_prev[engram_prev_n] = e;
+            engram_prev_n += 1;
+            e = m.queue.commandBufferUnretained();
+            enc = e.compute(if (concurrentOn()) .concurrent else .serial);
+            for (m.checkpoint.shards.items) |shard| enc.useResource(shard.buffer, mtl.ResourceUsage.read);
+            if (index == hash_layer) try hashRows(m, segs, slot, rows);
         }
         // THE ENGRAM GATE READS THE EXPANDED STREAM: flush the pending expand before the gate sees post-branch hidden.
         if (layer.engram != null and m.pending_expand and
