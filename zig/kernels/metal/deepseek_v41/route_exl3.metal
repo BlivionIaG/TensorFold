@@ -12,8 +12,7 @@ kernel void dsv41_route(const device float* logits [[buffer(0)]], const device u
                         uint row [[threadgroup_position_in_grid]],
                         uint t [[thread_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],
                         uint sg [[simdgroup_index_in_threadgroup]]) {
-  threadgroup float scores[384], select[384], best[4], picked[6];
-  threadgroup uint best_id[4], winner;
+  threadgroup float scores[384], select[384];
   for (uint e=t;e<d.experts;e+=128) {
     float b;
     if (d.bias_dtype==1) b=((const device float*)bias)[e];
@@ -25,53 +24,56 @@ kernel void dsv41_route(const device float* logits [[buffer(0)]], const device u
     select[e]=scores[e]+b;
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
-  // Every expert participates in every rank selection; ties use the lower expert id deterministically.
+  // The first simdgroup ranks all the experts from registers: lane l owns experts l, l+32, ... so every rank
+  // selection is a lane-local scan in ascending id and two simdgroup reductions, with no threadgroup barrier.
+  if (sg!=0) return;
+  float sel[12];
+  for (uint j=0;j<12;++j) {
+    const uint e=lane+32u*j;
+    sel[j]=e<d.experts?select[e]:-INFINITY;
+  }
+  float picked[6];
   for (uint slot=0;slot<d.topk;slot++) {
     float v=-INFINITY;
     uint id=0xffffffffu;
-    // THE SELECTION SCANS THE BLOCK'S OWN EXPERT COUNT, so the drafter's 128 never ranks stale slots past its table.
-    for (uint e=t;e<d.experts;e+=128) if (select[e]>v || (select[e]==v && e<id)) { v=select[e]; id=e; }
-    float mx=simd_max(v);
-    uint ix=simd_min(v==mx?id:0xffffffffu);
-    if (lane==0) { best[sg]=mx; best_id[sg]=ix; }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (sg==0) {
-      float b=lane<4?best[lane]:-INFINITY;
-      float m=simd_max(b);
-      uint q=simd_min(lane<4 && b==m?best_id[lane]:0xffffffffu);
-      if (lane==0) {
-        winner=q;
-        ids[ulong(row)*d.output_stride+slot]=q;
-        // The fused gate+up dispatch: rows 0..6T-1 are every token's gate picks and 6T..12T-1 the same tokens' up.
-        if (d.fused!=0) {
-          fids[ulong(row)*d.output_stride+slot]=q;
-          fids[ulong(d.rows+row)*d.output_stride+slot]=q+d.fused;
-          fsrc[ulong(row)*d.output_stride+slot]=row;
-          fsrc[ulong(d.rows+row)*d.output_stride+slot]=row;
-          // The shared expert's two blocks after the routed twelve picks a token (gate rows then up rows).
-          if (d.moe_up!=0 && row==0 && slot==0) {
-            const uint tail = 2u*d.rows*d.output_stride;
-            for (uint t2=0;t2<d.rows;++t2) {
-              fids[tail+t2]=2u*d.fused;
-              fsrc[tail+t2]=t2;
-              fids[tail+d.rows+t2]=2u*d.fused+1u;
-              fsrc[tail+d.rows+t2]=t2;
-            }
+    for (uint j=0;j<12;++j) {
+      const uint e=lane+32u*j;
+      if (e<d.experts && (sel[j]>v || (sel[j]==v && e<id))) { v=sel[j]; id=e; }
+    }
+    const float mx=simd_max(v);
+    // Ties rank by the lower expert id.
+    const uint q=simd_min(v==mx?id:0xffffffffu);
+    for (uint j=0;j<12;++j) if (lane+32u*j==q) sel[j]=-INFINITY;
+    picked[slot]=q<d.experts?scores[q]:NAN;
+    if (lane==0) {
+      ids[ulong(row)*d.output_stride+slot]=q;
+      // The fused gate+up dispatch: rows 0..6T-1 are every token's gate picks and 6T..12T-1 the same tokens' up.
+      if (d.fused!=0) {
+        fids[ulong(row)*d.output_stride+slot]=q;
+        fids[ulong(d.rows+row)*d.output_stride+slot]=q+d.fused;
+        fsrc[ulong(row)*d.output_stride+slot]=row;
+        fsrc[ulong(d.rows+row)*d.output_stride+slot]=row;
+        // The shared expert's two blocks after the routed twelve picks a token (gate rows then up rows).
+        if (d.moe_up!=0 && row==0 && slot==0) {
+          const uint tail = 2u*d.rows*d.output_stride;
+          for (uint t2=0;t2<d.rows;++t2) {
+            fids[tail+t2]=2u*d.fused;
+            fsrc[tail+t2]=t2;
+            fids[tail+d.rows+t2]=2u*d.fused+1u;
+            fsrc[tail+d.rows+t2]=t2;
           }
         }
-        picked[slot]=q<d.experts?scores[q]:NAN;
       }
     }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (t==0 && winner<d.experts) select[winner]=-INFINITY;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
   }
-  if (t<d.topk) {
+  if (lane<d.topk) {
     // Source CUDA reduces contiguous six-score rows with four lanes, then shuffles by 2 and 1.
     float left, right;
     if (d.topk==6) { left=(picked[0]+picked[4])+picked[2]; right=(picked[1]+picked[5])+picked[3]; }
     else { left=picked[0]; right=(picked[1]+picked[2]); }
     float s=left+right;
-    weights[ulong(row)*d.output_stride+t]=(picked[t]/(s+1e-20f))*1.5f;
+    float mine=picked[0];
+    for (uint k=1;k<6;++k) if (lane==k) mine=picked[k];
+    weights[ulong(row)*d.output_stride+lane]=(mine/(s+1e-20f))*1.5f;
   }
 }
