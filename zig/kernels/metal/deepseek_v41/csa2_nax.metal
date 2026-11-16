@@ -315,17 +315,17 @@ inline bfloat dsv41_dense_at_off(int enc, uint off, device const ushort *dense, 
   }
   if (p.splits > 1) {
     // This split's (max, sum, accumulators) by head group, then split order; a decode window is one row.
-    device float *part = parts + ((((ulong(tg.y) * ulong(p.splits) + ulong(split)) * ulong(p.heads / GROUP) + ulong(tg.x)) * 4 + ulong(s)) * 32 + ulong(lane)) * 68;
-    part[0] = m[0];
-    part[1] = m[1];
-    part[2] = l[0];
-    part[3] = l[1];
+    device float *part = parts + ((((ulong(tg.y) * ulong(p.splits) + ulong(split)) * ulong(p.heads / GROUP) + ulong(tg.x)) * 4 + ulong(s)) * (68 * 32) + ulong(lane));
+    part[(0) * 32] = m[0];
+    part[(1) * 32] = m[1];
+    part[(2) * 32] = l[0];
+    part[(3) * 32] = l[1];
     TF_UNROLL
     for (short c = 0; c < 4; c++)
       TF_UNROLL
       for (short j = 0; j < 2; j++)
         TF_UNROLL
-        for (short e = 0; e < 8; e++) part[4 + c * 16 + j * 8 + e] = acc[c][j][e];
+        for (short e = 0; e < 8; e++) part[(4 + c * 16 + j * 8 + e) * 32] = acc[c][j][e];
     return;
   }
   // The source adds sink mass to the completed online denominator before the division; every store is dsv41_round.
@@ -346,23 +346,53 @@ inline bfloat dsv41_dense_at_off(int enc, uint off, device const ushort *dense, 
   }
 }
 
-// The same pass over only the compressed rows a one-row window actually reads: the picks name the positions.
-kernel void dsv41_dense_kv_picked(const device uchar *src [[buffer(0)]], device ushort *dense [[buffer(1)]],
-                                 constant DenseKv &d [[buffer(2)]], const device int *picks [[buffer(3)]],
-                                 uint2 gid [[thread_position_in_grid]]) {
-  if (gid.x >= d.rows || gid.y * 4 >= d.width) return;
-  const int pos = picks[gid.x];
-  if (pos < 0) return;
-  const device uchar *k = src + ulong(pos) * d.stride;
+// One decode window's dense keys in a single pass: the ring, the chunk rows, then the compressed rows (every row, or the picks).
+struct DenseKvAll { uint ring_rows, chunk_rows, comp_rows, width, ring_stride, chunk_stride, main_stride, window, comp_first, picked; };
+static_assert(sizeof(DenseKvAll) == 40, "DenseKvAll must mirror csa2.zig's DenseKvAll");
+kernel void dsv41_dense_kv_all(const device uchar *ring [[buffer(0)]], const device uchar *chunk [[buffer(1)]],
+                               const device uchar *main [[buffer(2)]], device ushort *dense [[buffer(3)]],
+                               constant DenseKvAll &d [[buffer(4)]], const device int *picks [[buffer(5)]],
+                               uint2 gid [[thread_position_in_grid]]) {
+  if (gid.y * 4 >= d.width) return;
+  const uint row = gid.x;
+  const device uchar *k;
+  uint out_row;
+  bool compressed = false;
+  if (row < d.ring_rows) {
+    k = ring + ulong(row) * d.ring_stride;
+    out_row = row;
+  } else if (row < d.ring_rows + d.chunk_rows) {
+    const uint r = row - d.ring_rows;
+    k = chunk + ulong(r) * d.chunk_stride;
+    out_row = d.window + r;
+  } else {
+    const uint r = row - d.ring_rows - d.chunk_rows;
+    if (r >= d.comp_rows) return;
+    int pos = int(r);
+    if (d.picked != 0) {
+      pos = picks[r];
+      if (pos < 0) return;
+    }
+    k = main + ulong(pos) * d.main_stride;
+    out_row = d.comp_first + uint(pos);
+    compressed = true;
+  }
   const uint dd = gid.y * 4;
-  device ushort *o = dense + ulong(d.first_row + uint(pos)) * d.width + dd;
+  device ushort *o = dense + ulong(out_row) * d.width + dd;
   bfloat4 v;
-  const float s = dsv41_e4(k[d.width / 2 + (dd >> 4)]);
-  const uchar2 c = *(const device uchar2 *)(k + dd / 2);
-  v[0] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[0] & 15) * s)));
-  v[1] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[0] >> 4) * s)));
-  v[2] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[1] & 15) * s)));
-  v[3] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[1] >> 4) * s)));
+  if (!compressed) {
+    const float s = as_type<float>(uint(k[d.width + (dd >> 5)]) << 23);
+    const uchar4 c = *(const device uchar4 *)(k + dd);
+    TF_UNROLL
+    for (short i = 0; i < 4; i++) v[i] = bfloat(dsv41_bf(dsv41_round(dsv41_e4(c[i]) * s)));
+  } else {
+    const float s = dsv41_e4(k[d.width / 2 + (dd >> 4)]);
+    const uchar2 c = *(const device uchar2 *)(k + dd / 2);
+    v[0] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[0] & 15) * s)));
+    v[1] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[0] >> 4) * s)));
+    v[2] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[1] & 15) * s)));
+    v[3] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[1] >> 4) * s)));
+  }
   *(device bfloat4 *)o = v;
 }
 
@@ -378,9 +408,9 @@ kernel void dsv41_dense_kv_picked(const device uchar *src [[buffer(0)]], device 
   const ulong groups = ulong(p.heads / GROUP);
   float m[2] = {-1e30f, -1e30f};
   for (uint sp = 0; sp < p.splits; ++sp) {
-    const device float *part = parts + ((((ulong(row) * p.splits + ulong(sp)) * groups + ulong(tg.x)) * 4 + ulong(s)) * 32 + ulong(lane)) * 68;
-    m[0] = max(m[0], part[0]);
-    m[1] = max(m[1], part[1]);
+    const device float *part = parts + ((((ulong(row) * p.splits + ulong(sp)) * groups + ulong(tg.x)) * 4 + ulong(s)) * (68 * 32) + ulong(lane));
+    m[0] = max(m[0], part[(0) * 32]);
+    m[1] = max(m[1], part[(1) * 32]);
   }
   float l[2] = {0.0f, 0.0f};
   frag<float> acc[2];
@@ -391,17 +421,17 @@ kernel void dsv41_dense_kv_picked(const device uchar *src [[buffer(0)]], device 
     for (short e = 0; e < 8; e++) acc[j][e] = 0.0f;
   }
   for (uint sp = 0; sp < p.splits; ++sp) {
-    const device float *part = parts + ((((ulong(row) * p.splits + ulong(sp)) * groups + ulong(tg.x)) * 4 + ulong(s)) * 32 + ulong(lane)) * 68;
+    const device float *part = parts + ((((ulong(row) * p.splits + ulong(sp)) * groups + ulong(tg.x)) * 4 + ulong(s)) * (68 * 32) + ulong(lane));
     float f[2];
     TF_UNROLL
     for (short h = 0; h < 2; ++h) {
-      f[h] = fast::exp(part[h] - m[h]);
-      l[h] += part[2 + h] * f[h];
+      f[h] = fast::exp(part[(h) * 32] - m[h]);
+      l[h] += part[(2 + h) * 32] * f[h];
     }
     TF_UNROLL
     for (short j = 0; j < 2; j++)
       TF_UNROLL
-      for (short e = 0; e < 8; e++) acc[j][e] += part[4 + c * 16 + j * 8 + e] * f[e >> 2];
+      for (short e = 0; e < 8; e++) acc[j][e] += part[(4 + c * 16 + j * 8 + e) * 32] * f[e >> 2];
   }
   device ushort *obase = out + ulong(row) * p.q_stride + ulong(h0) * RANK + uint(d0);
   TF_UNROLL
@@ -429,9 +459,9 @@ kernel void dsv41_dense_kv_picked(const device uchar *src [[buffer(0)]], device 
   const uint base = lane * 68;
   float m[2] = {-1e30f, -1e30f};
   for (uint sp = 0; sp < p.splits; ++sp) {
-    const device float *part = parts + ((((ulong(row) * p.splits + ulong(sp)) * groups + ulong(tg.x)) * 4 + ulong(s)) * 32 + ulong(lane)) * 68;
-    m[0] = max(m[0], part[0]);
-    m[1] = max(m[1], part[1]);
+    const device float *part = parts + ((((ulong(row) * p.splits + ulong(sp)) * groups + ulong(tg.x)) * 4 + ulong(s)) * (68 * 32) + ulong(lane));
+    m[0] = max(m[0], part[(0) * 32]);
+    m[1] = max(m[1], part[(1) * 32]);
   }
   float l[2] = {0.0f, 0.0f};
   frag<float> acc[4][2];
@@ -444,19 +474,19 @@ kernel void dsv41_dense_kv_picked(const device uchar *src [[buffer(0)]], device 
       for (short e = 0; e < 8; e++) acc[c][j][e] = 0.0f;
     }
   for (uint sp = 0; sp < p.splits; ++sp) {
-    const device float *part = parts + ((((ulong(row) * p.splits + ulong(sp)) * groups + ulong(tg.x)) * 4 + ulong(s)) * 32 + ulong(lane)) * 68;
+    const device float *part = parts + ((((ulong(row) * p.splits + ulong(sp)) * groups + ulong(tg.x)) * 4 + ulong(s)) * (68 * 32) + ulong(lane));
     float f[2];
     TF_UNROLL
     for (short h = 0; h < 2; h++) {
-      f[h] = fast::exp(part[h] - m[h]);
-      l[h] += part[2 + h] * f[h];
+      f[h] = fast::exp(part[(h) * 32] - m[h]);
+      l[h] += part[(2 + h) * 32] * f[h];
     }
     TF_UNROLL
     for (short c = 0; c < 4; c++)
       TF_UNROLL
       for (short j = 0; j < 2; j++)
         TF_UNROLL
-        for (short e = 0; e < 8; e++) acc[c][j][e] += part[4 + c * 16 + j * 8 + e] * f[e >> 2];
+        for (short e = 0; e < 8; e++) acc[c][j][e] += part[(4 + c * 16 + j * 8 + e) * 32] * f[e >> 2];
   }
   device ushort *obase = out + ulong(row) * p.q_stride + ulong(h0) * RANK + uint(d0);
   TF_UNROLL
