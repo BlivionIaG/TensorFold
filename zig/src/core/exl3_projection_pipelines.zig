@@ -24,6 +24,8 @@ pub const Pipelines = struct {
     down_combine: mtl.Pipeline,
     dense: mtl.Pipeline,
     prefill: ?mtl.Pipeline = null,
+    /// Dense windows of 9 to 31 rows: the plain eight-row body's sums with one decode shared by sixteen rows.
+    matmul_rows: ?mtl.Pipeline = null,
     /// The int8 prompt-row body (f32 sums, for a pack that keeps the runtime rotation).
     prefill_fp8: ?mtl.Pipeline = null,
     /// The pre-rotated pack's cast epilogue: f32 sums to the caller's bf16 output, no transform.
@@ -129,6 +131,13 @@ pub const Pipelines = struct {
             if (pf.simdWidth() != 32 or pf.maxThreads() < 128) {
                 pf.deinit();
                 prefill = null;
+            }
+        }
+        var matmul_rows = mtl.Pipeline.init(device, lib, "tf_exl3_matmul_rows", false) catch null;
+        if (matmul_rows) |pf| {
+            if (pf.simdWidth() != 32 or pf.maxThreads() < 128) {
+                pf.deinit();
+                matmul_rows = null;
             }
         }
         var prefill_nax_tiles: [8]?mtl.Pipeline = @splat(null);
@@ -341,6 +350,7 @@ pub const Pipelines = struct {
             .down_combine = dc,
             .dense = dn,
             .prefill = prefill,
+            .matmul_rows = matmul_rows,
             .prefill_fp8 = prefill_fp8,
             .prefill_cast = prefill_cast,
             .reduce = reduce,
@@ -385,6 +395,7 @@ pub const Pipelines = struct {
         if (p.reduce) |pf| pf.deinit();
         if (p.codebook_table) |b| b.deinit();
         if (p.prefill) |pf| pf.deinit();
+        if (p.matmul_rows) |pf| pf.deinit();
         for (p.prefill_nax_tiles) |maybe| if (maybe) |pf| pf.deinit();
         if (p.prefill_nax_skip_pad128) |pf| pf.deinit();
         if (p.prefill_nax_warp32) |pf| pf.deinit();
