@@ -3,7 +3,7 @@
 using namespace metal;
 
 #ifndef TF_CTL
-#define TF_CTL 0 // planted faults: 1 NaN ranks highest, 2 ties go to the higher index, 3 last score dropped, 4 input write
+#define TF_CTL 0 // planted faults: 1 NaN ranks highest, 2 ties to the higher index, 3 last score dropped, 4 input write
 #endif
 #define TF_TG 1024u
 #define TF_K 512u
@@ -62,15 +62,26 @@ inline uint2 tf_topk512_pick(threadgroup atomic_uint* bins, uint k, threadgroup 
   uint threshold = 0u, above = 0u, ties = 0u;
   if (n > TF_K) {
     uint prefix = 0u, k = TF_K;
-    for (uint pass = 0; pass < 3u; ++pass) {
+    for (uint pass = 0u; pass < 3u; ++pass) {
       const uint shift = pass == 0u ? 21u : (pass == 1u ? 10u : 0u);
       const uint mask = pass == 2u ? 0x3ffu : 0x7ffu;
       const uint up = pass == 1u ? 21u : 10u;
       for (uint i = tid; i < TF_BINS; i += TF_TG) atomic_store_explicit(bins + i, 0u, memory_order_relaxed);
       threadgroup_barrier(mem_flags::mem_threadgroup);
-      for (uint i = tid; i < m; i += TF_TG) {
-        const uint key = tf_topk512_key(s[i]);
-        if (pass == 0u || (key >> up) == prefix) atomic_fetch_add_explicit(bins + ((key >> shift) & mask), 1u, memory_order_relaxed);
+      if (pass == 0u) {
+        uint b3 = 0u;
+        for (uint i = tid; i < m; i += TF_TG) {
+          const uint bin = tf_topk512_key(s[i]) >> 21u;
+          if (bin == 3u) ++b3;
+          else atomic_fetch_add_explicit(bins + bin, 1u, memory_order_relaxed);
+        }
+        const uint sb3 = simd_sum(b3);
+        if (lane == 0u && sb3 != 0u) atomic_fetch_add_explicit(bins + 3u, sb3, memory_order_relaxed);
+      } else {
+        for (uint i = tid; i < m; i += TF_TG) {
+          const uint key = tf_topk512_key(s[i]);
+          if ((key >> up) == prefix) atomic_fetch_add_explicit(bins + ((key >> shift) & mask), 1u, memory_order_relaxed);
+        }
       }
       threadgroup_barrier(mem_flags::mem_threadgroup);
       const uint2 r = tf_topk512_pick(bins, k, sc, tid, lane, simd);
@@ -84,7 +95,7 @@ inline uint2 tf_topk512_pick(threadgroup atomic_uint* bins, uint k, threadgroup 
   const uint wanted = keep - above; // keys equal to the threshold that make the set: the lowest indices
   const uint skip = TF_CTL == 2 ? ties - wanted : 0u;
   uint gt_run = 0u, eq_run = 0u;
-  for (uint base = 0; base < m && gt_run + min(eq_run, wanted) < keep; base += TF_TG) {
+  for (uint base = 0u; base < m && gt_run + min(eq_run, wanted) < keep; base += TF_TG) {
     const uint i = base + tid;
     const uint key = i < m ? tf_topk512_key(s[i]) : 0u;
     const uint gt = (i < m && (n <= TF_K || key > threshold)) ? 1u : 0u;
@@ -95,7 +106,7 @@ inline uint2 tf_topk512_pick(threadgroup atomic_uint* bins, uint k, threadgroup 
     if (lane == 31u) p[simd] = ex + packed;
     threadgroup_barrier(mem_flags::mem_threadgroup);
     uint before = ex, total = 0u;
-    for (uint q = 0; q < 32u; ++q) {
+    for (uint q = 0u; q < 32u; ++q) {
       const uint v = p[q];
       before += q < simd ? v : 0u;
       total += v;

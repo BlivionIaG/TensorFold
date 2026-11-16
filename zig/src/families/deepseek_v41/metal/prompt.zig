@@ -35,7 +35,7 @@ pub const Opts = struct {
     head_rows: u32 = 1,
     taps_rows: u32 = pipelines.attn.window,
     /// index rows scored at once (the scores' memory)
-    ix_rows: u32 = 64,
+    ix_rows: u32 = 128,
     /// every decoder layer on every row (the reference the cone must equal)
     full: bool = false,
     /// routed experts on the decode row kernels instead of the grouped kernels (the reference for them)

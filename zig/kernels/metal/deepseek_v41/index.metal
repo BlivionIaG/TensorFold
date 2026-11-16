@@ -68,63 +68,86 @@ constant constexpr half tf_ix_lut[16] = {0.0h, 0.5h, 1.0h, 1.5h, 2.0h, 3.0h, 4.0
   const uint vmax = (a.start + min(r0 + 8u, a.rows) - 1u) / a.ratio; // the block's last row reaches the most
   const uint first = tg.x * a.chunk;
   const uint last = min(first + a.chunk, a.keys);
+  const uint row_vis = min(visible, last);
+  const size_t cm_base = size_t(row) * a.mask_stride;
   const device uchar* qrow = Q + size_t(row) * QROW + fn / 2u;
   for (uint key0 = first; key0 < last; key0 += IXKT * 8u) {
     float sacc[IXKT][2];
     UNR for (uint kf = 0; kf < IXKT; ++kf) sacc[kf][0] = sacc[kf][1] = 0.0f;
     if (key0 < vmax) {
-      simdgroup_matrix<half, 8, 8> bq[IXKT][16];
-      float sk[IXKT][2][4];
+      bool kf_live[IXKT];
       UNR for (uint kf = 0; kf < IXKT; ++kf) {
-        const uint ka = min(key0 + 8u * kf + fn, a.keys - 1u), kb = min(ka + 1u, a.keys - 1u);
-        const device uchar* ra = IK + size_t(ka) * a.ik_stride;
-        const device uchar* rb = IK + size_t(kb) * a.ik_stride;
-        UNR for (uint ks = 0; ks < 16u; ++ks) {
-          const uint d = 8u * ks + fm;
-          bq[kf][ks].thread_elements()[0] = tf_ix_lut[(ra[d >> 1] >> (4u * (d & 1u))) & 0xFu];
-          bq[kf][ks].thread_elements()[1] = tf_ix_lut[(rb[d >> 1] >> (4u * (d & 1u))) & 0xFu];
-        }
-        UNR for (uint g = 0; g < 4u; ++g) { // a key's row: 64 FP4 bytes then its 4 e8m0 scales
-          sk[kf][0][g] = tf_ix_e8m0(ra[ID / 2u + g]);
-          sk[kf][1][g] = tf_ix_e8m0(rb[ID / 2u + g]);
-        }
-      }
-#if TF_CTL == 2 // gate 3's control: the head fold in reverse, and head 0 (the last one folded) dropped
-      for (uint h = IH - 1u; h >= 1u; --h) {
-#else
-      for (uint h = 0u; h < IH; ++h) {
-#endif
-        simdgroup_matrix<half, 8, 8> aq[16];
-        UNR for (uint ks = 0; ks < 16u; ++ks) {
-          const uchar b = qrow[h * (ID / 2u) + 4u * ks];
-          aq[ks].thread_elements()[0] = tf_ix_lut[b & 0xFu];
-          aq[ks].thread_elements()[1] = tf_ix_lut[b >> 4];
-        }
-        float qs[4];
-        UNR for (uint g = 0; g < 4u; ++g) qs[g] = tf_ix_e8m0(QS[size_t(row) * QSROW + h * 4u + g]);
-        // the row's weights times the softmax scale once, in fp32 (model.py:556), before any head meets a score
-        const float wv = float(W[size_t(row) * a.w_stride + h]) * a.w_scale;
-        simdgroup_matrix<float, 8, 8> acc[IXKT][4];
-        UNR for (uint kf = 0; kf < IXKT; ++kf)
-          UNR for (uint g = 0; g < 4u; ++g) acc[kf][g] = simdgroup_matrix<float, 8, 8>(0.0f);
-        UNR for (uint kk = 0; kk < 4u; ++kk)
-          UNR for (uint kf = 0; kf < IXKT; ++kf)
-            UNR for (uint g = 0; g < 4u; ++g) {
-              simdgroup_multiply_accumulate(acc[kf][g], aq[4u * g + kk], bq[kf][4u * g + kk], acc[kf][g]);
-            }
-        UNR for (uint kf = 0; kf < IXKT; ++kf)
-          UNR for (uint e = 0; e < 2u; ++e) {
-            float p[4];
-            UNR for (uint g = 0; g < 4u; ++g) {
-              p[g] = acc[kf][g].thread_elements()[e];
-#if TF_CTL == 3 // gate 4's control: the group sums accumulated in half
-              p[g] = float(half(p[g]));
-#endif
-            }
-            const float prod = (((p[0] * qs[0]) * sk[kf][e][0]) + ((p[1] * qs[1]) * sk[kf][e][1])) +
-                               (((p[2] * qs[2]) * sk[kf][e][2]) + ((p[3] * qs[3]) * sk[kf][e][3]));
-            sacc[kf][e] += tf_ix_relu(prod) * wv;
+        const uint k_lo = key0 + 8u * kf;
+        bool live_blk = k_lo < vmax;
+        if (live_blk && a.mask_stride != 0u) {
+          bool lane_hit = false;
+          if (row_ok && k_lo < row_vis) {
+            const uint b0 = k_lo / CBS;
+            const uint b1 = min(k_lo + 7u, row_vis - 1u) / CBS;
+            lane_hit = CM[cm_base + b0] != 0u || (b1 != b0 && CM[cm_base + b1] != 0u);
           }
+          live_blk = simd_any(lane_hit);
+        }
+        kf_live[kf] = live_blk;
+      }
+      if (kf_live[0] || kf_live[1]) {
+        simdgroup_matrix<half, 8, 8> bq[IXKT][16];
+        float sk[IXKT][2][4];
+        UNR for (uint kf = 0; kf < IXKT; ++kf) {
+          if (kf_live[kf]) {
+            const uint ka = min(key0 + 8u * kf + fn, a.keys - 1u), kb = min(ka + 1u, a.keys - 1u);
+            const device uchar* ra = IK + size_t(ka) * a.ik_stride;
+            const device uchar* rb = IK + size_t(kb) * a.ik_stride;
+            UNR for (uint ks = 0; ks < 16u; ++ks) {
+              const uint d = 8u * ks + fm;
+              bq[kf][ks].thread_elements()[0] = tf_ix_lut[(ra[d >> 1] >> (4u * (d & 1u))) & 0xFu];
+              bq[kf][ks].thread_elements()[1] = tf_ix_lut[(rb[d >> 1] >> (4u * (d & 1u))) & 0xFu];
+            }
+            UNR for (uint g = 0; g < 4u; ++g) { // a key's row: 64 FP4 bytes then its 4 e8m0 scales
+              sk[kf][0][g] = tf_ix_e8m0(ra[ID / 2u + g]);
+              sk[kf][1][g] = tf_ix_e8m0(rb[ID / 2u + g]);
+            }
+          }
+        }
+#if TF_CTL == 2 // gate 3's control: the head fold in reverse, and head 0 (the last one folded) dropped
+        for (uint h = IH - 1u; h >= 1u; --h) {
+#else
+        for (uint h = 0u; h < IH; ++h) {
+#endif
+          simdgroup_matrix<half, 8, 8> aq[16];
+          UNR for (uint ks = 0; ks < 16u; ++ks) {
+            const uchar b = qrow[h * (ID / 2u) + 4u * ks];
+            aq[ks].thread_elements()[0] = tf_ix_lut[b & 0xFu];
+            aq[ks].thread_elements()[1] = tf_ix_lut[b >> 4];
+          }
+          float qs[4];
+          UNR for (uint g = 0; g < 4u; ++g) qs[g] = tf_ix_e8m0(QS[size_t(row) * QSROW + h * 4u + g]);
+          // the row's weights times the softmax scale once, in fp32 (model.py:556), before any head meets a score
+          const float wv = float(W[size_t(row) * a.w_stride + h]) * a.w_scale;
+          simdgroup_matrix<float, 8, 8> acc[IXKT][4];
+          UNR for (uint kf = 0; kf < IXKT; ++kf)
+            UNR for (uint g = 0; g < 4u; ++g) acc[kf][g] = simdgroup_matrix<float, 8, 8>(0.0f);
+          UNR for (uint kk = 0; kk < 4u; ++kk)
+            UNR for (uint kf = 0; kf < IXKT; ++kf)
+              if (kf_live[kf])
+                UNR for (uint g = 0; g < 4u; ++g) {
+                  simdgroup_multiply_accumulate(acc[kf][g], aq[4u * g + kk], bq[kf][4u * g + kk], acc[kf][g]);
+                }
+          UNR for (uint kf = 0; kf < IXKT; ++kf)
+            if (kf_live[kf])
+              UNR for (uint e = 0; e < 2u; ++e) {
+                float p[4];
+                UNR for (uint g = 0; g < 4u; ++g) {
+                  p[g] = acc[kf][g].thread_elements()[e];
+#if TF_CTL == 3 // gate 4's control: the group sums accumulated in half
+                  p[g] = float(half(p[g]));
+#endif
+                }
+                const float prod = (((p[0] * qs[0]) * sk[kf][e][0]) + ((p[1] * qs[1]) * sk[kf][e][1])) +
+                                   (((p[2] * qs[2]) * sk[kf][e][2]) + ((p[3] * qs[3]) * sk[kf][e][3]));
+                sacc[kf][e] += tf_ix_relu(prod) * wv;
+              }
+        }
       }
     }
     if (!row_ok) continue;
