@@ -480,6 +480,81 @@ kernel void tf_exl3_matmul_prefill(const device half* x [[buffer(0)]],
   }
 }
 
+// Dense windows of 9 to 31 rows with the plain eight-row body's arithmetic, bit for bit: each output's products reach one
+// fp32 accumulator k ascending, block after block. A SIMDgroup owns sixteen rows and a sixteen-column tile, a lane one row
+// and eight columns, so one decode of the tile serves sixteen rows. The next block's trellis words and activations are
+// loaded while this block multiplies.
+kernel void tf_exl3_matmul_rows(const device half* x [[buffer(0)]],
+                                const device uchar* trellis [[buffer(1)]],
+                                device float* sums [[buffer(2)]],
+                                constant TfExl3Args& a [[buffer(3)]],
+                                const device uint* routes [[buffer(4)]],
+                                uint lane [[thread_index_in_simdgroup]],
+                                uint sg [[simdgroup_index_in_threadgroup]],
+                                uint3 tg [[threadgroup_position_in_grid]]) {
+  threadgroup float tiles[4 * 512];
+  const uint nb = (tg.x * 4u + sg) * 16u;
+  const uint rb = tg.y * 16u;
+  if (nb >= a.n || rb >= a.rows) return;
+  // Two 16x16 tiles a SIMDgroup: block b decodes into one while the lanes that are behind finish multiplying the other.
+  threadgroup float* wx = tiles + sg * 512u;
+  uint maps[8], at[8];
+  for (uint j = 0; j < 8; ++j) {
+    const uint p = lane + 32u * j, l = p / 8u, e = p % 8u;
+    maps[j] = tf_exl3_map_of(p, a.halves);
+    at[j] = (2u * (l % 4u) + (e & 1u) + 8u * ((e >> 1) & 1u)) * 16u + (l / 4u + 8u * (e >> 2));
+  }
+  const uint row = rb + (lane & 15u), half_col = lane >> 4;
+  const device uchar* column = trellis + ulong(nb / 16u) * a.tile_n_stride;
+  const device half* xr = x + ulong(min(row, a.rows - 1u)) * a.k;
+  float acc[8];
+  for (uint c = 0; c < 8; ++c) acc[c] = 0.0f;
+  const uint blocks = a.k / 16u;
+  uint lo[8], hi[8];
+  float xn[16];
+  {
+    const device ushort* tile = reinterpret_cast<const device ushort*>(column);
+    for (uint j = 0; j < 8; ++j) lo[j] = tf_exl3_word(tile, maps[j] & 63u), hi[j] = tf_exl3_word(tile, maps[j] >> 11);
+    for (uint q = 0; q < 4; ++q) {
+      const half4 v = half4(*reinterpret_cast<const device packed_half4*>(xr + 4u * q));
+      xn[4 * q] = float(v.x), xn[4 * q + 1] = float(v.y), xn[4 * q + 2] = float(v.z), xn[4 * q + 3] = float(v.w);
+    }
+  }
+  for (uint b = 0; b < blocks; ++b) {
+    float xf[16];
+    uint cl[8], ch[8];
+    for (uint i = 0; i < 16; ++i) xf[i] = xn[i];
+    for (uint j = 0; j < 8; ++j) cl[j] = lo[j], ch[j] = hi[j];
+    if (b + 1 < blocks) {
+      const device ushort* tile = reinterpret_cast<const device ushort*>(column + ulong(b + 1) * a.tile_k_stride);
+      for (uint j = 0; j < 8; ++j) lo[j] = tf_exl3_word(tile, maps[j] & 63u), hi[j] = tf_exl3_word(tile, maps[j] >> 11);
+      for (uint q = 0; q < 4; ++q) {
+        const half4 v = half4(*reinterpret_cast<const device packed_half4*>(xr + (b + 1u) * 16u + 4u * q));
+        xn[4 * q] = float(v.x), xn[4 * q + 1] = float(v.y), xn[4 * q + 2] = float(v.z), xn[4 * q + 3] = float(v.w);
+      }
+    }
+    threadgroup float* buf = wx + (b & 1u) * 256u;
+    for (uint j = 0; j < 8; ++j) {
+      const uint off = (maps[j] >> 6) & 31u;
+      const uint carry = (ch[j] >> ((32u - off) & 31u)) & (0u - uint(off != 0));
+      const ushort s = ushort(((cl[j] << off) | carry) >> 16);
+      buf[at[j]] = float(tf_exl3_value(s, a.codebook));
+    }
+    simdgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint k = 0; k < 16; ++k) {
+      const threadgroup float4* w4 = reinterpret_cast<const threadgroup float4*>(buf + k * 16u + half_col * 8u);
+      const float4 w0 = w4[0], w1 = w4[1];
+      const float xv = xf[k];
+      acc[0] += xv * w0.x, acc[1] += xv * w0.y, acc[2] += xv * w0.z, acc[3] += xv * w0.w;
+      acc[4] += xv * w1.x, acc[5] += xv * w1.y, acc[6] += xv * w1.z, acc[7] += xv * w1.w;
+    }
+  }
+  if (row < a.rows && tf_exl3_active(routes, a, row)) {
+    device float* out = sums + ulong(row) * a.n + nb + half_col * 8u;
+    for (uint c = 0; c < 8; ++c) out[c] = acc[c] + 0.0f;
+  }
+}
+
 // Split-K reduction: one row's partial dot products, summed in split order.
 kernel void tf_exl3_splitk_reduce(const device float* partials [[buffer(0)]],
                                   device float* sums [[buffer(1)]],

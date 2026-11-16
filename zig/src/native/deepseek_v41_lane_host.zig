@@ -206,7 +206,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         }
     };
     h.host.explain = .{ .text = words };
-    h.warm = .{ .queue = model_ptr.queue };
+    h.warm = .{ .queue = model_ptr.queue, .sets = @as(*const [1]mtl.ResidencySet, &model_ptr.residency), .scratch = model_ptr.warm_scratch };
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
     try h.host.start();
     errdefer h.host.stop();
