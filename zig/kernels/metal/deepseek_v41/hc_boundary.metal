@@ -9,6 +9,8 @@ constant constexpr int kWidth = 5120;                          // one copy's wid
 constant constexpr int kStream = kCopies * kWidth;             // the flattened hc stream
 constant constexpr int kMixes = (2 + kCopies) * kCopies;       // pre, post and the comb cells
 constant constexpr int kSlices = kStream / 1024;               // the mix projection's column slices
+constant constexpr int kUnits = kStream / 128;                 // 128-column units, one simdgroup's share of a slice
+constant constexpr int kUnitsPerCopy = kWidth / 128;           // the units of one stream copy
 constant constexpr int kParts = kMixes + 1;                    // the mixes and the stream's squares
 
 struct HcArgs { float eps; float hc_eps; int iters; };
@@ -89,6 +91,9 @@ inline void hc_publish_slice(threadgroup float* warp, device float* part, const 
 }
 
 // The release's split (kernel.py hc_split_sinkhorn_kernel): lanes 0-3 carry pre and post.
+// EARLY stops the Sinkhorn once its state repeats: every pass past the first is the same function of the last one's
+// result, so a result equal to the one two passes back (a fixed point, or a two-cycle) fixes all the later ones.
+template <bool EARLY>
 inline void hc_split_row(threadgroup const float* tot, constant const HcArgs& a,
                          const device float* base, const device float* scale, uint lane, uint r,
                          device float* pre_out, device float* post_out, device float* comb_out) {
@@ -109,6 +114,7 @@ inline void hc_split_row(threadgroup const float* tot, constant const HcArgs& a,
   float row = e + simd_shuffle_xor(e, ushort(2));
   row = row + simd_shuffle_xor(row, ushort(1));
   float comb = live ? e / row + a.hc_eps : 0.0f;
+  float older = 0.0f, last = 0.0f;  // the results one and two passes back
   for (uint it = 0; it < uint(a.iters); it++) {
     if (it > 0) {
       float row_sum = comb + simd_shuffle_xor(comb, ushort(2));
@@ -118,8 +124,129 @@ inline void hc_split_row(threadgroup const float* tot, constant const HcArgs& a,
     float col_sum = comb + simd_shuffle_xor(comb, ushort(8));
     col_sum = col_sum + simd_shuffle_xor(col_sum, ushort(4));
     comb = live ? comb / (col_sum + a.hc_eps) : 0.0f;
+    if (EARLY) {
+      if (it >= 2 && (it & 1u) == 0u && simd_all(!live || comb == older)) {
+        if (((uint(a.iters) - 1u - it) & 1u) != 0u) comb = last;
+        break;
+      }
+      older = last;
+      last = comb;
+    }
   }
   if (live) comb_out[r * kCopies * kCopies + lane] = comb;
+}
+
+// The decode-sized boundary, in two launches. Same arithmetic as tf_hc_expand_mix + tf_hc_boundary_mix: a unit's
+// 32-lane sum is the old warp sum, and the boundary adds the eight units of a slice in order and then the slices.
+//
+// A threadgroup a (row, 128-column range) with a simdgroup for each of the four stream copies, so the collapse of the
+// four copies needs no second pass over the streams: Y holds the rounded collapse for the norm.
+[[kernel, max_total_threads_per_threadgroup(128)]]
+void tf_hc_expand_collapse(const device bfloat* X [[buffer(0)]], const device bfloat* BR [[buffer(1)]],
+                           const device float* POST [[buffer(2)]], const device float* COMB [[buffer(3)]],
+                           const device float* FN [[buffer(4)]], device float* PART [[buffer(5)]],
+                           device bfloat* XO [[buffer(6)]], const device float* PRE_IN [[buffer(7)]],
+                           device bfloat* Y [[buffer(8)]], uint2 tg [[threadgroup_position_in_grid]],
+                           uint2 tpos [[thread_position_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],
+                           uint sg [[simdgroup_index_in_threadgroup]]) {
+  threadgroup float stream[kCopies * 128];
+  const int range = int(tg.x), r = int(tg.y);
+  const int k = int(sg);
+  const int d0 = 128 * range + 4 * int(lane);
+  const int col = k * kWidth + d0;
+  // The hc_fn columns first: their read overlaps the expand's. Kept tensors pack at 256 bytes, so four floats are aligned.
+  float4 f[kMixes];
+  for (int q = 0; q < kMixes; q++) f[q] = *reinterpret_cast<const device float4*>(FN + size_t(q) * kStream + col);
+  // Every read of the expand before any write of it: a store may alias the next read, so it would end the overlap.
+  const device bfloat* x = X + size_t(r) * kStream;
+  const device float* comb = COMB + r * kCopies * kCopies;
+  float branch[4], old[4][kCopies];
+  for (int i = 0; i < 4; i++) {
+    branch[i] = float(BR[size_t(r) * kWidth + d0 + i]);
+    for (int jj = 0; jj < kCopies; jj++) old[i][jj] = float(x[jj * kWidth + d0 + i]);
+  }
+  float mix_col[kCopies];
+  for (int jj = 0; jj < kCopies; jj++) mix_col[jj] = comb[jj * kCopies + k];
+  const float post = POST[r * kCopies + k];
+  float v[4];
+  for (int i = 0; i < 4; i++) {
+    float mixed = 0.0f;
+    for (int jj = 0; jj < kCopies; jj++) mixed += mix_col[jj] * old[i][jj];
+    const bfloat out = bfloat(post * branch[i] + mixed);
+    XO[size_t(r) * kStream + col + i] = out;
+    v[i] = float(out);
+    stream[k * 128 + 4 * int(lane) + i] = v[i];
+  }
+  float parts[kParts];
+  parts[kMixes] = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+  for (int q = 0; q < kMixes; q++) parts[q] = f[q].x * v[0] + f[q].y * v[1] + f[q].z * v[2] + f[q].w * v[3];
+  float mine = 0.0f;
+  for (int q = 0; q <= kMixes; q++) {
+    const float s = simd_sum(parts[q]);
+    if (int(lane) == q) mine = s;
+  }
+  if (int(lane) <= kMixes) PART[(size_t(r) * kUnits + k * kUnitsPerCopy + range) * kParts + lane] = mine;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  const int t = int(tpos.x);
+  float collapsed = 0.0f;
+  for (int s = 0; s < kCopies; s++) collapsed += PRE_IN[r * kCopies + s] * stream[s * 128 + t];
+  Y[size_t(r) * kWidth + 128 * range + t] = bfloat(hc_round(collapsed));
+}
+
+// Two threadgroups a row, 1024 threads: 2r the norm of the collapse Y (written in place as the normed row), 2r+1 the
+// split of the unit partials. They run side by side, so the Sinkhorn is off the norm's path.
+[[kernel, max_total_threads_per_threadgroup(1024)]]
+void tf_hc_boundary_rows(device bfloat* Y [[buffer(0)]], const device float* PART [[buffer(1)]],
+                         const device float* BASE [[buffer(2)]], const device float* SCALE [[buffer(3)]],
+                         const device bfloat* NORMW [[buffer(4)]], constant HcArgs& a [[buffer(5)]],
+                         device float* PRE_OUT [[buffer(6)]], device float* POST_OUT [[buffer(7)]],
+                         device float* COMB_OUT [[buffer(8)]], constant uint& rows [[buffer(9)]],
+                         uint g [[threadgroup_position_in_grid]], uint t [[thread_position_in_threadgroup]],
+                         uint lane [[thread_index_in_simdgroup]], uint sg [[simdgroup_index_in_threadgroup]]) {
+  threadgroup float units[kUnits * kParts];  // the partials, a mix's units together
+  threadgroup float slices[kSlices * kParts];
+  threadgroup float totals[kParts];
+  threadgroup float sums[32];
+  threadgroup float inv_rms[1];
+  const uint r = g >> 1;
+  if (g & 1) {
+    // Each slice's eight units added in order from zero by a thread of its own, then the slices in order.
+    for (uint i = t; i < uint(kUnits * kParts); i += 1024) units[(i % kParts) * kUnits + i / kParts] = PART[size_t(r) * kUnits * kParts + i];
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (t < uint(kSlices * kParts)) {
+      const uint j = t / kParts, q = t % kParts;
+      float w = 0.0f;
+      for (uint k = 0; k < 8; k++) w += units[q * kUnits + 8 * j + k];
+      slices[t] = w;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (int(t) <= kMixes) {
+      float s = 0.0f;
+      for (int j = 0; j < kSlices; j++) s += slices[j * kParts + t];
+      totals[t] = s;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sg == 0) hc_split_row<true>(&totals[0], a, BASE, SCALE, lane, r, PRE_OUT, POST_OUT, COMB_OUT);
+    return;
+  }
+  float y[5], weight[5];
+  for (int i = 0; i < 5; i++) {
+    y[i] = float(Y[size_t(r) * kWidth + int(t) + 1024 * i]);
+    weight[i] = float(NORMW[int(t) + 1024 * i]);
+  }
+  float squares = 0.0f;
+  for (int i = 0; i < 5; i++) squares += y[i] * y[i];
+  const float lane_squares = simd_sum(squares);
+  if (lane == 0) sums[sg] = lane_squares;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (t == 0) {
+    float s = 0.0f;
+    for (int k = 0; k < 32; k++) s += sums[k];
+    inv_rms[0] = precise::rsqrt(s / float(kWidth) + a.eps);
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  const float inv = inv_rms[0];
+  for (int i = 0; i < 5; i++) Y[size_t(r) * kWidth + int(t) + 1024 * i] = bfloat(weight[i] * (y[i] * inv));
 }
 
 // A threadgroup a row, 1024 threads: the split, collapse and norm; MIXES=false consumes a pre made elsewhere.
@@ -156,7 +283,7 @@ template <bool MIXES>
   const float lane_squares = simd_sum(squares);
   if (lane == 0) sums[sg] = lane_squares;
   threadgroup_barrier(mem_flags::mem_threadgroup);
-  if (MIXES && sg == 0) hc_split_row(&slice[0], a, BASE, SCALE, lane, r, PRE_OUT, POST_OUT, COMB_OUT);
+  if (MIXES && sg == 0) hc_split_row<false>(&slice[0], a, BASE, SCALE, lane, r, PRE_OUT, POST_OUT, COMB_OUT);
   if (t == 32) {  // simdgroup 1, while simdgroup 0 runs the split
     float s = 0.0f;
     for (int k = 0; k < 32; k++) s += sums[k];
