@@ -48,6 +48,11 @@ fn multiRows() u32 {
     return std.fmt.parseInt(u32, std.mem.span(v), 10) catch 0;
 }
 
+/// Column tiles a warp in the exact half-FMA decode bodies: 0 (the LUT bodies), 1, 2 or 4.
+fn fmaTiles() u32 {
+    return @import("sys").environment.read(u32, "TF_DSV41_EXL3_FMA_TILES", 2) catch unreachable;
+}
+
 fn tileRows() u32 {
     return if (rows("TF_DSV41_MOE_TILE_ROWS", 64) == 128) 128 else 64;
 }
@@ -82,6 +87,7 @@ pub fn load() exl3.Knobs {
         .decode_compact = present("TF_DSV41_EXL3_DECODE_COMPACT"),
         .funnel = !present("TF_DSV41_EXL3_FUNNEL"),
         .row_invariant = !present("TF_DSV41_NO_ROW_INVARIANT"),
+        .fma_tiles = fmaTiles(),
         .fma_dense_h8 = enabled("TF_DSV41_EXL3_FMA_DENSE_H8", true),
         .fma_dense_multi = multiRows(),
         .fma_dense_multi_ceil = enabled("TF_DSV41_EXL3_FMA_DENSE_MULTI_CEIL", true),

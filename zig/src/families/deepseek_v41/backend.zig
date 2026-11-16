@@ -13,10 +13,6 @@ const RING = 1024;
 const policy = @import("backend_policy.zig");
 const MtpCache = policy.MtpCache;
 const fastArgmax = policy.fastArgmax;
-const tokAt = policy.tokAt;
-const lookupTokens = policy.lookupTokens;
-const mtpDepthMax = policy.mtpDepthMax;
-const lookupDepth = policy.lookupDepth;
 const noRefeedOn = policy.noRefeedOn;
 const draftRowsFollowWindow = policy.draftRowsFollowWindow;
 const roundSignalMode = policy.roundSignalMode;
@@ -29,7 +25,6 @@ const draftOffAfter = policy.draftOffAfter;
 const draftOffGateCtx = policy.draftOffGateCtx;
 const draftOffLow = policy.draftOffLow;
 const draftOffAfterFor = policy.draftOffAfterFor;
-const mtpDepthFor = policy.mtpDepthFor;
 const draftGovernorOff = policy.draftGovernorOff;
 
 pub const Backend = struct {
@@ -46,8 +41,6 @@ pub const Backend = struct {
     held: [][]u32,
     /// The trained proposer's last proposal, so the round runs the draft forward ONCE.
     mtp_cache: [32]?MtpCache = @splat(null),
-    /// Each slot's committed tokens after the prompt, for the lookup drafter's matches.
-    history: []std.ArrayListUnmanaged(u32),
     /// What the last verify sampled per row, so a rejected window's re-feed can be compared with it.
     last_sampled: [8]u32 = @splat(0),
     /// The depth each slot's last round RAN -- the adaptive policy's state.
@@ -76,12 +69,11 @@ pub const Backend = struct {
     pub const draft = run.draft;
     pub const tree = run.tree;
     pub const release = run.release;
+    pub const adaptiveDepth = policy.mtpDepthFor;
 
     pub fn init(gpa: std.mem.Allocator, model: *ds.Model) !Backend {
         const held = try gpa.alloc([]u32, model.lanes);
         for (held) |*h| h.* = &.{};
-        const history = try gpa.alloc(std.ArrayListUnmanaged(u32), model.lanes);
-        for (history) |*h| h.* = .empty;
         const last_depth = try gpa.alloc(u32, model.lanes);
         @memset(last_depth, 0);
         const up_streak = try gpa.alloc(u32, model.lanes);
@@ -121,7 +113,6 @@ pub const Backend = struct {
             .first = try gpa.alloc(u32, model.lanes),
             .verify_len = try gpa.alloc(u32, model.lanes),
             .held = held,
-            .history = history,
         };
     }
 
@@ -131,8 +122,7 @@ pub const Backend = struct {
         b.gpa.free(b.verify_len);
         for (b.held) |h| if (h.len > 0) b.gpa.free(h);
         b.gpa.free(b.held);
-        for (b.history) |*h| h.deinit(b.gpa);
-        b.gpa.free(b.history);
+        b.gpa.free(b.last_depth);
         b.gpa.free(b.up_streak);
         b.gpa.free(b.keep_pending);
         b.gpa.free(b.keep_ratio);
@@ -147,33 +137,39 @@ pub const Backend = struct {
         if (b.pen_row.len > 0) b.gpa.free(b.pen_row);
     }
 
+    /// The lane vtable; `prefill_step` runs one chunk a call, with decode rounds between.
     pub fn backend(b: *Backend) be.Backend {
-        return .{ .ptr = b, .penalties = true, .vtable = &.{
-            .prefill = prefill,
-            .first = firstFn,
-            .queue = queue,
-            .read = read,
-            .verify = verify,
-            .keep = keep,
-            .draft = draft,
-            .tree = tree,
-            .release = release,
-        } };
+        return .{ .ptr = b, .penalties = true, .vtable = &vtable };
     }
+
+    const vtable: be.Backend.VTable = .{
+        .prefill = prefill,
+        .prefill_step = prefill_step,
+        .reports_fill = true,
+        .first = firstFn,
+        .queue = queue,
+        .read = read,
+        .verify = verify,
+        .keep = keep,
+        .draft = draft,
+        .tree = tree,
+        .release = release,
+    };
 
     /// A window of any width runs exactly as its slot's own forward; the lane core may bundle streams freely.
     pub fn facts(b: *const Backend) lanes.Model {
         const rows = b.model.workspace.plan.rows;
+        const depth = policy.maxDraftDepth(b);
         return .{
             // The widest window whose rows reproduce one-token steps: rows <= 8; wider cannot verify.
             .exact_width = @min(rows, 8),
             .first_copy_rows = 1,
-            .mtp = lookupDepth() != 0,
-            .speculate = lookupDepth() != 0,
+            .mtp = depth != 0,
+            .speculate = depth != 0,
             .speculate_early = false,
             .gpu_tokens = false,
             .plain_guard = true,
-            .drafts = @max(lookupDepth(), 1),
+            .drafts = @max(depth, 1),
             .window_costs = &.{},
             .streams_exact = true,
             .hidden_rows = true,
@@ -229,64 +225,9 @@ pub const Backend = struct {
         return best;
     }
 
-    fn prefill(ptr: *anyopaque, s: *Stream) anyerror!void {
-        const b = self(ptr);
-        const prompt = s.prompt();
-        if (prompt.len == 0) return error.EmptyPrompt;
-        const i = b.free() orelse return error.NoFreeSlot;
-        const state = &b.model.caches[i];
-        if (prompt.len + s.max_new + 1 > state.plan.capacity) return error.ContextFull;
-        try b.by.put(b.gpa, s, i);
-        try b.model.resetSlot(i);
-        b.history[i].clearRetainingCapacity();
-        s.cached = 0;
-        var at: u32 = 0;
-        // A KEPT PROMPT STATE RESUMES THE PASS WHERE IT STOOD.
-        if (s.reuse.saved) |saved| {
-            const snap: *ds.Model.Snapshot = @ptrCast(@alignCast(saved));
-            const want = s.reuse.at;
-            if (want > 0 and want < prompt.len) blk: {
-                b.model.snapshotRestore(i, snap) catch |err| {
-                    s.reuse_failed = true;
-                    s.reuse_error = err;
-                    break :blk;
-                };
-                at = want;
-                s.cached = at;
-                b.history[i].appendSlice(b.gpa, prompt[0..at]) catch {};
-            }
-        }
-        const rows = b.model.workspace.plan.rows;
-        // THE TAIL MARK IS SNAPSHOTTED INSIDE THE CHUNK THAT RUNS PAST IT, not cut into a second forward.
-        const merge_cold = std.c.getenv("TF_DSV41_SNAP_COLD") == null;
-        const snap_at: u32 = if (std.c.getenv("TF_DSV41_NO_TAIL_SNAP") == null and b.model.snapTailAllowed() and (merge_cold or s.reuse.at > 0)) s.reuse.snap_at else 0;
-        while (at < prompt.len) {
-            if (s.isCancelled()) return error.Cancelled;
-            var end = @min(at + rows, @as(u32, @intCast(prompt.len)));
-            // The store's marks always end a chunk: the pass stands exactly there when it calls the hook.
-            for (s.reuse.marks) |m| if (m > at and m < end and m != snap_at) {
-                end = m;
-                break;
-            };
-            const last = end == prompt.len;
-            var merge: u32 = if (snap_at > at and snap_at < end and end - at >= 64) snap_at else 0;
-            if (merge != 0 and !b.model.beginSnapTail(i, prompt[@max(0, @as(usize, merge) - 4)..merge], merge, at)) merge = 0;
-            if (last) {
-                _ = try b.model.forwardOn(i, prompt[at..end], .last);
-                b.first[i] = try b.draw(i, s, @intCast(prompt.len));
-            } else {
-                _ = try b.model.forwardOn(i, prompt[at..end], .none);
-            }
-            if (merge != 0) {
-                // the state at the mark, copied from the stash the chunk's own publishes wrote
-                if (s.reuse.hook) |hook| hook.at(hook.ptr, s, merge);
-                b.model.endSnapTail();
-            }
-            at = end;
-            // The prompt cache's keep hook, at the chunk end it asked to see.
-            if (s.reuse.hook) |hook| if (std.mem.indexOfScalar(u32, s.reuse.marks, at) != null) hook.at(hook.ptr, s, at);
-        }
-    }
+    const pass = @import("backend_prefill.zig");
+    const prefill = pass.whole;
+    const prefill_step = pass.step;
 
     /// The prompt cache's Snapshots functions over the resident model (`ptr`: the *Backend, `owner`: the stream).
     pub fn snapBytes(ptr: *anyopaque, _: u32) u64 {
@@ -325,7 +266,6 @@ pub const Backend = struct {
             .handle => |h| try read(ptr, h),
         };
         _ = try b.model.forwardOn(i, &.{token}, .last);
-        try b.history[i].append(b.gpa, token);
         return b.put(try b.draw(i, s, position));
     }
 
@@ -404,10 +344,18 @@ pub const Backend = struct {
 
     /// The shared-round batch; the one-row windows of a plain shared round are the only admitted shape.
     var batch_on: ?bool = null;
+    var batch_max: ?usize = null;
     /// The instruments that read a forward's internals take the one-stream path; the batch never runs under them.
     pub fn noBatchInstrument() bool {
-        return std.c.getenv("TF_DSV41_STAGE_CB") == null and std.c.getenv("TF_DSV41_LAYER_CB") == null and
+        return std.c.getenv("TF_DSV41_LAYER_CB") == null and
             std.c.getenv("TF_DSV41_ATTN_PROF") == null and std.c.getenv("TF_DSV41_HID_HASH") == null;
+    }
+
+    /// TF_DSV41_BATCH_MAX: the most one-row windows one batched forward carries (default 4, ceiling 8).
+    pub fn batchMax() usize {
+        if (batch_max) |v| return v;
+        batch_max = @import("sys").environment.read(usize, "TF_DSV41_BATCH_MAX", 4) catch unreachable;
+        return batch_max.?;
     }
 
     pub fn batchOn() bool {

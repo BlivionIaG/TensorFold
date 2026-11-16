@@ -43,9 +43,9 @@ pub const core_row_projection = @embedFile("core/row_projection.metal");
 pub const core_binned_projection = @embedFile("core/binned_projection.metal");
 pub const core_tile_qmm = @embedFile("core/tile_qmm.metal") ++ @embedFile("core/tile_qmv.metal") ++
     @embedFile("core/tile_qmv_rows.metal");
-pub const core_exl3_projection = @embedFile("core/exl3_projection_core.metal") ++ @embedFile("core/exl3_projection_wide.metal");
+pub const core_exl3_projection = @embedFile("core/exl3_projection_core.metal") ++ @embedFile("core/exl3_projection_wide.metal") ++ @embedFile("core/exl3_projection_chain.metal");
 /// The same EXL3 prefill reduction on the tensor units (core/exl3_projection.zig, loadWith).
-pub const core_exl3_projection_nax = @embedFile("core/exl3_projection_nax_base.metal") ++ @embedFile("core/exl3_projection_nax_prefill_body.metal") ++ @embedFile("core/exl3_projection_nax_prefill.metal") ++ @embedFile("core/exl3_projection_nax_variants_a.metal") ++ @embedFile("core/exl3_projection_nax_variants_b.metal") ++ @embedFile("core/exl3_projection_nax_variants_c.metal") ++ @embedFile("core/exl3_projection_nax_fma.metal") ++ @embedFile("core/exl3_projection_nax_fma_static_a.metal") ++ @embedFile("core/exl3_projection_nax_fma_static_b.metal") ++ @embedFile("core/exl3_projection_nax_fp8.metal");
+pub const core_exl3_projection_nax = @embedFile("core/exl3_projection_nax_base.metal") ++ @embedFile("core/exl3_projection_nax_prefill_body.metal") ++ @embedFile("core/exl3_projection_nax_prefill_ku.metal") ++ @embedFile("core/exl3_projection_nax_prefill.metal") ++ @embedFile("core/exl3_projection_nax_variants_a.metal") ++ @embedFile("core/exl3_projection_nax_variants_b.metal") ++ @embedFile("core/exl3_projection_nax_variants_c.metal") ++ @embedFile("core/exl3_projection_nax_fma.metal") ++ @embedFile("core/exl3_projection_nax_fma_static_a.metal") ++ @embedFile("core/exl3_projection_nax_fma_static_b.metal") ++ @embedFile("core/exl3_projection_nax_fma_t.metal") ++ @embedFile("core/exl3_projection_nax_fp8.metal");
 pub const core_exlr8_projection = @embedFile("core/exlr8_projection.metal");
 pub const core_exlr8_dense = @embedFile("core/exlr8_dense.metal");
 pub const core_exlr8_prompt = @embedFile("core/exlr8_prompt.metal");
@@ -192,6 +192,8 @@ pub const deepseek_v41_index_nax = @embedFile("deepseek_v41/index_exl3_nax.metal
 pub const deepseek_v41_csa2 = @embedFile("deepseek_v41/csa2.metal");
 /// The same attention's prompt chunks on the tensor units (nax.h inlined at load, after kv's decoders).
 pub const deepseek_v41_csa2_nax = @embedFile("deepseek_v41/csa2_nax.metal");
+/// The batched decode windows' kernels (joined after the tensor-unit text).
+pub const deepseek_v41_csa2_rows = @embedFile("deepseek_v41/csa2_rows.metal");
 pub const core_lane_projection = @embedFile("core/lane_projection.metal");
 pub const core_lane_order = @embedFile("core/lane_order.metal");
 /// Lane rows attending a shared context through an explicit mask (core/shared_attention.zig).

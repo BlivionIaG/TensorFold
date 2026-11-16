@@ -16,9 +16,11 @@ const reference = support.reference;
 test "EXL3 long cancellation retains small terms in BF16 projection output" {
     const long_k = 4096;
     const blocks = long_k / 128;
+    // A prompt window is the body that keeps compensated dots; the one-row and decode bodies sum plain f32.
+    const window = 32;
     const device = try mtl.Device.init();
     defer device.deinit();
-    var pipelines = try ex.Pipelines.load(device);
+    var pipelines = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer pipelines.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -37,12 +39,12 @@ test "EXL3 long cancellation retains small terms in BF16 projection output" {
     matrix.trellis = .{ .buffer = trellis };
     matrix.suh = .{ .buffer = scales };
     matrix.bias = null;
-    const x = try device.buffer(long_k * 2, mtl.ResourceOptions.shared);
+    const x = try device.buffer(window * long_k * 2, mtl.ResourceOptions.shared);
     defer x.deinit();
     var rotated: [long_k]f16 = undefined;
     for (0..blocks) |i| {
         const v: f32 = if (i == 0) 4096 else if (i == blocks - 1) -4096 else 0x1p-13;
-        @memset(x.slice(u16, long_k)[i * 128 ..][0..128], bf16(v));
+        for (0..window) |row| @memset(x.slice(u16, window * long_k)[row * long_k + i * 128 ..][0..128], bf16(v));
         var block: [128]f32 = @splat(v);
         decoder.hadamard(&block);
         for (block, 0..) |value, j| rotated[i * 128 + j] = @floatCast(value);
@@ -60,21 +62,21 @@ test "EXL3 long cancellation retains small terms in BF16 projection output" {
     const sv = base.buffers[2].slice(f16, n + 8)[8..];
     var expected_bf16: [n]u16 = undefined;
     for (expected, sv, &expected_bf16) |v, scale, *out| out.* = bf16(v * @as(f32, scale));
-    const y = try device.buffer(n * 2, mtl.ResourceOptions.shared);
+    const y = try device.buffer(window * n * 2, mtl.ResourceOptions.shared);
     defer y.deinit();
-    const scratch = try device.buffer(try ex.scratchBytes(long_k, n, 1), mtl.ResourceOptions.shared);
+    const scratch = try device.buffer(try ex.scratchBytes(long_k, n, window), mtl.ResourceOptions.shared);
     defer scratch.deinit();
     const cb = queue.commandBuffer();
     const encoder = cb.compute(.concurrent);
-    try ex.encode(&pipelines, encoder, matrix, .{ .buffer = x }, .{ .buffer = y }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = long_k, .y_stride = n });
+    try ex.encode(&pipelines, encoder, matrix, .{ .buffer = x }, .{ .buffer = y }, .{ .buffer = scratch }, .{ .count = window, .x_stride = long_k, .y_stride = n });
     try complete(cb, encoder);
-    try std.testing.expectEqualSlices(u16, &expected_bf16, y.slice(u16, n));
+    for (0..window) |row| try std.testing.expectEqualSlices(u16, &expected_bf16, y.slice(u16, window * n)[row * n ..][0..n]);
 }
 
 test "Metal EXL3 codebooks and half widths match the rotated scalar projection" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -108,7 +110,7 @@ test "Metal EXL3 codebooks and half widths match the rotated scalar projection" 
 test "Metal EXL3 rows retain exact BF16 bits across full and independently resumed windows" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -133,7 +135,7 @@ test "Metal EXL3 rows retain exact BF16 bits across full and independently resum
 test "GPU router descriptors select mixed-width experts with gather and scatter without host routing" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -180,7 +182,7 @@ test "GPU router descriptors select mixed-width experts with gather and scatter 
 test "packed signs and GPU expert filtering preserve untouched output slots" {
     const device = try mtl.Device.init();
     defer device.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const queue = try device.queue();
     defer queue.deinit();
@@ -228,7 +230,7 @@ test "rejected views leave an encoder reusable and successful output retains its
     defer device.deinit();
     const queue = try device.queue();
     defer queue.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const w = try Owned.init(device, 6, .mul1, 17);
     defer w.deinit();
@@ -280,7 +282,7 @@ test "caller-prepared grouped expert tiles preserve scatter slots and ignore pad
     defer device.deinit();
     const queue = try device.queue();
     defer queue.deinit();
-    var p = try ex.Pipelines.load(device);
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
     defer p.deinit();
     const w0 = try Owned.init(device, 3, .mul1, 81);
     defer w0.deinit();
@@ -324,4 +326,97 @@ test "caller-prepared grouped expert tiles preserve scatter slots and ignore pad
     }
     try complete(cb, e);
     try std.testing.expectEqualSlices(u32, plain.slice(u32, 16 * n), grouped.slice(u32, 16 * n));
+}
+
+test "the exact half-FMA decode bodies keep every bit of the table bodies for any tile count" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
+    defer p.deinit();
+    const queue = try device.queue();
+    defer queue.deinit();
+    const saved = ex.knobs.fma_tiles;
+    const saved_groups = ex.knobs.fma_tile_groups;
+    defer ex.knobs.fma_tiles = saved;
+    defer ex.knobs.fma_tile_groups = saved_groups;
+    ex.knobs.fma_tile_groups = 0;
+    const x = try input(device, 3);
+    defer x.deinit();
+    const scratch = try device.buffer(try ex.scratchBytes(k, n, 6), mtl.ResourceOptions.shared);
+    defer scratch.deinit();
+    const ref = try device.buffer(7 * n * 4, mtl.ResourceOptions.shared);
+    defer ref.deinit();
+    const got = try device.buffer(7 * n * 4, mtl.ResourceOptions.shared);
+    defer got.deinit();
+    const descriptors = try device.buffer(2 * @sizeOf(ex.ExpertDescriptor), mtl.ResourceOptions.shared);
+    defer descriptors.deinit();
+    const ids = try device.buffer(6 * 4, mtl.ResourceOptions.shared);
+    defer ids.deinit();
+    @memcpy(ids.slice(u32, 6), &[_]u32{ 0, 1, 1, 0, 1, 0 });
+    const gather = try device.buffer(6 * 4, mtl.ResourceOptions.shared);
+    defer gather.deinit();
+    @memcpy(gather.slice(u32, 6), &[_]u32{ 2, 0, 1, 2, 1, 0 });
+    for ([_]u16{ 2, 4, 6, 8, 10, 12 }) |halves| {
+        const w0 = try Owned.init(device, halves, .mul1, 0xa0 + @as(u64, halves));
+        defer w0.deinit();
+        const w1 = try Owned.init(device, halves, .mcg, 0xb0 + @as(u64, halves));
+        defer w1.deinit();
+        descriptors.slice(ex.ExpertDescriptor, 2)[0] = try ex.descriptor(w0.matrix);
+        descriptors.slice(ex.ExpertDescriptor, 2)[1] = try ex.descriptor(w1.matrix);
+        // Zero tiles is the table body; every other count writes the same bits, dense and routed.
+        for ([_]u32{ 0, 1, 2, 4 }) |tiles| {
+            ex.knobs.fma_tiles = tiles;
+            const out = if (tiles == 0) ref else got;
+            const cb = queue.commandBuffer();
+            const e = cb.compute(.concurrent);
+            ex.useMatrix(e, w0.matrix);
+            ex.useMatrix(e, w1.matrix);
+            try ex.encode(&p, e, w0.matrix, .{ .buffer = x, .offset = 32 }, .{ .buffer = out }, .{ .buffer = scratch }, .{ .count = 1, .x_stride = k + 16, .y_stride = n, .output = .f32 });
+            try ex.encodeIndexed(&p, e, .{ .descriptors = .{ .buffer = descriptors }, .count = 2, .k = k, .n = n }, .{ .buffer = x, .offset = 32 }, .{ .buffer = out, .offset = n * 4 }, .{ .buffer = scratch }, .{ .count = 6, .x_stride = k + 16, .y_stride = n, .output = .f32, .routes = .{ .ids = .{ .buffer = ids }, .repeat = 2 }, .input_rows = 3, .output_rows = 6, .input_ids = .{ .buffer = gather } });
+            try complete(cb, e);
+            if (tiles != 0) try std.testing.expectEqualSlices(u32, ref.slice(u32, 7 * n), got.slice(u32, 7 * n));
+        }
+    }
+}
+
+test "indexed odd and wide codebooks project routed rows against the scalar reference" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
+    defer p.deinit();
+    const queue = try device.queue();
+    defer queue.deinit();
+    const w0 = try Owned.init(device, 3, .mul1, 31);
+    defer w0.deinit();
+    const w1 = try Owned.init(device, 14, .inst3, 32);
+    defer w1.deinit();
+    const w2 = try Owned.init(device, 16, .mcg, 33);
+    defer w2.deinit();
+    const matrices = [_]Owned{ w0, w1, w2 };
+    const descriptors = try device.buffer(matrices.len * @sizeOf(ex.ExpertDescriptor), mtl.ResourceOptions.shared);
+    defer descriptors.deinit();
+    for (matrices, 0..) |w, i| descriptors.slice(ex.ExpertDescriptor, matrices.len)[i] = try ex.descriptor(w.matrix);
+    const ids = try device.buffer(matrices.len * 4, mtl.ResourceOptions.shared);
+    defer ids.deinit();
+    @memcpy(ids.slice(u32, matrices.len), &[_]u32{ 2, 0, 1 });
+    const x = try input(device, matrices.len);
+    defer x.deinit();
+    const y = try device.buffer(matrices.len * n * 4, mtl.ResourceOptions.shared);
+    defer y.deinit();
+    @memset(y.slice(u8, matrices.len * n * 4), 0);
+    const scratch = try device.buffer(try ex.scratchBytes(k, n, matrices.len), mtl.ResourceOptions.shared);
+    defer scratch.deinit();
+    const cb = queue.commandBuffer();
+    const e = cb.compute(.concurrent);
+    for (matrices) |w| ex.useMatrix(e, w.matrix);
+    try ex.encodeIndexed(&p, e, .{ .descriptors = .{ .buffer = descriptors }, .count = matrices.len, .k = k, .n = n }, .{ .buffer = x, .offset = 32 }, .{ .buffer = y }, .{ .buffer = scratch }, .{ .count = matrices.len, .x_stride = k + 16, .y_stride = n, .output = .f32, .routes = .{ .ids = .{ .buffer = ids }, .repeat = 1 }, .input_rows = matrices.len });
+    try complete(cb, e);
+    for (ids.slice(u32, matrices.len), 0..) |expert, row| {
+        var want: [n]f32 = undefined;
+        reference(matrices[expert], x.slice(u16, matrices.len * (k + 16) + 16)[16 + row * (k + 16) ..][0..k], &want);
+        var peak: f32 = 1;
+        for (want) |v| peak = @max(peak, @abs(v));
+        for (y.slice(f32, matrices.len * n)[row * n ..][0..n], want) |got, expected|
+            try std.testing.expectApproxEqAbs(expected, got, 0.00005 * peak);
+    }
 }

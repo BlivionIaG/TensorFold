@@ -89,6 +89,28 @@ The `TF_GLM_*` rows are checked when GLM's CUDA family opens, on every rank, so 
 Common server settings are checked before checkpoint resolution, including when no request would use them yet.
 Direct family readers also refuse malformed values when called without the server.
 
+## DeepSeek EXL3 Metal controls
+
+These controls use the shared parser. Empty or whitespace-only values keep the default; malformed values stop startup.
+
+| Variable | Accepted explicit value and default |
+| --- | --- |
+| `TF_DSV41_EXL3_FMA_TILES` | `0`, `1`, `2` or `4`; default `2`. Zero disables column tiling; dispatch still respects the projection's geometry. |
+| `TF_DSV41_BATCH_MAX` | Whole row count `1` through `8`; default `4`. |
+| `TF_DSV41_BATCH_ATTN` | `0` or `1`; default `1`. Zero restores the per-slot attention chain. |
+| `TF_DSV41_MTP_DRAFTS` | `0` or `1`; default `0`. Enables the trained Metal drafter without requiring lookup drafts; `0` disables it. |
+| `TF_DSV41_CONE` | `0`, `1` or `2`; default `2`. Zero uses the full forward, one uses one replay program, two uses layer groups. |
+| `TF_DSV41_CONE_PARK` | Whole count `0` through `3`; default `3`. Other prompts' pending encoder runs retained beside the active run. |
+
+Unset `TF_DSV41_PREFILL_STEP` tries 8192 workspace rows and falls back to 4096 only on memory admission refusal.
+The admitted wide workspace uses chunks of at most 4096 rows while another stream decodes.
+An explicit step keeps the parent's parsing and disables this automatic choice.
+
+`tf-dsv41-run` also honors an explicit step, using the existing lenient parser and recording `workspace_rows`.
+Its unset diagnostic default remains 15872 rows; the server's automatic admission policy above is unchanged.
+
+The Metal MTP proposal has four draft-token slots. `TF_DSV41_MTP_DEPTH_MAX` defaults to three and is capped at four.
+
 ## Existing lenient switches
 
 These settings retain their existing boolean policies rather than gaining new aliases or refusals:
@@ -106,6 +128,7 @@ These settings retain their existing boolean policies rather than gaining new al
 
 - The DeepSeek-V4.1 lane's existing experimental and diagnostic switches keep their own readers
   (presence, exact `0`, or lenient numeric parsing), so they are listed here rather than gaining refusals:
+  `TF_DSV41_CONE_CHECK` (a comma-separated list of diagnostic prompt sizes),
   `TF_DSV41_ATTN_COUNT`, `TF_DSV41_ATTN_COUNT_LAYERS`, `TF_DSV41_ATTN_DENSE_VALUES`, `TF_DSV41_ATTN_PROF`, `TF_DSV41_ATTN_PROF_LAYERS`,
   `TF_DSV41_ATTN_SCAN_BARRIER`, `TF_DSV41_ATTN_SPLITS`, `TF_DSV41_BATCH`, `TF_DSV41_BATCH_DEBUG`, `TF_DSV41_BLOCK_FILTER`,
   `TF_DSV41_BLOCK_PROF`, `TF_DSV41_CLEAR_PARTIALS`, `TF_DSV41_CLEAR_STALE`, `TF_DSV41_CONCURRENT`, `TF_DSV41_COND_NOALIGN`,
@@ -133,7 +156,7 @@ These settings retain their existing boolean policies rather than gaining new al
   `TF_DSV41_KROW_CHECK`, `TF_DSV41_LAYER_CB`, `TF_DSV41_LOGIT_DUMP`, `TF_DSV41_LOOKUP_DRAFTS`, `TF_DSV41_MTP_ADAPT`,
   `TF_DSV41_MTP_ADAPT_CONFIRM`, `TF_DSV41_MTP_ADAPT_DEBUG`, `TF_DSV41_MTP_ADAPT_DOWN`, `TF_DSV41_MTP_ADAPT_RATCHET`, `TF_DSV41_MTP_ADAPT_SIGNAL`,
   `TF_DSV41_MTP_ADAPT_UP`, `TF_DSV41_MTP_ADAPT_WARM`, `TF_DSV41_MTP_DEBUG_LOGITS`, `TF_DSV41_MTP_DEBUG_ROWS`, `TF_DSV41_MTP_DEBUG_TOP`,
-  `TF_DSV41_MTP_DEPTH_MAX`, `TF_DSV41_MTP_DRAFTS`, `TF_DSV41_MTP_DRAFT_ROWS`, `TF_DSV41_MTP_PIPE`, `TF_DSV41_MTP_ROPE_ALL`,
+  `TF_DSV41_MTP_DEPTH_MAX`, `TF_DSV41_MTP_DRAFT_ROWS`, `TF_DSV41_MTP_PIPE`, `TF_DSV41_MTP_ROPE_ALL`,
   `TF_DSV41_MTP_ROWS`, `TF_DSV41_MTP_STOP`, `TF_DSV41_MTP_STUB`, `TF_DSV41_MTP_STUB_BLOCKS`, `TF_DSV41_MTP_STUB_COND`,
   `TF_DSV41_MTP_STUB_HEAD`, `TF_DSV41_MTP_TRUNK_RING`, `TF_DSV41_NAX_MIN_ROWS`, `TF_DSV41_NO_COND_WKV_FUSE`, `TF_DSV41_NO_ENGRAM_FLUSH`,
   `TF_DSV41_NO_FUSE_DRAFT_WO_A`, `TF_DSV41_NO_FUSE_KVGLUE`, `TF_DSV41_NO_FUSE_MOE_UP`, `TF_DSV41_NO_FUSE_QKV`, `TF_DSV41_NO_FUSE_SHARED`,

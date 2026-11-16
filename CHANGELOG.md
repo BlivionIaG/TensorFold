@@ -313,6 +313,22 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - Internal: a shared CUDA MLA image (`mla.cu`, `cuda.mla`) for a 512-wide latent with 64 roped columns and 128-wide heads, on GLM's MLA chunk bodies, which move from `glm_glue_attn.cuh` to `common/mla.cuh` and which GLM instantiates at its old widths (its SASS is identical on all five SMs). Its seven launches are under the kernel contract with a planted control each, and `test-mla-twins-host` keeps its absorb, expand and per-rank merge GLM's kernels token for token. No family calls it yet (#2335, refs #850). Thanks to @ajensenwaud.
 
 ## 1.2.5
+- DeepSeek-V4.1 EXL3 on Metal: exact tiled half-FMA decode, fused projection chains, batched decode attention (#3382),
+  per-prompt suffix-cone prefill, next-chunk Engram staging and bounded vocabulary-head scratch.
+  Prompt chunks adapt to admitted memory and live decoders; incompatible shapes retain the generic projection body.
+  Small dense, filtered and indexed projections retain matching reduction orders and logical output bounds.
+  Attention tiles stop at their split boundary instead of counting some keys twice, and packed NaNs survive BF16 decoding.
+  Draft embedding IDs grow without replacing Markov picks; unload releases host state, Markov IDs and drafter scratch.
+  MTP-only configurations no longer depend on lookup drafting; proposal depth is capped at the four-ID capacity.
+  Adaptive trained depth remains available with lookup disabled; suffix lookup reads the committed stream context.
+  Matching suffix proposals take precedence over paid trained proposals.
+  The diagnostic runner honors an explicit prefill-workspace setting without changing its unset default.
+  GPU profiling starts deferred mHC spans only when work is encoded, avoiding empty counter samples.
+  Last-row logits expand the selected final stream row rather than row zero of a multi-row window.
+  Fused mHC Sinkhorn uses the unfused split's FP32 row and column reduction order.
+  Stacked on #2373; whole-model qualification is still incomplete.
+  See [scope and qualification limits](docs/deepseek-v41.md#exl3-optimization-follow-up)
+  and [full-window fidelity](docs/receipts/dsv41-exl3-metal/fidelity-128.json).
 
 - Tests: the Metal kernel contract's limits pass checks LFM3's launches again; a rebase had dropped their five entries, so the pass stopped at the first LFM3 record with `UnknownLaunch` and left every later launch unchecked (#2565).
 

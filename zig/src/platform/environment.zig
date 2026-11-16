@@ -94,8 +94,11 @@ pub const rules = [_]Rule{
     .{ .name = "TF_DSV41_LOOKUP", .scope = .dsv41, .kind = .toggle, .trim = " \t", .forms = "0, 1, true, false, on, off, yes or no (any case); blank turns lookup drafts off" },
     .{ .name = "TF_DSV41_LOOKUP_PLAN", .scope = .dsv41, .kind = .toggle, .trim = " \t", .forms = "0, 1, true, false, on, off, yes or no (any case)" },
     .{ .name = "TF_DSV41_GM_V3", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+    .{ .name = "TF_DSV41_CONE", .scope = .dsv41, .kind = .u32, .forms = "0, 1 or 2" },
+    .{ .name = "TF_DSV41_CONE_PARK", .scope = .dsv41, .kind = .u32, .forms = "0 to 3" },
     .{ .name = "TF_DSV41_OWN_PREFILL", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_DRAFTS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+    .{ .name = "TF_DSV41_MTP_DRAFTS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1 (default 0; enables the trained Metal drafter independently of lookup drafts)" },
     .{ .name = "TF_DSV41_GRAPHS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_AOT_GUARD", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_DSV41_ENGRAM_PREFETCH", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
@@ -170,6 +173,9 @@ pub const rules = [_]Rule{
     .{ .name = "TF_DSV41_IMAGES", .scope = .dsv41, .kind = .word, .trim = " ", .words = &.{ "0", "native" }, .forms = "native or 0" },
     .{ .name = "TF_DSV41_LAYERS", .scope = .dsv41, .kind = .range, .forms = "lo-hi: two whole layer numbers from 0 to 4294967295 with lo <= hi" },
     .{ .name = "TF_DSV41_ROWS_CAP", .scope = .dsv41, .kind = .u32, .only = &.{ 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 24, 32, 48, 64 }, .forms = "1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 24, 32, 48 or 64" },
+    .{ .name = "TF_DSV41_EXL3_FMA_TILES", .scope = .dsv41, .kind = .u32, .trim = " \t\r\n", .only = &.{ 0, 1, 2, 4 }, .forms = "0, 1, 2 or 4 column tiles" },
+    .{ .name = "TF_DSV41_BATCH_MAX", .scope = .dsv41, .kind = .u32, .trim = " \t\r\n", .min = 1, .max = 8, .forms = "a whole row count from 1 to 8" },
+    .{ .name = "TF_DSV41_BATCH_ATTN", .scope = .dsv41, .kind = .flag, .trim = " \t\r\n", .forms = "0 or 1" },
 };
 
 pub fn rule(name: []const u8) Rule {
