@@ -144,10 +144,10 @@ inline void tf_exl3_t_body(const device half* x, const TfExl3DecodeJob job, devi
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
-  if (sg != 0) return;
-  for (uint r = 0; r < R; ++r) {
-    if (row0 + r >= a.rows) break;
-    for (uint t = 0; t < T; ++t) {
+  // Warp t finishes tile t (warps beyond the tile count are done): the fixed slot order per output is unchanged.
+  for (uint t = sg; t < T; t += TF_FMA_WARPS) {
+    for (uint r = 0; r < R; ++r) {
+      if (row0 + r >= a.rows) break;
       float acc0 = 0.0f, acc1 = 0.0f;
       for (uint w = 0; w < W; ++w) {
         const uint slot = ((w * R + r) * T + t) * 64u;

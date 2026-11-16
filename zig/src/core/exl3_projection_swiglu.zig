@@ -64,7 +64,8 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     var a = args;
     // T-tile exact half-FMA bodies (routed, one-row dense): the widest T up to the knob that keeps the group count.
     const tiles: u32 = if (knobs.fma_tiles == 0) 0 else blk: {
-        var t: u32 = if (knobs.fma_tiles >= 4) 4 else if (knobs.fma_tiles >= 2) 2 else 1;
+        const want = if (r.fma_tiles != 0) r.fma_tiles else knobs.fma_tiles;
+        var t: u32 = if (want >= 4) 4 else if (want >= 2) 2 else 1;
         while (t > 1 and ((@as(usize, a.n) + 16 * t - 1) / (16 * t)) * a.rows < knobs.fma_tile_groups) t /= 2;
         break :blk t;
     };
