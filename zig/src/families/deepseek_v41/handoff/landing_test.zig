@@ -182,3 +182,51 @@ test "a drafter ring part that is not whole, repeated, or for a stage that does 
     try std.testing.expectError(error.BadPart, sink.put_fn(sink.ptr, first, 0, 1, bytes)); // the same stage again
     try std.testing.expectError(error.Incomplete, l.complete()); // one stage of three: no ring is ever half there
 }
+
+test "a layer-split state lands exactly the plan's parts below the cut, completes, and touches nothing above it" {
+    const split = @import("split.zig");
+    for ([_]struct { upto: u64, cut: u32 }{ .{ .upto = 300, .cut = 14 }, .{ .upto = 131, .cut = 8 }, .{ .upto = 64, .cut = 2 } }) |cs| {
+        var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
+        const w = try s.make(arena, .{ .upto = cs.upto, .seed = cs.upto + cs.cut });
+        const shape = split.stateShape(cs.upto, cs.cut);
+        const parts = try ex.build(arena, shape, w.cuda);
+        const layers = try split.describe(arena, cs.upto, cs.cut);
+
+        const via = try target(arena);
+        var l: landing.Landing = undefined;
+        try l.initCut(arena, cs.upto, cs.cut, .{ .@"packed" = via });
+        defer l.deinit();
+        try std.testing.expectError(error.Incomplete, l.complete());
+        var at: usize = 0;
+        for (layers[1..]) |*layer| for (layer.parts, 0..) |p, i| {
+            try std.testing.expectEqual(parts[at].spec.layer, layer.index);
+            var name: [40]u8 = undefined;
+            try std.testing.expectEqualStrings(parts[at].spec.name(&name), p.name);
+            try l.decoderSink().put_fn(l.decoderSink().ptr, layer, i, 1, parts[at].bytes);
+            at += 1;
+        };
+        try std.testing.expectEqual(parts.len, at);
+        const res = try l.complete();
+        try std.testing.expectEqual(cs.upto, res.upto);
+        try std.testing.expect(!res.drafter_dropped);
+
+        const direct = try target(arena);
+        var imp = try im.Import.init(arena, shape, .{ .@"packed" = direct }, .{});
+        var buf: [40]u8 = undefined;
+        for (parts) |p| try imp.put(0, p.spec.layer, p.spec.name(&buf), p.spec.dtype, p.spec.rows, p.spec.cols, p.bytes);
+        _ = try imp.complete();
+        try std.testing.expectEqualSlices(u8, direct.live, via.live);
+        try std.testing.expectEqualSlices(u8, direct.storage, via.storage);
+        // layers at and above the cut stay blank: their rings, and the owners from the cut on
+        const ring = @as(usize, metal.Packed.window) * metal.Packed.ring_stride;
+        for (via.live[@as(usize, cs.cut) * ring .. via.ringBytes()]) |b| try std.testing.expectEqual(@as(u8, 0), b);
+        for (metal.Packed.owners, 0..) |o, id| if (o >= cs.cut) {
+            for (via.live[via.partialOff(id)..][0 .. 2 * metal.Packed.ratios[id] * 512 * 4]) |b| try std.testing.expectEqual(@as(u8, 0), b);
+            for (via.live[via.captureOff(id)..][0..metal.Packed.capture_bytes]) |b| try std.testing.expectEqual(@as(u8, 0), b);
+            const rows = via.capacity / metal.Packed.ratios[id];
+            for (via.storage[via.mainOff(id)..][0 .. @as(usize, rows) * (metal.Packed.main_stride + metal.Packed.index_stride)]) |b| try std.testing.expectEqual(@as(u8, 0), b);
+        };
+    }
+}

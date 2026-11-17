@@ -180,7 +180,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         }
         try engram.encodeCommit(enc, &p.engram, ws.view(.ids), ws.view(.token_map), null, try ws.historyView(slot), rows);
     }
-    if (cone_phase == .decoder) forward_cone.loadStash(m, enc, rows) else if (m.gate.entry_dir) |_| {
+    if (cone_phase == .decoder) forward_cone.loadStash(m, enc, rows) else if (m.gate.entered()) {
         if (segs.len != 1) return error.GateStop;
         try m.gate.loadEntry(ws.view(.stream), ws.view(.previous_pre), segs[0].p0, rows);
     } else {
@@ -189,7 +189,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         mhc.encodeExpand(enc, &p.mhc, ws.view(.collapsed), ws.view(.stream), ws.view(.previous_pre), .{ .rows = rows, .width = 5120, .x_stride = 5120, .stream_stride = 20480 });
         enc.barrier();
     }
-    if (m.gate.entry_dir == null) hid.record(enc, &p.ops, m.streamView(), rows, .embed, 0);
+    if (!m.gate.entered()) hid.record(enc, &p.ops, m.streamView(), rows, .embed, 0);
     var asegs: [8]attention.Seg = undefined;
     {
         var at: u32 = 0;
@@ -200,7 +200,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     }
     for (&m.weights.layers, 0..) |*layer, index| {
         if (cone_phase == .decoder and index < m.cone.lo) continue;
-        if (m.gate.entry_dir != null and index < m.gate.k) continue;
+        if (m.gate.entered() and index < m.gate.k) continue;
         if (m.gate.stop_dir != null and index == m.gate.stop_k) {
             if (logits != .none or segs.len != 1) return error.GateStop;
             if (m.pending_expand) {

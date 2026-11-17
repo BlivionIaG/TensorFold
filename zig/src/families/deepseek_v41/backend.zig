@@ -6,6 +6,7 @@ const lanes = @import("lanes");
 const be = lanes.backend;
 const Stream = lanes.Stream;
 const greedy = @import("greedy.zig");
+const split_run = @import("split_run.zig");
 
 const RING = 1024;
 
@@ -41,6 +42,8 @@ pub const Backend = struct {
     held: [][]u32,
     /// The trained proposer's last proposal, so the round runs the draft forward ONCE.
     mtp_cache: [32]?MtpCache = @splat(null),
+    /// Each slot's layer-split prompt pass (backend_prefill.zig) while its stream holds the slot, null otherwise.
+    runs: []?split_run.Run,
     /// What the last verify sampled per row, so a rejected window's re-feed can be compared with it.
     last_sampled: [8]u32 = @splat(0),
     /// The depth each slot's last round RAN -- the adaptive policy's state.
@@ -74,6 +77,8 @@ pub const Backend = struct {
     pub fn init(gpa: std.mem.Allocator, model: *ds.Model) !Backend {
         const held = try gpa.alloc([]u32, model.lanes);
         for (held) |*h| h.* = &.{};
+        const runs = try gpa.alloc(?split_run.Run, model.lanes);
+        @memset(runs, null);
         const last_depth = try gpa.alloc(u32, model.lanes);
         @memset(last_depth, 0);
         const up_streak = try gpa.alloc(u32, model.lanes);
@@ -113,6 +118,7 @@ pub const Backend = struct {
             .first = try gpa.alloc(u32, model.lanes),
             .verify_len = try gpa.alloc(u32, model.lanes),
             .held = held,
+            .runs = runs,
         };
     }
 
@@ -123,6 +129,7 @@ pub const Backend = struct {
         for (b.held) |h| if (h.len > 0) b.gpa.free(h);
         b.gpa.free(b.held);
         b.gpa.free(b.last_depth);
+        b.gpa.free(b.runs);
         b.gpa.free(b.up_streak);
         b.gpa.free(b.keep_pending);
         b.gpa.free(b.keep_ratio);
