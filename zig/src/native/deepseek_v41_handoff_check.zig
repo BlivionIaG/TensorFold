@@ -219,6 +219,7 @@ fn graft(m: *ds.Model, native: *const ds.Model.Snapshot, landed: *ds.Model.Snaps
 /// TF_DSV41_HANDOFF_BISECT: one part kind from the hand-off, the rest from the local prefill, compared on logits.
 fn bisect(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, prompt: []const u32, upto: u32, ref_picks: []const u32, ref: []const f32, steps: usize) !void {
     try compareRows(m, a, native, landed, upto);
+    rawBytes(m, native, landed, upto);
     inline for (comptime std.meta.tags(Part)) |part| {
         const hybrid = try graft(m, native, landed, part, upto);
         defer m.snapshotDrop(hybrid);
@@ -227,6 +228,28 @@ fn bisect(m: *ds.Model, a: std.mem.Allocator, native: *const ds.Model.Snapshot, 
         const first = (try feed(m, a, prompt[upto..], true)).?;
         const rows = try decode(m, a, first, ref_picks, steps, try a.alloc(u32, steps));
         compare("only " ++ @tagName(part) ++ " from the hand-off", ref, rows, steps);
+    }
+}
+
+/// The landed storage against the native one byte for byte, per compressor source: differing rows of the main and index regions.
+fn rawBytes(m: *ds.Model, native: *const ds.Model.Snapshot, landed: *ds.Model.Snapshot, upto: u32) void {
+    const pk = remote.packedOf(m, landed);
+    const P = ho.metal.Packed;
+    for (P.ratios, 0..) |ratio, i| {
+        const rows = @as(usize, upto) / ratio;
+        const main = pk.mainOff(i);
+        const index = main + @as(usize, pk.capacity / ratio) * P.main_stride;
+        var main_rows: usize = 0;
+        var main_first: usize = 0;
+        var index_rows: usize = 0;
+        for (0..rows) |r| {
+            if (!std.mem.eql(u8, native.storage[main + r * P.main_stride ..][0..P.main_stride], landed.storage[main + r * P.main_stride ..][0..P.main_stride])) {
+                if (main_rows == 0) main_first = r;
+                main_rows += 1;
+            }
+            if (!std.mem.eql(u8, native.storage[index + r * P.index_stride ..][0..P.index_stride], landed.storage[index + r * P.index_stride ..][0..P.index_stride])) index_rows += 1;
+        }
+        log.info("raw source {d} (ratio {d}): {d} rows, main differs in {d} (first {d}), index differs in {d}", .{ i, ratio, rows, main_rows, main_first, index_rows });
     }
 }
 
