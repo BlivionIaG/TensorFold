@@ -310,7 +310,7 @@ pub const Pipelines = struct {
                             for ([_]View{ qv, wv, scratch.denseKeys(), scratch.scores() }, 0..) |v, i|
                                 enc.setBuffer(v.buffer, v.offset, i);
                             enc.setValue(tile, 4);
-                            enc.dispatchGroups(mtl.Size.of((keys_here + 63) / 64, (a.rows + 15) / 16, 1), mtl.Size.of(128, 1, 1));
+                            enc.dispatchGroups(mtl.Size.of((keys_here + 63) / 64, (a.rows + 31) / 32, 1), mtl.Size.of(128, 1, 1));
                             enc.barrier();
                         } else if (nax_ok) {
                             enc.setPipeline(p.nax_score.?);
