@@ -344,9 +344,23 @@ pub const Seg = struct {
                 try s.postOnly(y);
                 try e.glue("trace", &.{ y, .{ .i = L } });
             }
+            if (!s.short and s.multi == null and dumpHas(L)) {
+                // private gate instrumentation: the layer's true residual (post applied) and the next site's pre
+                const y = try e.buf("w.trace", .{}, .bf16, &.{ n, 4 * D });
+                try s.postOnly(y);
+                try e.glue("bdump", &.{ y, (try Seg.coefs(e, e.coef))[0], .{ .i = L }, .{ .i = e.start } });
+            }
         }
         if (head) try s.final();
         s.unpend();
+    }
+
+    /// TF_LS_DUMP_LAYERS=a,b,..: the layers whose output boundary the prefill dumps (private gate instrumentation).
+    fn dumpHas(L: u32) bool {
+        const v = std.c.getenv("TF_LS_DUMP_LAYERS") orelse return false;
+        var it = std.mem.tokenizeScalar(u8, std.mem.span(v), ',');
+        while (it.next()) |t| if ((std.fmt.parseInt(u32, t, 10) catch continue) == L) return true;
+        return false;
     }
 
     /// A program ending on an exchange's pieces: its last piece back on the main stream after a join (no open fork).

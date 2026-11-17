@@ -193,6 +193,8 @@ pub const Model = struct {
     attention_observer: ?attention.DiagnosticObserver = null,
     /// The cone prefill's state (forward_cone.zig).
     cone: forward_cone.Cone = .{},
+    /// Layer-split gate G3: enter or stop the forward at a layer (layersplit_gate.zig).
+    gate: @import("layersplit_gate.zig").Gate = .{},
     pub const Observer = struct {
         ctx: *anyopaque,
         encode: *const fn (*anyopaque, mtl.ComputeEncoder, u32, gpu_counters.Stage, *const Model) void,
