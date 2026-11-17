@@ -480,10 +480,7 @@ kernel void tf_exl3_matmul_prefill(const device half* x [[buffer(0)]],
   }
 }
 
-// Dense windows of 9 to 31 rows with the plain eight-row body's arithmetic, bit for bit: each output's products reach one
-// fp32 accumulator k ascending, block after block. A SIMDgroup owns sixteen rows and a sixteen-column tile, a lane one row
-// and eight columns, so one decode of the tile serves sixteen rows. The next block's trellis words and activations are
-// loaded while this block multiplies.
+// Dense windows of 9 to 31 rows, the eight-row body's arithmetic bit for bit: one decode of a tile serves sixteen rows.
 kernel void tf_exl3_matmul_rows(const device half* x [[buffer(0)]],
                                 const device uchar* trellis [[buffer(1)]],
                                 device float* sums [[buffer(2)]],

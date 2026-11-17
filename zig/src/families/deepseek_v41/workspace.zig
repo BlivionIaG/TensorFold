@@ -46,8 +46,7 @@ pub const Field = enum {
     fused_sources,
     /// The hyper-connection boundary's second stream buffer: the fused expand writes here and the views swap.
     stream_next,
-    /// The boundary's partial sums: 20 slices of 1024 columns x 25 (24 mixes and the squares) a row; a window of
-    /// `hc_unit_rows` rows or fewer takes 160 units of 128 columns instead.
+    /// The boundary's partial sums: 20 slices of 1024 columns x 25 a row, or 160 units of 128 columns when small.
     hc_part,
 };
 const count = std.enums.values(Field).len;

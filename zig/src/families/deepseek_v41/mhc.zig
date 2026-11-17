@@ -171,8 +171,7 @@ pub fn encodeBoundary(e: mtl.ComputeEncoder, p: *const BoundaryPipelines, d: Bou
 }
 pub const BoundaryArgs = extern struct { eps: f32, hc_eps: f32, iters: i32 };
 
-/// The decode-sized boundary: expand + collapse + unit partials, then the norm beside the split. The collapse lands in
-/// `normed` and the second launch norms it in place; the partials are `workspace.hc_unit_row_bytes` a row.
+/// The decode-sized boundary: expand, collapse and unit partials, then the norm beside the split.
 fn encodeBoundaryRows(e: mtl.ComputeEncoder, p: *const BoundaryPipelines, d: Boundary, v: anytype) void {
     e.setPipeline(p.expand_collapse);
     inline for (.{ v.x_old, v.branch, v.post, v.comb, v.fn_, v.part, v.x_new, v.pre_in, v.normed }, 0..) |r, i| e.setBuffer(r.buffer, r.offset, i);

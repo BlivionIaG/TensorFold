@@ -167,7 +167,7 @@ pub const Proj = struct {
         @memset(zero, 0);
         const scale = [_]f32{ 1, 1, 1 };
         const bias: [24]f32 = @splat(0);
-        // The unit launch adds eight unit partials a slice from zero; one unit carrying the slice's partial and seven zeros give it back.
+        // The unit launch adds eight unit partials a slice from zero; one unit and seven zeros give the partial back.
         const units = try a.alloc(f32, shape.rows * mhc.boundary_width / 128 * 4 * parts);
         @memset(units, 0);
         for (0..shape.rows) |r| for (0..slices) |j| @memcpy(units[(r * unit_groups + 8 * j) * parts ..][0..parts], p.partials[(r * slices + j) * parts ..][0..parts]);

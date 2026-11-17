@@ -126,8 +126,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         scan_probe.reset();
     }
     m.look_slot = slot;
-    // A few rows hash and stage their Engram rows on the host (about half a millisecond a token), which the first
-    // Engram layer reads. The layers before it are committed first so the GPU runs them during that pass.
+    // A few rows hash their Engram rows on the host; the layers before the first Engram layer commit first.
     const hash_overlap = m.stream != null and cone_phase == .off and rows <= model_hash.cpuHashRows() and
         engram.hash.layers[0].layer_id > 0 and std.c.getenv("TF_DSV41_SKIP_ENGRAM") == null and
         std.c.getenv("TF_DSV41_LAYER_CB") == null and std.c.getenv("TF_DSV41_STAGE_CB") == null and
@@ -208,8 +207,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
             for (m.checkpoint.shards.items) |shard| enc.useResource(shard.buffer, mtl.ResourceUsage.read);
         }
         if (hash_overlap and (index == hash_layer or index == hash_layer + 2)) {
-            // The first commit is the layers before the Engram layer; the second the Engram layer and the next, so the
-            // GPU is never waiting for the rest of the encode.
+            // Commit the layers before the Engram layer, then the Engram layer and the next, so the GPU never idles.
             enc.end();
             e.commit();
             engram_prev[engram_prev_n] = e;

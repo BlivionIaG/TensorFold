@@ -192,8 +192,7 @@ kernel void tf_exl3_rope_rotate_in(device ushort* x [[buffer(0)]],
   if (base >= a.k) return;
   float v[4];
   ushort bits[4];
-  // x_stride, the head stride and the head width are multiples of 128 (the host checks), so a block sits inside one
-  // head of one row: the division and the modulo run once a SIMDgroup.
+  // x_stride, head stride and width are multiples of 128 (host-checked): the head division runs once a SIMDgroup.
   const ulong at0 = ulong(source) * a.x_stride + base;
   const ulong z = at0 / rp.stride;
   const uint head_base = uint(at0 % rp.stride) % rp.width;

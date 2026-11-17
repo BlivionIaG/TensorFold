@@ -175,8 +175,7 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
         std.log.info("exl3: nax31 dense double-buffered body selected rows={d} tile={d}", .{ a.rows, nax_tile });
     }
     const shared = !nax and !decode_nax and p.prefill != null and a.rows >= knobs.shared_min_rows and a.indexed == 0 and a.routed == 0;
-    // Dense windows of 9 to 31 rows keep the plain eight-row body's arithmetic and share one decode of a column tile
-    // across sixteen rows.
+    // Dense windows of 9 to 31 rows keep the eight-row body's arithmetic and share one tile decode across sixteen rows.
     const rows_plain = p.matmul_rows != null and !nax and !decode_nax and !shared and a.indexed == 0 and a.routed == 0 and
         a.rows >= 9 and a.rows < knobs.shared_min_rows and a.splits <= 1;
     // The table-decode knob: the one-row matmul body reads the codebook from the resident table, bit-identically.

@@ -90,9 +90,7 @@ inline void hc_publish_slice(threadgroup float* warp, device float* part, const 
   hc_publish_slice(&warp[0], PART, parts, lane, sg, t, uint(r), uint(j));
 }
 
-// The release's split (kernel.py hc_split_sinkhorn_kernel): lanes 0-3 carry pre and post.
-// EARLY stops the Sinkhorn once its state repeats: every pass past the first is the same function of the last one's
-// result, so a result equal to the one two passes back (a fixed point, or a two-cycle) fixes all the later ones.
+// The release's split (hc_split_sinkhorn_kernel); EARLY stops once a pass repeats the one two back.
 template <bool EARLY>
 inline void hc_split_row(threadgroup const float* tot, constant const HcArgs& a,
                          const device float* base, const device float* scale, uint lane, uint r,
@@ -136,11 +134,7 @@ inline void hc_split_row(threadgroup const float* tot, constant const HcArgs& a,
   if (live) comb_out[r * kCopies * kCopies + lane] = comb;
 }
 
-// The decode-sized boundary, in two launches. Same arithmetic as tf_hc_expand_mix + tf_hc_boundary_mix: a unit's
-// 32-lane sum is the old warp sum, and the boundary adds the eight units of a slice in order and then the slices.
-//
-// A threadgroup a (row, 128-column range) with a simdgroup for each of the four stream copies, so the collapse of the
-// four copies needs no second pass over the streams: Y holds the rounded collapse for the norm.
+// The decode-sized boundary in two launches: one (row, 128-column) threadgroup expands and collapses the four streams.
 [[kernel, max_total_threads_per_threadgroup(128)]]
 void tf_hc_expand_collapse(const device bfloat* X [[buffer(0)]], const device bfloat* BR [[buffer(1)]],
                            const device float* POST [[buffer(2)]], const device float* COMB [[buffer(3)]],
@@ -154,7 +148,7 @@ void tf_hc_expand_collapse(const device bfloat* X [[buffer(0)]], const device bf
   const int k = int(sg);
   const int d0 = 128 * range + 4 * int(lane);
   const int col = k * kWidth + d0;
-  // The hc_fn columns first: their read overlaps the expand's. Kept tensors pack at 256 bytes, so four floats are aligned.
+  // The hc_fn columns first, so their read overlaps the expand's; kept tensors pack at 256 bytes (aligned float4).
   float4 f[kMixes];
   for (int q = 0; q < kMixes; q++) f[q] = *reinterpret_cast<const device float4*>(FN + size_t(q) * kStream + col);
   // Every read of the expand before any write of it: a store may alias the next read, so it would end the overlap.
@@ -193,8 +187,7 @@ void tf_hc_expand_collapse(const device bfloat* X [[buffer(0)]], const device bf
   Y[size_t(r) * kWidth + 128 * range + t] = bfloat(hc_round(collapsed));
 }
 
-// Two threadgroups a row, 1024 threads: 2r the norm of the collapse Y (written in place as the normed row), 2r+1 the
-// split of the unit partials. They run side by side, so the Sinkhorn is off the norm's path.
+// Two threadgroups a row: 2r norms the collapse Y in place, 2r+1 splits the unit partials, off the norm's path.
 [[kernel, max_total_threads_per_threadgroup(1024)]]
 void tf_hc_boundary_rows(device bfloat* Y [[buffer(0)]], const device float* PART [[buffer(1)]],
                          const device float* BASE [[buffer(2)]], const device float* SCALE [[buffer(3)]],

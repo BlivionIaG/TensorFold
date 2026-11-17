@@ -346,7 +346,7 @@ inline bfloat dsv41_dense_at_off(int enc, uint off, device const ushort *dense, 
   }
 }
 
-// One decode window's dense keys in a single pass: the ring, the chunk rows, then the compressed rows (every row, or the picks).
+// One decode window's dense keys in a single pass: the ring, the chunk rows, then the compressed rows (all or picked).
 struct DenseKvAll { uint ring_rows, chunk_rows, comp_rows, width, ring_stride, chunk_stride, main_stride, window, comp_first, picked; };
 static_assert(sizeof(DenseKvAll) == 40, "DenseKvAll must mirror csa2.zig's DenseKvAll");
 kernel void dsv41_dense_kv_all(const device uchar *ring [[buffer(0)]], const device uchar *chunk [[buffer(1)]],
