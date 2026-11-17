@@ -10,12 +10,7 @@ const split_run = @import("split_run.zig");
 /// The stream's slot, taken, reset and (for a kept prompt state) restored on the first chunk; the pass's cursor.
 fn begin(b: *Backend, s: *Stream, prompt: []const u32) !u32 {
     // a split feed the stream cannot start on is over, as a failed one (the prompt is a local pass if it runs again)
-    errdefer if (s.reuse.split) |p| {
-        const feed = @as(*const split_feed.Feed, @ptrCast(@alignCast(p))).*;
-        s.reuse.split = null;
-        feed.finish(false, .{});
-        s.split_report = .{ .cut = feed.cut, .fell_back = true };
-    };
+    errdefer dropFeed(s);
     const i = b.free() orelse return error.NoFreeSlot;
     const state = &b.model.caches[i];
     if (prompt.len + s.max_new + 1 > state.plan.capacity) return error.ContextFull;
@@ -93,6 +88,15 @@ pub fn step(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
     if (s.reuse.hook) |hook| if (std.mem.indexOfScalar(u32, s.reuse.marks, end) != null) hook.at(hook.ptr, s, end);
     s.fill_at.store(end, .monotonic);
     return last;
+}
+
+/// A split feed no pass adopted (the stream could not start, or ended first) is over, as a failed one, exactly once.
+pub fn dropFeed(s: *Stream) void {
+    const p = s.reuse.split orelse return;
+    const feed = @as(*const split_feed.Feed, @ptrCast(@alignCast(p))).*;
+    s.reuse.split = null;
+    feed.finish(false, .{});
+    s.split_report = .{ .cut = feed.cut, .fell_back = true };
 }
 
 /// What the lane host reports of a layer-split pass (the feed's timings are read when it is finished).
