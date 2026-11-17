@@ -9,6 +9,7 @@ pub const registration = @import("registration.zig");
 pub const wire = @import("wire.zig");
 pub const manifest = @import("manifest.zig");
 pub const frames = @import("frames.zig");
+pub const row_stage = @import("row_stage.zig");
 pub const producer = @import("producer.zig");
 pub const decoder = @import("decoder.zig");
 pub const rdma = @import("rdma.zig");

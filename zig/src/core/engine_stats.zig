@@ -16,6 +16,20 @@ pub const RemotePhases = struct {
     tail_s: f64 = 0,
     /// payload bytes the pull moved
     bytes: u64 = 0,
+    /// a layer-split prompt (the pair ran layers below `split_cut` and streamed the rows; 0: none): rows streamed and
+    /// passes run on them, then seconds from the trigger to the first row, the last row and the landed state, the time
+    /// this machine waited for rows and computed on them, waited for the state and restored it; true if it fell back
+    split_cut: u32 = 0,
+    split_rows: u64 = 0,
+    split_passes: u32 = 0,
+    split_first_row_s: f64 = 0,
+    split_rows_s: f64 = 0,
+    split_state_s: f64 = 0,
+    split_wait_s: f64 = 0,
+    split_compute_s: f64 = 0,
+    split_state_wait_s: f64 = 0,
+    split_restore_s: f64 = 0,
+    split_fell_back: bool = false,
 };
 
 pub const Stats = struct {

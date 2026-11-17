@@ -12,6 +12,7 @@ test {
     std.testing.refAllDecls(@import("p2.zig"));
     std.testing.refAllDecls(@import("blob.zig"));
     std.testing.refAllDecls(@import("landing.zig"));
+    std.testing.refAllDecls(@import("split.zig"));
 }
 test {
     std.testing.refAllDecls(@import("synth.zig"));
