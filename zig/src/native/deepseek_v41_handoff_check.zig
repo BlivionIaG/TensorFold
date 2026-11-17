@@ -250,6 +250,14 @@ fn rawBytes(m: *ds.Model, native: *const ds.Model.Snapshot, landed: *ds.Model.Sn
             if (!std.mem.eql(u8, native.storage[index + r * P.index_stride ..][0..P.index_stride], landed.storage[index + r * P.index_stride ..][0..P.index_stride])) index_rows += 1;
         }
         log.info("raw source {d} (ratio {d}): {d} rows, main differs in {d} (first {d}), index differs in {d}", .{ i, ratio, rows, main_rows, main_first, index_rows });
+        if (main_rows > 0) {
+            const n = native.storage[main + main_first * P.main_stride ..][0..P.main_stride];
+            const l = landed.storage[main + main_first * P.main_stride ..][0..P.main_stride];
+            for (0..32) |g| {
+                if (n[256 + g] == l[256 + g] and std.mem.eql(u8, n[8 * g ..][0..8], l[8 * g ..][0..8])) continue;
+                log.info("  row {d} group {d}: scale code native {d} landed {d}, nibble bytes native {x} landed {x}", .{ main_first, g, n[256 + g], l[256 + g], n[8 * g ..][0..8], l[8 * g ..][0..8] });
+            }
+        }
     }
 }
 
