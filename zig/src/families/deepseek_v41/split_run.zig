@@ -26,8 +26,7 @@ pub const Ops = struct {
     reset: *const fn (ptr: *anyopaque) anyerror!void,
     /// the slot's position
     position: *const fn (ptr: *anyopaque) u32,
-    /// layers from the cut over prompt rows [at, at + n), entered from `rows` (n boundary rows): the rows are copied
-    /// before this returns and the pass may still be running, so passes follow one another without a wait
+    /// layers from the cut over prompt rows [at, at + n), entered from `rows` (n boundary rows)
     enter: *const fn (ptr: *anyopaque, at: u32, n: u32, rows: []const u8) anyerror!void,
     /// every pass entered so far has completed: asked once, before the restore (`reset` ends them as well)
     sync: *const fn (ptr: *anyopaque) anyerror!void,
