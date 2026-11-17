@@ -39,9 +39,11 @@ const tapsSharedBaseOn = model.tapsSharedBaseOn;
 const condAlignOn = model.condAlignOn;
 const concurrentOn = model.concurrentOn;
 const forward_cone = @import("forward_cone.zig");
+const entry_async = @import("entry_async.zig");
 
 /// One forward over the segments; the cone prefill (forward_cone.zig) takes a long prompt's chunks first.
 pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
+    if (!m.pipe.deferring) try entry_async.settle(m);
     if (!m.valid) return error.InvalidModelState;
     if (try forward_cone.route(m, segs, logits)) |out| return out;
     return forwardCore(m, segs, logits);
@@ -156,6 +158,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     var engram_prev: [4]mtl.CommandBuffer = undefined;
     var engram_prev_n: usize = 0;
     var e = m.queue.commandBufferUnretained();
+    entry_async.behind(m, e);
     var enc = e.compute(if (concurrentOn()) .concurrent else .serial);
     for (m.checkpoint.shards.items) |shard| enc.useResource(shard.buffer, mtl.ResourceUsage.read);
     var encoding = true;
@@ -182,7 +185,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     }
     if (cone_phase == .decoder) forward_cone.loadStash(m, enc, rows) else if (m.gate.entered()) {
         if (segs.len != 1) return error.GateStop;
-        try m.gate.loadEntry(ws.view(.stream), ws.view(.previous_pre), segs[0].p0, rows);
+        if (m.gate.entry_buf) |buf| try entry_async.encodeEntry(m, enc, buf, rows) else try m.gate.loadEntry(ws.view(.stream), ws.view(.previous_pre), segs[0].p0, rows);
     } else {
         ops.encodeEmbedding(enc, &p.ops, ws.view(.ids), tensor(m.weights.embed), ws.view(.collapsed), .{ .rows = rows, .width = 5120, .table_stride = 5120, .y_stride = 5120, .copies = 1 });
         enc.barrier();
@@ -259,6 +262,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
                     engram_prev_n += 1;
                 }
                 e = m.queue.commandBufferUnretained();
+                entry_async.behind(m, e);
                 enc = e.compute(if (concurrentOn()) .concurrent else .serial);
                 for (m.checkpoint.shards.items) |shard| enc.useResource(shard.buffer, mtl.ResourceUsage.read);
                 m.engram_pending = false;
@@ -506,8 +510,14 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
     } else enc.end();
     encoding = false;
     m.valid = false;
+    // A layer-split pass keeps running after its commit: the next is encoded behind it (entry_async.zig).
+    const park_ok = m.pipe.deferring and cone_phase != .decoder and logits == .none and !layer_cb and hid_stage == null and
+        sp_stage == null and m.profile == null and m.observer == null and !m.host_prof and m.gate.stop_dir == null and
+        std.c.getenv("TF_DSV41_STAGE_CB") == null;
+    if (park_ok) try entry_async.signal(m, e);
     const host_commit: u64 = nowNs();
     e.commit();
+    if (park_ok) return entry_async.commitParked(m, segs, if (pipe_prev_set) pipe_prev else null, engram_prev[0..engram_prev_n], e);
     if (segs.len == 1) lookahead.start(m, slot);
     e.wait();
     lookahead.join(m, slot);
