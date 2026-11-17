@@ -75,6 +75,8 @@ pub const PrefillSource = struct {
 pub const Trigger = struct {
     ptr: *anyopaque,
     start_fn: *const fn (ptr: *anyopaque, handoff: [16]u8, tokens: []const u32) anyerror!void,
+    /// Raised to give up an exchange under way (a pull that ended while the producer was still prefilling).
+    halt: ?*std.atomic.Value(bool) = null,
 };
 
 /// Makes every link usable again once the producer's prefill is over: a daemon may have re-linked while it ran.
@@ -110,6 +112,8 @@ pub const Remote = struct {
     renew: ?Renew = null,
     /// the longest wait for a link to come back after the trigger
     link_wait_ns: u64 = link_wait_ns,
+    /// pull while the producer still prefills (frames are served as converted); the trigger runs on its own thread
+    overlap: bool = false,
 
     pub fn source(r: *Remote) PrefillSource {
         return .{ .ptr = r, .vtable = &.{ .offer = offerFn, .fill = fillFn } };
@@ -148,6 +152,10 @@ pub const Remote = struct {
         r.next_id += 1;
         if (o.upto >= prompt.len) return error.PrefixTooLong; // a token past the prefix goes too
         const tokens = prompt[0..@intCast(o.upto)];
+        if (r.overlap and r.peers.len == 0) {
+            try r.fillOverlapped(id, prompt[0..@intCast(o.upto + 1)], sink);
+            return sink.commit_fn(sink.ptr, o.upto, .remote);
+        }
         const began = words.nowNs();
         try r.trigger.start_fn(r.trigger.ptr, id, prompt[0..@intCast(o.upto + 1)]);
         r.trigger_ns = words.nowNs() - began;
@@ -163,6 +171,46 @@ pub const Remote = struct {
             r.bytes = got.bytes;
         }
         sink.commit_fn(sink.ptr, o.upto, .remote);
+    }
+
+    /// The trigger's exchange on its own thread, so the pull can run beside it.
+    const Exchange = struct {
+        r: *Remote,
+        id: [16]u8,
+        tokens: []const u32,
+        running: std.atomic.Value(bool) = .init(true),
+        failed: std.atomic.Value(bool) = .init(false),
+        ns: u64 = 0,
+        result: anyerror!void = {},
+
+        fn run(t: *Exchange) void {
+            const began = words.nowNs();
+            t.result = t.r.trigger.start_fn(t.r.trigger.ptr, t.id, t.tokens);
+            t.ns = words.nowNs() - began;
+            if (t.result) |_| {} else |_| t.failed.store(true, .release);
+            t.running.store(false, .release);
+        }
+    };
+
+    /// The trigger and the pull at once: frames land as the producer converts them, the last ones after it is done.
+    fn fillOverlapped(r: *Remote, id: [16]u8, prompt: []const u32, sink: StateSink) !void {
+        try r.renewLinks();
+        if (r.trigger.halt) |h| h.store(false, .release);
+        var t: Exchange = .{ .r = r, .id = id, .tokens = prompt };
+        const thread = try std.Thread.spawn(.{}, Exchange.run, .{&t});
+        var arena: std.heap.ArenaAllocator = .init(r.gpa);
+        defer arena.deinit();
+        const pass: decoder.Sink = .{ .ptr = sink.ptr, .put_fn = sink.put_fn };
+        const expect: decoder.Expect = .{ .model = r.model, .tokens = prompt[0 .. prompt.len - 1], .protocol = r.protocol, .abort = r.abort, .stream = true, .working = &t.running, .failed = &t.failed };
+        const pulled = decoder.pull(arena.allocator(), r.client, id, expect, pass, &r.reason);
+        const refused = t.failed.load(.acquire); // the producer failed first: its error is the one to report
+        if (std.meta.isError(pulled)) if (r.trigger.halt) |h| h.store(true, .release); // its work is no use to a failed pull
+        thread.join();
+        r.trigger_ns = t.ns;
+        const got = pulled catch |err| return if (refused) (if (t.result) |_| err else |terr| terr) else err;
+        try t.result;
+        if (got.manifest.first_token != 0) return error.PartialPrefix;
+        r.bytes = got.bytes;
     }
 
     /// One shard's pull on its own link; the thread's result and the producer's reason stay in the job.
