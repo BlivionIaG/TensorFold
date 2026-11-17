@@ -24,6 +24,7 @@ const expert_groups = @import("core").expert_groups;
 const scan_probe = @import("scan_probe.zig");
 const projection_knobs = @import("projection_knobs.zig");
 const model = @import("model.zig");
+const forward_cone = @import("forward_cone.zig");
 const Model = model.Model;
 const CondProf = Model.CondProf;
 const Snapshot = Model.Snapshot;
@@ -75,6 +76,8 @@ const headRms = model.headRms;
 const logitsTopK = model.logitsTopK;
 
 pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
+    try @import("env_validate.zig").startup();
+    const mtp_enabled = try @import("sys").environment.read(bool, "TF_DSV41_MTP_DRAFTS", false);
     projection_knobs.apply();
     var arena = std.heap.ArenaAllocator.init(gpa);
     errdefer arena.deinit();
@@ -94,7 +97,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     const map = try engram.hash.TokenMap.parse(map_blob);
     const lanes = o.lanes;
     // A draft round runs five rows through the same workspace and attention scratch; at decode the plan is one row.
-    const drafted = std.c.getenv("TF_DSV41_MTP_DRAFTS") != null or std.c.getenv("TF_DSV41_LOOKUP_DRAFTS") != null;
+    const drafted = mtp_enabled or std.c.getenv("TF_DSV41_LOOKUP_DRAFTS") != null;
     const round_rows: u32 = if (drafted) @max(o.chunk_rows, 8) else o.chunk_rows;
     const wp = try work.Plan.initLanes(round_rows, lanes);
     const kp = kv.cache.Plan{ .capacity = capacity, .layers = 40 };
@@ -167,8 +170,10 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     @memset(taps_stash.contents()[0..taps_stash.length()], 0);
     // The conditioning scratch: 128 rows of 5120 bf16, then 128 rows of 512 bf16 keys, then 128 packed rows.
     const mtp_logits = try device.buffer(8 * 129280 * 4, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+    errdefer mtp_logits.deinit();
     const cond_bytes = 128 * 5120 * 2 + 128 * 512 * 2 + 128 * 528;
     const cond = try device.buffer(cond_bytes, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+    errdefer cond.deinit();
     // The fused `wkv` dispatch's scratch.
     const cond_wkv_bytes = 3 * 128 * 5120 * 2 + 3 * 128 * 512 * 2 + 3 * 3 * 128 * 4;
     const cond_wkv = try device.buffer(cond_wkv_bytes, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
@@ -182,7 +187,6 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
         }
     }
     errdefer cond_wkv.deinit();
-    errdefer taps.deinit();
     residency.add(taps);
     residency.add(cond_wkv);
     var stream_rows: ?*engram_stream.Rows = null;
@@ -208,17 +212,20 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     residency.commit();
     residency.requestResidency();
     queue.addResidencySet(residency);
-    return .{ .gpa = gpa, .io = io, .device = device, .queue = queue, .residency = residency, .checkpoint = cp, .weights = bound, .cfg = c, .cfg_arena = arena, .lanes = lanes, .caches = caches, .cache = &caches[0], .engram_stash = engram_stash, .partial_stash = partial_stash, .ring_stash = ring_stash, .snap_ring = snap_ring, .taps_stash = taps_stash, .stream = stream_rows, .stream_stage = stream_stage, .workspace = workspace, .attention_workspace = aw, .taps = taps, .cond = cond, .cond_wkv = cond_wkv, .mtp_logits = mtp_logits, .pipelines = pipelines, .admitted_bytes = needed, .load_seconds = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .awake).toNanoseconds() - load_started.toNanoseconds())) / 1e9 };
+    return .{ .gpa = gpa, .io = io, .device = device, .queue = queue, .residency = residency, .checkpoint = cp, .weights = bound, .mtp_enabled = mtp_enabled, .cfg = c, .cfg_arena = arena, .lanes = lanes, .caches = caches, .cache = &caches[0], .engram_stash = engram_stash, .partial_stash = partial_stash, .ring_stash = ring_stash, .snap_ring = snap_ring, .taps_stash = taps_stash, .stream = stream_rows, .stream_stage = stream_stage, .workspace = workspace, .attention_workspace = aw, .taps = taps, .cond = cond, .cond_wkv = cond_wkv, .mtp_logits = mtp_logits, .pipelines = pipelines, .admitted_bytes = needed, .load_seconds = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .awake).toNanoseconds() - load_started.toNanoseconds())) / 1e9 };
 }
 pub fn deinit(m: *Model) void {
+    forward_cone.release(m);
     m.queue.removeResidencySet(m.residency);
     m.residency.deinit();
     if (m.drafter_ids) |ids| ids.deinit();
+    if (m.markov_ids) |ids| ids.deinit();
     if (m.markov_part) |part| part.deinit();
     if (m.drafter_state) |state| {
         state.deinit();
         m.gpa.destroy(state);
     }
+    @import("model_lookahead.zig").deinit(m);
     if (m.stream) |rows| rows.close();
     if (m.stream_stage) |buf| buf.deinit();
     m.attention_workspace.deinit();
@@ -230,6 +237,9 @@ pub fn deinit(m: *Model) void {
     m.ring_stash.deinit();
     m.snap_ring.deinit();
     m.taps_stash.deinit();
+    m.taps.deinit();
+    if (m.cond) |b| b.deinit();
+    if (m.mtp_logits) |b| b.deinit();
     if (m.gate_x) |b| b.deinit();
     if (m.dspark_logits) |b| b.deinit();
     if (m.cond_wkv) |b| b.deinit();
@@ -244,6 +254,7 @@ pub fn reset(m: *Model) !void {
     for (0..m.lanes) |slot| try m.resetSlot(@intCast(slot));
 }
 pub fn resetSlot(m: *Model, slot: u32) !void {
+    forward_cone.drop(m, slot);
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const state = &m.caches[slot];
     const pool = mtl.objc.Pool.push();
@@ -293,9 +304,9 @@ pub fn beginSnapTail(m: *Model, slot: u32, hist: []const u32, at: u32, from: u32
     m.attention_workspace.publish_stash = .{ .buffer = m.snap_ring, .offset = @as(usize, slot) * ring_bytes };
     return true;
 }
-pub fn snapTailAllowed(m: *const Model) bool {
-    _ = m;
-    return condAlignOn();
+/// The tail mark is captured inside its chunk, except under the cone: that cuts at the mark and replays there.
+pub fn snapTailAllowed(m: *Model) bool {
+    return condAlignOn() and !forward_cone.active(m);
 }
 pub fn endSnapTail(m: *Model) void {
     m.publish_limit = 0;
@@ -307,6 +318,7 @@ pub fn snapshotBytes(m: *const Model) u64 {
     return @as(u64, plan.packedBytes()) + plan.mutableBytes() + m.taps.length();
 }
 pub fn snapshotSave(m: *Model, slot: u32) !*Snapshot {
+    try forward_cone.flush(m, slot);
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const state = &m.caches[slot];
     const snap = try m.gpa.create(Snapshot);
@@ -364,6 +376,7 @@ pub fn snapshotDrop(m: *Model, snap: *Snapshot) void {
     m.gpa.destroy(snap);
 }
 pub fn snapshotRestore(m: *Model, slot: u32, snap: *const Snapshot) !void {
+    forward_cone.drop(m, slot);
     if (slot >= m.lanes) return error.InvalidLaneSlot;
     const state = &m.caches[slot];
     if (snap.storage.len != state.plan.packedBytes() or snap.live.len != state.plan.mutableBytes() or snap.taps.len != m.taps.length()) return error.SnapshotLayout;

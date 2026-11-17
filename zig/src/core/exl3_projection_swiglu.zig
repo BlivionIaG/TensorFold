@@ -42,9 +42,41 @@ pub const Plan = struct {
     depth: usize,
 };
 
+fn denseFmaReady(p: *const Pipelines, k: usize, n: usize, halves: u16, rows: usize) bool {
+    return p.decode_fma_dense != null and rows <= 8 and n % 16 == 0 and k % 16 == 0 and
+        (halves != 8 or knobs.fma_dense_h8) and
+        (p.fma_warps == 16 or halves == 2 or halves == 4 or halves == 6 or halves == 8 or halves == 10 or halves == 12);
+}
+
+/// Joining a dense matrix to routed rows must preserve its sixteen-warp FP32 reduction.
+pub fn canMergeDenseRows(p: *const Pipelines, m: Matrix, rows: usize, joined_rows: usize) bool {
+    if (rows == 0 or joined_rows < rows or joined_rows > moe_split_rows or m.codebook != .mul1 or
+        p.fma_warps != 16 or p.decode_nax == null or p.decode_fma == null or
+        knobs.scalar_experts or knobs.fma_off or !denseFmaReady(p, m.k, m.n, m.width.halves, rows)) return false;
+    const multi = knobs.fma_dense_multi;
+    const ceil = knobs.fma_dense_multi_ceil;
+    const multi4 = p.decode_fma_dense_multi4 != null and multi == 4 and rows >= 4 and (ceil or rows % 4 == 0);
+    const multi2 = p.decode_fma_dense_multi2 != null and multi >= 2 and rows >= 2 and (ceil or rows % 2 == 0);
+    return multi4 or multi2 or fmaDenseOn();
+}
+
 pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     var a = args;
-    const decode_nax = p.decode_nax != null and a.indexed == 1 and !knobs.scalar_experts;
+    // T-tile exact half-FMA bodies (routed, one-row dense): the widest T up to the knob that keeps the group count.
+    const tiles: u32 = if (knobs.fma_tiles == 0) 0 else blk: {
+        var t: u32 = if (knobs.fma_tiles >= 4) 4 else if (knobs.fma_tiles >= 2) 2 else 1;
+        while (t > 1 and ((@as(usize, a.n) + 16 * t - 1) / (16 * t)) * a.rows < knobs.fma_tile_groups) t /= 2;
+        break :blk t;
+    };
+    const tile_pick: ?usize = switch (tiles) {
+        1 => 0,
+        2 => 1,
+        4 => 2,
+        else => null,
+    };
+    const grouped_decode = a.indexed == 2 and a.rows < 64 and p.fma_warps == 16 and p.decode_fma != null and
+        (if (tile_pick) |ti| p.decode_fma_t[ti] != null else false) and !knobs.fma_off;
+    const decode_nax = p.decode_nax != null and (a.indexed == 1 or grouped_decode) and !knobs.scalar_experts;
     // The compact-decode knob: the one-row, 1 KB-threadgroup decode tile.
     const compact = p.decode_nax_c != null and decode_nax and (knobs.decode_compact or a.rows > 1);
     // The routed-table knob (default on): the routed decode body reads the codebook value from the resident table.
@@ -76,20 +108,22 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     // The one-row split order for every decode-width call, rows <= 8 included.
     const row_invariant = knobs.row_invariant;
     // The register-only body on the dense one-row path.
-    const fma_dense_h8 = knobs.fma_dense_h8;
-    const fma_dense_ok = p.decode_fma_dense != null and a.indexed == 0 and a.routed == 0 and a.rows <= 8 and
-        a.n % 16 == 0 and a.k % 16 == 0 and (a.halves == 6 or a.halves == 10 or a.halves == 12 or
-        (a.halves == 8 and fma_dense_h8));
+    const fma_dense_ok = a.indexed == 0 and (a.routed == 0 or p.fma_warps == 16) and
+        denseFmaReady(p, a.k, a.n, @intCast(a.halves), a.rows);
     // The MULTI-ROW dense body -- R rows a threadgroup, so the weight decode is shared by the rows.
     const multi_rows: u32 = knobs.fma_dense_multi;
     // (the arm): THE CEIL HEIGHT: the multi body uses ceil(rows/R), so a five-row window still shares one decode.
     const multi_ceil = knobs.fma_dense_multi_ceil;
-    const fma_dense_multi4 = fma_dense_ok and p.decode_fma_dense_multi4 != null and multi_rows == 4 and
+    const fma_dense_multi4 = fma_dense_ok and a.routed == 0 and p.decode_fma_dense_multi4 != null and multi_rows == 4 and
         a.rows >= 4 and (multi_ceil or a.rows % 4 == 0);
-    const fma_dense_multi2 = fma_dense_ok and p.decode_fma_dense_multi2 != null and multi_rows >= 2 and
+    const fma_dense_multi2 = fma_dense_ok and a.routed == 0 and p.decode_fma_dense_multi2 != null and multi_rows >= 2 and
         a.rows >= 2 and (multi_ceil or a.rows % 2 == 0) and (multi_rows == 2 or !fma_dense_multi4);
     const fma_dense = fma_dense_ok and fmaDenseOn() and !fma_dense_multi4 and !fma_dense_multi2;
-    const splits: usize = if (fma or fma_dense or fma_dense_multi2 or fma_dense_multi4) 1 else if (a.indexed == 0 and a.routed == 0 and (a.rows == 1 or (row_invariant and a.rows <= 8)) and p.reduce != null)
+    const fma_t = if (tile_pick) |ti| p.decode_fma_t[ti] != null and decode_nax and a.rows <= moe_split_rows and !fma_off else false;
+    const fma_t_dense = if (tile_pick) |ti| p.decode_fma_t_dense[ti] != null and fma_dense and a.codebook == 2 else false;
+    const scalar_window = (a.indexed == 0 and a.routed == 0 and (a.rows == 1 or (row_invariant and a.rows <= 8))) or
+        (!decode_nax and (a.indexed != 0 or a.routed != 0) and a.rows < 64);
+    const splits: usize = if (fma or fma_t or fma_dense or fma_dense_multi2 or fma_dense_multi4) 1 else if (scalar_window and p.reduce != null)
         @as(usize, splitOverride() orelse @as(u32, @intCast(if (wide) wide_splits else one_row_splits)))
     else
         moe_splits;
@@ -101,14 +135,23 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     const nax_cols: usize = if (a.indexed != 0 and nax_tile >= 256) 64 else if (moe_cols != 0) moe_cols else (knobs.nax_cols orelse 64);
     const tile_id: usize = ((nax_tile / 64) - 1) * 2 + (nax_cols / 64 - 1);
     const nax_pick: ?mtl.Pipeline = p.prefill_nax_tiles[tile_id];
+    // (THE LEVER, default off): THE DENSE TILE AT EIGHT ROWS, so a wrapped conditioning piece stays on the tile.
+    const dense8 = knobs.nax_dense8;
+    // The gate is the CALLER's hint and the flag together: the hint alone moves nothing.
+    const dense8_on = dense8 and r.dense8;
+    const nax_min_rows: u32 = knobs.nax_min_rows;
+    // The tile bodies decode whole-bit widths; a half-bit (odd) width takes the shared or plain body.
+    const nax = nax_pick != null and a.k % 64 == 0 and a.halves % 2 == 0 and
+        a.rows >= (if (dense8_on and a.indexed == 0 and a.routed == 0) @min(nax_min_rows, 8) else nax_min_rows) and
+        ((a.indexed == 0 and a.routed == 0) or grouped_nax);
     // The funnel read in the routed prompt tile: halves = 6 is the packed width; another width takes the shipped path.
-    const nax_funnel_pick: ?mtl.Pipeline = if (funnelPrefillOn() and a.indexed != 0 and tile_id == 0)
+    const nax_funnel_pick: ?mtl.Pipeline = if (nax and funnelPrefillOn() and a.indexed != 0 and tile_id == 0)
         p.prefill_nax_funnel
     else
         null;
     const nax_funnel = nax_funnel_pick != null;
     // The same tile with the grouping's padded rows skipped.
-    const nax_skip_pad_pick: ?mtl.Pipeline = if (skipPadOn() and a.indexed != 0)
+    const nax_skip_pad_pick: ?mtl.Pipeline = if (nax and skipPadOn() and a.indexed != 0)
         (if (tile_id == 0)
             p.prefill_nax_skip_pad
         else if (tile_id == 2)
@@ -125,14 +168,6 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     else
         null;
     const nax_funnel_only = nax_funnel_only_pick != null;
-    // (THE LEVER, default off): THE DENSE TILE AT EIGHT ROWS, so a wrapped conditioning piece stays on the tile.
-    const dense8 = knobs.nax_dense8;
-    // The gate is the CALLER's hint and the flag together: the hint alone moves nothing.
-    const dense8_on = dense8 and r.dense8;
-    const nax_min_rows: u32 = knobs.nax_min_rows;
-    const nax = nax_pick != null and a.k % 64 == 0 and
-        a.rows >= (if (dense8_on and a.indexed == 0 and a.routed == 0) @min(nax_min_rows, 8) else nax_min_rows) and
-        ((a.indexed == 0 and a.routed == 0) or grouped_nax);
     // The dense 128x64 tile's double-buffered twin: one barrier a block.
     const nax_dense_db = p.prefill_nax_dense_db != null and nax and a.indexed == 0 and tile_id == 2 and denseDb();
     if (nax_dense_db and !pipe.nax_db_logged) {
@@ -150,18 +185,18 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
         pipe.matmul_tab_logged = true;
         std.log.info("exl3: one-row table body {s} rows={d} n={d} k={d} splits={d}", .{ if (matmul_static_lut) "static-lut" else "matmul", a.rows, a.n, a.k, splits });
     }
-    const pipeline = (if (fma_static_lut) p.decode_fma_static_lut.? else if (fma_static) p.decode_fma_static.? else if (fma) p.decode_fma.? else if (fma_dense_multi4) p.decode_fma_dense_multi4.? else if (fma_dense_multi2) p.decode_fma_dense_multi2.? else if (fma_dense) p.decode_fma_dense.? else if (decode_pipe) |dp| dp else if (matmul_static_lut) p.matmul_static_lut.? else if (matmul_tab) p.matmul_tab.? else if (nax_dense_db) p.prefill_nax_dense_db.? else if (nax_funnel_only) nax_funnel_only_pick.? else if (nax_skip_pad) nax_skip_pad_pick.? else if (nax_funnel) nax_funnel_pick.? else if (nax) nax_pick.? else if (shared) p.prefill.? else p.matmul);
+    const pipeline = (if (fma_t) p.decode_fma_t[tile_pick.?].? else if (fma_t_dense) p.decode_fma_t_dense[tile_pick.?].? else if (fma_static_lut) p.decode_fma_static_lut.? else if (fma_static) p.decode_fma_static.? else if (fma) p.decode_fma.? else if (fma_dense_multi4) p.decode_fma_dense_multi4.? else if (fma_dense_multi2) p.decode_fma_dense_multi2.? else if (fma_dense) p.decode_fma_dense.? else if (decode_pipe) |dp| dp else if (matmul_static_lut) p.matmul_static_lut.? else if (matmul_tab) p.matmul_tab.? else if (nax_dense_db) p.prefill_nax_dense_db.? else if (nax_funnel_only) nax_funnel_only_pick.? else if (nax_skip_pad) nax_skip_pad_pick.? else if (nax_funnel) nax_funnel_pick.? else if (nax) nax_pick.? else if (shared) p.prefill.? else p.matmul);
     // Rows a decode threadgroup takes: one a SIMDgroup (the row knob selects one a threadgroup).
     const moe_rows: usize = if (decode_nax) (if (compact) 1 else knobs.moe_rows) else 4;
     const group_rows: usize = if (fma or fma_static or fma_static_lut or fma_dense_multi2 or fma_dense_multi4) 1 else if (decode_nax) moe_rows else if (nax) nax_tile else if (shared) 32 else 8;
     // The geometry must follow the pipeline: the static one-row body is 128 columns and 256 threads.
-    const group_cols: usize = if (fma or fma_static or fma_static_lut or fma_dense) 16 else if (matmul_static_lut) 128 else if (nax) nax_cols else if (decode_nax) 32 else 16;
+    const group_cols: usize = if (fma_t or fma_t_dense) 16 * @as(usize, tiles) else if (fma or fma_static or fma_static_lut or fma_dense) 16 else if (matmul_static_lut) 128 else if (nax) nax_cols else if (decode_nax) 32 else 16;
     const height: usize = if (fma_dense_multi4) (a.rows + 3) / 4 else if (fma_dense_multi2) (a.rows + 1) / 2 else if (fma or fma_static or fma_static_lut or fma_dense) a.rows else if (splits > 1 and !decode_nax) splits else if (a.indexed == 1 and !decode_nax) a.rows else (@as(usize, a.rows) + group_rows - 1) / group_rows;
     // The warp32 tile runs four warps (a warp owns two sixteen-row groups).
     const nax_warp32: bool = nax and a.indexed != 0 and tile_id == 2 and warp32On() and nax_skip_pad_pick != null;
     const threads: usize = if (fma or fma_static or fma_static_lut or fma_dense or fma_dense_multi2 or fma_dense_multi4) 32 * p.fma_warps else if (nax) (if (nax_warp32) nax_tile / 32 * 32 * (nax_cols / 64) else nax_tile / 16 * 32 * (nax_cols / 64)) else if (decode_nax) 32 * moe_rows else if (matmul_static_lut) 256 else if (shared) 128 else 32;
     // One split dispatch over a window: a row group a threadgroup (the tile spans eight rows), the splits in y.
-    const split_groups: usize = if (splits > 1 and !decode_nax) (a.rows + 7) / 8 else 1;
+    const split_groups: usize = if (splits > 1 and !decode_nax) (if (a.indexed == 1) a.rows else (a.rows + 7) / 8) else 1;
     if ((fma or fma_static or fma_static_lut) and core.fma_log_count < 8) {
         core.fma_log_count += 1;
         std.log.info("exl3: routed decode body rows={d} n={d} k={d} halves={d} cols={d} grid={d}x{d}x{d} threads={d} static={} fma={} experts={d}", .{ a.rows, a.n, a.k, a.halves, group_cols, (@as(usize, a.n) + group_cols - 1) / group_cols, height, if (fma or fma_static) 1 else if (decode_nax) moe_splits else split_groups, threads, fma_static, fma, a.experts });
@@ -192,13 +227,17 @@ pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     };
 }
 
+/// Where a call leaves its f32 sums (`Rows.no_epilogue` stops there): past the call's rotated input rows.
+pub fn sumsView(scratch: View, rows: usize, k: usize) View {
+    return .{ .buffer = scratch.buffer, .offset = scratch.offset + ((rows * k * 2 + 15) & ~@as(usize, 15)) };
+}
+
 pub fn stages(p: *const Pipelines, e: mtl.ComputeEncoder, args: Args, trellis: View, su: View, sv: View, bias: View, descriptors: View, x: View, y: View, scratch: View, r: Rows) void {
     var a = args;
     const plan = planBody(p, a, r);
     a.splits = @intCast(plan.splits);
-    const sums_off = (@as(usize, a.rows) * a.k * 2 + 15) & ~@as(usize, 15);
-    const sums = View{ .buffer = scratch.buffer, .offset = scratch.offset + sums_off };
-    const partials = View{ .buffer = scratch.buffer, .offset = scratch.offset + sums_off + ((@as(usize, a.rows) * a.n * 4 + 15) & ~@as(usize, 15)) };
+    const sums = sumsView(scratch, a.rows, a.k);
+    const partials = View{ .buffer = scratch.buffer, .offset = sums.offset + ((@as(usize, a.rows) * a.n * 4 + 15) & ~@as(usize, 15)) };
     const routes = if (r.routes) |v| v.ids else scratch;
     const rotate_passes: usize = if (knobs.double_rotate) 2 else 1;
     if (!r.prerotated) {
@@ -293,9 +332,80 @@ pub fn encodeSwiGLUPreRotate(p: *const Pipelines, e: mtl.ComputeEncoder, gate: V
     e.dispatchGroups(.{ .width = (d.k / 128 + 3) / 4, .height = d.rows }, .{ .width = 128 });
 }
 
-test "EXL3 scratch is row compact and bounded independently of full matrices" {
-    // 214,016 was the pre-split-K bound; the formula now adds the split-K partials and the fused gate+up split room.
-    try std.testing.expectEqual(@as(usize, 1025024), try scratchBytes(5120, 2304, 11));
+/// The gate+up call's rotate_out and the routed and shared SwiGLU plus the down rotate_in in one pass.
+pub const GateUpRot = struct {
+    /// Routed rows: tokens times picks; the call's gate rows lead, its up rows follow, the shared pair comes last.
+    rows: usize,
+    shared_rows: usize,
+    k: usize,
+    experts: usize,
+    fused_experts: usize,
+    shared_dst: usize,
+    weighted: bool = true,
+    /// Written to the id row after the routed picks for each shared row, for the down call's table: none leaves them.
+    shared_id: ?u32 = null,
+};
+
+pub fn encodeGateUpSwiGLU(p: *const Pipelines, e: mtl.ComputeEncoder, sums: View, fused_ids: View, weights: View, routes: View, fused: View, down: View, shared_down: View, rotated: View, d: GateUpRot) void {
+    const A = extern struct { rows: u32, shared_rows: u32, k: u32, sums_stride: u32, experts: u32, fused_experts: u32, shared_dst: u32, weighted: u32, shared_id: u32 };
+    const args = A{
+        .rows = @intCast(d.rows),
+        .shared_rows = @intCast(d.shared_rows),
+        .k = @intCast(d.k),
+        .sums_stride = @intCast(d.k),
+        .experts = @intCast(d.experts),
+        .fused_experts = @intCast(d.fused_experts),
+        .shared_dst = @intCast(d.shared_dst),
+        .weighted = @intFromBool(d.weighted),
+        .shared_id = d.shared_id orelse std.math.maxInt(u32),
+    };
+    e.setPipeline(p.gateup_swiglu_prerotate);
+    bind(e, sums, 0);
+    bind(e, fused_ids, 1);
+    bind(e, weights, 2);
+    bind(e, routes, 3);
+    bind(e, fused, 4);
+    bind(e, down, 5);
+    bind(e, shared_down, 6);
+    bind(e, rotated, 7);
+    e.setValue(args, 8);
+    e.dispatchGroups(.{ .width = (d.k / 128 + 3) / 4, .height = d.rows + d.shared_rows }, .{ .width = 128 });
+}
+
+/// The routed picks' and the shared expert's down rows combined: the call's rotate_out and the weighted-sum's end.
+pub const DownCombine = struct {
+    tokens: usize,
+    picks: usize,
+    width: usize,
+    /// The table entry of the shared row (the routed count): its descriptor carries that row's scales and bias.
+    experts: usize,
+    y_stride: usize,
+    /// The sums row of token 0's shared output; the routed rows are token * picks + slot from row 0.
+    shared_row: usize,
+};
+
+pub fn encodeDownCombine(p: *const Pipelines, e: mtl.ComputeEncoder, sums: View, ids: View, descriptors: View, y: View, d: DownCombine) void {
+    const A = extern struct { rows: u32, picks: u32, width: u32, sums_stride: u32, experts: u32, y_stride: u32, shared_row: u32, reserved: u32 };
+    const args = A{
+        .rows = @intCast(d.tokens),
+        .picks = @intCast(d.picks),
+        .width = @intCast(d.width),
+        .sums_stride = @intCast(d.width),
+        .experts = @intCast(d.experts),
+        .y_stride = @intCast(d.y_stride),
+        .shared_row = @intCast(d.shared_row),
+        .reserved = 0,
+    };
+    e.setPipeline(p.down_combine);
+    bind(e, sums, 0);
+    bind(e, ids, 1);
+    bind(e, descriptors, 2);
+    bind(e, y, 3);
+    e.setValue(args, 4);
+    e.dispatchGroups(.{ .width = d.width / 128, .height = d.tokens }, .{ .width = 256 });
+}
+
+test "EXL3 scratch rejects invalid shapes" {
     try std.testing.expectError(error.InvalidExl3Rows, scratchBytes(128, 128, 0));
     try std.testing.expectError(error.UnsupportedExl3Shape, scratchBytes(129, 128, 1));
     try std.testing.expectEqual(@as(usize, 72), @sizeOf(ExpertDescriptor));

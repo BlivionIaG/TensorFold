@@ -16,7 +16,7 @@ pub const mhc = @import("mhc.zig");
 pub const csa2 = @import("csa2.zig");
 pub const csa2_index = @import("csa2_index.zig");
 pub const rope = @import("rope.zig");
-const route = @import("route.zig");
+pub const route = @import("route.zig");
 const engram = @import("engram.zig");
 const engram_stream = @import("engram_rows_safetensors.zig");
 pub const View = @import("view.zig").View;
@@ -26,11 +26,13 @@ const scan_probe = @import("scan_probe.zig");
 const support = @import("model_support.zig");
 const model_drafter = @import("model_drafter.zig");
 const model_hash = @import("model_hash.zig");
+const model_lookahead = @import("model_lookahead.zig");
 const model_lifecycle = @import("model_lifecycle.zig");
 const model_import = @import("model_import.zig");
 const model_propose = @import("model_propose.zig");
 const model_draft_attention = @import("model_draft_attention.zig");
 const forward_impl = @import("forward_impl.zig");
+pub const forward_cone = @import("forward_cone.zig");
 const moe_impl = @import("model_moe.zig");
 pub const nowNs = support.nowNs;
 pub const prefill_step = support.prefill_step;
@@ -85,6 +87,7 @@ pub const Model = struct {
     residency: mtl.ResidencySet,
     checkpoint: checkpoint.Checkpoint,
     weights: weights.Model,
+    mtp_enabled: bool = false,
     cfg: config.Config,
     cfg_arena: std.heap.ArenaAllocator,
     lanes: u32,
@@ -93,7 +96,7 @@ pub const Model = struct {
     cache: *kv.cache.State,
     /// The drafter's three KV rings (TF_DSV41_MTP_DRAFTS), built on first use; null until then.
     drafter_state: ?*kv.cache.State = null,
-    /// The drafter's one-token id (the embedding kernel reads an ids view); shared, four bytes, written a step.
+    /// Shared embedding IDs for the current draft arm; capacity grows before host writes.
     drafter_ids: ?mtl.Buffer = null,
     /// The Markov chain's picks (a u32 a step), kept apart from the one-token id buffer the embedding reads.
     markov_ids: ?mtl.Buffer = null,
@@ -177,6 +180,10 @@ pub const Model = struct {
     engram_slow_n: u8 = 0,
     /// The second Engram layer's prompt gather is deferred to its own layer.
     engram_pending: bool = false,
+    /// The next prompt chunk's Engram rows, read while the GPU runs this one (model_lookahead.zig).
+    look: [model_lookahead.slots]?*model_lookahead.State = @splat(null),
+    /// The slot the running forward hashes for (the lookahead keeps one hint a slot).
+    look_slot: u32 = 0,
     profile_stage_dispatch: [gpu_counters.stage_count]u64 = @splat(0),
     profile_last_count: u64 = 0,
     profile_open_stage: ?gpu_counters.Stage = null,
@@ -184,6 +191,8 @@ pub const Model = struct {
     observer: ?Observer = null,
     /// The attention's own per-stage observer (the `stagediff` harness).
     attention_observer: ?attention.DiagnosticObserver = null,
+    /// The cone prefill's state (forward_cone.zig).
+    cone: forward_cone.Cone = .{},
     pub const Observer = struct {
         ctx: *anyopaque,
         encode: *const fn (*anyopaque, mtl.ComputeEncoder, u32, gpu_counters.Stage, *const Model) void,
@@ -204,7 +213,7 @@ pub const Model = struct {
     pub fn beginSnapTail(m: *Model, slot: u32, hist: []const u32, at: u32, from: u32) bool {
         return model_lifecycle.beginSnapTail(m, slot, hist, at, from);
     }
-    pub fn snapTailAllowed(m: *const Model) bool {
+    pub fn snapTailAllowed(m: *Model) bool {
         return model_lifecycle.snapTailAllowed(m);
     }
     pub fn endSnapTail(m: *Model) void {
@@ -321,6 +330,10 @@ pub const Model = struct {
     }
     pub fn stageRows(m: *Model, rows: u32) !void {
         return model_hash.stageRows(m, rows);
+    }
+    /// The prompt rows after the next big forward's: their Engram rows are read during its GPU time.
+    pub fn lookahead(m: *Model, slot: u32, next: []const u32) void {
+        model_lookahead.hint(m, slot, next);
     }
     pub fn drafterId(m: *Model, token: u32) !View {
         return model_drafter.drafterId(m, token);

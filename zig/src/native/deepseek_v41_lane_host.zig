@@ -83,6 +83,32 @@ fn loadLimit(device: mtl.Device) !struct { bytes: u64, asked: bool } {
     return .{ .bytes = @intFromFloat(@min(gb * 1e9, @as(f64, @floatFromInt(most)))), .asked = true };
 }
 
+/// Automatic workspace sizes; the narrow round is retried only after memory admission refusal.
+const round_wide: u32 = 8192;
+const round_narrow: u32 = 4096;
+
+fn openOptions(o: api.Open, map: []const u8, context: u32, limit: u64, chunk: u32) ds.Options {
+    return .{
+        .dir = o.dir,
+        .table_dir = o.engram_table_dir,
+        .stream_dir = o.engram_stream_dir,
+        .token_map = map,
+        .context = context,
+        .lanes = @max(1, @min(o.lanes, 256)),
+        .ram_limit_bytes = limit,
+        .chunk_rows = chunk,
+    };
+}
+
+fn openFailed(a: Allocator, model: *ds.Model, problem: *[]const u8, err: anyerror) !?api.Opened {
+    if (err == error.InvalidTokenMap) {
+        a.destroy(model);
+        problem.* = "engram-token-map.bin is missing beside the checkpoint: the pull builds it; see the family guide";
+        return null;
+    }
+    return err;
+}
+
 pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
     if (o.speed_up != null or o.slide or o.learn != null or
         o.drafter != null or o.tp != 1)
@@ -105,33 +131,24 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         if (l.asked) std.log.info("deepseek-v41: load limit {d} bytes from GLM_LOAD_LIMIT_GB", .{l.bytes});
         break :blk l.bytes;
     } else 0;
-    // Prefill round and workspace chunk.
-    const chunk: u32 = blk: {
-        const raw = std.c.getenv("TF_DSV41_PREFILL_STEP") orelse break :blk ds.prefill_step;
-        const text = std.mem.span(raw);
-        const n = std.fmt.parseInt(u32, text, 10) catch break :blk ds.prefill_step;
-        if (n < 16) break :blk ds.prefill_step;
+    // Prefill round and workspace chunk: TF_DSV41_PREFILL_STEP, else 8192 rows if the plan admits it, else 4096.
+    const step_asked: ?u32 = blk: {
+        const raw = std.c.getenv("TF_DSV41_PREFILL_STEP") orelse break :blk null;
+        const n = std.fmt.parseInt(u32, std.mem.span(raw), 10) catch break :blk null;
+        if (n < 16) break :blk null;
         break :blk @min(n, 16384);
     };
-    if (chunk != ds.prefill_step) std.log.info("deepseek-v41: prefill round {d} rows (TF_DSV41_PREFILL_STEP; constant is {d})", .{ chunk, ds.prefill_step });
+    var chunk: u32 = step_asked orelse round_wide;
+    if (step_asked) |n| if (n != ds.prefill_step) std.log.info("deepseek-v41: prefill round {d} rows (TF_DSV41_PREFILL_STEP; constant is {d})", .{ n, ds.prefill_step });
     const model = try a.create(ds.Model);
     errdefer a.destroy(model);
-    model.* = ds.Model.open(gpa, io, .{
-        .dir = o.dir,
-        .table_dir = o.engram_table_dir,
-        .stream_dir = o.engram_stream_dir,
-        .token_map = map,
-        .context = if (o.context) |c| if (c > 0) @intCast(@min(c, std.math.maxInt(u32))) else 0 else 0,
-        .lanes = @max(1, @min(o.lanes, 256)),
-        .ram_limit_bytes = limit,
-        .chunk_rows = chunk,
-    }) catch |err| {
-        a.destroy(model);
-        if (err == error.InvalidTokenMap) {
-            problem.* = "engram-token-map.bin is missing beside the checkpoint: the pull builds it; see the family guide";
-            return null;
-        }
-        return err;
+    const context: u32 = if (o.context) |c| if (c > 0) @intCast(@min(c, std.math.maxInt(u32))) else 0 else 0;
+    model.* = ds.Model.open(gpa, io, openOptions(o, map, context, limit, chunk)) catch |first| retry: {
+        // Admission is checked before any weight is read: the narrow round is tried when the wide one does not fit.
+        if (step_asked != null or !(first == error.LoadLimitExceeded or first == error.InsufficientResidentMemory)) return openFailed(a, model, problem, first);
+        chunk = round_narrow;
+        std.log.info("deepseek-v41: the {d}-row prefill round does not fit this context: using {d} rows", .{ round_wide, round_narrow });
+        break :retry ds.Model.open(gpa, io, openOptions(o, map, context, limit, chunk)) catch |err| return openFailed(a, model, problem, err);
     };
     const model_ptr = model;
     errdefer model_ptr.deinit();
@@ -163,12 +180,15 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     {
         const f = h.back.facts();
         const lk = if (std.c.getenv("TF_DSV41_LOOKUP_DRAFTS")) |v| std.mem.span(v) else "null";
-        const mp = if (std.c.getenv("TF_DSV41_MTP_DRAFTS")) |v| std.mem.span(v) else "null";
+        const mp = try @import("sys").environment.read(bool, "TF_DSV41_MTP_DRAFTS", false);
         const tp = if (std.c.getenv("TF_DSV41_TAPS")) |v| std.mem.span(v) else "null";
-        std.log.info("deepseek-v41: draft env raw: lookup={s} mtp={s} taps={s} facts.mtp={} facts.speculate={} facts.drafts={} exact_width={} family_mtp={} most_drafts={}", .{ lk, mp, tp, f.mtp, f.speculate, f.drafts, f.exact_width, h.cfg.family_mtp, h.cfg.most_drafts });
+        std.log.info("deepseek-v41: draft env raw: lookup={s} mtp={} taps={s} facts.mtp={} facts.speculate={} facts.drafts={} exact_width={} family_mtp={} most_drafts={}", .{ lk, mp, tp, f.mtp, f.speculate, f.drafts, f.exact_width, h.cfg.family_mtp, h.cfg.most_drafts });
     }
     errdefer h.cfg.deinit(gpa);
-    h.core = lanes.Engine.init(gpa, &h.cfg, h.back.backend(), h.wall.clock());
+    var back = h.back.backend();
+    // The unset step's wide round gives way to the narrow one while a stream decodes: decode rounds wait less.
+    if (step_asked == null and chunk == round_wide) back.decoding_rows = round_narrow;
+    h.core = lanes.Engine.init(gpa, &h.cfg, back, h.wall.clock());
     errdefer h.core.deinit();
     h.host = api.LaneHost.init(gpa, io, &h.core, .{
         .name = "deepseek-v41-zig",
@@ -223,6 +243,8 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     std.log.info("DeepSeek V4.1 resident loaded in {d:.1} s, {d:.2} GB admitted, {d} lane slots, context {d} tokens, greedy only", .{ model_ptr.load_seconds, @as(f64, @floatFromInt(model_ptr.admitted_bytes)) / 1e9, model_ptr.lanes, window });
     if (std.c.getenv("TF_DSV41_HANDOFF_CHECK")) |spec| @import("deepseek_v41_handoff_check.zig").run(gpa, io, model_ptr, std.mem.span(spec), try remote.checkpointId(a, io, o.dir)) catch |err|
         std.log.err("handoff-check: did not complete: {s}", .{@errorName(err)});
+    if (std.c.getenv("TF_DSV41_CONE_CHECK")) |spec|
+        try @import("deepseek_v41_cone_check.zig").runSizes(gpa, io, model_ptr, std.mem.span(spec));
     if (std.c.getenv("TF_DSV41_KROW_CHECK") != null) krowCheck(model_ptr) catch |err|
         std.log.err("krow: the check did not run: {s}", .{@errorName(err)});
     return .{ .engine = h.host.engine(), .close = close, .ctx = h };

@@ -4,9 +4,11 @@ using namespace metal;
 inline float dsv41_bf(ushort x) { return as_type<float>(uint(x) << 16); }
 inline ushort dsv41_round(float x) {
     uint u = as_type<uint>(x);
+    if ((u & 0x7fffffff) > 0x7f800000) return ushort((u >> 16) | 0x40);
     return ushort((u + 0x7fff + ((u >> 16) & 1)) >> 16);
 }
 inline float dsv41_e4(uchar c) {
+    if ((c & 127) == 127) return NAN;
     uint e = (c >> 3) & 15, m = c & 7;
     float v = e == 0 ? float(m) * 0x1p-9f : ldexp(1.0f + float(m) / 8.0f, int(e) - 7);
     return (c & 128) ? -v : v;
@@ -102,8 +104,9 @@ kernel void dsv41_pool(device const uchar *values [[buffer(0)]], device const fl
             gslots[j] = score;
             exponent[j] = exp(score - mx); sum += exponent[j];
         }
-        // The raw row's capture -- the row's own values and its gate, one slot a position.
-        if (p.capture_rows != 0) {
+        // The raw row's capture (values, gate), a slot a position; a call's last capture_rows positions write it.
+        uint done = (p.position + p.rows) / p.ratio - p.position / p.ratio;
+        if (p.capture_rows != 0 && group + p.capture_rows / p.ratio >= done) {
             for (uint j = 0; j < p.ratio; ++j) {
                 uint pos = start + j;
                 uint slot = pos % p.capture_rows;
@@ -144,6 +147,13 @@ kernel void dsv41_publish_window(device const uchar *chunk [[buffer(0)]], device
     if (i.x >= p.z || i.y >= count) return;
     uint row = first + i.y, slot = (p.y + row) % 128;
     ring[slot * p.w + i.x] = chunk[row * p.z + i.x];
+}
+// Batched publish: slot z's chunk row into its ring at pos[z] % 128; p = (ring offset, row stride, row bytes, 0).
+kernel void dsv41_publish_rows(device const uchar *chunk [[buffer(0)]], constant uint4 &p [[buffer(1)]],
+    device const ulong *addr [[buffer(2)]], device const uint *pos [[buffer(3)]], uint2 i [[thread_position_in_grid]]) {
+    if (i.x >= p.z) return;
+    device uchar *ring = reinterpret_cast<device uchar *>(addr[4 * i.y]) + p.x;
+    ring[(pos[i.y] % 128) * p.y + i.x] = chunk[i.y * p.y + i.x];
 }
 kernel void dsv41_unpack_rows(device const uchar *packed [[buffer(0)]], device ushort *out [[buffer(1)]],
     constant Dsv41Pack &p [[buffer(2)]], uint2 i [[thread_position_in_grid]]) {

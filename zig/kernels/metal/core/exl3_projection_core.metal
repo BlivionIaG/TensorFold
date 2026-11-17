@@ -189,9 +189,10 @@ inline void tf_exl3_matmul_impl(const device half* x, const device uchar* trelli
                                 threadgroup float* wx, threadgroup float* xx) {
   const uint split = a.splits > 1 ? tg.y : 0;
   // A split dispatch carries a row group in tg.z (the tile already spans eight rows).
-  const uint rb = a.splits > 1 ? tg.z * 8 : (a.indexed == 1 ? tg.y : tg.y * 8), nb = tg.x * 16;
+  const uint rb = a.splits > 1 ? (a.indexed == 1 ? tg.z : tg.z * 8) : (a.indexed == 1 ? tg.y : tg.y * 8), nb = tg.x * 16;
   if (!simd_any(tf_exl3_active(routes, a, rb + (a.indexed == 1 ? 0 : lane % 8)))) return;
   const uint id = a.indexed ? routes[rb] : 0;
+  if (a.indexed && descriptors[id].reserved != 0 && nb >= descriptors[id].reserved) return;
   const device uchar* data = a.indexed ? descriptors[id].trellis : trellis;
   const ulong ks = a.indexed ? descriptors[id].tile_k_stride : a.tile_k_stride;
   const ulong ns = a.indexed ? descriptors[id].tile_n_stride : a.tile_n_stride;
@@ -346,6 +347,13 @@ kernel void tf_exl3_codebook_check(device half* arithmetic [[buffer(0)]],
   if (i < 3 * 65536) arithmetic[i] = tf_exl3_value(ushort(i % 65536), i / 65536);
 }
 
+// The rotate_out value of one output: the Hadamard result scaled, signed by sv, plus the bias; the caller rounds it.
+inline float tf_exl3_out_value(float v, const device ushort* scales, const device half* biases, uint n, uint signs, uint has_bias) {
+  float out = (v * 0.08838834764831845f) * tf_exl3_scale(scales, n, signs);
+  if (has_bias) out += float(biases[n]);
+  return out;
+}
+
 kernel void tf_exl3_rotate_out(const device float* sums [[buffer(0)]],
                               const device ushort* sv [[buffer(1)]],
                               const device half* bias [[buffer(2)]],
@@ -374,8 +382,7 @@ kernel void tf_exl3_rotate_out(const device float* sums [[buffer(0)]],
   const uint dest = a.output_ids ? output_ids[row] : row;
   for (uint j = 0; j < 4; ++j) {
     const uint n = base + lane + 32 * j;
-    float out = (v[j] * 0.08838834764831845f) * tf_exl3_scale(scales, n, signs);
-    if (has_bias) out += float(biases[n]);
+    const float out = tf_exl3_out_value(v[j], scales, biases, n, signs, has_bias);
     const ulong at = ulong(dest) * a.y_stride + n;
     if (a.output_f32) reinterpret_cast<device float*>(y)[at] = out;
     else reinterpret_cast<device bfloat*>(y)[at] = bfloat(out);

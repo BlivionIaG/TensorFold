@@ -2,15 +2,16 @@
 
 TensorFold serves DeepSeek-V4.1-Flash from resident EXL3 packs on Apple Silicon through the
 Metal engine. **Scope: a DeepSeek-only family.** The kernels below are specific to the EXL3
-2.9 bpw pack format (trellis-coded weights the GPU decodes at use time) and are tuned on one
-M5 Ultra (256 GB unified memory, 80-core GPU); receipts name that hardware class and no
-other checkpoint or chip is claimed.
+2.9 bpw pack format (trellis-coded weights the GPU decodes at use time). The parent's historical
+receipts below use an M5 Ultra with 256 GB unified memory and an 80-core GPU.
+The [optimization follow-up receipt](receipts/dsv41-exl3-metal/README.md) names its separate 64-core machine;
+neither receipt qualifies other checkpoints or chips.
 
 The lane core runs one stream per slot and windows of rows, so concurrent requests keep
-their own caches and Engram cursor. The served checks hold: a drafted request equals the
+their own caches and Engram cursor. The parent's recorded served checks report: a drafted request equals the
 no-drafts reply token for token (the 20-prompt band reads 329/329), a resumed conversation
 equals the fresh one, concurrent lanes equal their solo runs (12/12 under sampled draws),
-and the retained prompt cache is bounded by its own budget.
+and the retained prompt cache is bounded by its own budget. These are not new follow-up measurements.
 
 ## What you need
 
@@ -22,8 +23,8 @@ and the retained prompt cache is bounded by its own budget.
 - The original release's inference directory — `tokenizer.json`, `config.json`,
   `chat_template.jinja` and the two Engram tables — beside the pack or passed with
   `--engram-table-dir` / `--engram-stream-dir`. The weights come under DeepSeek's own
-  terms; the inference code is MIT and the native reference follows it (see
-  THIRD_PARTY_NOTICES).
+  terms; DeepSeek's reference inference code is MIT and the native reference follows it (see
+  THIRD_PARTY_NOTICES). TensorFold itself is Apache-2.0.
 - An EXL3 pack of the checkpoint. Pack provenance is the pack's own business: read the
   `provenance/` note that ships beside it before comparing any two packs' numbers.
 
@@ -71,16 +72,43 @@ the suffix — 78 of 21,966 rows in 0.85 s on the receipt prompt).
 
 ## The kernels
 
-The lane ships **45 Metal kernel source files** (26 new for this lane, 17 evolved from
-upstream's release-checkpoint line, 2 renamed splits): 31 under
-`zig/kernels/metal/deepseek_v41/` and 14 in the `core/exl3_projection*` and
-`core/expert_groups` group. The kernel contract registers the
-family at **89 kernel variants: 89/89 pass gates 1–4, 0 fail, 186/186 planted controls
-caught red, 2 documented limit records** (`tf-kernel-contract --only dsv41` on the shipped
-tree). The headline tensor-unit paths report themselves at boot: `tf_exl3_matmul_prefill_nax3` /
-`tf_exl3_matmul_prefill_nax31` (prompt) and `tf_exl3_matmul_decode_fma_static_lut` /
-`tf_exl3_matmul_decode_fma_dense` (decode), beside the CSA2 attention, the sparse index block, the Engram gather and the
-hyper-connection boundary.
+EXL3 projections decode trellis weights at use time. The follow-up adds exact half-FMA decode bodies,
+projection-chain fusions and batched one-row attention, retaining the parent's format and device admission paths.
+Tensor-unit prefill is restricted to compatible geometry and whole-bit widths; half-bit widths keep the shared
+or plain body. The vocabulary head scores at most 1024 rows per `.all` call; larger prompt chunks request only
+their final row's logits.
+
+## EXL3 optimization follow-up
+
+This contribution is based on the EXL3 lane in upstream [#2373](https://github.com/ashhart/TensorFold/pull/2373).
+It does not add CUDA serving, remote prefill, transport or approximate arithmetic.
+
+- Decode uses pipelined half-FMA trellis values, column tiles and matching dense multi-row bodies.
+- MoE and attention chains fuse adjacent operations while preserving their rounding points and fallback paths.
+- One-row attention stages can batch across slots; request state remains separate.
+- Small dense, filtered and grouped projections share the same sixteen-warp reduction on tensor-unit devices;
+  scalar indexed windows use the dense split order and honor each descriptor's logical output width.
+- Split attention masks each final key tile at its own boundary. Draft embedding IDs grow without replacing
+  pending Markov picks; teardown releases both owners and the taps, conditioning and draft-logit buffers.
+- `TF_DSV41_MTP_DRAFTS=1` enables trained proposals independently of lookup drafting when DSpark weights exist.
+  Proposal depth is capped at four IDs. Served plain/drafted hashes match in the exercised greedy and sampled
+  cases, but the measured acceptance and verify costs do not establish a speedup or clear the no-slowdown gate.
+- Exact suffix-cone prefill retains each interleaved prompt's pending encoder run.
+- Engram lookahead reads the next chunk while the current chunk's GPU work runs; rows are consumed only when
+  their hashed IDs match the current chunk. The worker is joined before the forward returns.
+- Head scratch is capped independently of chunk rows. An unset prefill step tries an admitted 8192-row workspace,
+  otherwise 4096, and caps prompt chunks at 4096 while another stream decodes.
+- Two-k-block tensor-unit prefill preserves accumulation order. Its historical standalone speedup is not an
+  isolated served-engine speed claim.
+
+Controls and defaults are listed in [environment validation](environment.md#deepseek-exl3-metal-controls).
+Operator checks are `zig build test-exl3-gpu` and `zig build test-deepseek-v41`; they do not establish whole-model
+fidelity, every chip's performance, or complete kernel-contract qualification for the added bodies.
+The parent's historical kernel-contract counts do not qualify these new kernels.
+The follow-up remains a draft until its remaining kernel-contract and model gates are agreed and completed.
+
+The follow-up's [reproduction commands and raw token/timing receipts](receipts/dsv41-exl3-metal/README.md)
+separate the newly exercised checks from the parent's historical results.
 
 ## Known issues (honest)
 
