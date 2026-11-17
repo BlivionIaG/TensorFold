@@ -22,7 +22,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
   See [scope and qualification limits](docs/deepseek-v41.md#exl3-optimization-follow-up)
   and [full-window fidelity](docs/receipts/dsv41-exl3-metal/fidelity-128.json).
 - Docs: an operator guide for DeepSeek-V4.1 prefill on a GB10 pair with decode on a Mac (#3600).
-
+- Remote prefill, DeepSeek V4.1 (opt-in, mixed CUDA/Metal arithmetic): a layer split prefills one long prompt on the pair and the Mac together. `TF_LS_SPLIT=1` on the Mac and `TF_LS_PRODUCE=1` on the pair let the route split a prompt of `TF_LS_MIN_TOKENS` (16384) or more when that is predicted faster than a pull and the Mac's own prefill: the pair runs layers 0 to `TF_LS_CUT` - 1 (2, 8 or 14, default 14) chunk by chunk and streams each chunk's boundary rows while it computes the next; the Mac runs the rest from those rows, then its own cone replay, and lands the pair's state of the layers below the cut. A failed split is prefilled again on the Mac. The reply's `tensorfold` block labels it (`remote_arithmetic`, `remote_route: "split"`) and reports `split_*` timings; its state is never kept in the exact cache. Not measured on the machines yet.
 - DeepSeek V4.1 remote prefill: a pulled hand-off's drafter rings land in the slot when it holds them, and `TF_DSV41_HANDOFF_CHECK=synth` writes a synthetic hand-off for timing (#3599).
 
 - DeepSeek V4.1 remote prefill: `--mcdma-link` takes a comma list of up to eight links and pulls a split hand-off's shards in parallel (#3598).
