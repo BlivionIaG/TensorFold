@@ -150,7 +150,7 @@ test "the early entry is held before any compute, counts the stage and the parts
     defer p.stop();
     const tokens = try tokensOf(a, upto);
     const id: [16]u8 = @splat(0x61);
-    var run = try p.openEarly(id, tokens, cut);
+    var run = try p.openEarly(id, tokens, cut, upto);
     defer run.close();
     // the table has it at once: a decoder's OPEN succeeds with nothing computed
     const entry = p.table.get(id).?;
@@ -197,14 +197,14 @@ test "an export whose rows and state do not fit the cap is refused by name, and 
     defer fake.deinit();
     const p = try open(fake, std.time.ns_per_hour, upto * split.row_bytes); // the stage alone fills it: the parts do not fit
     defer p.stop();
-    try std.testing.expectError(error.HeldExportsFull, p.openEarly(@splat(0x62), try tokensOf(a, upto), cut));
+    try std.testing.expectError(error.HeldExportsFull, p.openEarly(@splat(0x62), try tokensOf(a, upto), cut, upto));
     try std.testing.expectEqual(@as(usize, 0), p.held.count());
     try std.testing.expectEqual(@as(u64, 0), p.table.held_bytes);
     try std.testing.expect(p.table.get(@splat(0x62)) == null);
     // a cut that is not an index source has no manifest
     const roomy = try open(fake, std.time.ns_per_hour, 1 << 30);
     defer roomy.stop();
-    try std.testing.expectError(error.BadShape, roomy.openEarly(@splat(0x63), try tokensOf(a, upto), 11));
+    try std.testing.expectError(error.BadShape, roomy.openEarly(@splat(0x63), try tokensOf(a, upto), 11, upto));
     try std.testing.expectEqual(@as(usize, 0), roomy.held.count());
 }
 
@@ -217,7 +217,7 @@ test "rows are served while the producer computes, then the state: what a decode
     const p = try open(fake, std.time.ns_per_hour, 1 << 30);
     const tokens = try tokensOf(a, upto);
     const id: [16]u8 = @splat(0x64);
-    var run = try p.openEarly(id, tokens, cut);
+    var run = try p.openEarly(id, tokens, cut, upto);
     var reader: Read = .{ .p = p, .id = id };
     defer reader.bytes.deinit(gpa);
     const t = try std.Thread.spawn(.{}, Read.run, .{&reader});
@@ -257,7 +257,7 @@ test "a producer that fails mid-split fails the decoder's pull, the failure is r
     defer fake.deinit();
     const p = try open(fake, std.time.ns_per_hour, 1 << 30);
     const id: [16]u8 = @splat(0x65);
-    var run = try p.openEarly(id, try tokensOf(a, upto), cut);
+    var run = try p.openEarly(id, try tokensOf(a, upto), cut, upto);
     var reader: Read = .{ .p = p, .id = id };
     defer reader.bytes.deinit(gpa);
     const t = try std.Thread.spawn(.{}, Read.run, .{&reader});
@@ -285,7 +285,7 @@ test "a decoder that releases the export mid-split ends the run, and the produce
     defer fake.deinit();
     const p = try open(fake, std.time.ns_per_hour, 1 << 30);
     const id: [16]u8 = @splat(0x66);
-    var run = try p.openEarly(id, try tokensOf(a, upto), cut);
+    var run = try p.openEarly(id, try tokensOf(a, upto), cut, upto);
     try std.testing.expect(!run.gone());
     try std.testing.expect(p.discard(id)); // the decoder's CLOSE, rows still being produced
     try std.testing.expect(run.gone());
@@ -309,7 +309,7 @@ test "an entry is not expired while its split runs, and its clock starts when th
     const ttl = 150 * std.time.ns_per_ms;
     const p = try open(fake, ttl, 1 << 30);
     const id: [16]u8 = @splat(0x67);
-    var run = try p.openEarly(id, try tokensOf(a, upto), cut);
+    var run = try p.openEarly(id, try tokensOf(a, upto), cut, upto);
     // chunks 60 ms apart for far longer than the TTL: each publish restarts the clock
     var chunks: split.Chunks = .{ .n = upto, .max = 128 };
     var elapsed: u64 = 0;
