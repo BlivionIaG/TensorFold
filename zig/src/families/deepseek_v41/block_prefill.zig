@@ -357,8 +357,9 @@ pub const Seg = struct {
 
     /// TF_LS_DUMP_LAYERS=a,b,..: the layers whose output boundary the prefill dumps (private gate instrumentation).
     fn dumpHas(L: u32) bool {
-        const v = std.c.getenv("TF_LS_DUMP_LAYERS") orelse return false;
-        var it = std.mem.tokenizeScalar(u8, std.mem.span(v), ',');
+        const env = @import("sys").environment;
+        const v = (env.path("TF_LS_DUMP_LAYERS", (env.Process{}).get("TF_LS_DUMP_LAYERS")) catch return false) orelse return false;
+        var it = std.mem.tokenizeScalar(u8, v, ',');
         while (it.next()) |t| if ((std.fmt.parseInt(u32, t, 10) catch continue) == L) return true;
         return false;
     }

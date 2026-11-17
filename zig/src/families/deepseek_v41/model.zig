@@ -164,6 +164,7 @@ pub const Model = struct {
     stream_alt: bool = false,
     pending_expand: bool = false,
     host_prof: bool = false,
+
     host_hash_ns: u64 = 0,
     host_stage_ns: u64 = 0,
     host_stage_misses: u64 = 0,
