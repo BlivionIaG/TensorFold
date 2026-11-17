@@ -97,6 +97,44 @@ pub fn mainRow(x: *const [512]u16, out: *[288]u8) void {
     }
 }
 
+/// The block's nibbles at `scale` when they dequantise to exactly its bf16 values; false when any value is off the grid.
+fn packExact(blk: []const u16, scale: f32, nib: *[8]u8) bool {
+    for (0..8) |j| {
+        var pair: [2]u8 = undefined;
+        for (0..2) |h| {
+            const v = c.bf16ToF32(blk[2 * j + h]);
+            const code = e2code(v / scale);
+            if (c.f32ToBf16(e2value(code) * scale) != blk[2 * j + h]) return false;
+            pair[h] = code;
+        }
+        nib[j] = pair[0] | (pair[1] << 4);
+    }
+    return true;
+}
+
+/// `mainRow`, except that a block the plain rule cannot reproduce keeps its values when a nearby E4M3 scale can.
+/// A row dequantised from a cache (every value on the grid) then lands as it was; the plain rule re-picks a scale
+/// from the block's amax, which differs from the written one where the scale is a coarse subnormal.
+pub fn mainRowKeep(x: *const [512]u16, out: *[288]u8) void {
+    mainRow(x, out);
+    for (0..32) |g| {
+        const blk = x[16 * g ..][0..16];
+        var nib: [8]u8 = undefined;
+        if (packExact(blk, c.e4m3(out[256 + g]), &nib)) continue;
+        const plain: i32 = out[256 + g];
+        var d: i32 = 1;
+        found: while (d <= 12) : (d += 1) {
+            for ([2]i32{ plain + d, plain - d }) |sc| {
+                if (sc < 1 or sc > 126) continue;
+                if (!packExact(blk, c.e4m3(@intCast(sc)), &nib)) continue;
+                @memcpy(out[8 * g ..][0..8], &nib);
+                out[256 + g] = @intCast(sc);
+                break :found;
+            }
+        }
+    }
+}
+
 /// kind 2, `index_fp4`: 32-value blocks, UE8M0 scale 2^ceil(log2(max(amax, 6 2^-126) / 6)); 64 codes, 4 scales.
 pub fn index(x: *const [128]u16, out: *[68]u8) void {
     for (0..4) |g| {

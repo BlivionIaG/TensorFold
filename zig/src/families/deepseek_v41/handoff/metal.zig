@@ -136,7 +136,7 @@ pub const Layout = union(enum) {
     pub fn setPool(l: Layout, geo: g.Geometry, src: u32, r: u64, row: *const [512]u16) void {
         switch (l) {
             .release => |rl| c.storeRow(512, row, rl.layers[geo.sources[src].layer].pool[@as(usize, @intCast(r)) * 1024 ..]),
-            .@"packed" => |p| fp4.mainRow(row, p.storage[p.mainOff(src) + @as(usize, @intCast(r)) * Packed.main_stride ..][0..Packed.main_stride]),
+            .@"packed" => |p| fp4.mainRowKeep(row, p.storage[p.mainOff(src) + @as(usize, @intCast(r)) * Packed.main_stride ..][0..Packed.main_stride]),
         }
     }
 

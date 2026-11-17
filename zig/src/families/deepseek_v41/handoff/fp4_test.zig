@@ -258,3 +258,23 @@ test "main rows: scales are the E4M3 of amax / 6, codes the nearest E2M1, error 
     }
     try std.testing.expect(@sqrt(sq_err / sq_val) < 0.2); // E2M1 with a fine scale: about 10% rms on gaussian blocks
 }
+
+test "main rows dequantised from a cache land as they were, also where the scale is a coarse subnormal" {
+    // a block whose largest value is 4 scale steps at scale code 2: the plain rule picks code 1 and clips it
+    var row: [512]u16 = undefined;
+    var packed_row: [288]u8 = @splat(0);
+    for (0..32) |grp| {
+        packed_row[256 + grp] = if (grp == 29) 2 else 0x38;
+        for (0..8) |j| packed_row[8 * grp + j] = if (grp == 29) 0x36 else 0x75;
+    }
+    fp4.unpackMain(&packed_row, &row);
+    var plain: [288]u8 = undefined;
+    var keep: [288]u8 = undefined;
+    fp4.mainRow(&row, &plain);
+    fp4.mainRowKeep(&row, &keep);
+    var again: [512]u16 = undefined;
+    fp4.unpackMain(&keep, &again);
+    try std.testing.expectEqualSlices(u16, &row, &again);
+    fp4.unpackMain(&plain, &again);
+    try std.testing.expect(!std.mem.eql(u16, &row, &again));
+}
