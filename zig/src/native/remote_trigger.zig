@@ -12,10 +12,11 @@ pub const Http = struct {
     key: ?[]const u8 = null, // TF_PREFILL_API_KEY_FILE's key, sent as a Bearer token to a GB10 started with --api-key
     cached: u64 = 0, // the last reply's usage.prompt_tokens_details.cached_tokens: what the GB10 did not compute (0: none said)
     gone: ?*const std.atomic.Value(bool) = null, // the pull's request ended: the exchange under way is cut off (`Aborted`)
+    halt: std.atomic.Value(bool) = .init(false), // a pull that ended before the producer did cuts the exchange off (`Aborted`)
     limit_s: u64 = 0, // the exchange's bound, set by the pull before each trigger; 0: `seconds` of the tokens sent
 
     pub fn trigger(h: *Http) fabric.prefill_source.Trigger {
-        return .{ .ptr = h, .start_fn = start };
+        return .{ .ptr = h, .start_fn = start, .halt = &h.halt };
     }
 
     /// The exchange, bounded by `limit_s` (the pull's own deadline) or `seconds`: the GB10 prefills the tokens first.
@@ -43,7 +44,7 @@ pub const Http = struct {
         var future = h.io.concurrent(@TypeOf(x.*).run, .{x}) catch return error.TriggerUnavailable;
         while (!x.done.load(.acquire)) {
             const closing = if (h.closing) |c| c.load(.acquire) else false;
-            const gone = if (h.gone) |g| g.load(.acquire) else false;
+            const gone = h.halt.load(.acquire) or (if (h.gone) |g| g.load(.acquire) else false);
             if (closing or gone or fabric.words.nowNs() >= deadline) {
                 future.cancel(h.io);
                 return if (closing) error.TriggerClosed else if (gone) error.Aborted else error.TriggerTimedOut;
