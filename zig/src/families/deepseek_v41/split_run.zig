@@ -66,9 +66,14 @@ pub const Run = struct {
     progress_ns: u64,
     /// when the last row ran (the state's wait starts); 0 until then
     state_since_ns: u64 = 0,
+    /// TF_LS_TRACE: one log line a pass
+    trace: bool = false,
+    started_ns: u64,
 
     pub fn init(feed: Feed) Run {
-        return .{ .feed = feed, .upto = @intCast(feed.upto), .progress_ns = fabric.words.nowNs() };
+        const now = fabric.words.nowNs();
+        const trace = @import("sys").environment.read(bool, "TF_LS_TRACE", false) catch false;
+        return .{ .feed = feed, .upto = @intCast(feed.upto), .progress_ns = now, .started_ns = now, .trace = trace };
     }
 
     /// The feed is over, once: `ok` for a restored state, else the puller may stop. Its timings are read first.
@@ -144,6 +149,9 @@ pub const Run = struct {
                 r.stats.rows += n;
                 r.stats.passes += 1;
                 r.at += n;
+                // the pass copied the rows into its own buffers: the stream's window moves on
+                r.feed.release(r.at);
+                if (r.trace) std.log.info("split pass {d}: rows {d}+{d}, entered in {d:.1} ms at {d:.0} ms, waited {d:.0} ms so far", .{ r.stats.passes, r.at - n, n, @as(f64, @floatFromInt(t1 - t0)) / 1e6, @as(f64, @floatFromInt(t1 - r.started_ns)) / 1e6, @as(f64, @floatFromInt(r.stats.wait_ns)) / 1e6 });
                 r.idle = false;
                 r.progress_ns = t1;
                 return;
@@ -253,6 +261,8 @@ test "rows streamed in odd sizes are run in order, no pass leaves a stub, and th
         try std.testing.expect(run.at <= ready);
     }
     try std.testing.expectEqual(upto, run.at);
+    // every pass gave its rows back to the stream's window once they were in its buffers
+    try std.testing.expectEqual(@as(u64, upto), fake.released);
     for (probe.passes.items) |ps| try std.testing.expect(ps.n <= 256);
     var covered: u32 = 0;
     for (probe.passes.items) |ps| {

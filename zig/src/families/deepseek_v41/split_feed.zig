@@ -47,6 +47,8 @@ pub const Feed = struct {
         snapshot: *const fn (ptr: *anyopaque) ?*anyopaque,
         /// the pass is over (`ok`: it ran every row and restored the state), or the job ended: the puller may stop
         finish: *const fn (ptr: *anyopaque, ok: bool, stats: Stats) void,
+        /// the pass has taken rows [0, end) into its own buffers: the stream may reuse their room (a window)
+        release: *const fn (ptr: *anyopaque, end: u64) void,
     };
 
     pub fn ready(f: Feed) u64 {
@@ -76,6 +78,10 @@ pub const Feed = struct {
     pub fn finish(f: Feed, ok: bool, stats: Stats) void {
         f.vtable.finish(f.ptr, ok, stats);
     }
+
+    pub fn release(f: Feed, end: u64) void {
+        f.vtable.release(f.ptr, end);
+    }
 };
 
 /// A feed over plain memory for tests: rows arrive when `ready_rows` is raised.
@@ -89,9 +95,10 @@ pub const Fake = struct {
     finished: ?bool = null,
     stats: Stats = .{},
     times: Pull = .{},
+    released: u64 = 0,
 
     pub fn feed(f: *Fake) Feed {
-        return .{ .ptr = f, .cut = f.cut, .upto = f.upto, .vtable = &.{ .ready = ready, .rows = rows, .wait = wait, .state = state, .pull = pull, .snapshot = snapshot, .finish = finish } };
+        return .{ .ptr = f, .cut = f.cut, .upto = f.upto, .vtable = &.{ .ready = ready, .rows = rows, .wait = wait, .state = state, .pull = pull, .snapshot = snapshot, .finish = finish, .release = release } };
     }
 
     fn self(p: *anyopaque) *Fake {
@@ -128,6 +135,10 @@ pub const Fake = struct {
     fn finish(p: *anyopaque, ok: bool, stats: Stats) void {
         self(p).finished = ok;
         self(p).stats = stats;
+    }
+
+    fn release(p: *anyopaque, end: u64) void {
+        self(p).released = @max(self(p).released, end);
     }
 };
 

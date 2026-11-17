@@ -71,7 +71,7 @@ const Producer = struct {
         while (chunks.next()) |c| {
             fabric.words.pause(2 * std.time.ns_per_ms);
             if (p.fail_at) |f| if (c.row0 >= f) return p.stage.fail();
-            for (0..c.rows) |i| p.stage.put(c.row0 + i, &rowOf(c.row0 + i)) catch return p.stage.fail();
+            for (0..c.rows) |i| p.stage.putWait(c.row0 + i, &rowOf(c.row0 + i), 5 * std.time.ns_per_s, null) catch return p.stage.fail();
         }
         for (p.x.buffers, 0..) |b, i| @memset(b, @truncate(i + 1));
         p.latch.publish(1) catch p.latch.fail();
@@ -158,4 +158,40 @@ test "a state that never lands is a stall, not a hang" {
     defer x.deinit();
     for (0..upto) |i| try stage.put(i, &rowOf(i));
     try std.testing.expectError(error.ProducerStalled, stream(x));
+}
+
+test "a producer with a window of two chunks streams a prompt of three times its size, and the reader frees the window as it goes" {
+    // 512 rows held of 700: the producer writes row 512 only once the frames over the first rows were served
+    var stage = try fabric.row_stage.Stage.initRing(gpa, upto, split.row_bytes, 512, 0);
+    defer stage.deinit();
+    try std.testing.expect(stage.isRing());
+    var latch = try fabric.row_stage.Stage.init(gpa, 1, 0);
+    defer latch.deinit();
+    const x = try Export.make(&stage, &latch, 5 * std.time.ns_per_s);
+    defer x.deinit();
+    var p: Producer = .{ .stage = &stage, .latch = &latch, .x = x };
+    const t = try std.Thread.spawn(.{}, Producer.run, .{&p});
+    const bytes = try stream(x);
+    t.join();
+    defer gpa.free(bytes);
+    try std.testing.expect(!stage.failed.load(.acquire));
+    try std.testing.expectEqual(upto, stage.available());
+    try std.testing.expectEqual(upto, stage.released.load(.acquire)); // every frame went out, the window is all free
+    var mirror = try fabric.row_stage.Stage.init(gpa, upto, split.row_bytes);
+    defer mirror.deinit();
+    var landed: Landed = .{ .stage = &mirror };
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var reason: fabric.decoder.Reason = .{};
+    _ = try file.pull(arena.allocator(), bytes, .{ .model = model, .tokens = x.tokens, .protocol = 2 }, .{ .ptr = &landed, .put_fn = Landed.put }, &reason);
+    try std.testing.expectEqual(upto, mirror.available());
+    for (0..upto) |i| try std.testing.expectEqualSlices(u8, &rowOf(i), mirror.slice(i, 1));
+}
+
+test "a window nobody reads stalls the producer instead of growing" {
+    var stage = try fabric.row_stage.Stage.initRing(gpa, upto, split.row_bytes, 256, 0);
+    defer stage.deinit();
+    for (0..256) |i| try stage.putWait(i, &rowOf(i), 0, null);
+    try std.testing.expectError(error.WindowFull, stage.putWait(256, &rowOf(256), 5 * std.time.ns_per_ms, null));
+    try std.testing.expect(stage.blocked_ns.load(.monotonic) > 0);
 }

@@ -5,10 +5,11 @@ const split = @import("handoff/split.zig");
 /// Staging slots: chunk N's rows copy out while chunk N + 1 computes and N + 2 may queue behind it.
 pub const slots = 3;
 
-/// Where the rows go: the early export's stage (`rows` is the chunk's region of it, `publish` makes rows [0
+/// Where the rows go: the early export's stage (`rows` is the chunk's next region of it, which may end before the chunk does when
+/// the stage is a ring that wraps, and waits for room; `publish` makes rows [0
 pub const Sink = struct {
     ptr: *anyopaque,
-    rows: *const fn (ptr: *anyopaque, row0: u64, n: u64) []u8,
+    rows: *const fn (ptr: *anyopaque, row0: u64, n: u64) anyerror![]u8,
     publish: *const fn (ptr: *anyopaque, end: u64) anyerror!void,
 };
 
@@ -65,16 +66,23 @@ pub const Ring = struct {
         if (block) try r.be.wait(r.be.ptr, s);
         const c = r.chunk[s];
         if (c.row0 != r.end) return error.OutOfOrder;
-        // a row on the wire is the stream's 40,960 bytes then the pre's 16
-        const dst = r.sink.rows(r.sink.ptr, c.row0, c.n);
+        // a row on the wire is the stream's 40,960 bytes then the pre's 16; a region of the stage may be a part of the chunk
         const stride: usize = @intCast(split.row_bytes);
         const xrow: usize = @intCast(split.stream_bytes);
         const prow: usize = @intCast(split.pre_bytes);
-        for (0..@as(usize, @intCast(c.n))) |i| {
-            @memcpy(dst[i * stride ..][0..xrow], r.x[s][i * xrow ..][0..xrow]);
-            @memcpy(dst[i * stride + xrow ..][0..prow], r.pre[s][i * prow ..][0..prow]);
+        var done: u64 = 0;
+        while (done < c.n) {
+            const dst = try r.sink.rows(r.sink.ptr, c.row0 + done, c.n - done);
+            const n: usize = @min(dst.len / stride, @as(usize, @intCast(c.n - done)));
+            if (n == 0) return error.OutOfOrder;
+            const from: usize = @intCast(done);
+            for (0..n) |i| {
+                @memcpy(dst[i * stride ..][0..xrow], r.x[s][(from + i) * xrow ..][0..xrow]);
+                @memcpy(dst[i * stride + xrow ..][0..prow], r.pre[s][(from + i) * prow ..][0..prow]);
+            }
+            done += n;
+            try r.sink.publish(r.sink.ptr, c.row0 + done);
         }
-        try r.sink.publish(r.sink.ptr, c.row0 + c.n);
         r.end = c.row0 + c.n;
         r.first = (r.first + 1) % slots;
         r.live -= 1;
@@ -86,6 +94,8 @@ const Fake = struct {
     waits: u32 = 0,
     stage: std.ArrayList(u8) = .empty,
     published: std.ArrayList(u64) = .empty,
+    /// the most rows a region of the stage holds (a ring that wraps hands out less than asked)
+    region: u64 = std.math.maxInt(u64),
 
     fn done(ptr: *anyopaque, slot: usize) anyerror!bool {
         const f: *Fake = @ptrCast(@alignCast(ptr));
@@ -98,9 +108,10 @@ const Fake = struct {
         f.finished[slot] = true;
     }
 
-    fn rows(ptr: *anyopaque, row0: u64, n: u64) []u8 {
+    fn rows(ptr: *anyopaque, row0: u64, n0: u64) anyerror![]u8 {
         const f: *Fake = @ptrCast(@alignCast(ptr));
         const row: usize = @intCast(split.row_bytes);
+        const n = @min(n0, f.region);
         f.stage.resize(std.testing.allocator, @intCast((row0 + n) * row)) catch unreachable;
         return f.stage.items[@intCast(row0 * row)..][0..@intCast(n * row)];
     }
@@ -218,4 +229,21 @@ test "a published row is the stream's bytes then its pre, and an out-of-order or
     try std.testing.expectError(error.OutOfOrder, r.submit((s + 1) % slots, 3, 1));
     try r.submit(s, 5, 1); // a gap in the rows: refused when it comes to publish
     try std.testing.expectError(error.OutOfOrder, r.drain());
+}
+
+test "a chunk the stage takes in parts is copied and published part by part, in order" {
+    var f: Fake = .{ .region = 3 };
+    defer f.deinit();
+    var bufs: [slots][2][]u8 = undefined;
+    defer freeBufs(&bufs);
+    var r = try testRing(&f, &bufs, 8);
+    const s = try r.acquire();
+    for (bufs[s][0], 0..) |*b, i| b.* = @truncate(i / split.stream_bytes);
+    @memset(bufs[s][1], 9);
+    try r.submit(s, 0, 8);
+    try r.drain();
+    try std.testing.expectEqualSlices(u64, &.{ 3, 6, 8 }, f.published.items);
+    const row: usize = @intCast(split.row_bytes);
+    for (0..8) |i| try std.testing.expectEqual(@as(u8, @intCast(i)), f.stage.items[i * row]);
+    try std.testing.expectEqual(@as(u64, 8), r.end);
 }
