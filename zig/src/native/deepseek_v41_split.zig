@@ -66,7 +66,7 @@ pub const Session = struct {
         const at: u32 = std.math.cast(u32, upto) orelse return error.PrefixTooLong;
         s.* = .{ .gpa = spec.gpa, .model = spec.model, .stage = try fabric.row_stage.Stage.init(spec.gpa, upto, split.row_bytes), .snap = undefined, .landing = undefined, .cut = spec.cut, .upto = upto, .t0 = fabric.words.nowNs(), .announce = announce, .feedv = undefined };
         errdefer s.stage.deinit();
-        s.snap = try spec.model.snapshotBlank(at);
+        s.snap = try spec.model.snapshotBlank();
         errdefer spec.model.snapshotDrop(s.snap);
         try s.landing.initCut(spec.gpa, at, spec.cut, .{ .@"packed" = @import("deepseek_v41_remote.zig").packedOf(spec.model, s.snap) });
         s.feedv = .{ .ptr = s, .cut = spec.cut, .upto = upto, .vtable = &vtable };

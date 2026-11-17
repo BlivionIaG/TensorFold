@@ -141,7 +141,6 @@ const Calls = struct {
     fn reset(ptr: *anyopaque) anyerror!void {
         const c = self(ptr);
         try c.b.model.resetSlot(c.slot);
-        c.b.history[c.slot].clearRetainingCapacity();
     }
     fn position(ptr: *anyopaque) u32 {
         const c = self(ptr);

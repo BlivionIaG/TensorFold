@@ -79,7 +79,7 @@ fn restoreCache(state: *kv.cache.State, snap: *const Snapshot, cut: u32) !void {
     if (snap.live.len != state.plan.mutableBytes()) return error.SnapshotLayout;
     if (snap.position != state.position) return error.PositionMismatch;
     const dst: Packed = .{ .live = state.live.contents()[0..state.plan.mutableBytes()], .storage = state.storage.contents()[0..state.plan.packedBytes()], .layers = state.plan.layers, .capacity = state.plan.capacity };
-    const src: Packed = .{ .live = snap.live, .storage = snap.storage, .layers = state.plan.layers, .capacity = snap.capacity };
+    const src: Packed = .{ .live = snap.live, .storage = snap.storage, .layers = state.plan.layers, .capacity = state.plan.capacity };
     try restore.layers(dst, src, cut, state.position);
 }
 
@@ -97,16 +97,15 @@ test "a layer-split restore writes where the engine's cache reads layers below t
         @memset(state.live.contents()[0..state.plan.mutableBytes()], 0xd0);
         @memset(state.storage.contents()[0..state.plan.packedBytes()], 0xd0);
         state.position = cs.position;
-        const cap = cs.position + cs.position % 2;
         const snap = try gpa.create(Snapshot);
         defer gpa.destroy(snap);
         const live = try gpa.alloc(u8, state.plan.mutableBytes());
         defer gpa.free(live);
-        const storage = try gpa.alloc(u8, cache.pool_layout.storageBytes(cap));
+        const storage = try gpa.alloc(u8, state.plan.packedBytes());
         defer gpa.free(storage);
         @memset(live, 0x5c);
         @memset(storage, 0x5c);
-        snap.* = .{ .storage = storage, .capacity = cap, .live = live, .taps = &no_taps, .position = cs.position, .history = @splat(0), .taps_row = 0, .taps_n = 0, .taps_rows_last = 0, .taps_rows_valid = 0, .taps_base = 0 };
+        snap.* = .{ .storage = storage, .live = live, .taps = &no_taps, .position = cs.position, .history = @splat(0), .taps_row = 0, .taps_n = 0, .taps_rows_last = 0, .taps_rows_valid = 0, .taps_base = 0 };
         try restoreCache(&state, snap, cs.cut);
         const bytes = state.live.contents();
         for (0..cs.layers) |l| {
@@ -137,7 +136,7 @@ test "a layer-split restore writes where the engine's cache reads layers below t
     defer gpa.free(live);
     const storage = try gpa.alloc(u8, cache.pool_layout.storageBytes(64));
     defer gpa.free(storage);
-    var snap: Snapshot = .{ .storage = storage, .capacity = 64, .live = live, .taps = &no_taps, .position = 10, .history = @splat(0), .taps_row = 0, .taps_n = 0, .taps_rows_last = 0, .taps_rows_valid = 0, .taps_base = 0 };
+    var snap: Snapshot = .{ .storage = storage, .live = live, .taps = &no_taps, .position = 10, .history = @splat(0), .taps_row = 0, .taps_n = 0, .taps_rows_last = 0, .taps_rows_valid = 0, .taps_base = 0 };
     state.position = 9;
     try std.testing.expectError(error.PositionMismatch, restoreCache(&state, &snap, 8));
 }

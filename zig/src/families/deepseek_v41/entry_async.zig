@@ -120,14 +120,14 @@ pub fn signal(m: *Model, e: mtl.CommandBuffer) !void {
 }
 
 /// A committed entered pass is parked, not waited for: its buffers in queue order, then its caches advance.
-pub fn commitParked(m: *Model, segs: []const model.Seg, first: ?mtl.CommandBuffer, engram: []const mtl.CommandBuffer, e: mtl.CommandBuffer) ![]const f32 {
+pub fn commitParked(m: *Model, segs: []const model.Seg, first: ?mtl.CommandBuffer, flushed: []const mtl.CommandBuffer, e: mtl.CommandBuffer) ![]const f32 {
     var cbs: [6]mtl.CommandBuffer = undefined;
     var n: usize = 0;
     if (first) |cb| {
         cbs[n] = cb;
         n += 1;
     }
-    for (engram) |cb| {
+    for (flushed) |cb| {
         cbs[n] = cb;
         n += 1;
     }

@@ -74,7 +74,7 @@ pub fn describe(arena: std.mem.Allocator, upto: u64, cut: u32) ![]manifest.Layer
 /// Chunk starts and sizes keep to the compressors' 128-row window
 pub const grid_rows: u64 = 128;
 
-/// Rows a split prompt's i-th chunk takes: the ramp, then `max` (the grid's multiple at or below it, 16 at least).
+/// Rows a split prompt's i-th chunk takes: the ramp, then `max` (the grid's multiple at or below it, 128 at least).
 pub fn chunkRows(i: u32, max: u32) u32 {
     const full = @max(@as(u32, grid_rows), max / @as(u32, grid_rows) * @as(u32, grid_rows));
     return @min(full, if (i < ramp.len) ramp[i] else full);
@@ -96,7 +96,7 @@ pub const Chunks = struct {
         if (rows >= left) {
             rows = left;
         } else if (left - rows < min_tail_rows) {
-            // leave a tail of 17 to 32 rows, the chunk before it on the grid
+            // leave a short tail, the chunk before it on the grid
             const take = if (left > 2 * min_tail_rows) left - min_tail_rows else left;
             const aligned = take / grid_rows * grid_rows;
             rows = if (aligned >= min_tail_rows) aligned else take;
