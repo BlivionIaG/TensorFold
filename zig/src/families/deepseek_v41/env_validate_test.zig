@@ -40,7 +40,6 @@ fn check(name: []const u8, raw: []const u8, valid: bool) !void {
     try t.expect(std.mem.endsWith(u8, why.?, e.rule(name).forms));
 }
 
-
 test "DeepSeek strict env: unset and blank settings both read as the caller's default" {
     for (e.rules) |r| if (r.scope == .dsv41) for ([_]?[]const u8{ null, "", " ", "\t", " \t\r\n" }) |raw| {
         if (raw) |v| try check(r.name, v, true);

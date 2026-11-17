@@ -414,7 +414,7 @@ fn stageRows(e: *const E) i64 {
 pub const emitMulti = block_prefill_emit.emitMulti;
 pub const planRuns = block_prefill_emit.planRuns;
 
-/// A prefill program's part: a whole segment, one of CED replay's passes (ced.zig), or the layer-split producer's chunk.
+/// A prefill program's part: a whole segment, a CED replay pass (ced.zig), or the layer-split producer's chunk.
 pub const Part = enum { whole, encoder, decoder, split };
 
 pub const emitReplay = block_prefill_emit.emitReplay;
