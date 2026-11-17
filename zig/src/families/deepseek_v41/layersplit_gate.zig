@@ -1,5 +1,6 @@
 //! Layer-split gate G3: enter the forward at layer `k` from another engine's boundary rows, or stop and dump them.
 const std = @import("std");
+const mtl = @import("metal");
 const View = @import("view.zig").View;
 
 const hidden_row: usize = 4 * 5120 * 2; // the four residual planes, bf16
@@ -73,3 +74,35 @@ pub const Gate = struct {
         try write(try path(&b, g.stop_dir.?, "M.", g.stop_k - 1, "pre.f32"), q, p0 * pre_row);
     }
 };
+
+test "gate: boundary rows in memory enter as the entry files' rows do, split into the stream and the pre" {
+    const pool = mtl.objc.Pool.push();
+    defer pool.pop();
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    const rows = 5;
+    const stream = try device.buffer(rows * hidden_row + 64, mtl.ResourceOptions.shared);
+    defer stream.deinit();
+    const pre = try device.buffer(rows * pre_row + 64, mtl.ResourceOptions.shared);
+    defer pre.deinit();
+    @memset(stream.contents()[0 .. rows * hidden_row + 64], 0xee);
+    @memset(pre.contents()[0 .. rows * pre_row + 64], 0xee);
+    var src: [rows * (hidden_row + pre_row)]u8 = undefined;
+    for (&src, 0..) |*b, i| b.* = @truncate(i * 7 + i / 251);
+    var g: Gate = .{ .entry_rows = &src, .k = 14 };
+    try std.testing.expect(g.entered());
+    // a view at an offset, as the workspace hands them out
+    try g.loadEntry(.{ .buffer = stream, .offset = 32 }, .{ .buffer = pre, .offset = 16 }, 123, rows);
+    for (0..rows) |r| {
+        const row = src[r * (hidden_row + pre_row) ..];
+        try std.testing.expectEqualSlices(u8, row[0..hidden_row], stream.contents()[32 + r * hidden_row ..][0..hidden_row]);
+        try std.testing.expectEqualSlices(u8, row[hidden_row..][0..pre_row], pre.contents()[16 + r * pre_row ..][0..pre_row]);
+    }
+    // nothing around the rows moved
+    for (stream.contents()[0..32]) |b| try std.testing.expectEqual(@as(u8, 0xee), b);
+    for (pre.contents()[16 + rows * pre_row .. 64 + rows * pre_row]) |b| try std.testing.expectEqual(@as(u8, 0xee), b);
+    // a row count the bytes do not match is refused
+    try std.testing.expectError(error.GateRows, g.loadEntry(.{ .buffer = stream, .offset = 32 }, .{ .buffer = pre, .offset = 16 }, 0, rows - 1));
+    g.off();
+    try std.testing.expect(!g.entered());
+}
