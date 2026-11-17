@@ -148,7 +148,7 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
     if (std.mem.eql(u8, step, "split_rows")) return @import("forward_glue_split.zig").rows(f, r, c);
     if (std.mem.eql(u8, step, "split_hold")) return @import("forward_glue_split.zig").hold(f, r);
     if (std.mem.eql(u8, step, "bdump")) {
-        // private gate instrumentation (TF_LS_DUMP_DIR): rank 0 writes the boundary rows at their position
+        // gate instrumentation (TF_LS_DUMP_DIR): rank 0 writes the boundary rows at their position
         if (f.comm.rank() != 0) return;
         const env = @import("sys").environment;
         const dir = (env.path("TF_LS_DUMP_DIR", (env.Process{}).get("TF_LS_DUMP_DIR")) catch return error.BadGlue) orelse return;

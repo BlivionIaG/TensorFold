@@ -225,7 +225,7 @@ state of layers 0 to `TF_LS_CUT` - 1 into the same slot. Layers 20 to 39 never r
 `TF_LS_MIN_TOKENS` (16384) or more when its predicted time beats the pull and the Mac's own prefill) and `TF_LS_PRODUCE=1` on
 the pair. The cut is one of 2, 8 or 14: a layer that reuses an index source's selection must sit on the same side
 as it, and the index sources are layers 2, 8, 14 and 20, so the boundary rows alone cannot carry a cut in between. The route
-picks the cut whose slower stage is fastest from a speed per machine against per-cut stage costs (at 14 the Sparks stage is
+picks the cut whose slower stage is fastest from a speed per machine against per-cut stage costs (at 14 the pair's stage is
 the slower one, at 8 the Mac's) and learns the speed of whichever stage was the bottleneck from the Mac's wait for rows;
 `TF_LS_CUT` forces one. Both machines keep only a window of `TF_LS_WINDOW` chunks (default 4) of boundary rows, not the
 prompt: the pair waits for the Mac to take the oldest before it copies the next, so a prompt is bounded by the pair's pool

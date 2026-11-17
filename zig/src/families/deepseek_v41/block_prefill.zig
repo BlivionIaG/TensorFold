@@ -352,7 +352,7 @@ pub const Seg = struct {
                 return e.glue("split_rows", &.{ y, (try Seg.coefs(e, e.coef))[0], .{ .i = L } });
             }
             if (!s.short and s.multi == null and dumpHas(L)) {
-                // private gate instrumentation: the layer's true residual (post applied) and the next site's pre
+                // gate instrumentation: the layer's true residual (post applied) and the next site's pre
                 const y = try e.buf("w.trace", .{}, .bf16, &.{ n, 4 * D });
                 try s.postOnly(y);
                 try e.glue("bdump", &.{ y, (try Seg.coefs(e, e.coef))[0], .{ .i = L }, .{ .i = e.start } });
@@ -362,7 +362,7 @@ pub const Seg = struct {
         s.unpend();
     }
 
-    /// TF_LS_DUMP_LAYERS=a,b,..: the layers whose output boundary the prefill dumps (private gate instrumentation).
+    /// TF_LS_DUMP_LAYERS=a,b,..: the layers whose output boundary the prefill dumps (gate instrumentation).
     fn dumpHas(L: u32) bool {
         const env = @import("sys").environment;
         const v = (env.path("TF_LS_DUMP_LAYERS", (env.Process{}).get("TF_LS_DUMP_LAYERS")) catch return false) orelse return false;
