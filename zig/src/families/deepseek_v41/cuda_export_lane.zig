@@ -73,7 +73,7 @@ pub const Export = struct {
     /// The token a layer-split trigger's reply carries: the split drew none, and the decoder ignores it.
     pub const split_reply_token: u32 = 0;
 
-    /// TF_LS_PRODUCE=1, one replicated KV pool on one slot, a link or HTTP to serve the early export, a cut of the model's.
+    /// TF_LS_PRODUCE=1, one replicated KV pool on one slot, a link or HTTP to serve the early export
     fn splitOk(ptr: *anyopaque, cut: u32) bool {
         const x = self(ptr);
         const on = @import("sys").environment.read(bool, "TF_LS_PRODUCE", false) catch false;
@@ -93,13 +93,7 @@ pub const Export = struct {
         return @min(seg, try @import("sys").environment.read(u32, "TF_LS_CHUNK", seg));
     }
 
-    /// A layer-split prefill of `ids` (the whole prompt; its last token stays unexported) under `h` (`split_cut`), on
-    /// the engine thread with the slot empty: the early export is added before any compute, so the decoder's OPEN
-    /// succeeds at once; the layers below the cut then prefill chunk by chunk (`split_lib.Chunks`), each chunk's
-    /// boundary rows published when its program ends, and the state of those layers lands at the end. The D2H of a
-    /// chunk's rows is synchronous (no overlap with the next chunk's compute; the transfer to the decoder is what
-    /// overlaps). No sampling and no full-model window run: nothing of the slot is kept. Failure, a closed export or a
-    /// gone client: the stage and latch fail (readers get the producer's failure), `failed` is called, the slot is released.
+    /// A layer-split prefill of `ids` (the whole prompt; its last token stays unexported) under `h` (`split_cut`)
     pub fn splitPrefill(x: *Export, h: Handoff, ids: []const u32, cancel: ?api.LaneHost.Export.Cancel) !void {
         const cut = h.split_cut;
         if (!splitOk(x, cut)) return x.refused(h, error.SplitRefused);

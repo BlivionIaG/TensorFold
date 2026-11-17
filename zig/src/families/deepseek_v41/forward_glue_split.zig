@@ -1,4 +1,4 @@
-//! The layer-split producer's glue: a chunk's boundary rows (the cut layer's residual and the next site's pre) to the host.
+//! The layer-split producer's glue: a chunk's boundary rows (the cut layer's residual and the next site's pre) to the
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -12,10 +12,7 @@ const Forward = fwd.Forward;
 /// The most rows a host copy takes at once: its scratch is `block_rows` rows of the stream (40 KB each).
 const block_rows: usize = 256;
 
-/// glue split_rows (x [n, 4 * 5120] bf16, pre [n, 4] f32, layer): rank 0 writes row i of the chunk as the stream's
-/// 40,960 bytes then the pre's 16 into the stage's rows (`split.row_bytes` each); the other ranks hold the same
-/// values and write nothing. The stream is synchronised first and the copy is synchronous: the rows are in the stage
-/// when this step returns, and the chunk's `publish` follows the program.
+/// glue split_rows (x [n, 4 * 5120] bf16, pre [n, 4] f32, layer)
 pub fn rows(f: *Forward, r: *run.Runner, c: *const calls.Call) !void {
     if (f.comm.rank() != 0) return;
     const dst = pf.state(f).split_dst;

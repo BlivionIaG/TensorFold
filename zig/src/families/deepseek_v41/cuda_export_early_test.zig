@@ -1,5 +1,4 @@
-//! A layer-split export's producer side over synthetic state: the early entry, rows streamed while it computes, the
-//! state of layers below the cut, failure and expiry.
+//! A layer-split export's producer side over synthetic state: the early entry, rows streamed while it computes
 const std = @import("std");
 const fabric = @import("fabric");
 const plan = @import("handoff/plan.zig");
@@ -17,8 +16,7 @@ const model = "dsv41-early-test";
 const upto: u64 = 700;
 const cut: u32 = 14;
 
-/// A source whose layer-split state is a synthetic world's, as the engine's capture hands it (no pages or carries above
-/// the cut are read, no drafter rows ride).
+/// A source whose layer-split state is a synthetic world's, as the engine's capture hands it
 const Fake = struct {
     arena: std.heap.ArenaAllocator,
     world: s.World,

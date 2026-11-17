@@ -1,4 +1,4 @@
-//! A layer-split state's restore: layers [0, cut) of a landed Packed state into a live slot, layers from the cut on kept.
+//! A layer-split state's restore: layers [0, cut) of a landed Packed state into a live slot
 const std = @import("std");
 const metal = @import("metal.zig");
 const prefix = @import("../kv_prefix.zig");
@@ -17,8 +17,7 @@ pub fn ownersBelow(cut: u32) Error!usize {
     return n;
 }
 
-/// Copy from `src` into `dst` (same layer count; capacities may differ): the window rings of layers [0, cut), the carries
-/// and raw-row captures of the owners below the cut, and those owners' pool rows that `position` uses.
+/// Copy from `src` into `dst` (same layer count; capacities may differ): the window rings of layers [0, cut)
 pub fn layers(dst: Packed, src: Packed, cut: u32, position: u32) Error!void {
     const owners = try ownersBelow(cut);
     if (dst.layers != src.layers or dst.live.len != src.live.len or dst.live.len < dst.liveBytes()) return error.SnapshotLayout;
