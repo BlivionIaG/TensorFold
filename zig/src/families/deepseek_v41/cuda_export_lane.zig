@@ -96,20 +96,15 @@ pub const Export = struct {
     /// A layer-split prefill of `ids` (the whole prompt; its last token stays unexported) under `h` (`split_cut`)
     pub fn splitPrefill(x: *Export, h: Handoff, ids: []const u32, cancel: ?api.LaneHost.Export.Cancel) !void {
         const cut = h.split_cut;
-        if (!splitOk(x, cut)) return x.refused(h, error.SplitRefused);
-        if (ids.len < 2 or ids.len - 1 < split_lib.min_tail_rows) return x.refused(h, error.SplitTooShort);
+        if (!splitOk(x, cut)) return error.SplitRefused;
+        if (ids.len < 2 or ids.len - 1 < split_lib.min_tail_rows) return error.SplitTooShort;
         const upto: u64 = ids.len - 1;
-        var run = x.produce.openEarly(h.id, ids[0..upto], cut) catch |err| return x.refused(h, err);
+        var run = try x.produce.openEarly(h.id, ids[0..upto], cut);
         defer run.close();
         x.splitBody(&run, h, ids, upto, cancel) catch |err| {
-            run.fail(@errorName(err));
+            run.fail();
             return err;
         };
-    }
-
-    fn refused(x: *Export, h: Handoff, err: anyerror) anyerror {
-        x.produce.failed(h.id, @errorName(err));
-        return err;
     }
 
     fn splitBody(x: *Export, run: *serve.Produce.Early, h: Handoff, ids: []const u32, upto: u64, cancel: ?api.LaneHost.Export.Cancel) !void {

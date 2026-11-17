@@ -89,6 +89,28 @@ pub fn exportable(h: *const LaneHost, r: *const Request) bool {
     return r.prompt.len >= 2 and r.images.len == 0 and !r.promptOnly();
 }
 
+/// A layer-split handoff ends here instead of opening a stream: the exporter prefills and exports on this (engine)
+/// thread with the slot empty, and the reply is the token `run` returns. True: the job was run and finished.
+pub fn runSplit(h: *LaneHost, job: *Job) bool {
+    const k = job.request.handoff orelse return false;
+    const x = h.exporter orelse return false;
+    const s = x.split orelse return false;
+    if (k.split_cut == 0) return false;
+    job.exported = true; // the split reports its own state or failure to the decoder
+    const cancel: Cancel = .{ .ptr = job, .is = LaneHost.cancelled };
+    const token = s.run(x.ptr, k, job.request.prompt, cancel) catch |err| {
+        x.failed(x.ptr, k, @errorName(err));
+        _ = if (err == error.Cancelled) h.cancel(job) else @import("lane_host_end.zig").dropFailed(h, job, err);
+        return true;
+    };
+    h.remove(job);
+    LaneHost.emit(job, .{ .prefilled = 0 });
+    const reply = [1]u32{token};
+    LaneHost.emit(job, .{ .tokens = &reply });
+    h.finish(job, .length, "");
+    return true;
+}
+
 /// A handoff stream cuts before the prompt's last token (its row stays pending) and exports there; its marks keep.
 pub fn exporting(h: *const LaneHost, job: *Job, reuse: *lanes.stream.Reuse) bool {
     if (job.request.handoff == null or h.exporter == null) return false;
