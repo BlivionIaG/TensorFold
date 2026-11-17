@@ -24,10 +24,10 @@ pub const default_cut: u32 = 14;
 pub const default_min_tokens: u64 = 16384;
 /// The longest prompt a split takes: the boundary rows are held a window at a time, so the pair's pool is the limit.
 pub const default_max_tokens: u64 = 1048576;
-/// Chunks of boundary rows each side holds in flight (TF_LS_WINDOW): the producer runs this far ahead of the rows taken.
+/// Chunks of boundary rows each side holds in flight (TF_LS_WINDOW).
 pub const default_window: u32 = 4;
 
-/// The rows of a window of `chunks` chunks of up to `chunk` rows: room for the chunk being filled and the ones in flight.
+/// The rows of a window of `chunks` chunks of up to `chunk` rows: the chunk being filled and the ones in flight.
 pub fn windowRows(chunk: u32, chunks: u32) u64 {
     return @as(u64, chunk) * @max(chunks, 2);
 }

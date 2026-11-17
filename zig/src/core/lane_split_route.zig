@@ -5,9 +5,7 @@ const Rate = @import("lane_remote_rate.zig").Rate;
 /// The layers this machine may start at: index sources, so the selection a layer reuses is made on its own side.
 pub const cuts = [_]u32{ 2, 8, 14 };
 
-/// Per cut, ms a boundary row on the pair (layers below the cut) and on this machine (layers from it, then its cone), as the
-/// first two windows measured them with the pipeline's overheads in: the pair 0.178 / 0.2825 GPU ms at cuts 8 / 14 (x1.3 in
-/// flight), this machine 0.38 ms at cut 8 and ~0.0317 per layer elsewhere. The speeds below scale all cuts of one machine.
+/// Per cut, ms a boundary row on the pair (layers below it) and on this machine (layers from it), overheads in.
 pub const pair_ms = [cuts.len]f64{ 0.070, 0.234, 0.370 };
 pub const mac_ms = [cuts.len]f64{ 0.570, 0.380, 0.190 };
 
@@ -78,8 +76,7 @@ pub const Model = struct {
         return @as(f64, @floatFromInt(prefix)) / m.tps() + m.fixed_s.v;
     }
 
-    /// A split at `cut` of `rows` rows as timed (trigger to state landed), this machine having waited `wait_ns` for rows: the
-    /// rate it streamed at is the pair's when this machine starved, else this machine's own (the pipeline runs at the slower).
+    /// A split at `cut` timed to its landed state, `wait_ns` waited for rows: a starved machine means the pair is slow.
     pub fn observeSplit(m: *Model, cut: u32, rows: u64, ns: u64, wait_ns: u64) void {
         const i = slot(cut) orelse return;
         const total = @as(f64, @floatFromInt(ns)) / 1e9;
@@ -126,7 +123,7 @@ test "the cut follows the measured speeds: a slow pair moves it down, a slow mac
 
 test "a timed split moves the speed of the stage that was the bottleneck, and a split no longer than its fixed cost says nothing" {
     var m: Model = .{ .enabled = true };
-    // cut 14, 32767 rows in 9.4 s over the fixed cost, this machine waited 3 s for rows: the pair streamed 3486 a second
+    // cut 14, 32767 rows in 9.4 s over the fixed cost, 3 s waited for rows: the pair streamed 3486 a second
     m.observeSplit(14, 32767, 10_800_000_000, 3_000_000_000);
     try t.expectApproxEqAbs(@as(f64, 32767) / 9.4 * 0.370 / 1000, m.pair_speed.v, 1e-6);
     try t.expectEqual(@as(f64, 1), m.mac_speed.v);
