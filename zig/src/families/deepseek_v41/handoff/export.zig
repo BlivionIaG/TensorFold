@@ -69,13 +69,26 @@ fn sourceOf(cuda: Cuda, layer: u32) ?SourceState {
 
 /// All of a shard's parts, converted, in plan order. `shape` says which producer this is (shard, split, drafter rows).
 pub fn build(arena: std.mem.Allocator, shape: plan.Shape, cuda: Cuda) Error![]Part {
+    return buildWith(arena, shape, cuda, null);
+}
+
+/// `build` into buffers that exist already (`into[i]` is plan part i, of exactly its bytes): a split export's early ones.
+pub fn buildInto(arena: std.mem.Allocator, shape: plan.Shape, cuda: Cuda, into: []const []u8) Error![]Part {
+    return buildWith(arena, shape, cuda, into);
+}
+
+fn buildWith(arena: std.mem.Allocator, shape: plan.Shape, cuda: Cuda, into: ?[]const []u8) Error![]Part {
     const list = try plan.specs(arena, shape);
+    if (into) |dst| {
+        if (dst.len != list.len) return error.BadShape;
+        for (list, dst) |spec, b| if (b.len != spec.bytes()) return error.BadShape;
+    }
     const geo = shape.geo;
     if (cuda.rings.rows < geo.window or !std.math.isPowerOfTwo(cuda.rings.rows) or !std.math.isPowerOfTwo(cuda.rings.drafter_rows)) return error.BadRingRows;
     if (cuda.rings.drafter_rows < shape.ds_rows) return error.BadRingRows;
     const parts = try arena.alloc(Part, list.len);
-    for (list, parts) |spec, *p| {
-        p.* = .{ .spec = spec, .bytes = try arena.alloc(u8, @intCast(spec.bytes())) };
+    for (list, parts, 0..) |spec, *p, at| {
+        p.* = .{ .spec = spec, .bytes = if (into) |dst| dst[at] else try arena.alloc(u8, @intCast(spec.bytes())) };
         switch (spec.kind) {
             .swa => {
                 const ring = if (spec.layer < cuda.swa.len) cuda.swa[spec.layer] else null;

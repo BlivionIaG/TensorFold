@@ -344,6 +344,13 @@ pub const Seg = struct {
                 try s.postOnly(y);
                 try e.glue("trace", &.{ y, .{ .i = L } });
             }
+            if (s.part == .split and i + 1 == layers.len) {
+                // layer-split producer: the cut layer's true residual (post applied) and the next site's pre, the
+                // boundary rows (what `bdump` writes for the gate); nothing past the layer runs: no head, no more layers
+                const y = try e.buf("w.trace", .{}, .bf16, &.{ n, 4 * D });
+                try s.postOnly(y);
+                return e.glue("split_rows", &.{ y, (try Seg.coefs(e, e.coef))[0], .{ .i = L } });
+            }
             if (!s.short and s.multi == null and dumpHas(L)) {
                 // private gate instrumentation: the layer's true residual (post applied) and the next site's pre
                 const y = try e.buf("w.trace", .{}, .bf16, &.{ n, 4 * D });
@@ -407,8 +414,8 @@ fn stageRows(e: *const E) i64 {
 pub const emitMulti = block_prefill_emit.emitMulti;
 pub const planRuns = block_prefill_emit.planRuns;
 
-/// A prefill program's part: a whole segment, or one of CED replay's passes (ced.zig).
-pub const Part = enum { whole, encoder, decoder };
+/// A prefill program's part: a whole segment, one of CED replay's passes (ced.zig), or the layer-split producer's chunk.
+pub const Part = enum { whole, encoder, decoder, split };
 
 pub const emitReplay = block_prefill_emit.emitReplay;
 pub const emitPrefill = block_prefill_emit.emitPrefill;

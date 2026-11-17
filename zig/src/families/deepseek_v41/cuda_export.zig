@@ -5,9 +5,10 @@ const g = @import("handoff/geometry.zig");
 const plan = @import("handoff/plan.zig");
 const ex = @import("handoff/export.zig");
 const p2 = @import("handoff/p2.zig");
+const lsplit = @import("handoff/split.zig");
 const producer = fabric.producer;
 
-pub const Error = ex.Error || error{ BadSnapshot, NotAHandoffPrompt };
+pub const Error = ex.Error || error{ BadSnapshot, NotAHandoffPrompt, NotASplitExport };
 
 /// One bounded role of the engine's snapshot: its name and this slot's bytes (stale drafter rows are zeroed in place).
 pub const Piece = struct { role: []const u8, bytes: []u8 };
@@ -29,6 +30,8 @@ pub const State = struct {
     /// KV_SPLIT: this producer is shard `shard` of `shards`.
     shard: u32 = 0,
     shards: u32 = 1,
+    /// a layer-split state (0: whole): only layers [0, cut) are valid, no drafter rings ride and pages above are absent
+    cut: u32 = 0,
 
     /// `decoder_from` of a state with no replayed layers
     pub const none: u32 = std.math.maxInt(u32);
@@ -42,6 +45,8 @@ pub const Source = struct {
     ptr: *anyopaque,
     take: *const fn (ptr: *anyopaque, gpa: std.mem.Allocator, at: u64) anyerror!Captured,
     release: *const fn (ctx: *anyopaque) void,
+    /// The same at `at` tokens for a layer-split export of layers [0, cut): its pages and drafter rows are not read.
+    take_cut: ?*const fn (ptr: *anyopaque, gpa: std.mem.Allocator, at: u64, cut: u32) anyerror!Captured = null,
 };
 
 /// An export and everything it reads: the converted parts live in `arena` until `deinit`.
@@ -50,10 +55,17 @@ pub const Built = struct {
     exp: producer.Export,
     /// the parts' bytes: what a table counts against its cap
     bytes: u64,
+    /// a layer-split export's rows and state still arriving (null: a finished export)
+    early: ?*Early = null,
 
     /// Frees the arena and the frames a responder planned into `exp` with `gpa`; the caller destroys no `Built` itself.
     pub fn deinit(b: *Built, gpa: std.mem.Allocator) void {
         if (b.exp.frames.len > 0) gpa.free(b.exp.frames);
+        if (b.early) |e| {
+            e.stage.deinit();
+            e.latch.deinit();
+            gpa.destroy(e);
+        }
         b.arena.deinit();
         gpa.destroy(b);
     }
@@ -106,7 +118,7 @@ fn sourcesOf(arena: std.mem.Allocator, st: State) Error![]ex.SourceState {
     for (geo.sources, sources) |s, *x| {
         const pg = for (st.pages) |p| {
             if (p.layer == s.layer) break p;
-        } else return error.MissingSource;
+        } else if (st.cut != 0 and s.layer >= st.cut) Pages{ .layer = s.layer, .comp = &.{}, .index = &.{} } else return error.MissingSource;
         const comp = try arena.alloc([]const u8, st.shards);
         const index = try arena.alloc([]const u8, st.shards);
         @memset(comp, &.{});
@@ -134,10 +146,14 @@ pub fn cudaOf(arena: std.mem.Allocator, st: State, ds_rows: *u32) Error!ex.Cuda 
     try clearUnreplayed(st, swa, ring_rows);
     out.swa = swa;
     const carries = try arena.alloc([]const u8, geo.sources.len);
-    for (geo.sources, carries) |s, *c| c.* = if (s.ratio == 2) (piece(st.pieces, s.layer, "carry") orelse return error.MissingCarry) else &.{};
+    for (geo.sources, carries) |s, *c| {
+        const above = st.cut != 0 and s.layer >= st.cut; // a layer-split state has no carry past the cut: none is read
+        c.* = if (s.ratio == 2 and !above) (piece(st.pieces, s.layer, "carry") orelse return error.MissingCarry) else &.{};
+    }
     out.carries = carries;
     out.sources = try sourcesOf(arena, st);
     // the drafter's three rings ride whole or not at all; a short run of valid rows is zero-filled below it
+    if (st.cut != 0) return out; // a layer-split state has none
     var drows: u32 = 0;
     const drafter = try arena.alloc(ex.Ring, geo.mtp_layers);
     var found: u32 = 0;
@@ -165,9 +181,11 @@ pub fn build(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, st: State)
     errdefer gpa.destroy(b);
     b.arena = .init(gpa);
     errdefer b.arena.deinit();
+    b.early = null;
     const a = b.arena.allocator();
     var ds: u32 = 0;
     const cuda = try cudaOf(a, st, &ds);
+    if (st.cut != 0) return error.NotAHandoffPrompt; // a layer-split state goes through `Early`, into its early buffers
     const shape: plan.Shape = .{ .upto = st.pos, .ds_rows = ds, .shard = st.shard, .shards = st.shards, .split = st.shards > 1 };
     const parts = try ex.build(a, shape, cuda);
     var bytes: u64 = 0;
@@ -188,4 +206,77 @@ pub fn estimate(upto: u64) u64 {
         if (s.ratio == 2) n += 2 * geo.head_dim * 4;
     }
     return n;
+}
+
+/// A layer-split export's live parts: boundary rows still being produced and state parts landed at the cut.
+pub const Early = struct {
+    /// the boundary stream (`lsplit.row_bytes` a row), published chunk by chunk
+    stage: fabric.row_stage.Stage,
+    /// the state parts' latch: published once they are in `buffers`
+    latch: fabric.row_stage.Stage,
+    cut: u32,
+    upto: u64,
+    /// the state parts' bytes in manifest order (the export's sources read these), owned by the `Built`'s arena
+    buffers: []const []u8,
+
+    /// The producer gave up: every reader of the rows or the state is released with the producer's failure.
+    pub fn fail(e: *Early) void {
+        e.stage.fail();
+        e.latch.fail();
+    }
+};
+
+/// The early export of a split hand-off of `tokens` (the prompt but its last token) cut at `cut`: the manifest, the
+/// stage and latch and the state's buffers allocated, nothing computed. `wait_ns` bounds a frame's wait for the producer.
+pub fn early(gpa: std.mem.Allocator, id: [16]u8, tokens: []const u32, cut: u32, wait_ns: u64) !*Built {
+    const b = try gpa.create(Built);
+    errdefer gpa.destroy(b);
+    b.arena = .init(gpa);
+    errdefer b.arena.deinit();
+    const a = b.arena.allocator();
+    const upto: u64 = tokens.len;
+    const layers = try lsplit.describe(a, upto, cut);
+    const sources = try a.alloc(fabric.frames.Source, layers.len);
+    const e = try gpa.create(Early);
+    errdefer gpa.destroy(e);
+    e.stage = try fabric.row_stage.Stage.init(gpa, upto, lsplit.row_bytes);
+    errdefer e.stage.deinit();
+    e.latch = try fabric.row_stage.Stage.init(gpa, 1, 0);
+    errdefer e.latch.deinit();
+    sources[0] = .{ .bytes = &.{}, .shape = &.{}, .block_dim = 0, .elem = 2, .rows = &.{}, .stage = &e.stage, .wait_ns = wait_ns };
+    var count: usize = 0;
+    for (layers[1..]) |l| count += l.parts.len;
+    const buffers = try a.alloc([]u8, count);
+    var at: usize = 0;
+    var state_bytes: u64 = 0;
+    for (layers[1..], sources[1..]) |l, *src| {
+        const pieces = try a.alloc([]const u8, l.parts.len);
+        for (l.parts, pieces) |p, *slot| {
+            buffers[at] = try a.alloc(u8, @intCast(p.bytes()));
+            state_bytes += buffers[at].len;
+            slot.* = buffers[at];
+            at += 1;
+        }
+        src.* = .{ .bytes = &.{}, .shape = &.{}, .block_dim = 0, .elem = 1, .rows = &.{}, .parts = pieces, .latch = &e.latch, .wait_ns = wait_ns };
+    }
+    e.cut = cut;
+    e.upto = upto;
+    e.buffers = buffers;
+    b.exp = .{ .handoff = id, .tokens = try a.dupe(u32, tokens), .first_token = 0, .tokens_per_row = 1, .layers = layers, .sources = sources };
+    b.bytes = upto * lsplit.row_bytes + state_bytes;
+    b.early = e;
+    return b;
+}
+
+/// The state of layers [0, cut) converted into the early export's buffers, then released to the readers.
+pub fn land(gpa: std.mem.Allocator, b: *Built, st: State) (Error || fabric.row_stage.Stage.Error)!void {
+    const e = b.early orelse return error.NotASplitExport;
+    if (st.cut != e.cut or st.pos != e.upto or st.shard != 0 or st.shards != 1) return error.NotAHandoffPrompt;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var ds: u32 = 0;
+    const cuda = try cudaOf(a, st, &ds);
+    _ = try ex.buildInto(a, lsplit.stateShape(st.pos, st.cut), cuda, e.buffers);
+    try e.latch.publish(1);
 }

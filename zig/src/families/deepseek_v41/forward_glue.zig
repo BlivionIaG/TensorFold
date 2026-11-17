@@ -145,6 +145,7 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
         if (g) |gr| return f.engramGathered(gr, r, c);
         return f.engramRows(r, c);
     }
+    if (std.mem.eql(u8, step, "split_rows")) return @import("forward_glue_split.zig").rows(f, r, c);
     if (std.mem.eql(u8, step, "bdump")) {
         // private gate instrumentation (TF_LS_DUMP_DIR): rank 0 writes the boundary rows at their position
         if (f.comm.rank() != 0) return;

@@ -88,6 +88,13 @@ pub const Table = struct {
         try t.finished.append(t.gpa, h.value.request);
     }
 
+    /// Restart `handoff`'s expiry clock (a layer-split export under way is touched as it progresses and at its end).
+    pub fn touch(t: *Table, handoff: [16]u8) void {
+        t.hold();
+        defer t.lock.unlock();
+        if (t.held.getPtr(handoff)) |h| h.added = t.clock();
+    }
+
     pub fn expire(t: *Table) !void {
         t.hold();
         defer t.lock.unlock();

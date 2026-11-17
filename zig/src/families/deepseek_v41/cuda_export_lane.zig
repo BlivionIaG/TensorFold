@@ -7,6 +7,8 @@ const gpu = @import("cuda_export_gpu.zig");
 const cx = @import("cuda_export.zig");
 const split = @import("cuda_export_split.zig");
 const ff = @import("forward_follow.zig");
+const split_lib = @import("handoff/split.zig");
+const geometry = @import("handoff/geometry.zig");
 const pc = api.prompt_cache;
 const Handoff = api.LaneHost.Export.Handoff;
 const log = std.log.scoped(.dsv41);
@@ -65,7 +67,69 @@ pub const Export = struct {
 
     pub fn exporter(x: *Export) api.LaneHost.Export.Exporter {
         const over_http = x.produce.opts.http;
-        return .{ .ptr = x, .snapshots = .{ .ptr = x, .vtable = &snapshots }, .exported = exported, .failed = failed, .serve = if (over_http) .{ .ptr = x, .open = readOpen, .release = readRelease } else null };
+        return .{ .ptr = x, .snapshots = .{ .ptr = x, .vtable = &snapshots }, .exported = exported, .failed = failed, .serve = if (over_http) .{ .ptr = x, .open = readOpen, .release = readRelease } else null, .split = .{ .ok = splitOk, .run = splitRun } };
+    }
+
+    /// The token a layer-split trigger's reply carries: the split drew none, and the decoder ignores it.
+    pub const split_reply_token: u32 = 0;
+
+    /// TF_LS_PRODUCE=1, one replicated KV pool on one slot, a link or HTTP to serve the early export, a cut of the model's.
+    fn splitOk(ptr: *anyopaque, cut: u32) bool {
+        const x = self(ptr);
+        const on = @import("sys").environment.read(bool, "TF_LS_PRODUCE", false) catch false;
+        if (!on or x.split or x.produce.opts.shards != 1) return false;
+        if (x.produce.opts.link == null and !x.produce.opts.http) return false;
+        return x.source.ss.slot_set == null and split_lib.cutOk(geometry.release, cut);
+    }
+
+    fn splitRun(ptr: *anyopaque, h: Handoff, prompt: []const u32, cancel: ?api.LaneHost.Export.Cancel) anyerror!u32 {
+        try self(ptr).splitPrefill(h, prompt, cancel);
+        return split_reply_token;
+    }
+
+    /// The most rows of a split chunk: the forward's own segment rows (the 4K workspace has no split program), or less.
+    fn splitRows(f: *const @import("forward.zig").Forward) !u32 {
+        const seg: u32 = @intCast(f.opts.prefill_rows);
+        return @min(seg, try @import("sys").environment.read(u32, "TF_LS_CHUNK", seg));
+    }
+
+    /// A layer-split prefill of `ids` (the whole prompt; its last token stays unexported) under `h` (`split_cut`), on
+    /// the engine thread with the slot empty: the early export is added before any compute, so the decoder's OPEN
+    /// succeeds at once; the layers below the cut then prefill chunk by chunk (`split_lib.Chunks`), each chunk's
+    /// boundary rows published when its program ends, and the state of those layers lands at the end. The D2H of a
+    /// chunk's rows is synchronous (no overlap with the next chunk's compute; the transfer to the decoder is what
+    /// overlaps). No sampling and no full-model window run: nothing of the slot is kept. Failure, a closed export or a
+    /// gone client: the stage and latch fail (readers get the producer's failure), `failed` is called, the slot is released.
+    pub fn splitPrefill(x: *Export, h: Handoff, ids: []const u32, cancel: ?api.LaneHost.Export.Cancel) !void {
+        const cut = h.split_cut;
+        if (!splitOk(x, cut)) return x.refused(h, error.SplitRefused);
+        if (ids.len < 2 or ids.len - 1 < split_lib.min_tail_rows) return x.refused(h, error.SplitTooShort);
+        const upto: u64 = ids.len - 1;
+        var run = x.produce.openEarly(h.id, ids[0..upto], cut) catch |err| return x.refused(h, err);
+        defer run.close();
+        x.splitBody(&run, h, ids, upto, cancel) catch |err| {
+            run.fail(@errorName(err));
+            return err;
+        };
+    }
+
+    fn refused(x: *Export, h: Handoff, err: anyerror) anyerror {
+        x.produce.failed(h.id, @errorName(err));
+        return err;
+    }
+
+    fn splitBody(x: *Export, run: *serve.Produce.Early, h: Handoff, ids: []const u32, upto: u64, cancel: ?api.LaneHost.Export.Cancel) !void {
+        // the slot, empty before and after: pages and reservation back whatever happens (a split keeps no state)
+        defer x.f.release() catch |err| log.err("handoff {x}: the split's slot was not released ({t})", .{ &h.id, err });
+        try x.source.ss.beginFresh(ids.len, 1);
+        var chunks: split_lib.Chunks = .{ .n = upto, .max = try splitRows(x.f) };
+        while (chunks.next()) |c| {
+            if (cancel) |cc| if (cc.cancelled()) return error.Cancelled;
+            if (run.gone()) return error.Released;
+            try x.f.prefillSplit(ids[c.row0..][0..c.rows], h.split_cut, run.rows(c.row0, c.rows));
+            try run.publish(c.row0 + c.rows);
+        }
+        run.land(try x.produce.saveCut(upto, h.split_cut));
     }
 
     /// `GET /v1/handoff/<id>`: the held export's replies, a message at a time.

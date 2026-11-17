@@ -41,6 +41,9 @@ pub const op_sess_admit: i64 = 48;
 pub const op_pf_multi: i64 = 52;
 pub const op_ced_multi: i64 = 53;
 
+/// 72: [op, cut, rows, ids...]: one layer-split prefill chunk (`prefillSplit`): layers below `cut` over the ids
+pub const op_prefill_split: i64 = 72;
+
 /// 70: [op, id word 0, id word 1, at]: export the pool shard of the first `at` tokens; 71: [op, id words]: none comes
 pub const op_export: i64 = 70;
 pub const op_export_fail: i64 = 71;
@@ -55,6 +58,26 @@ pub fn idOf(words: []const i64) [16]u8 {
     std.mem.writeInt(i64, id[0..8], words[0], .little);
     std.mem.writeInt(i64, id[8..16], words[1], .little);
     return id;
+}
+
+/// One layer-split prefill chunk on every rank: `ids` through the layers below `cut` from the slot's position, their
+/// state committed, and rank 0's boundary rows written into `dst` (the chunk's stage rows; followers pass empty).
+pub fn prefillSplit(f: *Forward, ids: []const u32, cut: u32, dst: []u8) !void {
+    if (f.slot.pending != null) return error.BadWindow;
+    if (ids.len == 0) return;
+    f.gated = false; // prompt segments read their rows on the old path
+    if (f.leads()) {
+        const msg = try f.gpa.alloc(i64, 3 + ids.len);
+        defer f.gpa.free(msg);
+        msg[0] = op_prefill_split;
+        msg[1] = cut;
+        msg[2] = @intCast(ids.len);
+        for (ids, msg[3..]) |t, *y| y.* = t;
+        try f.link.?.send(msg);
+    }
+    f.quiet = true;
+    defer f.quiet = false;
+    return (try hooks.prefill()).promptSplit(f, ids, cut, dst);
 }
 
 /// Rank 0: the followers' shard exports of a hand-off, at the slot's cut (engine thread; the slot stands at `at`).
@@ -284,6 +307,13 @@ fn followOp(f: *Forward, msg: []const i64, ids: *std.ArrayList(u32), prompt: *st
             for (msg[3..]) |t| try prompt.append(f.gpa, @intCast(t));
             if (prompt.items.len > total) return error.BadPlan;
             if (prompt.items.len == total) try f.prefill(prompt.items);
+        },
+        op_prefill_split => {
+            const n: usize = @intCast(msg[2]);
+            if (msg.len != 3 + n) return error.BadPlan;
+            prompt.clearRetainingCapacity();
+            for (msg[3..]) |t| try prompt.append(f.gpa, @intCast(t));
+            try f.prefillSplit(prompt.items, @intCast(msg[1]), &.{});
         },
         op_ahead => {
             var nx: std.ArrayList(u32) = .empty;
