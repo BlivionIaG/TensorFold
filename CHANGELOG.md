@@ -23,6 +23,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
   and [full-window fidelity](docs/receipts/dsv41-exl3-metal/fidelity-128.json).
 - Docs: an operator guide for DeepSeek-V4.1 prefill on a GB10 pair with decode on a Mac (#3600).
 
+- DeepSeek V4.1 CUDA prefill: a shared expert's add rides on the routed-expert combine in one pass (`combine_add_kernel`), so the fp32 routed sum is no longer written and re-read; exported state is byte-identical and producer cold TTFT at 4k to 32k prompts is 0.3-0.7% lower.
+
 - DeepSeek V4.1 remote prefill: a pulled hand-off's drafter rings land in the slot when it holds them, and `TF_DSV41_HANDOFF_CHECK=synth` writes a synthetic hand-off for timing (#3599).
 
 - DeepSeek V4.1 remote prefill: `--mcdma-link` takes a comma list of up to eight links and pulls a split hand-off's shards in parallel (#3598).

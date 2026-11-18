@@ -158,8 +158,7 @@ pub fn moeRows(s: *Seg, L: u32, n: i64, x: Arg, comptime bias: []const u8, part:
             j += 1;
         }
     }
-    // a shared expert's add rides on the combine (combine_add: the routed sum never leaves the registers)
-    // the shared expert (gate / up GEMMs, clamped SiLU, down); TF_DSV41_PF_OVERLAP: a row piece at a time
+    // the shared expert per row piece (PF_OVERLAP); combine_add adds it to the routed sum, never stored
     const k: i64 = if (e.cfg.shared_experts > 0 and n == seg_rows and part.t.role == .buf and std.mem.eql(u8, part.t.role.buf, "L.moe16")) s.pieces() else 1;
     if (k > 1) {
         const sh = try e.fmt("{s}.shared.0", .{pre});
