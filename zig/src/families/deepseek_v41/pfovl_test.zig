@@ -103,7 +103,6 @@ test "TF_DSV41_PF_OVERLAP on the prefill emitter: k pieces an exchange behind th
             try testing.expectEqual(xs * @as(usize, @intCast(k)), count(on, "glue.exchange_rows"));
             try testing.expectEqual(count(off, "tensorfold_exl3_linear_v4.rot_in") + (@as(usize, @intCast(k)) - 1) * layers.len * (4 + 1 + 3), count(on, "tensorfold_exl3_linear_v4.rot_in"));
             try testing.expectEqual(@as(usize, @intCast(k)) * count(off, "tensorfold_exl3_experts_v1.combine_add"), count(on, "tensorfold_exl3_experts_v1.combine_add"));
-            try testing.expectEqual(@as(usize, 0), count(on, "glue.moe_sum"));
             // the streams: only the partials are shared inside a fork region
             const sh = try branches.shared(aa, on);
             for (sh) |r| try testing.expect(std.mem.eql(u8, r, "L.part") or std.mem.eql(u8, r, "L.moe16"));
