@@ -217,6 +217,11 @@ pub fn expertsExt(o: exl3.Ops, func: []const u8, args: []const Arg, kwargs: []co
         try o.combine(try c.ptr(0), try c.ptr(1), try c.ptr(2), try c.usz(3), try c.usz(4), try c.usz(5));
         return true;
     }
+    if (is(func, "combine_add")) {
+        const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "y", "wts", "sy", "out", "rows", "D", "slots" } };
+        try o.combineAdd(try c.ptr(0), try c.ptr(1), try c.ptr(2), try c.ptr(3), try c.usz(4), try c.usz(5), try c.usz(6));
+        return true;
+    }
     if (is(func, "down_combine")) {
         const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "Z", "pick", "svh_d", "y", "wts", "out", "rows", "P", "D", "SK", "slots", "E" } };
         const out = try c.tensor(5);
@@ -301,11 +306,22 @@ pub fn x3gmExt(o: exl3.Ops, func: []const u8, args: []const Arg, kwargs: []const
     }
     if (is(func, "gateup2")) {
         const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "xg", "xu", "tg", "tu", "k2e", "order", "pe", "poff", "pcnt", "npass", "ticket", "svh_g", "svh_u", "suh_d", "xd", "K", "N", "shx", "cfg", "use_ticket", "limit", "tables" } };
-        try o.gm2Gateup(try c.ptr(0), try c.ptr(1), try c.ptr(2), try c.ptr(3), try c.ptr(4), try c.ptr(5), try c.ptr(6), try c.ptr(7), try c.ptr(8), try c.ptr(9), try c.ptr(10), try c.ptr(11), try c.ptr(12), try c.ptr(13), try c.ptr(14), try c.usz(15), try c.usz(16), try c.boolean(17, false), try c.usz(18), try c.boolean(19, true), @floatCast(try c.float(20)), try c.boolean(21, false));
+        const shx = try c.boolean(17, false);
+        const cfg = try c.usz(18);
+        // TF_DSV41_GM_V3=1: v3's variants (claim-ahead items), the same bits; GU2's 128-member plan stays on v2
+        if (cfg != exl3.gu2_cfg and try exl3.gmV3()) {
+            try o.gm3Gateup(exl3.v3_default.gu[if (shx) 0 else 1], try c.ptr(0), try c.ptr(1), try c.ptr(2), try c.ptr(3), try c.ptr(4), try c.ptr(5), try c.ptr(6), try c.ptr(7), try c.ptr(8), try c.ptr(9), try c.ptr(10), try c.ptr(11), try c.ptr(12), try c.ptr(13), try c.ptr(14), try c.usz(15), try c.usz(16), shx, try c.boolean(19, true), @floatCast(try c.float(20)), try c.boolean(21, false));
+            return true;
+        }
+        try o.gm2Gateup(try c.ptr(0), try c.ptr(1), try c.ptr(2), try c.ptr(3), try c.ptr(4), try c.ptr(5), try c.ptr(6), try c.ptr(7), try c.ptr(8), try c.ptr(9), try c.ptr(10), try c.ptr(11), try c.ptr(12), try c.ptr(13), try c.ptr(14), try c.usz(15), try c.usz(16), shx, cfg, try c.boolean(19, true), @floatCast(try c.float(20)), try c.boolean(21, false));
         return true;
     }
     if (is(func, "down2")) {
         const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "xd", "td", "k2e", "order", "pe", "poff", "pcnt", "npass", "ticket", "svh_d", "y", "K", "N", "cfg", "use_ticket", "tables" } };
+        if (try exl3.gmV3()) {
+            try o.gm3Down(exl3.v3_default.dn, try c.ptr(0), try c.ptr(1), try c.ptr(2), try c.ptr(3), try c.ptr(4), try c.ptr(5), try c.ptr(6), try c.ptr(7), try c.ptr(8), try c.ptr(9), try c.ptr(10), try c.usz(11), try c.usz(12), try c.boolean(14, true), try c.boolean(15, false));
+            return true;
+        }
         try o.gm2Down(try c.ptr(0), try c.ptr(1), try c.ptr(2), try c.ptr(3), try c.ptr(4), try c.ptr(5), try c.ptr(6), try c.ptr(7), try c.ptr(8), try c.ptr(9), try c.ptr(10), try c.usz(11), try c.usz(12), try c.usz(13), try c.boolean(14, true), try c.boolean(15, false));
         return true;
     }

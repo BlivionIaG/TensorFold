@@ -43,7 +43,7 @@ test "prefill heads: legacy world one and two calls and buffer plans keep their 
     hash.final(&digest);
     const hex = std.fmt.bytesToHex(digest, .lower);
     std.debug.print("legacy prefill fingerprint: {s}\n", .{hex});
-    try t.expectEqualStrings("66015c45a28104778de630ab14e49aa4c871cefb95fad2e3a06c142c05449b58", &hex);
+    try t.expectEqualStrings("81955d08543bffeaf181f79702ecd083d3e0ecd5c1180204c34dd34890a015d3", &hex);
 }
 
 test "prefill heads: world four emits and plans the padded 32-head operation" {

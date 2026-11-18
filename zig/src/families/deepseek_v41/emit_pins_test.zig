@@ -66,7 +66,7 @@ test "worlds one, two and four: prefill calls keep their main fingerprint" {
         const o: block.Options = .{ .world = world, .rank = @intCast(rank) };
         try add(&h, a, try bp.emitPrefill(a, &cfg, &w, o, &.{ 0, 2, 20, 24, 40 }, rows, 2048, true));
     };
-    try expectDigest("589725eceeb07b8ea0b6c7be9488ce59a7d4e72dac64442987131ad326746e09", &h);
+    try expectDigest("1477aea90a0b7527663aa3c70d235fb9afa5e80cc0052168b201723094193f20", &h);
 }
 
 test "worlds one, two and four: prefetch sources keep their main fingerprint" {
