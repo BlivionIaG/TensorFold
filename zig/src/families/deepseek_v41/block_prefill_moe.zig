@@ -183,7 +183,7 @@ pub fn moeRows(s: *Seg, L: u32, n: i64, x: Arg, comptime bias: []const u8, part:
             try s.proj(try e.fmt("{s}.w2", .{sh}), .stored, ar, I, D, yr);
             try e.ext("tensorfold_exl3_experts_v1.combine_add", &.{
                 try rowsOf(e, y, .f32, r[0] * topk, m * topk, D), try rowsOf(e, w6, .f32, r[0], m, topk), yr,
-                try rowsOf(e, part, .bf16, r[0], m, D),           .{ .i = m },                           .{ .i = D },
+                try rowsOf(e, part, .bf16, r[0], m, D),           .{ .i = m },                            .{ .i = D },
                 .{ .i = topk },
             });
             e.n = n;
