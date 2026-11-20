@@ -1,13 +1,4 @@
-//! DeepSeek V4.1's GLP steering launches (kernels/cuda/deepseek_v41/glp.cu, image "dsv41_glp"), for gate 5's limits.
-//! One CTA of 320 threads a row: the fold and the writer keep one set of 10 warp partials (40 B static), the final
-//! keeps 80 chain partials and its norm scale (324 B static) and takes 2 bytes a column of dynamic memory for the
-//! collapsed row (10240 B at the served width 5120). No register receipt is recorded: the usage is derived by
-//! `tf-cuda-test kernel-contract-limits` on the built image, and an unmeasured record blocks qualification (it never
-//! passes a compiled resource check). The planted-fault controls (dsv41_glp_controls) carry no record.
-//!
-//! The shape of the declarations (threads and group memory of the steering launch listed for the limits gate) follows
-//! the earlier steering records at git ref c5947a8d2e (zig/src/core/contract/steer_records.zig); the control-vector
-//! steering idea itself is credited in kernels/cuda/deepseek_v41/glp.cuh.
+//! CUDA GLP launch records remain pending until kernel-contract-limits measures the actual image.
 const std = @import("std");
 const registry = @import("registry.zig");
 const limits = @import("limits.zig");

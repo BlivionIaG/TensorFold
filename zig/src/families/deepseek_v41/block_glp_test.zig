@@ -1,5 +1,4 @@
-//! GLP steering's emitted calls (host only): each steered block's fold edit between its post and the next site, the
-//! writer between the attention exchange and the FFN site, the steered final; a plan-less run emits no GLP call.
+//! Host IR contract: paired fold/writer placement and steered final, with no GLP emission when disabled.
 
 const std = @import("std");
 const t = std.testing;

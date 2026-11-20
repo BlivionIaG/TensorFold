@@ -1,6 +1,4 @@
-//! `--glp FILE [--glp-alpha F]` on tf-dsv41's served commands (follow, generate): a worker rank loads the same verified
-//! vector at the same effective strength as rank 0 before it joins the ranks' agreement (glp_agree.zig).
-//! GLP is Matt Suiche's `weightless` format (https://weightle.ss/).
+//! Worker GLP loading before TP policy agreement; format: Matt Suiche/weightless (see GLP recipe).
 
 const std = @import("std");
 const api = @import("engine_api");
@@ -33,8 +31,7 @@ fn value(x: []const u8, args: []const []const u8, i: *usize, comptime flag: []co
     return null;
 }
 
-/// `args` split into the positional arguments and the vector the flags name, loaded into `a` (it must outlive the
-/// vector). A strength without a vector, a bad strength and a file the reader refuses are refused, with the reason.
+/// Split positional arguments from GLP flags, loading verified data into an arena that must outlive the vector.
 pub fn split(a: std.mem.Allocator, io: std.Io, args: []const []const u8) Error!Split {
     var pos: std.ArrayList([]const u8) = .empty;
     var file: ?[]const u8 = null;

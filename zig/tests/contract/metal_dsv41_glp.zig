@@ -1,5 +1,4 @@
-//! DeepSeek V4.1's steering edits (GLP v3 hc_fold_pre_engram) on Metal: fold and writer, add and project, in place on
-//! bf16, checked against float64 (dsv41_glp_ref.zig), with a planted control for each way an edit can go wrong.
+//! In-place Metal GLPv3 fold/writer edits against FP64, with independently observable planted faults.
 const std = @import("std");
 const mtl = @import("metal");
 const tf = @import("tensorfold");
@@ -167,8 +166,7 @@ pub const Proj = struct {
         try p.case.?.reference(p.arena.allocator(), want, mag, .none, .sequential);
     }
 
-    /// An add has no sums, so its bound is the three fp32 roundings of |x| + alpha |d| and the bf16 output's own.
-    /// A project keeps the registered one: gamma(depth) of mag (exact sums on the stress rows, where it stays tight).
+    /// Add uses three FP32 roundings plus BF16 output; project retains exact stress and depth-based allowances.
     pub fn bounds(p: *Proj, want: []const f64, mag: []const f64, allow: []f64) !void {
         if (p.case.?.project) return;
         for (allow, want, mag) |*l, w, m| {
@@ -346,8 +344,7 @@ pub const Suite = struct {
         return 0;
     }
 
-    /// project's output has no component of the mean along d: exactly so on a one-hot d, where every other element
-    /// (d = 0) must also leave as it came, byte for byte.
+    /// One-hot project removes its mean component while preserving every unselected element byte for byte.
     fn rankOne(s: *Suite, p: *Proj, seed: u64) !usize {
         p.one_hot = true;
         defer p.one_hot = false;
@@ -382,9 +379,7 @@ pub const Suite = struct {
         return 0;
     }
 
-    /// Copies of the largest finite bf16 of one sign have that value for their mean: the scaled sum stays finite, so a
-    /// one-hot project moves the element by alpha times it and leaves every other byte alone. The control that sums
-    /// the copies first overflows to infinity there and must not.
+    /// BF16-max copies must keep a finite mean; the sum-first control must overflow on the same witness.
     fn maxMean(s: *Suite, seed: u64) !usize {
         const prod = s.find(.fold, true, 0) orelse return 0;
         const hi: u16 = 0x7f7f;
@@ -435,8 +430,7 @@ pub const Suite = struct {
         return bad;
     }
 
-    /// A fold of four equal copies is the writer's output four times (the mean is the copy, the chain the same); a fold
-    /// of different copies is not the writer's output on its first.
+    /// Equal copies reproduce the writer's edit; differing copies must use their mean, not copy zero.
     fn foldIsWriter(s: *Suite, seed: u64) !usize {
         var bad: usize = 0;
         const shape = c.Shape{ .rows = 9, .n = 1, .k = dim };

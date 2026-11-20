@@ -1,15 +1,16 @@
-//! The model's side of --glp (cuda_model.zig boot): the vector's admission, the knobs it refuses, its one upload.
-//! `m` is the `*Model`; nothing here runs for a model without a plan: an unsteered server loads no GLP image or buffer.
+//! Admit and upload CUDA GLP state once; absent or zero-strength policies create no GPU plan or image.
 
 const std = @import("std");
 const quiet = @import("builtin").is_test; // a test's stderr is the build runner's channel
 const glp_plan = @import("glp_plan.zig");
 const pf = @import("forward_prefill.zig");
 
-/// This model's own copy of the plan (its arena), then every rank's agreement on it, before any execution or graph.
-pub fn open(m: anytype, a: std.mem.Allocator, given: ?*const glp_plan.Plan) !void {
+/// Clone active plans into the model arena and agree on every loaded policy before weights or graphs.
+pub fn open(m: anytype, a: std.mem.Allocator, given: ?*const glp_plan.Plan, policy: [8]i64) !void {
+    // a plan is always its own policy: a caller that built the two from different sources is a bug, never served
+    if (given != null and !std.mem.eql(i64, &glp_plan.Plan.words(given), &policy)) return error.GlpMismatch;
     m.glp = if (given) |g| try g.clone(a) else null;
-    try @import("glp_agree.zig").agree(&m.session.plan, if (m.glp) |*g| g else null);
+    try @import("glp_agree.zig").agree(&m.session.plan, policy);
 }
 
 /// Bytes the buffer plan allocates after the KV pool is sized (the direction table is a persistent role).
@@ -18,8 +19,7 @@ pub fn resident(m: anytype) u64 {
     return std.mem.alignForward(u64, g.tableBytes(), 256);
 }
 
-/// A vector this model cannot steer is refused before any weight loads: its width and layers, the whole backbone (a
-/// layer prefix would leave a fold unsteered), and the kernel image (loaded only here, never for an unsteered model).
+/// Refuse incompatible geometry, partial-backbone execution and missing active images before weights load.
 pub fn admit(m: anytype, g: *const glp_plan.Plan, layer_prefix: bool) !void {
     g.admit(m.cfg.layers, m.cfg.hidden) catch |e| {
         if (!quiet) std.log.err("glp: the vector does not fit this model ({t}): {d} wide against hidden {d}, {d} backbone layers", .{ e, g.width, m.cfg.hidden, m.cfg.layers });

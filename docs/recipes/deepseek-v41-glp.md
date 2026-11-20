@@ -55,6 +55,11 @@ experimental FP8 Metal package refuses GLP; its synthetic model is not evidence
 for this checkpoint. Check the source-bound receipts below before treating either
 target as qualified.
 
+Existing native Metal admission declares `draft_streams = false`: concurrent
+requests share plain target windows. Record actual proposal counters rather than
+treating a `draft: true` request as proof of speculative execution. This feature
+does not add concurrent MTP support.
+
 ## The DeepSeek site is not a Qwen residual hook
 
 DeepSeek-V4.1 carries four BF16 residual copies per token. A direction is H-wide,
@@ -137,3 +142,49 @@ project's benchmarks.
 
 Device and model receipts belong to the source-bound draft PR. An unrun platform,
 precision setting or workload is not qualified by a successful run elsewhere.
+
+## Numerical contract and stress fixtures
+
+For FP32 unit roundoff `u = 2^-24`, use `gamma(n) = n*u/(1-n*u)`.
+The projection error scale uses `A_j = mean_c(abs(x_cj))` and
+`D = sum_j(abs(d_j)*A_j)`, not the absolute value of the copies' mean:
+opposite-signed copies can cancel without eliminating mean-rounding error.
+Scale each BF16 copy by one quarter before adding, rather than overflowing a
+four-copy sum and scaling it afterwards.
+
+- **Metal:** the dot's conservative allowance is
+  `gamma(ceil(H/256)+16)*D`. Including strength, correction and subtraction gives
+  registered depth `ceil(H/256)+20` against
+  `abs(x_ci)+alpha*abs(d_i)*D`, followed by the BF16 output allowance.
+  Add mode accounts for its FP32 product/add and BF16 output separately.
+- **CUDA:** the dot uses conservative `gamma(50)*D`; the served width uses only
+  sixteen per-thread terms, below that static budget. Three post-dot roundings
+  and the BF16 output half-ulp are separate. Writer bounds include full-writer
+  BF16 rounding; final bounds include collapse tie flips and the RMS chain
+  (depth 170, five post-sum operations). Stress cases retain their exact-sum
+  allowances instead of using a loose random-input gamma allowance.
+
+The CUDA projection stress case has unit terms except at its first and last
+columns, where `m=2048` and `d=+1024,-1024` give opposite `2^21` terms.
+All FP32 partial sums stay below `2^24`, so every tested FP32 order gives `H-2`.
+In each tested BF16 order, the unit groups disappear into those large partials;
+FP16 overflows. The resulting miss exceeds the required 100-times exact
+allowance. The host witness exercises sequential, pairwise and strided orders.
+These unnormalized directions stress the low-level arithmetic, not the file
+loader: a served projective file must still pass unit-norm validation.
+
+The CUDA final stress case uses pre-mix `(1,0,0,0)` and integer copies in
+`[16,57]`. Its FP32 square sum is exact and below `2^24`, while every tested
+FP16 order overflows. A pairwise BF16 RMS sum cannot guarantee a 100-times
+output error, so that specific BF16 discrimination is declared unprovable
+rather than given a guessed threshold.
+
+Paired-program controls use real nonidentity mHC posts at width 5120. They
+establish sensitivity to missing or shifted edits, not a trusted full FFN,
+drafter or model-quality reference. Production-emitter placement, device
+arithmetic, and actual served-model state checks remain distinct evidence.
+
+Metal launches reserve 256 threads and 32 bytes of static threadgroup storage.
+CUDA launches use 320 threads; the final additionally requests `2*H` dynamic
+shared bytes. Register and static-shared usage must come from the actual
+compiled CUDA image, not estimates or another compiler's receipt.

@@ -1,5 +1,4 @@
-//! A GLP vector against the model it would steer, the strength in force and the identity a hand-off carries.
-//! The checkpoint-binding cases follow the #1835 tests (head c5947a8d2e, BlivionIaG); the fold-site cases are new.
+//! Model, strength and handoff-policy tests adapted from #1835 c5947a8d2e for the GLPv3 fold site.
 
 const std = @import("std");
 const glp = @import("glp.zig");

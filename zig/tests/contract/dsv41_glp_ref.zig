@@ -1,16 +1,4 @@
-//! Float64 model of DeepSeek V4.1's steering edits (GLP v3 hc_fold_pre_engram) of one call's host inputs.
-//!
-//! A row is a block's four-copy stream [4][dim] (fold) or its attention writer's single copy [dim]. The edit is add
-//! (x_c += alpha * d on every copy) or project (x_c -= alpha * dot(mean(x), d) * d on every copy).
-//!
-//! Bounds. Per element j the kernel's mean scales each copy by an exact 0.25 (so finite same-sign copies cannot
-//! overflow) and adds them in copy order: 3 fp32 adds, so it is off the exact mean by gamma3 * A_j with
-//! A_j = sum_c |x_cj| / 4 (the absolute error stays that large when copies cancel).
-//! Its product with d_j adds one rounding. The dot's chain is ceil(dim / 256) - 1 adds on a thread, 5 in the
-//! butterfly and 7 over the eight partials, so |dot - exact| <= gamma(ceil(dim / 256) + 16) * D with
-//! D = sum_j |d_j| A_j. The step (one product), its product with d_i and the subtraction add three more, hence the
-//! registered depth ceil(dim / 256) + 20 and mag_ci = |x_ci| + alpha * |d_i| * D. An add is x + fl(alpha * d):
-//! three roundings of mag = |x| + alpha * |d|.
+//! FP64 GLPv3 fold/writer reference; error derivation and deterministic stress fixtures are in the GLP recipe.
 const std = @import("std");
 const contract = @import("contract");
 
@@ -82,10 +70,7 @@ pub const Case = struct {
         };
     }
 
-    /// Integers 1 to 32 in the first half of a row, its negation in the second, and d the same integers 1 to 12 in both
-    /// halves: the terms mean_j * d_j are multiples of 1/4 under 2^22 in all, so every fp32 sum is exact in any order.
-    /// Copy 0 of the second half's first element is nudged so the mean there moves by 1: the dot is that one d, tiny
-    /// against partial sums of tens of thousands.
+    /// Mirrored integer halves keep FP32 sums exact; one copy's nudge leaves a small dot amid large partial sums.
     fn stress(s: *Case, rng: std.Random) void {
         const k = s.dim;
         const h = k / 2;
@@ -112,8 +97,7 @@ pub const Case = struct {
         }
     }
 
-    /// d is the unit vector at k / 3 and the copies there are known and apart: project removes the mean's whole
-    /// component, every other element has d = 0 and must come out as it went in.
+    /// A one-hot direction removes only its selected mean component and leaves every other BF16 value unchanged.
     fn oneHot(s: *Case) void {
         const at = s.dim / 3;
         @memset(s.d, 0);
@@ -174,9 +158,7 @@ pub const Case = struct {
 /// Rank one: the worst |dot(mean(out), d)| over its bound, and the least |dot(mean(x), d)| over the same bound.
 pub const Rank = struct { worst: f64, least: f64 };
 
-/// After project the mean of every row's output copies has no component along d: dot(mean(out), d) is
-/// dot(mean(x), d) * (1 - alpha * |d|^2) in exact arithmetic, and the device's bf16 outputs are each within their bound
-/// of the exact ones, so |dot| is at most the first term plus sum_j |d_j| * the copies' mean bound.
+/// Bound residual projection by ideal dot*(1-alpha*|d|^2) plus direction-weighted output error.
 pub fn rankOne(s: Case, a: std.mem.Allocator, out: []const u8, sp: c.Spec) !Rank {
     const k = s.dim;
     const cp = s.copies;

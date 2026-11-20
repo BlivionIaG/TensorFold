@@ -1,7 +1,4 @@
-//! The GGUF v3 subset a GLP file uses; implements the GLP format defined by the `weightless` project (@msuiche).
-//! Ported from the TensorFold-native reader of upstream #1835 (head c5947a8d2e, BlivionIaG); GLP spec pin
-//! b181a07d3980fc48abe39d95ddb044459dd0b868 (https://github.com/msuiche/weightless, docs/spec/GLP.md).
-//! The container convention (`direction.<N>` tensors, fp32, 1-D) originated in llama.cpp's control vectors.
+//! Bounded GLPv3 GGUF subset from TensorFold #1835 c5947a8d2e; original format credits are in the GLP recipe.
 
 const std = @import("std");
 
@@ -33,8 +30,7 @@ pub const Type = enum(u32) {
     f64v = 12,
 };
 
-/// An array's element type and its items, so an empty array still names the type it holds. A file's array is read
-/// past, not kept: `skipped` counts the items its bytes held and `items` stays empty; a writer gives `items`.
+/// Parsed arrays retain type/count only; writers supply items, avoiding decode-time allocation amplification.
 pub const Array = struct {
     elem: Type,
     items: []const Value = &.{},
@@ -318,8 +314,7 @@ fn readValue(c: *Cursor, kind: Type) Error!Value {
             // A nested array would recurse as deep as the file allows; no GLP key holds one.
             if (elem == .array) return error.BadGguf;
             const n = try c.u64v();
-            // No GLP key reads an array: its items are checked against the file's bytes and walked past, never kept,
-            // so a small file cannot make the reader hold more memory than the file is long.
+            // Skip ignored metadata arrays in place; never allocate a Value per element.
             try c.skipItems(elem, n);
             break :blk .{ .array = .{ .elem = elem, .skipped = n } };
         },

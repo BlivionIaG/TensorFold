@@ -1,9 +1,4 @@
-"""GLP control vectors in Zig against weightless's container reader: the same layers, numbers and digest.
-
-The reference reader is read from a checkout the operator names (--reference); nothing of it is copied here.
-GLP and weightless are Matt Suiche's (@msuiche, https://github.com/msuiche/weightless); the spec this tool follows
-is docs/spec/GLP.md at pin b181a07d3980fc48abe39d95ddb044459dd0b868. The Zig reader and writer began as #1835's.
-"""
+"""Compare native GLPv3 GGUF round-trips with Matt Suiche's weightless reader; provenance is in the GLP recipe."""
 from __future__ import annotations
 
 import argparse
@@ -69,11 +64,7 @@ HUB = "https://huggingface.co/"
 
 
 def base_of(meta: dict) -> tuple[str, str]:
-    """The base repo and commit pin from the spec's general.base_model.0.* keys, as the Zig reader takes them.
-
-    The repo comes from repo_url (the hub's prefix dropped), else organization and name, else a bare name; the pin is
-    version. A producer's own glp.* keys name no base, so none is consulted.
-    """
+    """Read canonical GGUF base repo/version; producer-specific glp.* keys cannot override provenance."""
     url = meta.get("general.base_model.0.repo_url") or ""
     org = meta.get("general.base_model.0.organization") or ""
     name = meta.get("general.base_model.0.name") or ""

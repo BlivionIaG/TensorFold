@@ -1,16 +1,4 @@
-//! DeepSeek V4.1's GLP steering kernels (dsv41_glp: fold, writer, final) under the contract, with the planted-fault
-//! controls of the dsv41_glp_controls image each red at the gate it breaks.
-//!
-//! The registration follows the earlier steering records of this tree (git ref c5947a8d2e: core/contract/steer_records.zig
-//! and steer.zig): one set of cases on the heap, each a kernel with its own hooks. The control-vector idea is credited
-//! in kernels/cuda/deepseek_v41/glp.cuh. The fold and the writer edit their buffers in place, so each run re-uploads the
-//! prepared bytes into the output slot first; the direction (and the final's inputs) are immutable input slots, and the
-//! gates' input and guard checks cover them. The layouts here are dense; strides, pads and tails are the direct test's
-//! (`tf-dsv41-test glp`).
-//!
-//! The reference is independent FP64 math (glp_ref.zig). `check` answers the non-finite and shapes gates with both
-//! tests: every output equal to a host fp32 model of the documented order (the dot's order is fixed, so equality is
-//! exact), and within the stated FP64 bound. Gate 4 runs the generic path: integer terms make every fp32 order exact.
+//! CUDA GLPv3 FP64/fixed-order contracts and mandatory fault controls; full derivations are in the GLP recipe.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -24,8 +12,7 @@ const c = core.contract.spec;
 const g = core.contract.gates;
 const rows_ = core.contract.rows;
 
-// Mirrors of glp_ops.zig's extern argument structs (this module cannot import the family's kernels): the kernels take
-// each by value, 56 bytes.
+// Mirror glp_ops.zig's by-value 56-byte launch arguments without importing the family module.
 const StreamArgs = extern struct { x: u64, xs: i64, tap: u64 = 0, ts: i64 = 0, dir: u64, alpha: f32, mode: c_int, R: c_int, width: c_int };
 const WriterArgs = extern struct { g: u64, gr: i64, gs: i64, dir: u64, alpha: f32, mode: c_int, R: c_int, width: c_int, world: c_int };
 const FinalArgs = extern struct { x: u64, xs: i64, pre: u64, nw: u64, out: u64, eps: f32, nwbf16: c_int, R: c_int, width: c_int };
@@ -62,13 +49,23 @@ const Ctl = enum {
 const edit_served = [_]c.Shape{ .{ .rows = 4, .n = 5120, .k = 5120 }, .{ .rows = 17, .n = 1032, .k = 1032 }, .{ .rows = 3, .n = 128, .k = 128 } };
 const final_served = [_]c.Shape{ .{ .rows = 3, .n = 5120, .k = 5120 }, .{ .rows = 17, .n = 128, .k = 128 } };
 
-/// The deepest chain of fp32 roundings of the dot: a thread's 32 fmas, the butterfly's 5 adds, the 10 warps, the mean's 3.
-fn depth(_: c.Shape) usize {
-    return 56;
+/// Conservative dot depth: 32 per-thread FMAs, five butterfly adds, ten warp adds and three mean adds.
+fn depthEdit(_: c.Shape) usize {
+    return 50;
 }
 
-const stress_why = "integer terms: every fp32 order is exact, a 16-bit accumulation of 2560 terms of up to 2000 is not";
-const none_why = "no dot: the edit is one rounding of an exact sum of at most eight terms, or the final's positive squares";
+/// The final's square chains: 128 fmas, then the (at most 40) chains' adds.
+fn depthFinal(_: c.Shape) usize {
+    return 170;
+}
+
+/// Bound post-dot rounding separately from BF16 output; final also includes RMS and collapse quantization.
+const edit_ops = 3;
+const final_ops = 5;
+
+const stress_why = "unit terms with one +-2^21 pair: every fp32 order is exact, every 16-bit order loses the units or overflows";
+const final_why = "one-hot pre-mix, integer copies: fp32 exact, fp16 overflows; a pairwise bf16 sum of positive squares errs by under 3%";
+const add_why = "add mode has no dot; its fp32 sums (the tap's mean, the writer's ranks) are checked bit for bit against the model";
 
 pub const Case = struct {
     rig: rig_.Rig,
@@ -85,6 +82,8 @@ pub const Case = struct {
     control: ?g.Gate = null,
     shape: c.Shape = .{ .rows = 0, .n = 0, .k = 0 },
     alpha: f32 = 1,
+    /// The prepared inputs are gate 4's: the sums' exact allowance stays, in place of the stated FP64 agreement.
+    stress: bool = false,
     /// The prepared input words: the fold's copies, the writer's partials, the final's streams.
     words: []u16 = &.{},
     d: []f32 = &.{},
@@ -101,16 +100,22 @@ pub const Case = struct {
 
     pub fn spec(t: *const Case) c.Spec {
         const project = t.kind != .final and t.mode == .project;
+        const fin = t.kind == .final;
         return .{
             .name = t.name,
-            .accum = .f32,
-            .depth = depth,
-            .ops = 4,
-            .mids = 2,
+            .accum = if (project or fin) .f32 else .none,
+            .depth = if (fin) depthFinal else depthEdit,
+            .ops = if (fin) final_ops else edit_ops,
+            .mids = 0,
             .out = .bf16,
-            .in_place = t.kind != .final,
-            .served = if (t.kind == .final) &final_served else &edit_served,
-            .sums = if (project) .{ .f16 = 10, .bf16 = 10, .why = stress_why } else .{ .f16 = 0, .bf16 = 0, .why = none_why },
+            .in_place = !fin,
+            .served = if (fin) &final_served else &edit_served,
+            .sums = if (project)
+                .{ .f16 = 100, .bf16 = 100, .why = stress_why }
+            else if (fin)
+                .{ .f16 = 100, .bf16 = 0, .why = final_why }
+            else
+                .{ .f16 = 0, .bf16 = 0, .why = add_why },
         };
     }
 
@@ -155,19 +160,15 @@ pub const Case = struct {
         t.rig.reset();
         t.free();
         t.shape = shape;
+        t.stress = fill == .stress;
         const a = t.rig.gpu.gpa;
         var rng = ref.Rng.init(seed);
-        var kf: ref.Fill = switch (fill) {
-            .random => if (t.cancel) .cancel else .random,
+        const kf: ref.Fill = switch (fill) {
+            .random => if (t.cancel and t.kind != .final) .cancel else .random,
             .nonfinite => .nonfinite,
-            .stress => .stress,
+            .stress => .random, // replaced below by the stress fixture
         };
-        if (t.kind == .final and (kf == .stress or kf == .cancel)) kf = .random;
-        t.alpha = if (t.mode == .add) 1.5 else switch (kf) {
-            .stress => 1,
-            .cancel => 64,
-            else => 0.75,
-        };
+        t.alpha = if (t.mode == .add) 1.5 else if (t.stress) 1 else if (kf == .cancel) 64 else 0.75;
         t.d = try a.alloc(f32, w);
         ref.fillDir(kf, &rng, t.d);
         const tmp = try a.alloc(u16, 4 * w);
@@ -181,12 +182,7 @@ pub const Case = struct {
                 t.words = try a.alloc(u16, t.world * R * w);
                 for (0..R) |r| {
                     ref.fillRow(kf, &rng, r, tmp, t.d);
-                    for (0..t.world) |rk| {
-                        const dst = t.words[rk * R * w + r * w ..][0..w];
-                        if (kf == .stress) {
-                            if (rk == 0) @memcpy(dst, tmp[0..w]) else @memset(dst, 0);
-                        } else @memcpy(dst, tmp[(rk % 4) * w ..][0..w]);
-                    }
+                    for (0..t.world) |rk| @memcpy(t.words[rk * R * w + r * w ..][0..w], tmp[(rk % 4) * w ..][0..w]);
                 }
                 t.o = try a.alloc(u16, R * w);
             },
@@ -200,6 +196,9 @@ pub const Case = struct {
                 const v = ref.dirEntry(&rng);
                 if (t.nw16) std.mem.writeInt(u16, t.nw[2 * k ..][0..2], ref.rne32(v), .little) else std.mem.writeInt(u32, t.nw[4 * k ..][0..4], @bitCast(v), .little);
             }
+        }
+        if (t.stress) t.stressInputs(&rng);
+        if (t.kind == .final) {
             t.x = try t.rig.input(std.mem.sliceAsBytes(t.words));
             t.pre_ptr = try t.rig.input(std.mem.sliceAsBytes(t.pre));
             t.nw_ptr = try t.rig.input(t.nw);
@@ -212,6 +211,31 @@ pub const Case = struct {
         return true;
     }
 
+    /// Exact FP32 fixtures use +/-2^21 with unit dot terms, or one-hot [16,57] copies for RMS squares (see recipe).
+    fn stressInputs(t: *Case, rng: *ref.Rng) void {
+        const w = t.shape.n;
+        const R = t.shape.rows;
+        switch (t.kind) {
+            .stream, .writer => {
+                @memset(t.d, 1);
+                t.d[0] = 1024;
+                t.d[w - 1] = -1024;
+                @memset(t.words, 0); // the writer's ranks above 0 stay zero
+                const copies: usize = if (t.kind == .stream) 4 else 1;
+                for (0..R) |r| for (0..copies) |cc| {
+                    const row = if (t.kind == .stream) t.words[r * 4 * w + cc * w ..][0..w] else t.words[r * w ..][0..w];
+                    @memset(row, 0x3f80); // 1.0
+                    row[0] = 0x4500; // 2048.0
+                    row[w - 1] = 0x4500;
+                };
+            },
+            .final => {
+                for (t.pre, 0..) |*v, i| v.* = if (i % 4 == 0) 1 else 0;
+                for (t.words) |*v| v.* = ref.rne32(@floatFromInt(16 + rng.below(42)));
+            },
+        }
+    }
+
     fn upload(t: *Case) !void {
         const b: cuda.DeviceBuffer = .{ .d = t.rig.gpu.d, .ptr = t.x, .len = t.words.len * 2 };
         try b.upload(0, std.mem.sliceAsBytes(t.words));
@@ -221,7 +245,7 @@ pub const Case = struct {
         if (t.kind != .final) try t.upload(); // in place: every run starts from the prepared bytes
         const w: c_int = @intCast(t.shape.n);
         const R: c_int = @intCast(t.shape.rows);
-        const mode: c_int = @intFromEnum(t.mode);
+        const mode: c_int = @backingInt(t.mode);
         var args: cuda.Args = .{};
         switch (t.kind) {
             .stream => args.add(StreamArgs{ .x = t.x, .xs = 4 * w, .dir = t.dptr, .alpha = t.alpha, .mode = mode, .R = R, .width = w }),
@@ -265,11 +289,12 @@ pub const Case = struct {
         };
     }
 
-    /// The stated agreement with FP64 (glp_ref.allow); the writer adds one bf16 ulp of its partial sums' rounding; the
-    /// final's is two bf16 ulps.
+    /// Preserve exact stress allowances; ordinary bounds include FP32 chains and writer/final BF16 tie flips.
     pub fn bounds(t: *Case, want: []const f64, _: []const f64, allow: []f64) !void {
+        if (t.stress) return;
         const w = t.shape.n;
         const R = t.shape.rows;
+        const sp = t.spec();
         for (allow, want, 0..) |*l, v, i| {
             var b: f64 = 1;
             switch (t.kind) {
@@ -282,14 +307,13 @@ pub const Case = struct {
                         b = ref.allow(v, o, t.d[rem % w], t.alpha, t.mode, t.rowinfo[rem / w], flip) + flip;
                     } else b = 0x1p-133;
                 },
-                .final => b = 0x1p-6 * @abs(v) + 0x1p-133,
+                .final => b = c.boundExact(sp, v) + (0x1p-7 + c.gamma(170, 0x1p-24)) * @abs(v),
             }
             l.* = if (std.math.isFinite(b)) b else 1;
         }
     }
 
-    /// The outputs if the dot's (the final's squares') sum ran in an accumulator, in an order; each element's own edit in
-    /// FP64 and rounded once to bf16.
+    /// Recompute each edit with a chosen reduced accumulator/order, then round the FP64 result once to BF16.
     pub fn simulate(t: *Case, acc: c.Accum, order: rows_.Order, out: []f64) !void {
         const a = t.rig.gpu.gpa;
         const w = t.shape.n;
@@ -350,7 +374,7 @@ pub const Case = struct {
         };
     }
 
-    /// Both tests at once: equal to the model's bits, and within the FP64 bound (classes equal where FP64 is not finite).
+    /// Both tests at once: equal to the model's bits, and within the FP64 bound (classes equal where FP64 is not).
     pub fn check(t: *Case, at: g.Gate) !?[]const u8 {
         const a = t.rig.gpu.gpa;
         const n = t.count();
@@ -418,7 +442,7 @@ pub const Set = struct {
         const stream = try prod.function("dsv41_glp_stream");
         const writer = try prod.function("dsv41_glp_writer");
         const final = try prod.function("dsv41_glp_final");
-        // production: the fold (add; project; project on mirrored halves), the writer (add; project, three ranks), the final
+        // production: the fold (add; project; mirrored halves), the writer (add; project, 3 ranks), the final
         const fold_add = set.add(.{ .rig = rig, .f = stream, .kind = .stream, .mode = .add, .name = "cuda dsv41 glp fold add" });
         const fold_project = set.add(.{ .rig = rig, .f = stream, .kind = .stream, .name = "cuda dsv41 glp fold project" });
         const fold_cancel = set.add(.{ .rig = rig, .f = stream, .kind = .stream, .cancel = true, .name = "cuda dsv41 glp fold project, mirrored halves" });
@@ -469,4 +493,41 @@ pub fn run(gpu: check_.Gpu) !void {
     try g.runAll(a, list.items, 0x676c70, &t);
     std.debug.print("SUMMARY dsv41 glp: {d} kernels, {d} pass gates 1-4, {d} fail; {d} controls: {d} red as planted, {d} missed\n", .{ t.kernels, t.passed, t.failed, t.controls, t.caught, t.missed });
     try check_.expect(t.problems() == 0, "dsv41-glp contract: {d} gate failures, {d} controls missed", .{ t.failed, t.missed });
+}
+
+const sum_orders = [_]rows_.Order{ .sequential, .pairwise, .strided };
+
+// Host witnesses separate both reduced dot types and FP16 RMS sums from exact FP32 at the declared width.
+test "gate 4 stress fixture of the fold and writer: exact in fp32, over 100x off in every 16-bit order" {
+    const w = 5120;
+    var terms: [w]f64 = @splat(1);
+    terms[0] = 0x1p21; // m = 2048 times d = 1024
+    terms[w - 1] = -0x1p21;
+    const dot_exact: f64 = w - 2;
+    const sp: c.Spec = .{ .name = "witness", .accum = .f32, .depth = depthEdit, .ops = edit_ops, .mids = 0, .out = .bf16, .served = &edit_served };
+    // an output element with x = 1 and d = 1, alpha 1: y = 1 - dot
+    const want = 1 - dot_exact;
+    const allow = c.boundExact(sp, want);
+    for (sum_orders) |o| {
+        try std.testing.expectEqual(dot_exact, rows_.sumIn(.f32, o, &terms));
+        for ([_]c.Accum{ .f16, .bf16 }) |acc| {
+            const y = 1 - rows_.sumIn(acc, o, &terms);
+            try std.testing.expect(!std.math.isFinite(y) or @abs(y - want) / allow >= 100);
+        }
+    }
+}
+
+test "gate 4 stress fixture of the final: squares exact in fp32 under 2^24, overflowing fp16 in every order" {
+    const w = 5120;
+    for ([_]f64{ 16 * 16, 57 * 57 }) |square| {
+        const terms: [w]f64 = @splat(square);
+        const total = square * w;
+        try std.testing.expect(total < 0x1p24 and total > 65504);
+        for (sum_orders) |o| {
+            try std.testing.expectEqual(total, rows_.sumIn(.f32, o, &terms));
+            try std.testing.expect(!std.math.isFinite(rows_.sumIn(.f16, o, &terms))); // rn reads 0: the output misses by all of it
+        }
+    }
+    const sp: c.Spec = .{ .name = "witness", .accum = .f32, .depth = depthFinal, .ops = final_ops, .mids = 0, .out = .bf16, .served = &final_served };
+    try std.testing.expect(1 / c.boundExact(sp, 1) >= 100); // an output of 0 against any finite want
 }

@@ -1,5 +1,4 @@
-//! DeepSeek V4.1's steering launches on Metal: each reserves its thread count, so none needs an M1/M2 receipt.
-//! Both kernels hold one `threadgroup float part[8]` (a simdgroup's partial a slot): 32 bytes of static memory.
+//! Metal GLP launches reserve 256 threads and 32 static threadgroup bytes; see the GLP recipe.
 const std = @import("std");
 const M = @import("limits.zig").MetalLaunch;
 pub const records = [_]M{

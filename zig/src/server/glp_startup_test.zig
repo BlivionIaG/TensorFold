@@ -1,5 +1,4 @@
-//! The control vector's serve checks: the file, the reader, the family, the checkpoint's own numbers and the line
-//! that reports what is in force. Ported from the #1835 startup tests (head c5947a8d2e, BlivionIaG) onto DeepSeek-V4.1.
+//! GLPv3 serve admission and truthful reporting, adapted from #1835 c5947a8d2e for DeepSeek-V4.1.
 
 const std = @import("std");
 const builtin = @import("builtin");

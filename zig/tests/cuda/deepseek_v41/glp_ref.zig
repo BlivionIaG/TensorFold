@@ -1,14 +1,11 @@
-//! Independent host references for the GLP steering kernels (kernels/cuda/deepseek_v41/glp.cuh): a FP64 formula with
-//! one round-to-nearest-even to bf16, a host fp32 model of the documented arithmetic order, seeded generators and the
-//! comparison tally. Written from the contract comment, not from the kernel body. Pure std: shared by the device test
-//! (glp.zig) and the registered contract (../contract_glp.zig).
+//! Independent FP64 and documented-order FP32 GLPv3 models shared by device cases and registered contracts.
 
 const std = @import("std");
 
 pub const nt: usize = 320; // threads a CTA
 pub const gpt: usize = 4; // groups of eight columns a thread holds
 pub const chain: usize = 128; // columns a block of the final's square chain
-pub const max_width: usize = nt * 8 * gpt;
+pub const max_width: usize = 5120; // the served width: the launch checks refuse more (the kernel's rows hold nt * 8 * gpt)
 pub const max_world: usize = 8;
 
 pub const Mode = enum(c_int) { add = 0, project = 1 };
@@ -75,7 +72,7 @@ fn accRound(a: Acc, v: f32) f32 {
     };
 }
 
-// ---- the host fp32 model of the documented order ---------------------------------------------------------------------
+// ---- the host fp32 model of the documented order -----------------------------------------------------------------
 
 /// Each copy times the exact 0.25, then added in copy order (no overflow for finite copies).
 fn mean4(v: [4]f32, acc: Acc) f32 {
@@ -84,8 +81,7 @@ fn mean4(v: [4]f32, acc: Acc) f32 {
     return s;
 }
 
-/// A fixed order: a thread's groups g = t + i nt (eight columns ascending) in an fma chain from 0, a xor butterfly
-/// (offsets 16 down to 1) in every warp of 32 threads, then the warps added in order from 0.
+/// Model the per-thread FMA chain, 32-lane XOR butterfly and ordered warp-partial sum.
 pub fn dot(m: []const f32, d: []const f32, acc: Acc) f32 {
     const ng = m.len / 8;
     var total: f32 = 0;
@@ -160,8 +156,7 @@ pub fn writerRow(world: usize, ranks: []const []const u16, d: []const f32, alpha
     }
 }
 
-/// The head's final on one row: c = bf16(((q0 x0 + q1 x1) + q2 x2) + q3 x3), squares in 128-column fma chains added
-/// in order, rn = 1 / sqrt(sum / width + eps), out = bf16((c rn) w). `nw` is fp32 or bf16 bits by `nw16`.
+/// Reproduce mhc_cuda's BF16 collapse, ordered 128-column square chains and RMS/weight output.
 pub fn finalRow(x: []const u16, q: [4]f32, nw: []const u8, nw16: bool, eps: f32, out: []u16) void {
     const w = out.len;
     var cb: [max_width]f32 = undefined;
@@ -183,7 +178,7 @@ pub fn finalRow(x: []const u16, q: [4]f32, nw: []const u8, nw16: bool, eps: f32,
 
 // ---- the FP64 formula -------------------------------------------------------------------------------------------
 
-/// A row's FP64 dot and the magnitude of its terms: what the fp32 order's error bound is made of.
+/// Include copy magnitudes in the dot error scale so cancellation cannot erase mean-rounding error.
 pub const Row = struct { dot: f64 = 0, mag: f64 = 0 };
 
 /// Fold: m = 0.25 (x0 + x1 + x2 + x3), s = alpha dot(m, d), project y = x - s d, add y = x + alpha d, in FP64.
@@ -193,7 +188,7 @@ pub fn foldRef(x: []const u16, d: []const f32, alpha: f32, mode: Mode, y: []f64)
     if (mode == .project) for (0..w) |k| {
         const m = 0.25 * (@as(f64, widen(x[k])) + widen(x[w + k]) + widen(x[2 * w + k]) + widen(x[3 * w + k]));
         row.dot += m * d[k];
-        row.mag += @abs(m * d[k]);
+        row.mag += @abs(d[k]) * 0.25 * (@abs(@as(f64, widen(x[k]))) + @abs(widen(x[w + k])) + @abs(widen(x[2 * w + k])) + @abs(widen(x[3 * w + k])));
     };
     const s = @as(f64, alpha) * row.dot;
     for (0..w) |k| for (0..4) |c| {
@@ -241,15 +236,13 @@ pub fn finalRef(x: []const u16, q: [4]f32, nw: []const u8, nw16: bool, eps: f32,
     }
 }
 
-/// The stated agreement between the fp32 order and FP64 for one element: the dot's gamma(56) of its terms (a thread's
-/// 32 fmas, the butterfly's 5 adds, the 10 warps, the mean's 3) scaled by alpha |d|, the product and subtraction
-/// roundings, then the bf16 output's own half ulp (2^-8 relative). `extra` is rounding flips of the writer's partial sums.
+/// Bound FP32 dot by gamma(50)*copy-magnitude, post-dot by 3u, then BF16 half-ulp plus writer rounding flips.
 pub fn allow(want: f64, x: f64, dk: f64, alpha: f32, mode: Mode, row: Row, extra: f64) f64 {
     const u = 0x1p-24;
     const a: f64 = alpha;
     var work: f64 = 2 * u * (@abs(x) + @abs(a * dk));
     if (mode == .project) {
-        const g = 56 * u / (1 - 56 * u);
+        const g = 50 * u / (1 - 50 * u);
         work = g * @abs(a * dk) * row.mag + 3 * u * (@abs(x) + @abs(a * row.dot * dk)) + @abs(a * dk) * extra;
     }
     return work + 0x1p-8 * (@abs(want) + work) + 0x1p-133;
@@ -296,9 +289,7 @@ pub fn dirEntry(r: *Rng) f32 {
     return m * std.math.ldexp(@as(f32, 1), -@as(i32, @intCast(r.below(5))));
 }
 
-/// What a case's inputs are: ordinary spread values, bf16 ties (add), mirrored halves whose dot cancels to rounding
-/// noise (every fp32 order change shows), integer terms (every fp32 order exact; fp16 / bf16 sums lose), the largest
-/// finite copies, or NaN and infinities at known places.
+/// Generate ordinary, tie, cancellation, exact-sum, BF16-max and nonfinite fixtures deterministically.
 pub const Fill = enum { random, ties, cancel, stress, extreme, nonfinite };
 
 pub const nan16: u16 = 0x7fc0;

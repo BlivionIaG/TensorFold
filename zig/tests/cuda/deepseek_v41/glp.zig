@@ -1,9 +1,4 @@
-//! `tf-dsv41-test glp FATBIN_DIR`: GLP steering kernels (dsv41_glp, the production image through Kernels.loadGlp) on the
-//! device against an independent FP64 formula and a host fp32 model of the documented order: the fold at the served and
-//! small widths, strided and dense, with and without the tap; the writer at worlds 1-8; the final (also against mHC's
-//! final); repeats on dirty memory; non-finite propagation; tails; row and slot separation; the alpha 0 bypass; the
-//! launch refusals; the planted controls loaded from FATBIN_DIR/dsv41_glp_controls.fatbin (their absence fails the
-//! command); program-level controls; and the CUDA graph lifetime.
+//! Production-image GLPv3 device proof: FP64/FP32 refs, strides, controls, alias refusals and graph lifetime.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -15,6 +10,7 @@ const fold = @import("glp_fold.zig");
 const final = @import("glp_final.zig");
 const controls = @import("glp_controls.zig");
 const graph = @import("glp_graph.zig");
+const program = @import("glp_program.zig");
 
 const glp = rig.glp;
 
@@ -46,8 +42,7 @@ fn foldSuite(c: rig.Ctx) !void {
     };
 }
 
-/// Inputs of other kinds: bf16 ties (exact in FP64 too: no flip allowed), mirrored halves, integer terms, the largest
-/// finite copies (the fp32 mean must not overflow), the last column's edit, NaN / infinity in a copy or in the direction.
+/// Exercise ties, cancellation, exact integer sums, BF16 maxima, tail columns and nonfinite values.
 fn fillSuite(c: rig.Ctx) !void {
     for ([_]usize{ 5120, 1032 }) |w| {
         const seed = nextSeed();
@@ -107,9 +102,7 @@ fn expectError(what: []const u8, want: anyerror, result: anytype) !void {
     }
 }
 
-/// Launches the checks refuse, with real buffers: each is refused with its error and no byte of any buffer changes.
-/// Widths with a partial last group of eight columns are refused for the fold and the writer (and, for the final, any
-/// width that is not whole 128-column chains).
+/// Reject invalid widths, alignment, strides and aliasing without changing any byte of real device buffers.
 fn refusals(c: rig.Ctx) !void {
     const a = c.gpu.gpa;
     const W = 5120;
@@ -124,7 +117,7 @@ fn refusals(c: rig.Ctx) !void {
     const x = xb.ptr();
     const d = db.ptr();
     var refused: usize = 0;
-    for ([_]usize{ 0, 4, 12, 1028, 5121, 5124, 10248 }) |w| {
+    for ([_]usize{ 0, 4, 12, 1028, 5121, 5124, 5128, 6144, 10240, 10248 }) |w| { // 5120 is the widest row
         try expectError("fold width", error.BadWidth, rig.fold(ops, x, 4 * W, 0, 0, d, 1, .add, 2, w));
         try expectError("writer width", error.BadWidth, rig.writer(ops, x, W, W, d, 1, .add, 2, w, 2));
         refused += 2;
@@ -134,7 +127,7 @@ fn refusals(c: rig.Ctx) !void {
         try expectError("writer partial group", error.BadWidth, rig.writer(ops, x, W, W, d, 1, .project, 2, 1024 + extra, 2));
         refused += 2;
     }
-    for ([_]usize{ 0, 5121, 5124, 5128, 130, 64, 10368 }) |w| {
+    for ([_]usize{ 0, 5121, 5124, 5128, 130, 64, 5248, 10240, 10368 }) |w| {
         try expectError("final width", error.BadWidth, c.ops.final(.{ .x = x, .xs = 4 * W, .pre = d, .nw = d, .out = x, .eps = 1e-6, .nwbf16 = 0, .R = 2, .width = @intCast(w) }));
         refused += 1;
     }
@@ -151,6 +144,19 @@ fn refusals(c: rig.Ctx) !void {
     try expectError("final pre misaligned", error.Misaligned, c.ops.final(.{ .x = x, .xs = 4 * W, .pre = d + 4, .nw = d, .out = x, .eps = 1e-6, .nwbf16 = 0, .R = 2, .width = W }));
     try expectError("fold mode 2", error.BadMode, ops.stream(.{ .x = x, .xs = 4 * W, .dir = d, .alpha = 1, .mode = 2, .R = 2, .width = W }));
     try expectError("writer mode -1", error.BadMode, ops.writer(.{ .g = x, .gr = W, .gs = W, .dir = d, .alpha = 1, .mode = -1, .R = 2, .width = W, .world = 2 }));
+    // the copies' bytes and the tap's never overlap; negative strides are never valid
+    try expectError("tap inside the copies", error.Overlap, rig.fold(ops, x, 4 * W, x + 32, W, d, 1, .add, 2, W));
+    try expectError("tap reaching into the copies", error.Overlap, rig.fold(ops, x, 4 * W, x - 2 * W, W, d, 1, .add, 2, W));
+    try expectError("negative fold stride", error.BadStride, ops.stream(.{ .x = x, .xs = -8 * W, .dir = d, .alpha = 1, .mode = 1, .R = 2, .width = W }));
+    try expectError("negative tap stride", error.BadStride, ops.stream(.{ .x = x, .xs = 4 * W, .tap = x + 8 * W, .ts = -8, .dir = d, .alpha = 1, .mode = 1, .R = 1, .width = W }));
+    try expectError("negative writer row stride", error.BadStride, ops.writer(.{ .g = x, .gr = 2 * W, .gs = -8, .dir = d, .alpha = 1, .mode = 1, .R = 2, .width = W, .world = 2 }));
+    try expectError("rank stride 0", error.BadStride, rig.writer(ops, x, 0, W, d, 1, .add, 2, W, 2));
+    try expectError("rank slots overlapping the rows", error.BadStride, rig.writer(ops, x, W, W, d, 1, .add, 2, W, 2));
+    try expectError("negative rank stride", error.BadStride, ops.writer(.{ .g = x, .gr = -2 * W, .gs = W, .dir = d, .alpha = 1, .mode = 1, .R = 2, .width = W, .world = 2 }));
+    // the boundary cases the checks accept (strength 0: the kernels return before touching a byte)
+    try rig.fold(ops, x, 4 * W, x + 8 * W, W, d, 0, .add, 1, W); // the tap right after the copies
+    try rig.writer(ops, x, 2 * W, W, d, 0, .add, 2, W, 2); // the rank stride just clearing the rows
+    try rig.writer(ops, x, 0, W, d, 0, .add, 2, W, 1); // one rank: the rank stride is not read
     // a negative or non-finite strength never reaches the kernels (zero, either sign, is the kernel's own bypass)
     for ([_]f32{ -0.5, -std.math.inf(f32), std.math.inf(f32), std.math.nan(f32), -1e-30 }) |bad| {
         try expectError("fold strength", error.BadStrength, rig.fold(ops, x, 4 * W, 0, 0, d, bad, .project, 2, W));
@@ -164,11 +170,10 @@ fn refusals(c: rig.Ctx) !void {
     defer a.free(dafter);
     if (!std.mem.eql(u8, after, zeros) or !std.mem.eql(u8, dafter, zeros[0 .. W * 4])) return rig.fail("a refused call changed a buffer", .{});
     if (!try xb.guards(a) or !try db.guards(a)) return rig.fail("a refused call wrote a canary band", .{});
-    check.pass("glp refusals: {d} launches refused (partial last groups of 1-7 columns, widths, strides, alignments, ranks, modes, strengths), no buffer byte changed", .{refused + 13});
+    check.pass("glp refusals: {d} launches refused (partial last groups of 1-7 columns, widths above 5120, strides, tap overlap, rank slots, alignments, ranks, modes, strengths), no buffer byte changed", .{refused + 21});
 }
 
-/// alpha 0 is the kernels' own bypass: over rows full of NaN, infinity and random payload bits, with a tap buffer, every
-/// byte of x, g, the tap and the direction is unchanged (the kernels return before reading or writing anything).
+/// Alpha zero must preserve every payload byte, including nonfinite values, taps and direction buffers.
 fn alphaZero(c: rig.Ctx) !void {
     const a = c.gpu.gpa;
     const w = 1032;
@@ -314,7 +319,7 @@ pub fn run(gpu: check.Gpu, k: *dsv41.Kernels, dir: []const u8) !void {
     try alphaZero(c);
     try separation(c);
     try controls.run(c, &ctl);
-    try controls.programs(c);
+    try program.run(c, k);
     try graph.run(c);
-    check.pass("glp: fold, writer, final (and mHC's final), repeats, nonfinite, tails, separation, alpha 0, refusals, 6 planted controls, 3 program controls and the graph lifetime all green", .{});
+    check.pass("glp: fold, writer, final (and mHC's final), repeats, nonfinite, tails, separation, alpha 0, refusals, 6 planted controls, program controls on the real mHC post and the graph lifetime all green", .{});
 }

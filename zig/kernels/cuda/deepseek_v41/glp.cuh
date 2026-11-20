@@ -1,20 +1,4 @@
-// GLP steering of DeepSeek-V4.1's four-copy stream (ours): the hc_fold_pre_engram site of docs/spec/GLP.md v3.
-// The control-vector format and its runtime concept are Matt Suiche's (@msuiche, https://weightle.ss/); directional
-// ablation is Arditi et al., "Refusal in Language Models Is Mediated by a Single Direction" (NeurIPS 2024).
-// No kernel or plugin code of the weightless engine is used: these kernels are written for TensorFold's streams.
-//
-// Contract, both halves of one layer N with the layer's direction d (fp32, width D), strength alpha (fp32), mode:
-//   fold   after block N's FFN write is folded into the four copies x_c (bf16), before the next block's Engram:
-//            m = mean_c x_c (fp32: each copy times the exact 0.25, then added in copy order: no overflow for finite
-//            copies), s = alpha * dot(m, d) (fp32 chain)
-//            project: x_c' = bf16(x_c - s * d)    add: x_c' = bf16(x_c + alpha * d)    every copy, one RNE each
-//   writer the attention output after its full TP reduction (the ranks' bf16 partials added in rank order in fp32,
-//          rounded to bf16 as the mHC post reads it) and before its hc post: the same edit on the one vector
-//          (project: o' = bf16(o - alpha * dot(o, d) * d), add: o' = bf16(o + alpha * d))
-// A row is one CTA; the dot is a fixed order (a thread's groups, then the warp butterfly, then the warps in order),
-// so repeats are bit-identical.
-// alpha == 0 is an exact bypass: both kernels return before reading or writing anything (the DSpark tap included,
-// which an unsteered boundary writes), nonfinite payloads untouched; the host emits no call for it either.
+// GLPv3 paired steering; Matt Suiche/weightless and Arditi et al.; see docs/recipes/deepseek-v41-glp.md.
 #pragma once
 
 #include <cstdint>
@@ -75,8 +59,7 @@ __device__ __forceinline__ void load8(const float* p, float (&d)[8]) {
     d[0] = a.x; d[1] = a.y; d[2] = a.z; d[3] = a.w; d[4] = b.x; d[5] = b.y; d[6] = b.z; d[7] = b.w;
 }
 
-// the copies' mean: every copy times the exact 0.25, added in copy order (the scale first: four finite BF16-max
-// copies of one sign stay finite); SUM: the planted fault keeps the plain sum
+// Scale each BF16 copy by 1/4 before FP32 addition to avoid overflow; SUM deliberately omits that scale.
 template <int CTL> __device__ __forceinline__ float mean4(float a, float b, float c, float d) {
     if (CTL == SUM) return __fadd_rn(__fadd_rn(__fadd_rn(a, b), c), d);
     return __fadd_rn(__fadd_rn(__fadd_rn(__fmul_rn(a, 0.25f), __fmul_rn(b, 0.25f)), __fmul_rn(c, 0.25f)),
@@ -164,8 +147,7 @@ template <int CTL> __device__ __forceinline__ void stream_body(const StreamArgs&
     }
 }
 
-// ---- writer: the gathered partials reduced, edited, written to rank 0's slot; the other slots -0.0 ----
-// A -0.0 slot adds to any value unchanged, so the mHC post's rank-order sum reads the edited vector bit for bit.
+// Store the edited writer in rank 0 and -0 elsewhere so hc_post's rank-ordered sum preserves its bits.
 template <int CTL> __device__ __forceinline__ void writer_body(const WriterArgs& a) {
     if (a.alpha == 0.0f) return;
     __shared__ float scratch[NT / 32];
@@ -214,9 +196,7 @@ template <int CTL> __device__ __forceinline__ void writer_body(const WriterArgs&
     }
 }
 
-// ---- final: the head's collapse and norm of steered streams, the mHC final's arithmetic without its post ----
-// c = bf16(q0 x0 + q1 x1 + q2 x2 + q3 x3) one rounding a step; squares in 128-column fma chains, the chains added
-// in order; out = bf16((c * rsqrt(mean square + eps)) * w): the bits mhc_cuda's final gives the same streams.
+// Match mhc_cuda's final collapse/RMS order on edited streams; the recipe documents rounding and error bounds.
 template <int CTL> __device__ __forceinline__ void final_body(const FinalArgs& a) {
     extern __shared__ __align__(16) unsigned char dyn[];
     uint16_t* cs = reinterpret_cast<uint16_t*>(dyn);

@@ -1,5 +1,4 @@
-//! Device buffers and launches shared by the GLP steering tests: every payload sits between canary bands, so a write
-//! past the edited rows or columns shows as a changed band, and the production and planted-control launch handles.
+//! Canary-banded device storage and production/control launch handles shared by GLP qualification cases.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -33,8 +32,8 @@ pub const Buf = struct {
         return s.b.ptr + band;
     }
 
-    pub fn write(s: Buf, bytes: []const u8) !void {
-        try s.b.upload(band, bytes);
+    pub fn write(s: Buf, data: []const u8) !void {
+        try s.b.upload(band, data);
     }
 
     pub fn read(s: Buf, a: std.mem.Allocator) ![]align(16) u8 {
@@ -93,7 +92,7 @@ pub fn fold(ops: glp.Ops, x: u64, xs: usize, tap: u64, ts: usize, dir: u64, alph
         .ts = @intCast(ts),
         .dir = dir,
         .alpha = alpha,
-        .mode = @intFromEnum(mode),
+        .mode = @backingInt(mode),
         .R = @intCast(rows),
         .width = @intCast(width),
     });
@@ -107,7 +106,7 @@ pub fn writer(ops: glp.Ops, g: u64, gr: usize, gs: usize, dir: u64, alpha: f32, 
         .gs = @intCast(gs),
         .dir = dir,
         .alpha = alpha,
-        .mode = @intFromEnum(mode),
+        .mode = @backingInt(mode),
         .R = @intCast(rows),
         .width = @intCast(width),
         .world = @intCast(world),

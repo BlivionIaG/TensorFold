@@ -302,7 +302,7 @@ pub const Open = struct {
     rope_yarn: ?f64 = null, // --rope-yarn: YaRN over the checkpoint's trained window; families without it refuse
     /// --record: each stream's committed rows and tapped features written under this folder, for drafter training.
     record: ?[]const u8 = null,
-    /// --glp: the control vector the engine applies at the hc fold site, strength in force (null: none, byte-exact off).
+    /// Immutable startup GLPv3 steering; null preserves the unsteered path.
     glp: ?glp.Glp = null,
     speed_up: ?[]const u8 = null,
     prompt_cache_gib: ?f64 = null,

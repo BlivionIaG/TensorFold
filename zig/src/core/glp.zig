@@ -1,8 +1,4 @@
-//! A GLP control vector, read, checked against the model it would steer and bound into a hand-off's identity.
-//! The GLP format and its weightless runtime concept are Matt Suiche's (@msuiche, https://weightle.ss/); this
-//! reader follows docs/spec/GLP.md at pin b181a07d3980fc48abe39d95ddb044459dd0b868 and reuses #1835's native reader.
-//! Only the format is cited: none of weightless's code is included.
-//! Directional ablation is Arditi et al., "Refusal in Language Models Is Mediated by a Single Direction" (2024).
+//! Native GLPv3 controls from #1835; concepts: Matt Suiche/weightless and Arditi et al. (see GLP recipe).
 
 const std = @import("std");
 const t = @import("glp_types.zig");
@@ -32,8 +28,7 @@ pub const Model = struct {
     hidden: ?usize = null,
     /// The backbone's block count: the DSpark/MTP blocks that follow it are never steerable.
     layers: ?usize = null,
-    /// The repo id the checkpoint came from ("Org/Name"), empty when it is not a hub snapshot. A vector's base repo
-    /// must be this one: a fork, a conversion or a similarly named repo is another checkpoint.
+    /// Exact hub repo ID (Org/Name), empty for local conversions; forks and similarly named repos are not aliases.
     repo: []const u8 = "",
     /// The commit the checkpoint's snapshot is, empty when it is not a hub snapshot.
     revision: []const u8 = "",
@@ -92,8 +87,7 @@ pub fn readFile(a: std.mem.Allocator, io: std.Io, path: []const u8, why: *Why) E
     return read(a, bytes, why);
 }
 
-/// The vector in `path` with the strength in force: `alpha` when given, else the file's own default. The strength is
-/// finite, from 0 and canonical (+0 for zero, which bypasses every edit); the model checks are `checkModel`.
+/// Load immutable file data with explicit or file-default strength; checkModel supplies checkpoint admission.
 pub fn load(a: std.mem.Allocator, io: std.Io, path: []const u8, alpha: ?f32, why: *Why) Error!Glp {
     const vector = try readFile(a, io, path, why);
     const effective: f32 = if (alpha) |x| strength(x) orelse return refuse(why, "the strength is not finite and from 0", .{}) else vector.alpha;
@@ -124,8 +118,7 @@ fn revisionMatches(a: []const u8, b: []const u8) bool {
     return std.ascii.startsWithIgnoreCase(a, b) or std.ascii.startsWithIgnoreCase(b, a);
 }
 
-/// The checkpoint's name a hand-off carries, with the steering that produced its states bound in: the vector file's
-/// exact digest, its mode and site and the effective strength. No steering returns `checkpoint` itself, unchanged.
+/// Preserve plain checkpoint IDs; otherwise bind file SHA-256, mode, hook and effective FP32 strength.
 pub fn identity(a: std.mem.Allocator, checkpoint: []const u8, g: ?Glp) std.mem.Allocator.Error![]const u8 {
     const steer = g orelse return checkpoint;
     var h: std.crypto.hash.sha2.Sha256 = .init(.{});

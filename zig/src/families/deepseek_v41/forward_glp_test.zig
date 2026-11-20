@@ -1,7 +1,4 @@
-//! GLP steering's two hooks (forward_glp.zig) on a real device: the actual `writer` and `fold` wrappers, a real plan
-//! and device buffers, against an independent float64 formula, for two adjacent blocks whose directions differ. The
-//! planted controls (hook omitted, index shifted) must each fail the formula's comparison. No checkpoint is read: only
-//! the Model fields the two wrappers use are set (the plan, the workspace views, the stream parity; no pending post).
+//! Real GLP hooks against FP64, with missing-companion and shifted-layer controls; only fixture-used fields are set.
 const std = @import("std");
 const t = std.testing;
 const mtl = @import("metal");
@@ -34,8 +31,7 @@ fn real(h: u16) f64 {
     return @as(f32, @bitCast(@as(u32, h) << 16));
 }
 
-/// The float64 answer for `x` ([n][copies][hidden] bf16) under block direction `d`, and the magnitude its error
-/// scales with.
+/// Independent FP64 outputs and magnitudes for BF16 rows under one block's direction.
 const Want = struct {
     v: []f64,
     mag: []f64,

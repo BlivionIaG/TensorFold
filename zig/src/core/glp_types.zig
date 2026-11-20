@@ -1,6 +1,4 @@
-//! The GLP control vector a serve applies: what a file says, what the reader accepted and the strength in force.
-//! GLP (GGUF Layer Projection) is the format of Matt Suiche's `weightless` project (https://weightle.ss/); this is a
-//! TensorFold-native reader of docs/spec/GLP.md at pin b181a07d3980fc48abe39d95ddb044459dd0b868, ported from #1835.
+//! GLPv3 data types from #1835; format: Matt Suiche/weightless (full provenance and credits in the GLP recipe).
 
 const std = @import("std");
 
@@ -32,8 +30,7 @@ pub const Mode = enum {
 
 /// Where the edit lands. The spec's v3 fold site is the only one a hyper-connection model has between layers.
 pub const Site = enum {
-    /// The four-copy stream right after a layer's FFN write is folded in and before the next layer's Engram, mean
-    /// taken over the copies in FP32; the same layer's attention output writer is armed with the same edit.
+    /// Edit a block's post-FFN four-copy stream and its pre-hc-post attention writer with the same direction.
     hc_fold_pre_engram,
 };
 
@@ -130,8 +127,7 @@ pub fn repoId(name: []const u8) []const u8 {
     return if (std.mem.startsWith(u8, name, hub_prefix)) name[hub_prefix.len..] else name;
 }
 
-/// An FP32 strength from a number the operator or a file gave: finite, from 0, and either exactly 0 or a normal float.
-/// A value that would flush to 0 or to a subnormal is refused, so 0 (every edit bypassed) is only ever asked for.
+/// Accept explicit zero or finite, normal FP32; nonzero strengths must not silently underflow off.
 pub fn strength(x: f64) ?f32 {
     if (!std.math.isFinite(x) or x < 0) return null;
     const applied: f32 = @floatCast(x);

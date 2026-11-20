@@ -1,5 +1,4 @@
-//! Reading a GLP file: a rank-one add or project vector at the spec's v3 hc fold site, accepted whole or refused.
-//! What changes how the edit is applied (version, mode, site, rank, scales, legacy keys) is refused, never ignored.
+//! Strict rank-one GLPv3 loading at hc_fold_pre_engram; reject unsupported interpretation instead of guessing.
 
 const std = @import("std");
 const gguf = @import("glp_container.zig");
@@ -10,8 +9,7 @@ const Error = t.Error;
 /// A project direction's squared norm may differ from 1 by this much (the reference reader's orthonormal bound).
 pub const unit_tolerance: f64 = 1e-3;
 
-// Other glp.* keys are informational (the spec names glp.dose_cos and glp.resid_norm_median and gates none of them):
-// they are read past, so a producer's extra notes never refuse a file whose mode, site, rank and version are known.
+// Ignore unknown informational glp.* keys without weakening version, mode, hook or rank checks.
 
 fn refuse(why: *Why, comptime fmt: []const u8, args: anytype) Error {
     why.set(fmt, args);
@@ -56,9 +54,7 @@ fn norm2(dir: []const f32) f64 {
     return sum;
 }
 
-/// glp.alpha_default as an FP32 strength, held to the rule --glp-alpha is: finite, from 0, and exactly 0 or a normal
-/// float. A double FP32 would flush to 0, or a subnormal, is refused: neither may read as off nor as a live strength.
-/// 1 when the file names none.
+/// File strength defaults to 1; otherwise require explicit zero or finite, normal FP32, exactly as --glp-alpha.
 fn alphaDefault(file: gguf.File, why: *Why) Error!f32 {
     const v = file.find("glp.alpha_default") orelse return 1.0;
     const wide: f64 = switch (v) {
@@ -105,8 +101,7 @@ fn declared(file: gguf.File, why: *Why) Error!Declared {
         return refuse(why, "glp.spec_version {d}; this reader implements version {d}, the hc fold site's", .{ version, t.spec_version });
     }
 
-    // The reference runtime refuses a file with no glp.mode ("refusing to guess"): an add file read as a projection,
-    // or the reverse, is another edit, so the mode is required and never defaulted.
+    // Never infer the edit: a missing mode could silently turn addition into projection or vice versa.
     const mode_text = try text(file, "glp.mode", why) orelse return refuse(why, "the file names no glp.mode", .{});
     const mode = std.meta.stringToEnum(t.Mode, mode_text) orelse
         return refuse(why, "glp.mode \"{f}\" is not one this reader applies: add or project", .{std.zig.fmtString(mode_text)});
@@ -181,9 +176,7 @@ fn checkLayerIds(a: std.mem.Allocator, file: gguf.File, layers: []const t.Layer,
 /// The base checkpoint as the spec's provenance table gives it.
 const Base = struct { repo: []const u8 = "", revision: []const u8 = "" };
 
-/// The base checkpoint's repo and commit pin from GGUF's general.base_model.0.* keys, the spec's provenance fields:
-/// the repo from repo_url, else organization and name; the pin from version. No producer-specific glp.* key names a
-/// base, so none can override the pin. Fields that disagree, or name more than one base, are refused.
+/// Read canonical GGUF base repo/version; reject conflicting fields, multiple bases and mistyped provenance.
 fn baseModel(a: std.mem.Allocator, file: gguf.File, why: *Why) Error!Base {
     const prefix = "general.base_model.0.";
     const url = try text(file, prefix ++ "repo_url", why);

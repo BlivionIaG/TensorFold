@@ -183,8 +183,7 @@ pub fn postOnly(s: *Seg, xout: Arg) !void {
     try s.siteTriton(x, xout, try gathered(e, ""), prev, null, null, x, x, null, 0, false);
 }
 
-/// mhc.final: the last post, collapse 2, the final norm; then the head's columns over every row. `steer`: the last
-/// block is steered by GLP: its post alone, the fold's edit, then the steered collapse and norm (glp.cu's final).
+/// Finish the last post and head; active GLP edits folded streams before its matching collapse/RMS.
 pub fn final(s: *Seg, steer: ?u32) !void {
     const e = s.e;
     s.pend = 0;

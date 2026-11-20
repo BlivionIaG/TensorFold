@@ -1,14 +1,4 @@
-//! DeepSeek V4.1 steering on Metal (GLP v3 hc_fold_pre_engram): the plan on the device and its two in-place edits.
-//!
-//! The GLP container format and the weightless runtime concept are Matt Suiche's
-//! (https://github.com/msuiche/weightless, docs/spec/GLP.md); directional ablation is Arditi et al., "Refusal in
-//! Language Models Is Mediated by a Single Direction" (https://arxiv.org/abs/2406.11717). The plan's shape follows
-//! the Qwen 27B steering plan of the same project (upload once, one buffer a covered layer, a layer-to-direction
-//! lookup); the kernels are this file's own.
-//!
-//! A vector's direction N edits backbone block N twice: the block's attention writer (one copy, before its hc_post) and
-//! the four-copy stream its FFN fold leaves (before the next block's Engram, or the head after the last block).
-//! Nothing here is built when steering is off or the strength is 0: `Plan.init` then returns null.
+//! Metal GLPv3 plan; Matt Suiche/weightless and Arditi et al. are credited in the GLP recipe.
 const std = @import("std");
 const mtl = @import("metal");
 const sources = @import("kernel_sources");
@@ -58,8 +48,7 @@ fn modeOf(v: anytype) Error!Mode {
     return std.meta.stringToEnum(Mode, @tagName(v)) orelse error.BadSteerMode;
 }
 
-/// The refusals a plan makes at load, before anything is allocated: no direction for block 0 or past the backbone,
-/// a direction that is not the hidden width or not finite, a block named twice, a strength not finite or negative.
+/// Refuse invalid geometry, layers, widths, directions or strength before allocating device state.
 pub fn validate(src: anytype, geom: Geometry) Error!void {
     _ = try modeOf(src.mode);
     if (geom.hidden == 0 or geom.layers < 2 or src.layers.len == 0) return error.BadSteerShape;
@@ -73,8 +62,7 @@ pub fn validate(src: anytype, geom: Geometry) Error!void {
     }
 }
 
-/// Device bytes `Plan.init` allocates for a validated source: none at strength 0 (no plan), else every direction in
-/// one buffer, rounded up to the 16 KiB page the device allocates in.
+/// Charge direction storage in 16-KiB pages; exact zero strength allocates no GPU buffer.
 pub fn residentBytes(src: anytype, geom: Geometry) usize {
     if (src.alpha == 0) return 0;
     return std.mem.alignForward(usize, src.layers.len * @as(usize, geom.hidden) * 4, 16384);
@@ -156,7 +144,7 @@ pub const Plan = struct {
 test "a vector the model cannot take is refused before anything is built" {
     const geom: Geometry = .{ .hidden = 4, .layers = 6 };
     const d = [4]f32{ 1, 0, 0, 0 };
-    const good = [_]Layer{.{ .id = 1, .dir = &d }, .{ .id = 5, .dir = &d }};
+    const good = [_]Layer{ .{ .id = 1, .dir = &d }, .{ .id = 5, .dir = &d } };
     try validate(Source{ .mode = .project, .alpha = 1, .layers = &good }, geom);
     const bad = [_]struct { l: []const Layer, a: f32, e: Error }{
         .{ .l = &.{.{ .id = 0, .dir = &d }}, .a = 1, .e = error.BadSteerLayer },

@@ -1,5 +1,4 @@
-//! The GLP control vector container as the outside world sees it: the reader's view of a file, and a rewrite of it.
-//! Ported from #1835's checker (head c5947a8d2e, BlivionIaG) for the v3 add and project vectors.
+//! Native GLPv3 read/rewrite probe, adapted from TensorFold #1835 c5947a8d2e.
 const std = @import("std");
 const glp = @import("glp");
 

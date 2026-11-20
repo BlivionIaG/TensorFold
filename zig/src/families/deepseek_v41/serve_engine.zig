@@ -106,12 +106,11 @@ pub const Served = struct {
         return openExporting(gpa, io, dir, assets, drafts, context, prompt_cache_gib, null, null, &refused);
     }
 
-    /// `open` that also exports hand-offs (over `produce`'s link or TF_DSV41_HANDOFF_DUMP); else `ExportRefused`.
-    /// `steer`: the control vector and strength in force (--glp), bound into the export's checkpoint identity.
+    /// Open handoff export with GLP policy bound into checkpoint identity; otherwise ExportRefused.
     pub fn openExporting(gpa: Allocator, io: std.Io, dir: []const u8, assets: []const u8, drafts: bool, context: ?i64, prompt_cache_gib: ?f64, produce: ?[]const u8, steer: ?api.glp.Glp, problem: *[]const u8) !*Served {
         var plan = if (steer) |g| try glp_plan.Plan.init(gpa, g) else null;
         defer if (plan) |*p| p.deinit(gpa);
-        const m = try model.Model.open(gpa, io, dir, assets, .{ .drafts = drafts, .own_prefill = (try model.ownPrefillEnv()), .layers = try model.layersEnv(gpa), .prompt_cache_gib = prompt_cache_gib, .glp = if (plan) |*p| p else null });
+        const m = try model.Model.open(gpa, io, dir, assets, .{ .drafts = drafts, .own_prefill = (try model.ownPrefillEnv()), .layers = try model.layersEnv(gpa), .prompt_cache_gib = prompt_cache_gib, .glp = if (plan) |*p| p else null, .glp_policy = glp_plan.policyWords(steer) });
         errdefer m.close();
         if (m.rank() != 0) return error.NotRankZero; // the other ranks run `tf-dsv41 follow`
         const s = try gpa.create(Served);
@@ -210,8 +209,7 @@ pub const Served = struct {
         return s;
     }
 
-    /// The hand-off exporter when `--mcdma-produce` or TF_DSV41_HANDOFF_DUMP asks; `ExportRefused` sets `problem`.
-    /// A steered server's hand-off names its checkpoint with the vector bound in (api.glp.identity).
+    /// Create the requested exporter with a steering-bound identity; report ExportRefused through problem.
     fn exportOpen(s: *Served, dir: []const u8, link: ?[]const u8, steer: ?api.glp.Glp, problem: *[]const u8) !?*xl.Export {
         const dump = (try xl.dumpDir(problem)) != null;
         if (link == null and !dump) return null;

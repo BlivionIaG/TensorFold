@@ -65,6 +65,20 @@ pub fn steps(b: *std.Build) void {
     host_step.dependOn(&host.step);
     host_step.dependOn(&binding_tests.step);
     host_step.dependOn(&common_tests.step);
+    const glp_contract = b.createModule(.{
+        .root_source_file = b.path("zig/tests/cuda/contract_glp.zig"),
+        .target = b.graph.host,
+        .optimize = .debug,
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "cuda", .module = planner.import_table.get("cuda").? },
+            .{ .name = "core", .module = planner.import_table.get("core").? },
+        },
+    });
+    @import("cuda_contract_deepseek.zig").inert(b, glp_contract);
+    const glp_witness = b.addRunArtifact(b.addTest(.{ .root_module = glp_contract }));
+    b.step("test-dsv41-glp-contract-host", "GLP exact accumulation witnesses without device calls").dependOn(&glp_witness.step);
+    host_step.dependOn(&glp_witness.step);
     const sm_module = module(b, b.graph.host, "cuda_test.zig", true).import_table.get("dsv41_kernels").?;
     const sm_test = b.addTest(.{ .root_module = sm_module, .filters = &.{"DeepSeek refuses pre-cluster GPUs"} });
     const sm_run = b.addRunArtifact(sm_test);

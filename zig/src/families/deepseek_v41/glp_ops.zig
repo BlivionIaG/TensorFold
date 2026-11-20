@@ -1,12 +1,11 @@
-//! GLP steering launches (kernels/cuda/deepseek_v41/glp.cu): the fold's and the attention writer's edits, the final.
-//! The GLP format is Matt Suiche's `weightless` (https://weightle.ss/); these kernels are TensorFold's own.
+//! TensorFold's CUDA GLPv3 launch ABI; concept/format: Matt Suiche/weightless (see GLP recipe).
 
 const std = @import("std");
 const cuda = @import("cuda");
 
-/// Threads a CTA (a row a CTA) and the widest row; the final's square chain is 128 columns a block.
+/// One CTA per row; the 5120-column width cap matches the contract's declared launch layout.
 pub const NT = 320;
-pub const max_width = NT * 8 * 4;
+pub const max_width = 5120;
 pub const chain = 128;
 pub const max_world = 8;
 
@@ -62,10 +61,15 @@ comptime {
     std.debug.assert(@sizeOf(FinalArgs) == 56 and @offsetOf(FinalArgs, "eps") == 40 and @offsetOf(FinalArgs, "width") == 52);
 }
 
-pub const Error = error{ BadWidth, BadStride, BadRanks, Misaligned, BadMode, BadStrength };
+pub const Error = error{ BadWidth, BadStride, BadRanks, Misaligned, BadMode, BadStrength, Overlap };
 
 fn aligned(p: u64) bool {
     return p % 16 == 0;
+}
+
+/// Bytes (bf16) a strided [rows, cols] region spans from its first element; exact in 128 bits.
+fn extent(rows: c_int, stride: i64, cols: i64) i128 {
+    return ((@as(i128, rows) - 1) * stride + cols) * 2;
 }
 
 fn checkRow(width: c_int, rows: c_int, mode: c_int, alpha: f32) Error!void {
@@ -79,17 +83,26 @@ fn checkRow(width: c_int, rows: c_int, mode: c_int, alpha: f32) Error!void {
 /// A fold call's refusals: the width, the strides and the alignments the kernel's 16-byte vectors need.
 pub fn checkStream(a: StreamArgs) Error!void {
     try checkRow(a.width, a.R, a.mode, a.alpha);
-    if (@rem(a.xs, 8) != 0 or a.xs < 4 * @as(i64, a.width) and a.R > 1) return error.BadStride;
+    if (a.xs < 0 or @rem(a.xs, 8) != 0 or a.xs < 4 * @as(i64, a.width) and a.R > 1) return error.BadStride;
     if (!aligned(a.x) or !aligned(a.dir)) return error.Misaligned;
-    if (a.tap != 0 and (!aligned(a.tap) or @rem(a.ts, 8) != 0 or a.ts < a.width and a.R > 1)) return error.Misaligned;
+    if (a.tap == 0) return;
+    if (!aligned(a.tap) or @rem(a.ts, 8) != 0 or a.ts < a.width and a.R > 1) return error.Misaligned;
+    if (a.ts < 0) return error.BadStride;
+    if (a.R == 0) return;
+    // the bf16 copies' bytes and the bf16 tap's bytes never share one
+    const xe = @as(i128, a.x) + extent(a.R, a.xs, 4 * @as(i64, a.width));
+    const te = @as(i128, a.tap) + extent(a.R, a.ts, a.width);
+    if (a.x < te and a.tap < xe) return error.Overlap;
 }
 
 /// A writer call's refusals: the ranks the kernel holds, the strides and the alignments.
 pub fn checkWriter(a: WriterArgs) Error!void {
     try checkRow(a.width, a.R, a.mode, a.alpha);
     if (a.world < 1 or a.world > max_world) return error.BadRanks;
-    if (@rem(a.gs, 8) != 0 or @rem(a.gr, 8) != 0 or a.gs < a.width and a.R > 1) return error.BadStride;
+    if (a.gs < 0 or @rem(a.gs, 8) != 0 or @rem(a.gr, 8) != 0 or a.gs < a.width and a.R > 1) return error.BadStride;
     if (!aligned(a.g) or !aligned(a.dir)) return error.Misaligned;
+    // rank slots are whole, disjoint regions: a rank stride that reaches past the last row's end
+    if (a.world > 1 and a.R > 0 and (a.gr <= 0 or @as(i128, a.gr) < @as(i128, a.R - 1) * a.gs + a.width)) return error.BadStride;
 }
 
 /// A final call's refusals: the width is whole chains, the strides and alignments the vectors need.
@@ -179,6 +192,23 @@ test "a call's refusals: width, strides, ranks, alignment, strength" {
     wb = w;
     wb.world = 0;
     try std.testing.expectError(error.BadRanks, checkWriter(wb));
+    for ([_]i64{ 0, -40960, 5120, 40960 - 8 }) |gr| {
+        wb = w;
+        wb.gr = gr;
+        try std.testing.expectError(error.BadStride, checkWriter(wb)); // rank slots overlap the rows, or run backwards
+    }
+    wb = w;
+    wb.world = 1;
+    wb.gr = 0;
+    try checkWriter(wb); // one rank has no slot stride to use
+    var tb = ok;
+    tb.tap = 256 + 8 * 5120; // inside the copies' bytes
+    tb.ts = 5120;
+    try std.testing.expectError(error.Overlap, checkStream(tb));
+    tb.tap = 256 + 2 * 4 * 5120 * 4; // the first byte past the copies
+    try checkStream(tb);
+    tb.tap = 240; // starts just before the copies and runs into them
+    try std.testing.expectError(error.Overlap, checkStream(tb));
     const f: FinalArgs = .{ .x = 256, .xs = 20480, .pre = 512, .nw = 1024, .out = 2048, .eps = 1e-6, .nwbf16 = 0, .R = 3, .width = 5120 };
     try checkFinal(f);
     var fb = f;

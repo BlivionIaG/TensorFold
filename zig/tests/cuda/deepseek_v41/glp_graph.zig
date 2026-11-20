@@ -1,7 +1,4 @@
-//! CUDA graph lifetime of the steering launches: the writer and the fold of a few rows captured from a stream, replayed
-//! three times with the input buffers rewritten between replays (the graph itself never updated), every replay's bits
-//! checked against the model and FP64 for its new inputs; the direction buffer is uploaded once before the capture and
-//! lives until the graph and its executable are destroyed.
+//! Replay GLP edits on rewritten inputs; keep uploaded directions until graph and executable teardown.
 
 const std = @import("std");
 const cuda = @import("cuda");

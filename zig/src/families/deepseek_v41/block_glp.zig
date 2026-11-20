@@ -1,7 +1,4 @@
-//! GLP steering's calls (tf_dsv41_glp_v1, glp.cu): the two spliced values of a steered block N, as emitted around it.
-//! Fold: the mean of the four streams after block N's FFN write folded in (before the next block's Engram or site; for
-//! the last block, before the head). Writer: block N's attention output after the full TP reduction, before hc post.
-//! A run without a plan (no vector, or strength 0) never reaches here: every caller asks `steers` first.
+//! Emit paired GLPv3 fold/writer/final calls; no plan means no GLP instructions.
 
 const std = @import("std");
 const calls = @import("block_calls.zig");
@@ -19,8 +16,7 @@ pub fn steers(e: *const E, layer: u32) bool {
     return p.has(layer);
 }
 
-/// A steered run's program shape: every block from 0, whole, without the trace copies or the TBO split (each would
-/// show or skip an unsteered fold). Refused, never silently unsteered.
+/// Require the whole backbone and refuse trace/TBO shapes that could expose or skip an unsteered fold.
 pub fn check(e: *const E, layers: []const u32, whole: bool) !void {
     if (e.o.glp == null) return;
     if (e.o.trace or e.marks != null or !whole) return error.InvalidBlock;
@@ -28,7 +24,7 @@ pub fn check(e: *const E, layers: []const u32, whole: bool) !void {
 }
 
 fn mode(p: *const glp_plan.Plan) Arg {
-    return .{ .i = @intFromEnum(p.mode) };
+    return .{ .i = @backingInt(p.mode) };
 }
 
 /// The layer's direction: its row of the plan's table (fp32 [width]).

@@ -1,5 +1,4 @@
-//! The steered head's final (dsv41_glp_final) against a host model of mHC final's arithmetic and the FP64 formula,
-//! and, at the served width, bit for bit against the existing mHC final launch (mhc_cuda mode 3) on the same streams.
+//! GLP final against FP64/FP32 math and the real mhc_cuda final at the served 5120-column width.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -122,8 +121,7 @@ pub fn finalCase(c: rig.Ctx, k: FinalCase) !void {
         " 5 repeats identical on dirty output, guards intact, seed 0x{x}", .{ k.name, if (k.nw16) "bf16" else "fp32", t.n, t.model_diff, t.flips, t.max_ulp, k.seed });
 }
 
-/// The same streams through mhc_cuda's final (mode 3 with the identity post, so its new streams are the input) and
-/// through glp_final: the normed rows must be bit-identical. The mHC kernel is built for the served width 5120.
+/// Feed identical streams through mhc_cuda mode 3 and GLP final; require identical normalized rows.
 pub fn mhcEqual(c: rig.Ctx, k: *const dsv41.Kernels, rows: usize, nw16: bool, seed: u64) !void {
     const a = c.gpu.gpa;
     const D = 5120;

@@ -1,5 +1,4 @@
-//! What the GLP container says about itself: the keys a consumer reads before it reads the directions.
-//! Ported from the #1835 publication tests (head c5947a8d2e, BlivionIaG) onto the v3 reader.
+//! GLPv3 publication metadata checks, ported from #1835 c5947a8d2e.
 
 const std = @import("std");
 const glp = @import("glp.zig");

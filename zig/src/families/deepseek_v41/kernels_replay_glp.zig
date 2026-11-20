@@ -24,8 +24,7 @@ fn typed(t: Tensor, want: replay.DType) !void {
     if (t.dtype != want) return error.WrongArgument;
 }
 
-/// stream (x, tap, dir, alpha, mode, R, width), writer (g, dir, alpha, mode, R, width),
-/// final (x, pre, nw, out, eps, R, width).
+/// Replay stream/writer/final records, validating tensor type, shape and stride before launch.
 pub fn glpExt(o: glp.Ops, func: []const u8, args: []const Arg, kwargs: []const Kw) !bool {
     if (is(func, "stream")) {
         const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "x", "tap", "dir", "alpha", "mode", "R", "width" } };
@@ -35,6 +34,10 @@ pub fn glpExt(o: glp.Ops, func: []const u8, args: []const Arg, kwargs: []const K
         try typed(x, .bf16);
         try typed(dir, .f32);
         if (numel(tap) != 0) try typed(tap, .bf16);
+        const rows = try c.int(5);
+        const wide = try c.int(6);
+        if (x.shape.len != 2 or x.stride[1] != 1 or rows < 0 or rows > x.shape[0] or x.shape[1] != 4 * wide) return error.WrongArgument;
+        if (numel(tap) != 0 and (tap.shape.len != 2 or tap.stride[1] != 1 or rows > tap.shape[0] or tap.shape[1] != wide)) return error.WrongArgument;
         try o.stream(.{ .x = x.ptr, .xs = x.stride[0], .tap = tp(tap), .ts = stride0(tap), .dir = dir.ptr, .alpha = @floatCast(try c.float(3)), .mode = @intCast(try c.int(4)), .R = @intCast(try c.int(5)), .width = @intCast(try c.int(6)) });
         return true;
     }
@@ -44,7 +47,10 @@ pub fn glpExt(o: glp.Ops, func: []const u8, args: []const Arg, kwargs: []const K
         const dir = try c.tensor(1);
         try typed(g, .bf16);
         try typed(dir, .f32);
-        if (g.shape.len != 3 or g.stride[2] != 1) return error.WrongArgument;
+        const rows = try c.int(4);
+        const wide = try c.int(5);
+        // the partials [world, rows, width] dense along a row, the call's rows and width inside them
+        if (g.shape.len != 3 or g.stride[2] != 1 or rows < 0 or rows > g.shape[1] or wide != g.shape[2]) return error.WrongArgument;
         try o.writer(.{ .g = g.ptr, .gr = g.stride[0], .gs = g.stride[1], .dir = dir.ptr, .alpha = @floatCast(try c.float(2)), .mode = @intCast(try c.int(3)), .R = @intCast(try c.int(4)), .width = @intCast(try c.int(5)), .world = @intCast(try dim(g, 0)) });
         return true;
     }

@@ -1,5 +1,4 @@
-//! The GLP vector a serve starts with: the file it reads, the checks that refuse one, and the line that reports it.
-//! Ported from upstream #1835's startup (head c5947a8d2e, BlivionIaG) for the GLP format of Matt Suiche (@msuiche).
+//! GLPv3 startup admission/reporting from #1835 c5947a8d2e; format: Matt Suiche/weightless (see GLP recipe).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -190,8 +189,7 @@ fn backendName(backend: []const u8) []const u8 {
     return backend;
 }
 
-/// The line that reports what is in force: whether replies are steered, the file (escaped), its digests and the rest.
-/// An alpha of 0 loads the vector and bypasses every edit, and the line says so rather than claiming steering.
+/// Report escaped file/digests and effective policy, explicitly distinguishing alpha-zero loads from active edits.
 pub fn report(a: std.mem.Allocator, v: Vec, facts: Facts) void {
     const vector = v.vector orelse return;
     const alpha = alphaOf(v);

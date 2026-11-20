@@ -1,8 +1,4 @@
-// DeepSeek V4.1 steering edits (GLP v3 hc_fold_pre_engram) of a bf16 residual row, in place, one threadgroup a row.
-// A row is one block's folded four-copy stream [4][dim] or its attention writer's single copy [dim]; the edit is
-// add (x += alpha * d on every copy) or project (x -= alpha * dot(mean(x), d) * d on every copy). The copies' mean and
-// the dot run in fp32 in the fixed order below; each output is one bf16 round to nearest even of its fp32 value.
-// Strength 0 is no edit at all: the launch returns before reading a byte, so payloads and non-finite classes stay.
+// In-place GLPv3 paired fold/writer edits with FP32 math and BF16 RNE; contract and credits are in the GLP recipe.
 #include <metal_stdlib>
 using namespace metal;
 #pragma clang fp contract(off)
@@ -32,9 +28,7 @@ inline float tf_glp_tree(float v) {
   return v;
 }
 
-// The fp32 mean of element i over the copies: each copy scaled by 0.25 (exact) and added in copy order from the first,
-// so same-sign finite copies up to the bf16 maximum cannot overflow; a single copy is its own mean.
-// Control 2: the plain sum, not the mean.
+// Scale each BF16 copy by 1/4 before FP32 addition to avoid overflow; control 2 deliberately uses the plain sum.
 template <uint COPIES>
 inline float tf_glp_mean(const device bfloat* x, uint dim, uint i) {
   const float k = (COPIES == 1 || TF_CTL == 2) ? 1.0f : 0.25f;

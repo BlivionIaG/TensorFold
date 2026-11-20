@@ -1,6 +1,4 @@
-// Planted faults of glp.cuh for the contract's controls (built only with the controls): each must fail its gate.
-// SUM keeps the copies' sum where the mean belongs; HALF accumulates the dot in fp16; DROP_TAIL loses a row's last
-// column; DROP_NONFINITE drops non-finite terms; ATOMIC adds the partials unordered; TRUNCATE rounds by truncation.
+// Planted GLPv3 faults: wrong mean, FP16 dot, missing tail, dropped nonfinite values, unordered sums and truncation.
 
 #include "glp.cuh"
 

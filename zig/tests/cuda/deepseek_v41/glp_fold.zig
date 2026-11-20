@@ -1,5 +1,4 @@
-//! The fold's and the writer's device cases (glp.zig and the controls drive them): one launch on pre-poisoned memory
-//! between canary bands, five repeats, then every element against the host fp32 order model and the FP64 formula.
+//! Real fold/writer launches between canary bands, repeated five times and checked against FP32/FP64 models.
 
 const std = @import("std");
 const check = @import("../check.zig");
@@ -283,7 +282,7 @@ pub fn writerRun(c: rig.Ctx, ops: rig.glp.Ops, k: WriterCase) !WOutcome {
             ref.writerRow(k.world, ranks[0..k.world], d, k.alpha, k.mode, .{}, ym);
             const row = ref.writerRef(k.world, ranks[0..k.world], d, k.alpha, k.mode, o16, y64);
             var extra: f64 = 0;
-            var flip = [_]bool{false} ** ref.max_width;
+            var flip: [ref.max_width]bool = @splat(false);
             for (0..w) |col| {
                 var s = ref.widen(ranks[0][col]);
                 for (1..k.world) |rk| s += ref.widen(ranks[rk][col]);

@@ -1,10 +1,4 @@
-//! The EXL3 forward's GLP steering edits (spec v3 hc_fold_pre_engram): where the plan's two edits sit in a layer.
-//!
-//! Direction N edits backbone block N twice: its attention writer (before the hc post) and the four-copy stream its FFN
-//! leaves (before the next Engram or the head). The fused boundary defers a sublayer's hc post into the next launch, so
-//! an edited fold first materialises the pending post (the unfused kernel the Engram flush already uses) and edits the
-//! result in place; the lagged pre mixes come from the pre-FFN stream and are the model's own, so they are not touched.
-//! With no plan nothing here runs.
+//! Native EXL3 GLPv3 paired edits; materialize deferred FFN post before editing, then recompute the next boundary.
 const std = @import("std");
 const mtl = @import("metal");
 const model = @import("model.zig");

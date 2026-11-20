@@ -194,8 +194,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     errdefer cond_wkv.deinit();
     residency.add(taps);
     residency.add(cond_wkv);
-    // The control vector: its directions uploaded once, resident for the model's life; null when off or strength 0.
-    // It comes before the stream block: that block's own errdefers end with it, so a later failure would leak them.
+    // Build GLP state before block-scoped stream cleanup ends; zero strength adds no device allocation.
     const glp_plan: ?*glp.Plan = if (o.glp) |src| try glp.Plan.init(gpa, device, src, .{ .hidden = c.hidden, .layers = c.layers }) else null;
     errdefer if (glp_plan) |g| g.deinit();
     if (glp_plan) |g| g.registerResidency(residency);

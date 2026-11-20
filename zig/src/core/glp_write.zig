@@ -1,5 +1,4 @@
-//! Writing a GLP file the way the spec names it: a producer's fields and one direction per layer, as a container.
-//! Ported from the writer of upstream #1835 (head c5947a8d2e, BlivionIaG) for the spec's v3 add and project vectors.
+//! GLPv3 GGUF writer adapted from #1835 c5947a8d2e; format credits are in the GLP recipe.
 
 const std = @import("std");
 const gguf = @import("glp_container.zig");
@@ -34,9 +33,7 @@ fn appendText(written: *std.ArrayList(gguf.Entry), tmp: std.mem.Allocator, key: 
     try written.append(tmp, .{ .key = key, .value = .{ .string = value } });
 }
 
-/// The base checkpoint as the spec's provenance table gives it: GGUF's general.base_model.0.* keys, the commit pin in
-/// version. A hub repo is written as name, organization and its URL, a name with no owner as the name alone and a
-/// non-hub URL as itself. No producer-specific glp.* key carries the base.
+/// Write canonical general.base_model.0.* provenance; version holds the commit, never a producer-specific key.
 fn appendBase(written: *std.ArrayList(gguf.Entry), tmp: std.mem.Allocator, spec: WriteSpec) !void {
     if (spec.base_model.len == 0 and spec.base_revision.len == 0) return;
     try written.append(tmp, .{ .key = "general.base_model.count", .value = .{ .u32v = 1 } });

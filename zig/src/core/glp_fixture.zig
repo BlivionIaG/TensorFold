@@ -1,5 +1,4 @@
-//! Synthetic GLP containers for the reader's tests, written the way a producer writes them, one rule bent at a time.
-//! The fixture layout follows the #1835 tests (head c5947a8d2e, BlivionIaG); no trained vector is bundled or implied.
+//! Synthetic GGUF fixtures adapted from #1835 c5947a8d2e; no trained vectors are included.
 
 const std = @import("std");
 const glp = @import("glp.zig");

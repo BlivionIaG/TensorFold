@@ -1,5 +1,4 @@
-//! The GLP reader's acceptance rules over synthetic containers: what it applies and what it refuses, not ignores.
-//! Ported in part from the #1835 reader tests (head c5947a8d2e, BlivionIaG); the v3 fold-site cases are new.
+//! GLPv3 acceptance/refusal cases adapted from #1835 c5947a8d2e, using synthetic containers only.
 
 const std = @import("std");
 const glp = @import("glp.zig");

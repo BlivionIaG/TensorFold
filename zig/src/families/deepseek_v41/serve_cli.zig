@@ -11,12 +11,11 @@ fn drafts() !bool {
     return @import("sys").environment.read(bool, "TF_DSV41_DRAFTS", true);
 }
 
-/// A worker rank: `steer` is rank 0's vector and strength (--glp / --glp-alpha), loaded here too: the ranks agree on
-/// its digest, mode and strength before any execution, and the hand-off shard it exports carries it in its identity.
+/// Load the worker's policy before TP agreement and bind every exported shard to that same policy.
 pub fn follow(gpa: std.mem.Allocator, io: std.Io, pack: []const u8, assets: []const u8, steer: ?api.glp.Glp) !u8 {
     var plan = if (steer) |g| try glp_plan.Plan.init(gpa, g) else null;
     defer if (plan) |*p| p.deinit(gpa);
-    const m = try model.Model.open(gpa, io, pack, assets, .{ .drafts = try drafts(), .own_prefill = (try model.ownPrefillEnv()), .layers = try model.layersEnv(gpa), .glp = if (plan) |*p| p else null });
+    const m = try model.Model.open(gpa, io, pack, assets, .{ .drafts = try drafts(), .own_prefill = (try model.ownPrefillEnv()), .layers = try model.layersEnv(gpa), .glp = if (plan) |*p| p else null, .glp_policy = glp_plan.policyWords(steer) });
     defer m.close();
     if (m.rank() == 0) return error.RankZeroServes;
     // KV_SPLIT hand-offs: this rank exports its pool pages on its own link when the leader announces a cut

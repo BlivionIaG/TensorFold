@@ -56,6 +56,7 @@ pub const Options = struct {
     prompt_cache_gib: ?f64 = null,
     /// --glp: the steering plan, borrowed for this call (the Model keeps its own copy); null or strength 0: none
     glp: ?*const glp_plan.Plan = null,
+    glp_policy: [8]i64 = @splat(0), // the loaded vector's agreement words, strength 0 included (glp_plan.policyWords)
 };
 
 /// TF_DSV41_LAYERS=<lo>-<hi>: load and run only that backbone prefix (a reference prefix's model; null: every layer)
@@ -226,7 +227,7 @@ pub const Model = struct {
         var so = try sg.optionsFromEnv();
         // rank 0's --prompt-cache-gib (or variable) on every rank: one resident limit, the same evictions
         so.resident_bytes = try @import("session_budget.zig").agree(&m.session.plan, so.resident_bytes, o.prompt_cache_gib);
-        try @import("glp_boot.zig").open(m, a, o.glp); // --glp: this model's own copy, every rank's agreement on it
+        try @import("glp_boot.zig").open(m, a, o.glp, o.glp_policy); // --glp: own copy, every rank's agreement
         m.cfg = try Config.read(gpa, io, pack_dir);
         // the release's FP8 blocks parse (Metal runs them); refused here, before any pack or launch on CUDA
         if (@import("cuda_format.zig").problem(&m.cfg)) |text| {

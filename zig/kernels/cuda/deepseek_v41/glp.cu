@@ -1,5 +1,4 @@
-// GLP steering kernels (ours, see glp.cuh): TF_DSV41's --glp fold and attention-writer edits and the steered final.
-// Plain C symbols, one image only when a vector is served: dsv41_glp_stream / _writer / _final.
+// Load these GLPv3 fold/writer/final C entry points only for active steering; contract and credits are in glp.cuh.
 
 #include "glp.cuh"
 

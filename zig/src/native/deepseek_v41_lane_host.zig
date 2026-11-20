@@ -125,8 +125,7 @@ fn steerWords(err: anyerror) ?[]const u8 {
     };
 }
 
-/// The name both ends of a hand-off give the model: the checkpoint's, bound to the control vector in force (null: as
-/// before).
+/// Preserve the plain checkpoint name or bind the loaded GLP policy identically at both handoff ends.
 fn modelId(a: Allocator, io: std.Io, o: api.Open) ![]const u8 {
     return api.glp.identity(a, try remote.checkpointId(a, io, o.dir), o.glp);
 }

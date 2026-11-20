@@ -1,10 +1,7 @@
-//! The GPU plan of a GLP control vector (--glp): its mode, effective strength and per-layer directions as the CUDA
-//! kernels take them. GLP is Matt Suiche's `weightless` format (https://weightle.ss/); directional ablation is
-//! Arditi et al., NeurIPS 2024. The plan reads its source structurally (an `api.glp.Glp`-shaped value), so this
-//! module imports no API type; a strength of exactly 0 makes no plan at all: every edit is bypassed bit for bit.
+//! Immutable CUDA GLPv3 plan; format: Matt Suiche/weightless, ablation: Arditi et al. (see GLP recipe).
 
 const std = @import("std");
-const glp_ops = @import("glp_ops.zig");
+const glp_ops = @import("dsv41_kernels").glp; // the kernels module's own, never a second copy of its file
 
 pub const Mode = glp_ops.Mode;
 
@@ -25,8 +22,7 @@ pub const Plan = struct {
     /// ascending by id, each id at least 1; the directions are the source's (it outlives the plan)
     layers: []Layer,
 
-    /// The plan of `source` (an `api.glp.Glp`: `.alpha`, `.vector.{mode, width, layers, file_sha256}`), or null when
-    /// its strength is exactly 0. A mode that is not add or project, a bad strength or a ragged layer is refused.
+    /// Validate and copy the structural GLP source; exact zero strength returns no plan and allocates nothing.
     pub fn init(gpa: std.mem.Allocator, source: anytype) Error!?Plan {
         const alpha: f32 = source.alpha;
         if (!std.math.isFinite(alpha) or alpha < 0) return error.BadGlpStrength;
@@ -105,16 +101,10 @@ pub const Plan = struct {
         return out;
     }
 
-    /// Ranks agree on this before any execution: presence, the file's digest, mode, strength bits and layer count.
+    /// This plan's words (see `policyWords`, which the ranks agree on); null: none.
     pub fn words(p: ?*const Plan) [8]i64 {
         const x = p orelse return @splat(0);
-        var w: [8]i64 = undefined;
-        w[0] = 1;
-        for (0..4) |i| w[1 + i] = std.mem.readInt(i64, x.file_sha256[8 * i ..][0..8], .little);
-        w[5] = @intFromEnum(x.mode);
-        w[6] = @as(i64, @as(u32, @bitCast(x.alpha)));
-        w[7] = @intCast(x.layers.len);
-        return w;
+        return pack(x.file_sha256, @backingInt(x.mode), x.alpha, x.layers.len);
     }
 
     /// `checkpoint` bound to this vector's identity: a stored session never restores into another steering.
@@ -130,6 +120,23 @@ pub const Plan = struct {
         return out;
     }
 };
+
+fn pack(sha: [32]u8, mode: i64, alpha: f32, layers: usize) [8]i64 {
+    var w: [8]i64 = undefined;
+    w[0] = 1;
+    for (0..4) |i| w[1 + i] = std.mem.readInt(i64, sha[8 * i ..][0..8], .little);
+    w[5] = mode;
+    w[6] = @as(i64, @as(u32, @bitCast(if (alpha == 0) @as(f32, 0) else alpha))); // -0 is 0, as in the identity
+    w[7] = @intCast(layers);
+    return w;
+}
+
+/// Bind loaded-policy metadata even at alpha zero, where no GPU plan exists; all-zero words mean no vector.
+pub fn policyWords(source: anytype) [8]i64 {
+    const s = source orelse return @splat(0);
+    const project = std.mem.eql(u8, @tagName(s.vector.mode), "project");
+    return pack(s.vector.file_sha256, @intFromBool(project), s.alpha, s.vector.layers.len);
+}
 
 const testing = std.testing;
 
@@ -183,4 +190,17 @@ test "plan: the table holds each layer's row, and ranks' words and the stored id
     try testing.expectEqual(base, Plan.bind(base, null));
     try testing.expect(!std.mem.eql(u8, &base, &Plan.bind(base, &a)));
     try testing.expect(!std.mem.eql(u8, &Plan.bind(base, &a), &Plan.bind(base, &b)));
+}
+
+test "plan: the policy words are the plan's when active, and a strength of 0 is still a policy (a plan of none)" {
+    const d = [_]f32{ 1, 0, 0, 0, 0, 0, 0, 0 };
+    const ls = [_]FakeLayer{.{ .id = 2, .dir = &d }};
+    var p = (try Plan.init(testing.allocator, fake(.project, 0.5, &ls))).?;
+    defer p.deinit(testing.allocator);
+    try testing.expectEqual(Plan.words(&p), policyWords(@as(?@TypeOf(fake(.add, 0, &ls)), fake(.project, 0.5, &ls))));
+    const none = policyWords(@as(?@TypeOf(fake(.add, 0, &ls)), null));
+    try testing.expectEqual(@as([8]i64, @splat(0)), none);
+    const zero = policyWords(@as(?@TypeOf(fake(.add, 0, &ls)), fake(.add, 0, &ls)));
+    try testing.expect(!std.mem.eql(i64, &zero, &none));
+    try testing.expectEqual(zero, policyWords(@as(?@TypeOf(fake(.add, 0, &ls)), fake(.add, -0.0, &ls))));
 }
