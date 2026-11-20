@@ -13,3 +13,4 @@ pub const hc = @import("hc.zig");
 pub const fused = @import("fused.zig");
 pub const fold = @import("fold.zig");
 pub const glue_rows = @import("glue.zig");
+pub const glp = @import("glp.zig");

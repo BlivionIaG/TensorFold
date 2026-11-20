@@ -14,6 +14,7 @@ pub const Sets = struct {
     pocket: *@import("contract_pocket.zig").Set,
     minimax: *@import("contract_minimax.zig").Set,
     moss: *@import("contract_moss_image.zig").Set,
+    glp: *@import("contract_glp.zig").Set,
     modelopt: *@import("contract_flashnext_modelopt.zig").Set,
     grouped: *Grouped,
     flashnext: *@import("contract_flashnext_more.zig").Set,
@@ -32,6 +33,8 @@ pub const Sets = struct {
         errdefer minimax.deinit();
         const moss = try @import("contract_moss_image.zig").Set.init(gpu, s, a, list);
         errdefer moss.deinit();
+        const glp = try @import("contract_glp.zig").Set.init(gpu, s, a, list);
+        errdefer glp.deinit();
         const modelopt = try @import("contract_flashnext_modelopt.zig").Set.init(gpu, s, a, list);
         errdefer modelopt.deinit();
         const grouped = try gpu.gpa.create(Grouped);
@@ -64,6 +67,7 @@ pub const Sets = struct {
             .pocket = pocket,
             .minimax = minimax,
             .moss = moss,
+            .glp = glp,
             .modelopt = modelopt,
             .grouped = grouped,
             .flashnext = flashnext,
@@ -85,6 +89,7 @@ pub const Sets = struct {
         sets.grouped.deinit();
         sets.gpa.destroy(sets.grouped);
         sets.modelopt.deinit();
+        sets.glp.deinit();
         sets.moss.deinit();
         sets.minimax.deinit();
         sets.pocket.deinit();

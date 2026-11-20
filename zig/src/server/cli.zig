@@ -2,25 +2,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const api = @import("engine_api");
+const glp_startup = @import("glp_startup.zig");
+const cli_flag = @import("cli_flag.zig");
 const Allocator = std.mem.Allocator;
-pub const Kind = enum {
-    value, // --flag VALUE or --flag=VALUE
-    store_true, // --flag
-    append, // repeatable --flag VALUE
-};
-
-pub const Flag = struct {
-    name: []const u8,
-    kind: Kind = .value,
-    /// argparse's choices; empty: any value of the flag's type.
-    choices: []const []const u8 = &.{},
-    /// This binary honours the flag (and lists it in ``capabilities``); the rest are refused as unsupported.
-    native: bool = false,
-    /// The values it honours when only some of the choices.
-    native_values: ?[]const []const u8 = null,
-    /// The value names a file or folder: a config file's relative one is read from that file's folder (cli_config.zig).
-    path: bool = false,
-};
+pub const Kind = cli_flag.Kind;
+pub const Flag = cli_flag.Flag;
 const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else if (served("--backend=rocm")) &.{ "auto", "rocm" } else &.{ "auto", "cuda" };
 
 /// The flags past the common ones the binary's backend serves, from its root's `serves` (test roots: none).
@@ -51,7 +37,7 @@ pub const flags = [_]Flag{
     .{ .name = "--chat-template", .path = true, .native = true },
     .{ .name = "--voices", .path = true, .native = true },
     .{ .name = "--default-voice", .native = true },
-} ++ @import("drama_cfg.zig").flags ++ @import("admission_cli.zig").flags ++ @import("connection_cli.zig").flags ++ [_]Flag{
+} ++ @import("drama_cfg.zig").flags ++ @import("admission_cli.zig").flags ++ @import("connection_cli.zig").flags ++ glp_startup.flags ++ [_]Flag{
     .{ .name = "--alias", .kind = .append, .native = true },
     .{ .name = "--name-priority", .kind = .append, .native = true },
     .{ .name = "--api-key", .kind = .append, .native = true },
@@ -240,6 +226,7 @@ pub const Args = struct {
     drafter_bits: u8 = 4,
     rope_yarn: ?f64 = null, // YaRN with this factor over the checkpoint's trained window (Qwen3.5/3.6 on CUDA)
     record: ?[]const u8 = null, // drafter training rows written under this folder
+    glp: ?glp_startup.Vec = null, // --glp and --glp-alpha: the vector file, the strength and the vector read from it
     kv_cache: []const u8 = "bf16", // fp8: e4m3 attention caches with a scale a row, about twice the context
     prompt_precision: []const u8 = "bf16", // int8: prompt matmuls quantize their inputs to int8 a 64-input group
     slide: bool = false, // Sliding Weights learns what /v1/slide/learn is told into the served weights, live
@@ -343,6 +330,7 @@ pub fn parse(a: Allocator, argv: []const []const u8, u: *Usage) error{ Usage, Ou
     var env_buf: [192]u8 = undefined; // a prefill variable the lane host would misread: refused here, by name
     if (api.prefill_env.problem(&env_buf)) |why| return fail(u, a, "{s}", .{why});
     try spillWith(u, a, out);
+    if (try glp_startup.read(a, &out.glp)) |why| return fail(u, a, "{s}", .{why});
     return out;
 }
 
@@ -375,6 +363,16 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
             return std.mem.eql(u8, x, y);
         }
     }.f;
+    if (is(name, "--glp")) {
+        out.glp = glp_startup.withPath(out.glp, v);
+        return;
+    }
+    if (is(name, "--glp-alpha")) {
+        const alpha = glp_startup.strength(v) orelse
+            return fail(u, a, "argument --glp-alpha: expected a finite strength from 0 (0 bypasses every edit): '{s}'", .{v});
+        out.glp = glp_startup.withAlpha(out.glp, alpha);
+        return;
+    }
     if (is(name, "--silence-floor-dbfs")) {
         out.silence.floor_dbfs = try float(u, a, name, v);
         return;
@@ -533,6 +531,7 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .drafter_bits = args.drafter_bits,
         .rope_yarn = args.rope_yarn,
         .record = args.record,
+        .glp = glp_startup.engine(args.glp),
         .kv8 = std.mem.eql(u8, args.kv_cache, "fp8"),
         .prompt_int8 = std.mem.eql(u8, args.prompt_precision, "int8"),
         .speed_up = args.speed_up,

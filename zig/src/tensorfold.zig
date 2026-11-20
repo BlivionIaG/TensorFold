@@ -131,6 +131,7 @@ test {
     _ = @import("families/lfm2_moe/state.zig");
     _ = @import("families/lfm2_moe/dspark_test.zig");
     _ = @import("families/deepseek_v41/metal/glue.zig"); // the launch wrappers' shape refusals, reached by no other test root
+    _ = @import("families/deepseek_v41/metal/glp.zig");
 }
 
 pub const lane_projection = @import("core/lane_projection.zig");

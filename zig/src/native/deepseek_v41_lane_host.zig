@@ -87,7 +87,7 @@ fn loadLimit(device: mtl.Device) !struct { bytes: u64, asked: bool } {
 const round_wide: u32 = 8192;
 const round_narrow: u32 = 4096;
 
-fn openOptions(o: api.Open, map: []const u8, context: u32, limit: u64, chunk: u32) ds.Options {
+fn openOptions(o: api.Open, map: []const u8, context: u32, limit: u64, chunk: u32, steer: ?ds.glp.Source) ds.Options {
     return .{
         .dir = o.dir,
         .table_dir = o.engram_table_dir,
@@ -97,10 +97,45 @@ fn openOptions(o: api.Open, map: []const u8, context: u32, limit: u64, chunk: u3
         .lanes = @max(1, @min(o.lanes, 256)),
         .ram_limit_bytes = limit,
         .chunk_rows = chunk,
+        .glp = steer,
     };
 }
 
+/// The control vector's layers in the family's own record: the same ids, the directions borrowed, not copied.
+fn steerLayers(a: Allocator, g: api.glp.Glp) ![]ds.glp.Layer {
+    const out = try a.alloc(ds.glp.Layer, g.vector.layers.len);
+    for (out, g.vector.layers) |*to, from| to.* = .{ .id = from.id, .dir = from.dir };
+    return out;
+}
+
+/// The family's plan source: the vector's mode by name, the effective strength bit for bit, and its layers.
+fn steerSource(g: api.glp.Glp, layers: []const ds.glp.Layer) !ds.glp.Source {
+    const mode = std.meta.stringToEnum(ds.glp.Mode, @tagName(g.vector.mode)) orelse return error.BadSteerMode;
+    return .{ .mode = mode, .alpha = g.alpha, .layers = layers };
+}
+
+/// Why a vector the checkpoint cannot take was refused, in one sentence the server prints.
+fn steerWords(err: anyerror) ?[]const u8 {
+    return switch (err) {
+        error.BadSteerLayer => "the control vector names a block this checkpoint's backbone does not have (direction.N is block N, 1 to layers-1)",
+        error.BadSteerWidth => "the control vector's directions are not this checkpoint's hidden width",
+        error.BadSteerDirection => "the control vector holds a direction that is not finite",
+        error.BadSteerShape, error.BadSteerAlpha, error.BadSteerMode => "the control vector cannot be applied to this checkpoint",
+        else => null,
+    };
+}
+
+/// Preserve the plain checkpoint name or bind the loaded GLP policy identically at both handoff ends.
+fn modelId(a: Allocator, io: std.Io, o: api.Open) ![]const u8 {
+    return api.glp.identity(a, try remote.checkpointId(a, io, o.dir), o.glp);
+}
+
 fn openFailed(a: Allocator, model: *ds.Model, problem: *[]const u8, err: anyerror) !?api.Opened {
+    if (steerWords(err)) |text| {
+        a.destroy(model);
+        problem.* = text;
+        return null;
+    }
     if (err == error.InvalidTokenMap) {
         a.destroy(model);
         problem.* = "engram-token-map.bin is missing beside the checkpoint: the pull builds it; see the family guide";
@@ -143,12 +178,16 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     const model = try a.create(ds.Model);
     errdefer a.destroy(model);
     const context: u32 = if (o.context) |c| if (c > 0) @intCast(@min(c, std.math.maxInt(u32))) else 0 else 0;
-    model.* = ds.Model.open(gpa, io, openOptions(o, map, context, limit, chunk)) catch |first| retry: {
+    // The control vector (GLP steering) goes to the model as startup state; with none, the options are the old ones.
+    const steer_layers: []const ds.glp.Layer = if (o.glp) |g| try steerLayers(a, g) else &.{};
+    defer if (o.glp != null) a.free(steer_layers);
+    const steer: ?ds.glp.Source = if (o.glp) |g| try steerSource(g, steer_layers) else null;
+    model.* = ds.Model.open(gpa, io, openOptions(o, map, context, limit, chunk, steer)) catch |first| retry: {
         // Admission is checked before any weight is read: the narrow round is tried when the wide one does not fit.
         if (step_asked != null or !(first == error.LoadLimitExceeded or first == error.InsufficientResidentMemory)) return openFailed(a, model, problem, first);
         chunk = round_narrow;
         std.log.info("deepseek-v41: the {d}-row prefill round does not fit this context: using {d} rows", .{ round_wide, round_narrow });
-        break :retry ds.Model.open(gpa, io, openOptions(o, map, context, limit, chunk)) catch |err| return openFailed(a, model, problem, err);
+        break :retry ds.Model.open(gpa, io, openOptions(o, map, context, limit, chunk, steer)) catch |err| return openFailed(a, model, problem, err);
     };
     const model_ptr = model;
     errdefer model_ptr.deinit();
@@ -214,7 +253,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         }
     };
     if (o.remote_prefill.on()) {
-        const id = try remote.checkpointId(a, io, o.dir);
+        const id = try modelId(a, io, o);
         try remote.attach(h, io, a, o.remote_prefill, id, problem);
     }
     if (std.c.getenv("TF_DSV41_HANDOFF_FILE")) |path| {
@@ -222,7 +261,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
             problem.* = "TF_DSV41_HANDOFF_FILE and --prefill-from both name a remote source: use one";
             return error.InvalidEnvironment;
         }
-        h.file = try remote.FileSource.open(gpa, io, model_ptr, std.mem.span(path), try remote.checkpointId(a, io, o.dir));
+        h.file = try remote.FileSource.open(gpa, io, model_ptr, std.mem.span(path), try modelId(a, io, o));
         h.host.remote = h.file.?.source();
         h.host.keep_remote = try remote.keeps();
     }
@@ -241,7 +280,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     try h.host.start();
     errdefer h.host.stop();
     std.log.info("DeepSeek V4.1 resident loaded in {d:.1} s, {d:.2} GB admitted, {d} lane slots, context {d} tokens, greedy only", .{ model_ptr.load_seconds, @as(f64, @floatFromInt(model_ptr.admitted_bytes)) / 1e9, model_ptr.lanes, window });
-    if (std.c.getenv("TF_DSV41_HANDOFF_CHECK")) |spec| @import("deepseek_v41_handoff_check.zig").run(gpa, io, model_ptr, std.mem.span(spec), try remote.checkpointId(a, io, o.dir)) catch |err|
+    if (std.c.getenv("TF_DSV41_HANDOFF_CHECK")) |spec| @import("deepseek_v41_handoff_check.zig").run(gpa, io, model_ptr, std.mem.span(spec), try modelId(a, io, o)) catch |err|
         std.log.err("handoff-check: did not complete: {s}", .{@errorName(err)});
     if (std.c.getenv("TF_DSV41_CONE_CHECK")) |spec|
         try @import("deepseek_v41_cone_check.zig").runSizes(gpa, io, model_ptr, std.mem.span(spec));

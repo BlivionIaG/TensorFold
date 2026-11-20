@@ -39,6 +39,7 @@ fused.metal TfFNormArgs 12
 fused.metal TfFPostArgs 8
 fused.metal TfFQuantArgs 28
 fused.metal TfFSwiArgs 8
+glp.metal TfGlpArgs 16
 glue.metal TfEmbedArgs 20
 glue.metal TfMeanArgs 12
 glue.metal TfQuantArgs 8

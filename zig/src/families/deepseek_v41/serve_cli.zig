@@ -5,20 +5,24 @@ const api = @import("engine_api");
 const model = @import("cuda_model.zig");
 const se = @import("serve_engine.zig");
 const split = @import("cuda_export_split.zig");
+const glp_plan = @import("glp_plan.zig");
 
 fn drafts() !bool {
     return @import("sys").environment.read(bool, "TF_DSV41_DRAFTS", true);
 }
 
-pub fn follow(gpa: std.mem.Allocator, io: std.Io, pack: []const u8, assets: []const u8) !u8 {
-    const m = try model.Model.open(gpa, io, pack, assets, .{ .drafts = try drafts(), .own_prefill = (try model.ownPrefillEnv()), .layers = try model.layersEnv(gpa) });
+/// Load the worker's policy before TP agreement and bind every exported shard to that same policy.
+pub fn follow(gpa: std.mem.Allocator, io: std.Io, pack: []const u8, assets: []const u8, steer: ?api.glp.Glp) !u8 {
+    var plan = if (steer) |g| try glp_plan.Plan.init(gpa, g) else null;
+    defer if (plan) |*p| p.deinit(gpa);
+    const m = try model.Model.open(gpa, io, pack, assets, .{ .drafts = try drafts(), .own_prefill = (try model.ownPrefillEnv()), .layers = try model.layersEnv(gpa), .glp = if (plan) |*p| p else null, .glp_policy = glp_plan.policyWords(steer) });
     defer m.close();
     if (m.rank() == 0) return error.RankZeroServes;
     // KV_SPLIT hand-offs: this rank exports its pool pages on its own link when the leader announces a cut
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
     var problem: []const u8 = "";
-    const shard = shardExporter(gpa, io, arena.allocator(), m, pack, &problem) catch |err| {
+    const shard = shardExporter(gpa, io, arena.allocator(), m, pack, steer, &problem) catch |err| {
         std.log.err("rank {d}: the hand-off shard exporter did not open: {s} ({s})", .{ m.rank(), problem, @errorName(err) });
         return err;
     };
@@ -48,9 +52,10 @@ fn followStartup(m: *model.Model) void {
     se.logStartup(m, floor);
 }
 
-fn shardExporter(gpa: std.mem.Allocator, io: std.Io, a: std.mem.Allocator, m: *model.Model, pack: []const u8, problem: *[]const u8) !?*split.Follower {
+fn shardExporter(gpa: std.mem.Allocator, io: std.Io, a: std.mem.Allocator, m: *model.Model, pack: []const u8, steer: ?api.glp.Glp, problem: *[]const u8) !?*split.Follower {
     const link = (try split.linkName(problem)) orelse return null;
-    return try split.Follower.open(gpa, io, m, link, try api.LaneHost.Remote.checkpointId(a, io, pack), problem);
+    const checkpoint = try api.glp.identity(a, try api.LaneHost.Remote.checkpointId(a, io, pack), steer);
+    return try split.Follower.open(gpa, io, m, link, checkpoint, problem);
 }
 
 const Box = struct {
@@ -88,12 +93,13 @@ const Box = struct {
     }
 };
 
-pub fn generate(gpa: std.mem.Allocator, io: std.Io, pack: []const u8, assets: []const u8, trace: []const u8) !u8 {
+pub fn generate(gpa: std.mem.Allocator, io: std.Io, pack: []const u8, assets: []const u8, trace: []const u8, steer: ?api.glp.Glp) !u8 {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const a = arena.allocator();
     const text = try std.Io.Dir.cwd().readFileAlloc(io, trace, a, .limited(1 << 30));
-    const s = try se.Served.open(gpa, io, pack, assets, try drafts(), null, null);
+    var refused: []const u8 = "";
+    const s = try se.Served.openExporting(gpa, io, pack, assets, try drafts(), null, null, null, steer, &refused);
     defer se.Served.close(s);
     const eng = s.engine();
     const Keyed = struct { seed: u64, temperature: f64, top_k: u32, top_p: f64, min_p: f64 = 0 };

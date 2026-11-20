@@ -11,7 +11,7 @@ pub const magic = "DSV41HOF";
 pub const version: u32 = 1;
 const head_bytes = 8 + 3 * 4;
 
-pub const Error = error{ BadBlob, BadManifest, OutOfMemory, WriteFailed };
+pub const Error = error{ BadBlob, BadManifest, Mismatch, OutOfMemory, WriteFailed };
 
 /// The file for `parts` (shard 0, one producer) after `tokens`: the manifest is the plan's own, protocol 2.
 pub fn write(arena: std.mem.Allocator, model: []const u8, tokens: []const u32, parts: []const ex.Part) Error![]u8 {
@@ -34,7 +34,7 @@ pub const Blob = struct {
     /// the parts' bytes, layer by layer
     data: []const u8,
 
-    pub fn parse(arena: std.mem.Allocator, bytes: []const u8) Error!Blob {
+    pub fn parse(arena: std.mem.Allocator, bytes: []const u8, model: []const u8) Error!Blob {
         if (bytes.len < head_bytes or !std.mem.eql(u8, bytes[0..8], magic)) return error.BadBlob;
         const word = struct {
             fn at(b: []const u8, i: usize) u32 {
@@ -50,6 +50,7 @@ pub const Blob = struct {
         const tokens = try arena.alloc(u32, n);
         for (tokens, 0..) |*t, i| t.* = word(bytes, head_bytes + i * 4);
         const m = manifest.parseUpTo(arena, bytes[tokens_end..json_end], 2) catch return error.BadManifest;
+        if (!std.mem.eql(u8, m.model, model)) return error.Mismatch;
         var want: usize = 0;
         for (m.layers) |l| for (l.parts) |p| {
             want = std.math.add(usize, want, @intCast(p.bytes())) catch return error.BadBlob;

@@ -139,7 +139,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, m: *ds.Model, spec: []const u8, c
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = data });
         log.info("wrote the round trip's hand-off {s} ({d} bytes, {d} tokens) to {s}", .{ if (as_stream) "stream, as a producer serves it," else "file", data.len, upto, path });
     };
-    const landed = if (file) |f| f else try ho.blob.Blob.parse(a, bytes.?);
+    const landed = if (file) |f| f else try ho.blob.Blob.parse(a, bytes.?, checkpoint);
     var landing: ho.landing.Landing = undefined;
     const t2 = std.Io.Timestamp.now(io, .awake).toNanoseconds();
     try landing.init(gpa, upto, .{ .@"packed" = remote.packedOf(m, snap) });

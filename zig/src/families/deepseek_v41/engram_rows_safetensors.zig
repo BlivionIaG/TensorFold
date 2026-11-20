@@ -145,11 +145,11 @@ pub const Rows = struct {
         return v;
     }
 
-    /// Turn the shard's cache bypass on or off for the gather that is about to run.
+    /// Turn the shard's cache bypass on or off for the next gather; F_NOCACHE is Darwin's, other hosts skip it.
     fn setNoCache(r: *Rows, li: usize, on: bool) void {
         if (!noCache()) return;
         if (li >= r.tables.len) return;
-        _ = std.c.fcntl(r.tables[li].file.handle, std.c.F.NOCACHE, @as(c_int, if (on) 1 else 0));
+        if (comptime @import("builtin").os.tag.isDarwin()) _ = std.c.fcntl(r.tables[li].file.handle, std.c.F.NOCACHE, @as(c_int, if (on) 1 else 0));
     }
 
     fn extent(a: std.mem.Allocator, arena: std.mem.Allocator, file: std.Io.File, io: std.Io, size: u64, layer: u32) !Extent {

@@ -42,7 +42,7 @@ test "a hand-off file lands like a direct import, and its drafter rings are read
         const tokens = try tokensOf(arena, @intCast(cs.upto));
         const file = try blob.write(arena, "dsv41-test", tokens, parts);
 
-        const parsed = try blob.Blob.parse(arena, file);
+        const parsed = try blob.Blob.parse(arena, file, "dsv41-test");
         try std.testing.expectEqualSlices(u32, tokens, parsed.tokens);
         try std.testing.expectEqual(cs.upto, parsed.manifest.prompt_tokens);
 
@@ -71,15 +71,20 @@ test "a hand-off file refuses a corrupt header, a short body and tokens that do 
     const w = try s.make(arena, .{ .upto = 20 });
     const tokens = try tokensOf(arena, 20);
     const file = try blob.write(arena, "dsv41-test", tokens, try ex.build(arena, .{ .upto = 20 }, w.cuda));
-    _ = try blob.Blob.parse(arena, file);
-    try std.testing.expectError(error.BadBlob, blob.Blob.parse(arena, file[0 .. file.len - 1]));
-    try std.testing.expectError(error.BadBlob, blob.Blob.parse(arena, file[0..10]));
+    _ = try blob.Blob.parse(arena, file, "dsv41-test");
+    try std.testing.expectError(error.Mismatch, blob.Blob.parse(arena, file, "dsv41-test#glp-other"));
+    const steered = try blob.write(arena, "dsv41-test#glp-policy", tokens, try ex.build(arena, .{ .upto = 20 }, w.cuda));
+    _ = try blob.Blob.parse(arena, steered, "dsv41-test#glp-policy");
+    try std.testing.expectError(error.Mismatch, blob.Blob.parse(arena, steered, "dsv41-test"));
+    try std.testing.expectError(error.Mismatch, blob.Blob.parse(arena, steered, "dsv41-test#glp-other"));
+    try std.testing.expectError(error.BadBlob, blob.Blob.parse(arena, file[0 .. file.len - 1], "dsv41-test"));
+    try std.testing.expectError(error.BadBlob, blob.Blob.parse(arena, file[0..10], "dsv41-test"));
     const bad = try arena.dupe(u8, file);
     bad[0] = 'X';
-    try std.testing.expectError(error.BadBlob, blob.Blob.parse(arena, bad));
+    try std.testing.expectError(error.BadBlob, blob.Blob.parse(arena, bad, "dsv41-test"));
     const other = try arena.dupe(u8, file);
     other[20] ^= 1; // the first token
-    try std.testing.expectError(error.BadBlob, blob.Blob.parse(arena, other));
+    try std.testing.expectError(error.BadBlob, blob.Blob.parse(arena, other, "dsv41-test"));
 }
 
 test "a producer's stream becomes a Blob that lands as the stream's own parts do, and a stream for another prompt is refused" {
@@ -124,7 +129,7 @@ test "a hand-off file's drafter rings land in a slot that has them, as a direct 
         const shape: plan.Shape = .{ .upto = cs.upto, .ds_rows = cs.ds_rows };
         const parts = try ex.build(arena, shape, w.cuda);
         const tokens = try tokensOf(arena, @intCast(cs.upto));
-        const parsed = try blob.Blob.parse(arena, try blob.write(arena, "dsv41-test", tokens, parts));
+        const parsed = try blob.Blob.parse(arena, try blob.write(arena, "dsv41-test", tokens, parts), "dsv41-test");
 
         const via = try slot(arena, 43);
         var l: landing.Landing = undefined;
@@ -166,7 +171,7 @@ test "a drafter ring part that is not whole, repeated, or for a stage that does 
     const arena = arena_state.allocator();
     const w = try s.make(arena, .{ .upto = 300, .ds_rows = 128 });
     const parts = try ex.build(arena, .{ .upto = 300, .ds_rows = 128 }, w.cuda);
-    const parsed = try blob.Blob.parse(arena, try blob.write(arena, "dsv41-test", try tokensOf(arena, 300), parts));
+    const parsed = try blob.Blob.parse(arena, try blob.write(arena, "dsv41-test", try tokensOf(arena, 300), parts), "dsv41-test");
     const via = try slot(arena, 43);
     var l: landing.Landing = undefined;
     try l.init(arena, 300, .{ .@"packed" = via });

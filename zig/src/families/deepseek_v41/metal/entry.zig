@@ -25,6 +25,11 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         problem.* = try std.fmt.allocPrint(a, "this build serves deepseek_v41 checkpoints only, not {s}", .{o.model_type});
         return null;
     }
+    // GLP steering is served by the EXL3 lane host only: this engine refuses a vector rather than ignore it.
+    if (o.glp != null) {
+        problem.* = "the DeepSeek-V4.1 FP8 Metal engine does not apply control vectors (--glp): use the EXL3 checkpoint's native engine";
+        return null;
+    }
     const opts: pkg.boot.Options = .{
         .slots = @max(1, @min(o.lanes, 16)),
         .context = if (o.context) |c| @intCast(@max(c, 1)) else null,

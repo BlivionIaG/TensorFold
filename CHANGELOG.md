@@ -4,6 +4,14 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- DeepSeek-V4.1 EXL3: experimental, opt-in GLP v3 rank-one additive and projective steering ([fork #104](https://github.com/BlivionIaG/TensorFold/pull/104)),
+  pairing the pre-Engram folded-stream edit with its attention-writer edit and isolating handoff state by policy.
+  Credits: Matt Suiche's weightless/GLP concept and format, Arditi et al.'s directional-ablation research,
+  llama.cpp's control-vector convention and TensorFold #1835's native reader.
+  No trained vectors or efficacy claims are included; see [scope and attribution](docs/recipes/deepseek-v41-glp.md).
+
+- Tests: DeepSeek's host checks no longer require Metal-only model declarations or Darwin-only cache hints; the proposal encoder check also avoids registering fragment sources twice.
+
 - DeepSeek-V4.1 EXL3 on Metal: exact tiled half-FMA decode, fused projection chains, batched decode attention (#3382),
   per-prompt suffix-cone prefill, next-chunk Engram staging and bounded vocabulary-head scratch.
   Prompt chunks adapt to admitted memory and live decoders; incompatible shapes retain the generic projection body.

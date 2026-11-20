@@ -3,6 +3,7 @@ const std = @import("std");
 const json = @import("json");
 const cli = @import("cli.zig");
 const cli_config = @import("cli_config.zig");
+const glp_startup = @import("glp_startup.zig");
 const log = @import("log.zig");
 const hub = @import("hub.zig");
 const engines = @import("engines.zig");
@@ -30,6 +31,7 @@ const usage_line = "usage: tensorfold serve [-h] [--config FILE.toml] [--host HO
     " [--thinking | --no-thinking] [--reasoning-effort {low,medium,high,xhigh}]" ++
     " [--thinking-budget THINKING_BUDGET] [--thinking-reserve THINKING_RESERVE] [--loop-guard] [--loop-guard-stop] [--no-drafts]" ++
     " [--drafter DRAFTER]" ++
+    " [--glp FILE] [--glp-alpha ALPHA]" ++
     " [--drafter-bits {0,4}] [--record RECORD] [--keep-warm SECONDS] [--idle-unload SECONDS]" ++
     " [--silence-floor-dbfs DBFS] [--silence-seconds SECONDS]" ++
     " [--silence-onset-s SECONDS] [--silence-onset-voiced-s SECONDS]" ++
@@ -142,6 +144,10 @@ pub fn main(init: std.process.Init) !u8 {
         return fail(problem);
     };
     if (args.silence.refusal(model_type) orelse args.redraw.refusal(model_type)) |why| return fail(why);
+    if (args.glp) |g| {
+        const setup: glp_startup.Setup = .{ .dir = dir, .model_type = model_type, .backend = args.backend, .persists = args.learn or (args.spill_gib orelse 0) > 0, .follower = args.rank > 0 };
+        if (try glp_startup.admit(a, setup, g)) |why| return fail(why);
+    }
     // the model folder held while this process reads it, so a rollback refuses it: exclusive with --slide, else shared
     var unheld: []const u8 = "";
     const held = api.originals.serving(a, dir, args.slide, &unheld) catch |e| switch (e) {
