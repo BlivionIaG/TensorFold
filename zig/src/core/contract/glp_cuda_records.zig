@@ -18,7 +18,7 @@ fn record(comptime symbol: []const u8, dynamic: u32, regs: u32, static: u32) reg
 }
 
 pub const records = [_]registry.CudaRecord{
-    record("dsv41_glp_stream", 0, 127, 48),
+    record("dsv41_glp_stream", 0, 113, 48),
     record("dsv41_glp_writer", 0, 61, 48),
     record("dsv41_glp_final", 2 * served_width, 48, 336),
 };

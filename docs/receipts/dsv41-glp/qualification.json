@@ -185,6 +185,27 @@
     "memory_guard_caveat": "Exploratory hard2.5GiB/target3GiB runs; not normal-admission performance qualification",
     "drafted_timing_excluded": "Draft acceptance and prefix cache hits confound the observed drafted timing"
   },
+  "canonical_cuda_packing_delta": {
+    "source_commit": "b59041261bf07b5da7dc462831d5fd05d85ea21d",
+    "change": "Use tf_common::pack8 for production BF16 round-to-nearest packing; keep a separate planted truncation adapter, without allowlist exceptions",
+    "cuda_common_check": {"local_copies": 51, "violations": 0},
+    "cuda_fragment_check": {"fragments": 2, "includes": 15, "misses": 0},
+    "family_nvcc_build": {"steps": 40, "steps_passed": 40},
+    "production_image_sha256": "44ccd5232f69e2e5841a0f9d51d1ee3c0584abec483e1e7eca158d04f3c2f3db",
+    "controls_image_sha256": "a58ef0556efd62e2f8417a06227d3b152b995dcf60604ad4b4e06cf352b43516",
+    "direct_runner_sha256": "cda81f50607503fbe7229b4aea56284a9ea6dcce0eac5fcf8a4754c3aa5c67bf",
+    "direct_checks": {"passed": 326, "failed": 0},
+    "direct_scope": "Actual current production image: FP32 order and FP64 bounds, both modes, copies/tap/writer/final, nonfinite/ties/tails/strides, repeats, alpha0, refusals, isolation, planted controls, paired programs and graph lifetime",
+    "driver_counted_resources": {
+      "stream": {"registers": 113, "static_shared_bytes": 48, "max_threads": 320},
+      "writer": {"registers": 61, "static_shared_bytes": 48, "max_threads": 320},
+      "final": {"registers": 48, "static_shared_bytes": 336, "max_threads": 320}
+    },
+    "test_environment": "Global device lease; original deployed model left resident and alive; 11083288KiB MemAvailable before the bounded direct suite. Numerical qualification only, not an isolated performance measurement",
+    "model_and_performance_rerun_after_packing_refactor": false,
+    "memcheck_rerun_after_packing_refactor": false,
+    "earlier_model_performance_memcheck_source_limits": "The full-model, mixed-handoff, performance and sanitizer records above retain their original source pins; they are not relabelled as final-HEAD runs"
+  },
   "unqualified": [
     "Trained vector efficacy, alpha calibration and held-out capability retention",
     "Weight-byte provenance of the local packed native conversion",
