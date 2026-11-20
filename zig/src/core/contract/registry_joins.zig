@@ -112,7 +112,8 @@ pub const all_cuda = @import("qmmf_prompt_records.zig").records ++
 pub const dsv41_pending = @import("registry_union.zig").extra(
     landed_cuda,
     @import("dsv41_pending_1.zig").records ++
-        @import("dsv41_pending_2.zig").records,
+        @import("dsv41_pending_2.zig").records ++
+        @import("glp_cuda_records.zig").records,
 );
 
 test {

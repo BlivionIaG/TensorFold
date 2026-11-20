@@ -35,9 +35,9 @@ pub const Controls = struct {
         var mod = try cuda.Module.load(c.gpu.d, image);
         errdefer mod.unload();
         var fns: [6]glp.Functions = undefined;
-        inline for (std.meta.fields(Control), 0..) |f, i| fns[i] = .{
-            .stream = try mod.function(std.fmt.comptimePrint("dsv41_glp_stream_{s}", .{f.name})),
-            .writer = try mod.function(std.fmt.comptimePrint("dsv41_glp_writer_{s}", .{f.name})),
+        inline for (std.enums.values(Control), 0..) |which, i| fns[i] = .{
+            .stream = try mod.function(std.fmt.comptimePrint("dsv41_glp_stream_{s}", .{@tagName(which)})),
+            .writer = try mod.function(std.fmt.comptimePrint("dsv41_glp_writer_{s}", .{@tagName(which)})),
             .final = prod.final,
         };
         return .{ .mod = mod, .fns = fns };

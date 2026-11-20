@@ -44,8 +44,18 @@ pub fn text(comptime frags: type, device: mtl.Device, a: std.mem.Allocator, kind
         .half_value => {
             if (kind != .scan) return error.NoDenseAttentionSum;
             try replace(a, &rows, "mma_16x32<false, false>(acc[c][0], acc[c][1], p1[kb], v0, v1);", "mma_16x32<false,false>(acc[c][0],acc[c][1],p1[kb],v0,v1); for(short z=0;z<8;z++){acc[c][0][z]=float(half(acc[c][0][z]));acc[c][1][z]=float(half(acc[c][1][z]));}");
-            try replace(a, &nax, "acc[j][e] += part[4 + c * 16 + j * 8 + e] * f[e >> 2];", "acc[j][e] = float(half(acc[j][e] + part[4+c*16+j*8+e]*f[e>>2]));");
-            try replace(a, &nax, "acc[c][j][e] += part[4 + c * 16 + j * 8 + e] * f[e >> 2];", "acc[c][j][e] = float(half(acc[c][j][e] + part[4+c*16+j*8+e]*f[e>>2]));");
+            try replace(
+                a,
+                &nax,
+                "acc[j][e] += part[(4 + c * 16 + j * 8 + e) * 32] * f[e >> 2];",
+                "acc[j][e] = float(half(acc[j][e] + part[(4+c*16+j*8+e)*32]*f[e>>2]));",
+            );
+            try replace(
+                a,
+                &nax,
+                "acc[c][j][e] += part[(4 + c * 16 + j * 8 + e) * 32] * f[e >> 2];",
+                "acc[c][j][e] = float(half(acc[c][j][e] + part[(4+c*16+j*8+e)*32]*f[e>>2]));",
+            );
         },
     };
     const expanded = try frags.sourceMode(device, a, nax, false);
