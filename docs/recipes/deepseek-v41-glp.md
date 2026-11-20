@@ -188,3 +188,26 @@ Metal launches reserve 256 threads and 32 bytes of static threadgroup storage.
 CUDA launches use 320 threads; the final additionally requests `2*H` dynamic
 shared bytes. Register and static-shared usage must come from the actual
 compiled CUDA image, not estimates or another compiler's receipt.
+
+### Tap rounding and cancellation
+
+The CUDA tap averages the edited BF16 copies, so its FP64 reference includes
+that intermediate quantization. Let `q_c=RNE16(y_c)`, `m=mean(q_c)`,
+`E=mean(copy_allowance_c+abs(y_c-q_c))` and `A=mean(abs(q_c))`.
+The FP32 mean error is bounded by `e=E+gamma(3)*(A+E)`. Its final BF16 tap
+allowance is `e+2^-8*(abs(m)+e)+2^-133`.
+
+Every device result must match the independently documented FP32 order and stay
+inside the FP64 error bound. ULP distance from a once-rounded FP64 result is
+diagnostic, not a blanket one-ULP gate: a rounded FP32 product followed by
+cancellation can legitimately produce a larger ULP distance.
+
+## Native prefix-cache qualification
+
+For plain completions without chat history, the current native policy creates
+tail and end snapshot marks only when the prompt exceeds 4096 tokens.
+An identical 2048-token request therefore exercises no restoration, even when
+the cache has enough budget. Use a longer fixture, such as 8192 tokens, and
+require nonzero `cached_tokens`; matching replies alone do not prove reuse.
+Compare fresh and restored token IDs under the same immutable policy, including
+actual solo drafting and seeded sampling, and keep the cache-off oracle separate.
