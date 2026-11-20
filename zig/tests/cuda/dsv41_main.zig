@@ -55,6 +55,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer driver.close();
     var ctx = try cuda.Context.init(&driver, 0);
     defer ctx.deinit();
+    defer cuda.download_stage.drop(); // the pinned bounce is freed while the context is still current
     const gpu: check.Gpu = .{ .d = &driver, .ctx = &ctx, .gpa = init.gpa, .io = init.io };
     run(gpu, args[1], args[2..]) catch |e| {
         std.debug.print("FAIL {s}: {t}\n", .{ args[1], e });

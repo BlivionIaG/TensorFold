@@ -391,7 +391,8 @@ pub const Tally = struct {
             const w16 = rne64(want);
             if (!same(got, w16)) {
                 t.flips += 1;
-                t.max_ulp = @max(t.max_ulp, ulps(got, w16));
+                const gap = ulps(got, w16);
+                t.max_ulp = @max(t.max_ulp, gap);
             }
             if (!(@abs(@as(f64, widen(got)) - want) <= bound)) {
                 t.over += 1;

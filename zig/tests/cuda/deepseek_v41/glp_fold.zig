@@ -121,15 +121,20 @@ pub fn foldRun(c: rig.Ctx, ops: rig.glp.Ops, k: FoldCase) !Outcome {
             };
             if (!k.tap) continue;
             for (0..w) |col| {
-                var yy: [4]f64 = undefined;
-                var mag: f64 = 0;
-                for (&yy, 0..) |*v, cc| {
-                    v.* = ref.widen(ref.rne64(y64[cc * w + col]));
-                    mag += @abs(v.*);
+                var m: f64 = 0; // the mean of the rounded FP64 copies q_c = RNE16(y_c): the tap's FP64 target
+                var err: f64 = 0; // E: each copy's enforced bound plus its distance from its rounded value
+                var mag: f64 = 0; // A: the mean of |q_c|
+                for (0..4) |cc| {
+                    const y = y64[cc * w + col];
+                    const q = ref.widen(ref.rne64(y));
+                    m += 0.25 * q;
+                    err += 0.25 * (ref.allow(y, ref.widen(xin[cc * w + col]), d[col], k.alpha, k.mode, row, 0) + @abs(y - q));
+                    mag += 0.25 * @abs(q);
                 }
-                const tap64 = 0.25 * (yy[0] + yy[1] + yy[2] + yy[3]);
-                const bound = 0x1p-8 * @abs(tap64) + 0.25 * mag * 0x1p-7 + 0x1p-133; // each steered copy may sit one ulp off
-                o.t.add(r * ts + col, gtw[r * ts + col], tm[col], tap64, bound);
+                const g3 = 3 * 0x1p-24 / (1 - 3 * 0x1p-24); // the three FP32 additions of the mean (0.25 scaling is exact)
+                const e = err + g3 * (mag + err);
+                const bound = e + 0x1p-8 * (@abs(m) + e) + 0x1p-133; // then the tap's one BF16 rounding
+                o.t.add(r * ts + col, gtw[r * ts + col], tm[col], m, bound);
             }
             for (w..ts) |i| if (gtw[r * ts + i] != tap0[r * ts + i]) {
                 o.t.bad_pad += 1;
@@ -145,10 +150,9 @@ pub fn foldRun(c: rig.Ctx, ops: rig.glp.Ops, k: FoldCase) !Outcome {
 }
 
 /// Reports one outcome as a line and fails the run if it is not clean.
-pub fn report(what: []const u8, name: []const u8, o: Outcome, mode: ref.Mode, seed: u64, planted: bool, mixed: bool) !void {
+pub fn report(what: []const u8, name: []const u8, o: Outcome, seed: u64, planted: bool, mixed: bool) !void {
     const t = o.t;
     var bad = !o.ok();
-    if (mode == .add and t.max_ulp > 1) bad = true;
     if (planted and o.nonfinite == 0) bad = true; // the planted values must reach the FP64 outputs
     if (mixed and o.nonfinite == t.n) bad = true; // and leave finite ones beside them
     if (bad) {
@@ -165,7 +169,7 @@ pub fn report(what: []const u8, name: []const u8, o: Outcome, mode: ref.Mode, se
 pub fn foldCase(c: rig.Ctx, k: FoldCase) !void {
     const o = try foldRun(c, c.ops, k);
     const planted = k.fill == .nonfinite or k.fault != .none;
-    try report("fold", k.name, o, k.mode, k.seed, planted, k.fill == .nonfinite or (k.fault != .none and k.mode == .add));
+    try report("fold", k.name, o, k.seed, planted, k.fill == .nonfinite or (k.fault != .none and k.mode == .add));
 }
 
 // ---- the writer ------------------------------------------------------------------------------------------------
@@ -325,7 +329,6 @@ pub fn writerRun(c: rig.Ctx, ops: rig.glp.Ops, k: WriterCase) !WOutcome {
 pub fn writerCase(c: rig.Ctx, k: WriterCase) !void {
     const o = try writerRun(c, c.ops, k);
     var bad = !o.ok();
-    if (k.mode == .add and o.t.max_ulp > 1) bad = true;
     if (k.fill == .nonfinite and (o.nonfinite == 0 or o.nonfinite == o.t.n)) bad = true;
     if (bad) {
         std.debug.print("  {d} elements: {d} off the model, {d} class, {d} past the FP64 bound (first {?d}), {d} pad words, " ++

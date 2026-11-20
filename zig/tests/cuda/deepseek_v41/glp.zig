@@ -48,7 +48,7 @@ fn fillSuite(c: rig.Ctx) !void {
         const seed = nextSeed();
         const o = try fold.foldRun(c, c.ops, .{ .name = "ties", .width = w, .rows = 17, .mode = .add, .alpha = 1, .fill = .ties, .seed = seed });
         if (o.t.flips != 0) return rig.fail("ties w{d}: {d} bf16 ties rounded differently from FP64", .{ w, o.t.flips });
-        try fold.report("fold", "add ties (every element on a bf16 tie)", o, .add, seed, false, false);
+        try fold.report("fold", "add ties (every element on a bf16 tie)", o, seed, false, false);
     }
     for ([_]ref.Mode{ .add, .project }) |mode| {
         const a = try fold.foldRun(c, c.ops, .{ .name = "extreme", .width = 128, .rows = 4, .mode = mode, .alpha = 0.5, .fill = .extreme, .tap = true, .seed = nextSeed() });
