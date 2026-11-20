@@ -13,6 +13,7 @@ const gr = @import("gate_replay.zig");
 const check = @import("calls_check.zig");
 const fwd = @import("gate_layers.zig");
 const run = @import("run.zig");
+const glp_cli = @import("glp_cli.zig");
 
 // the forward's executor is type-checked with this tool
 comptime {
@@ -38,8 +39,10 @@ const usage =
     \\       tf-dsv41 kv paged|split|compact|park PACK REF OUT (a rank of TP=2 on the paged pool vs the pool reference)
     \\       tf-dsv41 forward-digests PACK REF OUT (our forward vs recipe/dsv41_forward_digests.py's run, one GPU)
     \\       tf-dsv41 decode-tp PACK REF OUT (one NCCL rank, against matching-world reference tokens and digests)
-    \\       tf-dsv41 follow PACK ASSETS (a served model's rank > 0: rank 0's forward operations until it stops)
-    \\       tf-dsv41 generate PACK ASSETS TRACE (rank 0: TRACE's prompts through the served engine, ids == recorded)
+    \\       tf-dsv41 follow PACK ASSETS [--glp FILE [--glp-alpha F]] (a served model's rank > 0: rank 0's forward
+    \\                   operations until it stops; the vector and strength are rank 0's, checked equal at boot)
+    \\       tf-dsv41 generate PACK ASSETS TRACE [--glp FILE [--glp-alpha F]] (rank 0: TRACE's prompts through the
+    \\                   served engine, ids == recorded)
     \\       tf-dsv41 slot-drafts PACK ASSETS TRACE... (rank 0: drafts over several live slots, batched == alone == recorded)
     \\  PACK     the EXL3 pack (config.json, index, shards)
     \\  CAPTURE  recipe/dsv41_triton_capture.py's output (ops.jsonl, blobs/, weights.json, aot/, meta.json)
@@ -81,11 +84,13 @@ pub fn main(init: std.process.Init) !u8 {
         out.interface.flush() catch {};
         return 0;
     }
-    if (args.len == 4 and std.mem.eql(u8, args[1], "follow"))
-        return @import("serve_cli.zig").follow(init.gpa, init.io, args[2], args[3]) catch |e| {
+    if (args.len >= 4 and std.mem.eql(u8, args[1], "follow")) {
+        const sp = glp_cli.split(init.arena.allocator(), init.io, args[2..]) catch return 1;
+        if (sp.positional.len == 2) return @import("serve_cli.zig").follow(init.gpa, init.io, sp.positional[0], sp.positional[1], sp.glp) catch |e| {
             std.debug.print("FAIL tf-dsv41 follow: {t}\n", .{e});
             return 1;
         };
+    }
     if (args.len == 5 and std.mem.eql(u8, args[1], "slots"))
         return @import("slots_cli.zig").main(init.gpa, init.io, args[2], args[3], args[4]) catch |e| {
             std.debug.print("FAIL tf-dsv41 slots: {t}\n", .{e});
@@ -109,11 +114,13 @@ pub fn main(init: std.process.Init) !u8 {
             return 1;
         };
     }
-    if (args.len == 5 and std.mem.eql(u8, args[1], "generate"))
-        return @import("serve_cli.zig").generate(init.gpa, init.io, args[2], args[3], args[4]) catch |e| {
+    if (args.len >= 5 and std.mem.eql(u8, args[1], "generate")) {
+        const sp = glp_cli.split(init.arena.allocator(), init.io, args[2..]) catch return 1;
+        if (sp.positional.len == 3) return @import("serve_cli.zig").generate(init.gpa, init.io, sp.positional[0], sp.positional[1], sp.positional[2], sp.glp) catch |e| {
             std.debug.print("FAIL tf-dsv41 generate: {t}\n", .{e});
             return 1;
         };
+    }
     if (args.len == 3 and std.mem.eql(u8, args[1], "dcheck")) {
         var buf: [4096]u8 = undefined;
         var out = std.Io.File.stdout().writer(init.io, &buf);

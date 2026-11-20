@@ -3,6 +3,7 @@
 const std = @import("std");
 const calls = @import("block_calls.zig");
 const moe = @import("block_moe.zig");
+const glp = @import("block_glp.zig");
 const prefill = @import("block_prefill.zig");
 const E = prefill.E;
 const Arg = calls.Arg;
@@ -182,19 +183,26 @@ pub fn postOnly(s: *Seg, xout: Arg) !void {
     try s.siteTriton(x, xout, try gathered(e, ""), prev, null, null, x, x, null, 0, false);
 }
 
-/// mhc.final: the last post, collapse 2, the final norm; then the head's columns over every row.
-pub fn final(s: *Seg) !void {
+/// mhc.final: the last post, collapse 2, the final norm; then the head's columns over every row. `steer`: the last
+/// block is steered by GLP: its post alone, the fold's edit, then the steered collapse and norm (glp.cu's final).
+pub fn final(s: *Seg, steer: ?u32) !void {
     const e = s.e;
     s.pend = 0;
-    if (s.short) return moe.finish(e); // mhc_cuda's final, then the same head
+    if (s.short) return if (steer) |L| glp.finish(e, L) else moe.finish(e); // mhc_cuda's final, then the same head
     const n = e.n;
     const D: i64 = e.cfg.hidden;
     const x = try e.streams();
-    const prev = try coefs(e, e.coef);
-    const part = try e.buf("L.mhc.part", .{}, .f32, &.{ n, 4, 40, 32 });
-    const c = try e.buf("L.mhc.c", .{}, .bf16, &.{ n, D });
-    try s.siteTriton(x, x, try gathered(e, ""), prev, prev[0], null, part, c, null, 2, false);
-    try s.finish(null, prev, try e.weight("norm", .{}, .f32, &.{D}), part, c, 0);
+    if (steer) |L| {
+        try s.postOnly(x);
+        try glp.fold(e, L, null);
+        try glp.final(e);
+    } else {
+        const prev = try coefs(e, e.coef);
+        const part = try e.buf("L.mhc.part", .{}, .f32, &.{ n, 4, 40, 32 });
+        const c = try e.buf("L.mhc.c", .{}, .bf16, &.{ n, D });
+        try s.siteTriton(x, x, try gathered(e, ""), prev, prev[0], null, part, c, null, 2, false);
+        try s.finish(null, prev, try e.weight("norm", .{}, .f32, &.{D}), part, c, 0);
+    }
     // the head: the decode path's linear (prefill_mm.fast off), upstream's 128 rows a launch
     const V: i64 = (try @import("partition.zig").share(e.cfg.vocab, e.o.rank, e.o.world)).len;
     var a: i64 = 0;

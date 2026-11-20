@@ -22,6 +22,7 @@ const fold = @import("metal/fold.zig");
 const fp8_mma = @import("metal/fp8_mma.zig");
 const fp8_rows = @import("metal/fp8_rows.zig");
 const fused = @import("metal/fused.zig");
+const glp = @import("metal/glp.zig");
 const glue = @import("metal/glue.zig");
 const glue_k = @import("metal/glue_k.zig");
 const hc = @import("metal/hc.zig");
@@ -105,6 +106,7 @@ pub fn force() void {
         mirror.check(compress.RtArgs, sources.dsv41.compress, "TfCRtArgs");
         mirror.check(compress.PackArgs, sources.dsv41.compress, "TfCPackArgs");
         mirror.check(fold.PostArgs, sources.dsv41.fold, "TfOPostArgs");
+        mirror.check(glp.Args, sources.dsv41.glp, "TfGlpArgs");
         mirror.check(engram.History, sources.deepseek_v41_engram, "EngramHistory");
 
         // The routed experts, the fp8 prompt paths and the narrow decode matvecs.

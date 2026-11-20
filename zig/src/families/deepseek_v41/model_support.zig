@@ -23,6 +23,7 @@ const View = @import("view.zig").View;
 const gpu_counters = @import("profiler.zig");
 const expert_groups = @import("core").expert_groups;
 const scan_probe = @import("scan_probe.zig");
+const glp = @import("metal/glp.zig");
 
 // Every shared Zig/Metal argument struct is checked against its Metal twin at comptime, from one registry.
 comptime {
@@ -247,6 +248,8 @@ pub const Options = struct {
     lanes: u32 = 1,
     /// Refuse the load past this many bytes; null admits to Metal's working set minus the margin.
     ram_limit_bytes: ?u64 = null,
+    /// The control vector served from startup (GLP steering); null keeps every edit and allocation off.
+    glp: ?glp.Source = null,
 };
 
 pub const Pipelines = struct {

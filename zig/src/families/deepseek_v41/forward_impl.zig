@@ -39,6 +39,7 @@ const tapsSharedBaseOn = model.tapsSharedBaseOn;
 const condAlignOn = model.condAlignOn;
 const concurrentOn = model.concurrentOn;
 const forward_cone = @import("forward_cone.zig");
+const forward_glp = @import("forward_glp.zig");
 
 /// One forward over the segments; the cone prefill (forward_cone.zig) takes a long prompt's chunks first.
 pub fn forwardSegs(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
@@ -334,6 +335,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
         }
         enc.barrier();
         if (cone_phase == .encoder and index == cone_d) break;
+        forward_glp.writer(m, enc, index, rows);
         hid.record(enc, &p.ops, ws.view(.branch), rows, .attn, @intCast(index));
         if (hid.full_layer >= 0 and index == @as(usize, @intCast(hid.full_layer))) {
             // The attention block's own regions, in execution order, so the first one that moves names the kernel.
@@ -407,6 +409,7 @@ pub fn forwardCore(m: *Model, segs: []const Seg, logits: Logits) ![]const f32 {
             try m.profileSpan(&enc, .mhc);
             m.post(enc, rows);
         }
+        forward_glp.fold(m, enc, index, rows);
         if (m.observer) |observer| observer.encode(observer.ctx, enc, @intCast(index), .moe, m);
         try splitStage(m, &enc, &e, "moe", index);
         if (cone_phase == .decoder and index + 1 == m.cone.hi and m.cone.hi < m.cfg.layers) {

@@ -33,3 +33,5 @@ pub const route = @embedFile("route.metal");
 pub const hc = @embedFile("hc.metal");
 /// DeepSeek-V4.1.s row glue (deepseek_v41/glue_rows.metal): the row-level glue kernels as registered.
 pub const glue_rows = @embedFile("glue_rows.metal");
+/// DeepSeek-V4.1 steering edits (GLP v3 hc_fold_pre_engram) of a bf16 residual row, in place (deepseek_v41/glp.metal).
+pub const glp = @embedFile("glp.metal");

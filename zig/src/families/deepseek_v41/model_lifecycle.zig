@@ -21,6 +21,7 @@ const engram = @import("engram.zig");
 const engram_stream = @import("engram_rows_safetensors.zig");
 const gpu_counters = @import("profiler.zig");
 const expert_groups = @import("core").expert_groups;
+const glp = @import("metal/glp.zig");
 const scan_probe = @import("scan_probe.zig");
 const projection_knobs = @import("projection_knobs.zig");
 const model = @import("model.zig");
@@ -84,6 +85,8 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     const c = try config.Config.read(arena.allocator(), io, o.dir);
     const position_limit: u32 = @intCast(c.rope.max_positions);
     if (o.context > position_limit) return error.ContextFull;
+    // A vector the model cannot take is refused here, before any weight is read.
+    if (o.glp) |src| try glp.validate(src, .{ .hidden = c.hidden, .layers = c.layers });
     const capacity = if (o.context == 0) position_limit else o.context;
     const from_config = c.engram_table_dir.items();
     const resident_dir: ?[]const u8 = o.table_dir orelse (if (from_config.len == 0) null else from_config);
@@ -105,7 +108,9 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     const cache_bytes = try std.math.add(usize, kp.residentBytes(), weights.sizeofDescriptors());
     const execution_bytes = try std.math.add(usize, workspace_bytes, try std.math.mul(usize, cache_bytes, lanes));
     const rotary_bytes = attention.Pipelines.residentBytes(capacity, c);
-    const needed = try std.math.add(usize, plan.bytes, try std.math.add(usize, execution_bytes, rotary_bytes));
+    // the steering plan's direction buffer is model-owned device memory beside the weights and caches (none when off)
+    const glp_bytes: usize = if (o.glp) |src| glp.residentBytes(src, .{ .hidden = c.hidden, .layers = c.layers }) else 0;
+    const needed = try std.math.add(usize, plan.bytes, try std.math.add(usize, try std.math.add(usize, execution_bytes, rotary_bytes), glp_bytes));
     // The int8 twin lives beside the trellis it supersedes at prompt rows.
     const int8_extra: usize = if (exl3.knobs.i8_prefill) 5 << 30 else 0;
     const needed_all = try std.math.add(usize, needed, int8_extra);
@@ -189,6 +194,11 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     errdefer cond_wkv.deinit();
     residency.add(taps);
     residency.add(cond_wkv);
+    // The control vector: its directions uploaded once, resident for the model's life; null when off or strength 0.
+    // It comes before the stream block: that block's own errdefers end with it, so a later failure would leak them.
+    const glp_plan: ?*glp.Plan = if (o.glp) |src| try glp.Plan.init(gpa, device, src, .{ .hidden = c.hidden, .layers = c.layers }) else null;
+    errdefer if (glp_plan) |g| g.deinit();
+    if (glp_plan) |g| g.registerResidency(residency);
     var stream_rows: ?*engram_stream.Rows = null;
     var stream_stage: ?mtl.Buffer = null;
     // Invariant: only this block creates stream_rows and stream_stage; keep them in step with weights.bind.
@@ -212,7 +222,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, o: Options) !Model {
     residency.commit();
     residency.requestResidency();
     queue.addResidencySet(residency);
-    return .{ .gpa = gpa, .io = io, .device = device, .queue = queue, .residency = residency, .checkpoint = cp, .weights = bound, .mtp_enabled = mtp_enabled, .cfg = c, .cfg_arena = arena, .lanes = lanes, .caches = caches, .cache = &caches[0], .engram_stash = engram_stash, .partial_stash = partial_stash, .ring_stash = ring_stash, .snap_ring = snap_ring, .taps_stash = taps_stash, .stream = stream_rows, .stream_stage = stream_stage, .workspace = workspace, .attention_workspace = aw, .taps = taps, .cond = cond, .cond_wkv = cond_wkv, .mtp_logits = mtp_logits, .pipelines = pipelines, .admitted_bytes = needed, .load_seconds = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .awake).toNanoseconds() - load_started.toNanoseconds())) / 1e9 };
+    return .{ .gpa = gpa, .io = io, .device = device, .queue = queue, .residency = residency, .checkpoint = cp, .weights = bound, .mtp_enabled = mtp_enabled, .cfg = c, .cfg_arena = arena, .lanes = lanes, .caches = caches, .cache = &caches[0], .engram_stash = engram_stash, .partial_stash = partial_stash, .ring_stash = ring_stash, .snap_ring = snap_ring, .taps_stash = taps_stash, .stream = stream_rows, .stream_stage = stream_stage, .workspace = workspace, .attention_workspace = aw, .taps = taps, .cond = cond, .cond_wkv = cond_wkv, .mtp_logits = mtp_logits, .pipelines = pipelines, .glp = glp_plan, .admitted_bytes = needed, .load_seconds = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .awake).toNanoseconds() - load_started.toNanoseconds())) / 1e9 };
 }
 pub fn deinit(m: *Model) void {
     forward_cone.release(m);
@@ -245,6 +255,7 @@ pub fn deinit(m: *Model) void {
     if (m.cond_wkv) |b| b.deinit();
     m.weights.deinit();
     m.checkpoint.deinit();
+    if (m.glp) |g| g.deinit();
     m.pipelines.deinit();
     m.queue.deinit();
     m.device.deinit();

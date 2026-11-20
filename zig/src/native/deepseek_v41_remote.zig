@@ -202,7 +202,7 @@ fn readWhole(a: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
 /// A hand-off file: the library's blob or a producer stream (`<id>.mkvh2`, `<id>.tokens.json`) for `checkpoint`.
 pub fn loadFile(a: std.mem.Allocator, io: std.Io, path: []const u8, checkpoint: []const u8) !ho.blob.Blob {
     const bytes = try readWhole(a, io, path);
-    if (!std.mem.endsWith(u8, path, ho.file.extension)) return ho.blob.Blob.parse(a, bytes);
+    if (!std.mem.endsWith(u8, path, ho.file.extension)) return ho.blob.Blob.parse(a, bytes, checkpoint);
     const ids = try std.fmt.allocPrint(a, "{s}.tokens.json", .{path[0 .. path.len - ho.file.extension.len]});
     const tokens = try parseIds(a, try std.Io.Dir.cwd().readFileAlloc(io, ids, a, .limited(64 << 20)));
     var reason: fabric.decoder.Reason = .{};

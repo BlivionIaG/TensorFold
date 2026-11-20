@@ -27,6 +27,7 @@ const dsv41_fused2 = @import("metal_dsv41_fused2.zig");
 const dsv41_fused3 = @import("metal_dsv41_fused3.zig");
 const dsv41_fused4 = @import("metal_dsv41_fused4.zig");
 const dsv41_fused5 = @import("metal_dsv41_fused5.zig");
+const dsv41_glp = @import("metal_dsv41_glp.zig");
 
 fn wanted(only: ?[]const u8, name: []const u8) bool {
     const text = only orelse return true;
@@ -96,6 +97,7 @@ pub const Suites = struct {
     fused3: *dsv41_fused3.Suite,
     fused4: *dsv41_fused4.Suite,
     fused5: *dsv41_fused5.Suite,
+    glp: *dsv41_glp.Suite,
 
     pub fn create(a: std.mem.Allocator, device: mtl.Device, queue: mtl.Queue, kernels: *std.ArrayList(g.Kernel), only: ?[]const u8) !Suites {
         const fp8 = try dsv41_fp8_rows.Suite.create(a, device, queue, kernels, only);
@@ -142,10 +144,13 @@ pub const Suites = struct {
         errdefer fused5.destroy();
         const glue_rows2 = try dsv41_glue_rows2.Suite.create(a, device, queue, kernels, only);
         errdefer glue_rows2.destroy();
-        return .{ .fp8 = fp8, .fp8_mma = fp8_mma, .topk = topk, .cand = cand, .attn = attn, .experts = experts, .xmma = xmma, .ix = ix, .engram = engram, .glue = glue, .compress = compress, .mv = mv, .hc = hc, .boundary = boundary, .fold = fold, .glue_rows = glue_rows, .fused = fused, .fused2 = fused2, .fused3 = fused3, .fused4 = fused4, .fused5 = fused5, .glue_rows2 = glue_rows2 };
+        const glp = try dsv41_glp.Suite.create(a, device, queue, kernels, only);
+        errdefer glp.destroy();
+        return .{ .fp8 = fp8, .fp8_mma = fp8_mma, .topk = topk, .cand = cand, .attn = attn, .experts = experts, .xmma = xmma, .ix = ix, .engram = engram, .glue = glue, .compress = compress, .mv = mv, .hc = hc, .boundary = boundary, .fold = fold, .glue_rows = glue_rows, .fused = fused, .fused2 = fused2, .fused3 = fused3, .fused4 = fused4, .fused5 = fused5, .glue_rows2 = glue_rows2, .glp = glp };
     }
 
     pub fn destroy(s: *Suites) void {
+        s.glp.destroy();
         s.glue_rows2.destroy();
         s.fused5.destroy();
         s.fused4.destroy();
@@ -209,6 +214,7 @@ pub const Suites = struct {
         t.failed += try s.fused3.invariance(seed);
         t.failed += try s.fused4.invariance(seed);
         t.failed += try s.fused5.invariance(seed);
+        t.failed += try s.glp.invariance(seed);
         if (std.c.getenv("TF_DSV41_TIME") != null) try s.ix.timing(io);
     }
 };

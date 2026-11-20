@@ -355,7 +355,8 @@ pub fn loadStash(m: *Model, enc: mtl.ComputeEncoder, rows: u32) void {
     }
     enc.barrier();
     m.stream_alt = false;
-    m.pending_expand = true;
+    // The state entering layer `lo` is the pending hc post of the layer before it, unless that layer's fold was edited.
+    m.pending_expand = !@import("forward_glp.zig").expandedBefore(m, c.lo);
 }
 
 /// `n` stash rows from position `at` as up to two ring runs: to the ring's end, then from its start.

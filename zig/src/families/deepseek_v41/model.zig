@@ -34,6 +34,7 @@ const model_draft_attention = @import("model_draft_attention.zig");
 const forward_impl = @import("forward_impl.zig");
 pub const forward_cone = @import("forward_cone.zig");
 const moe_impl = @import("model_moe.zig");
+pub const glp = @import("metal/glp.zig");
 pub const nowNs = support.nowNs;
 pub const prefill_step = support.prefill_step;
 pub const Logits = support.Logits;
@@ -193,6 +194,8 @@ pub const Model = struct {
     attention_observer: ?attention.DiagnosticObserver = null,
     /// The cone prefill's state (forward_cone.zig).
     cone: forward_cone.Cone = .{},
+    /// The control vector's device plan (GLP steering), set once at open; null: steering is off, nothing is dispatched.
+    glp: ?*glp.Plan = null,
     pub const Observer = struct {
         ctx: *anyopaque,
         encode: *const fn (*anyopaque, mtl.ComputeEncoder, u32, gpu_counters.Stage, *const Model) void,
