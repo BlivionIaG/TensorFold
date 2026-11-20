@@ -52,8 +52,13 @@ per-request steering switch or a live vector-reload API.
 
 The native EXL3 Metal and CUDA paths are the implementation targets. The separate
 experimental FP8 Metal package refuses GLP; its synthetic model is not evidence
-for this checkpoint. Check the source-bound receipts below before treating either
-target as qualified.
+for this checkpoint. Qualification requires source-bound runtime receipts, not
+just an implementation or a successful build.
+
+Enabled CUDA steering refuses `TF_DSV41_PREFILL=replay` with `GlpUnsupported`:
+that path enters decoder layers from a stash, past the fold. Use whole prefill;
+an existing replay-performance profile is not an enabled-GLP profile. Keep normal
+memory-admission guards: lowering safety floors is not a qualification method.
 
 Existing native Metal admission declares `draft_streams = false`: concurrent
 requests share plain target windows. Record actual proposal counters rather than
@@ -114,6 +119,10 @@ mode/site and effective F32 strength. The old identifier stays unchanged when
 steering is absent. Missing or different steering must fail manifest validation
 before any prefix state is imported, including file-based handoffs. Tensor-parallel
 ranks must also agree before execution; configuring only rank zero is not support.
+
+A file loaded at zero strength remains a distinct policy namespace, even though
+its output is a no-op. It is not a state-identity alias for an absent file.
+Positive and negative F32 zero use the same effective-strength identity.
 
 A successful mixed run does not establish equality with native Metal prefill.
 The existing CUDA-to-Metal numerical/state exactness limitations remain separate;
