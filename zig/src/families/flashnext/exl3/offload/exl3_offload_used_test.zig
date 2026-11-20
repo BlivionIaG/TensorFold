@@ -3,6 +3,7 @@
 const std = @import("std");
 const hub = @import("exl3_offload.zig");
 const vram_ = @import("exl3_offload_vram.zig");
+const used_ = @import("exl3_offload_used.zig");
 
 const shape = hub.shape;
 const shared_id = hub.shared_id;
@@ -48,6 +49,8 @@ fn benchPolicy(slot_n: u16, expert_bytes: u64, copy_bytes: u64) Policy {
 }
 
 test "a high count keeps an old stamp and a one-off is the victim" {
+    used_.force_lru = false; // the count policy, whatever TF_FLASHNEXT_EVICT says
+    defer used_.force_lru = null;
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
@@ -74,6 +77,8 @@ test "a high count keeps an old stamp and a one-off is the victim" {
 }
 
 test "zero lifetime counts fall back to stamp LRU" {
+    used_.force_lru = false; // the count policy, whatever TF_FLASHNEXT_EVICT says
+    defer used_.force_lru = null;
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
@@ -94,6 +99,8 @@ test "zero lifetime counts fall back to stamp LRU" {
 }
 
 test "lifetime count beats this round's appearances" {
+    used_.force_lru = false; // the count policy, whatever TF_FLASHNEXT_EVICT says
+    defer used_.force_lru = null;
     var slots = [_]u16{Cache.empty_id};
     var line = [_]Line{.empty};
     var stamp = [_]u32{0};
@@ -112,6 +119,8 @@ test "lifetime count beats this round's appearances" {
 }
 
 test "a resident named this step is kept even when its count is low" {
+    used_.force_lru = false; // the count policy, whatever TF_FLASHNEXT_EVICT says
+    defer used_.force_lru = null;
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
@@ -135,6 +144,8 @@ test "a resident named this step is kept even when its count is low" {
 }
 
 test "a keep on layer 0 does not protect that id on layer 40" {
+    used_.force_lru = false; // the count policy, whatever TF_FLASHNEXT_EVICT says
+    defer used_.force_lru = null;
     var slots = [_]u16{ 7, 7, 3 };
     var line = [_]Line{ .resident, .resident, .resident };
     var stamp = [_]u32{ 4, 4, 4 };
@@ -167,6 +178,8 @@ test "a keep on layer 0 does not protect that id on layer 40" {
 }
 
 test "scheduleUsed is the layer-0 wrapper and is not the multi-layer path" {
+    used_.force_lru = false; // the count policy, whatever TF_FLASHNEXT_EVICT says
+    defer used_.force_lru = null;
     var slots = [_]u16{ 1, 4 };
     var line = [_]Line{ .resident, .resident };
     var stamp = [_]u32{ 1, 50 };
@@ -209,6 +222,8 @@ test "scheduleUsed is the layer-0 wrapper and is not the multi-layer path" {
 }
 
 test "scheduleUsedAt does not stage another rank or the shared expert" {
+    used_.force_lru = false; // the count policy, whatever TF_FLASHNEXT_EVICT says
+    defer used_.force_lru = null;
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
@@ -273,4 +288,27 @@ test "lineIds maps hits to their line and everything else to -1, stagedCopies li
     try std.testing.expectEqual(ln[1], ln[2]);
     try std.testing.expect(ln[3] == -1 and ln[4] == -1);
     try std.testing.expectEqual(@as(?usize, null), lineOf(v, 3, 7));
+}
+
+test "lru eviction takes the line unused for the longest time, whatever its lifetime count" {
+    var slots = [_]u16{ Cache.empty_id, Cache.empty_id, Cache.empty_id };
+    var line = [_]Line{ .empty, .empty, .empty };
+    var stamp = [_]u32{ 0, 0, 0 };
+    var layer = [_]u8{ 0, 0, 0 };
+    const vram = Vram.init(&slots, &line, &stamp, &layer);
+    slots = .{ 4, 7, 9 };
+    line = .{ .resident, .resident, .resident };
+    stamp = .{ 10, 30, 20 };
+    var counts: [shape.layers][shape.experts]u32 = std.mem.zeroes([shape.layers][shape.experts]u32);
+    counts[0][4] = 90;
+    counts[0][7] = 1;
+    counts[0][9] = 5;
+    // by count the one-off (line 1) goes; by recency the line used first (line 0) goes
+    try std.testing.expectEqual(@as(?usize, 1), hub.victimBy(vram, &counts, 0, &.{}, false));
+    try std.testing.expectEqual(@as(?usize, 0), hub.victimBy(vram, &counts, 0, &.{}, true));
+    // a kept id is never the victim under either policy
+    try std.testing.expectEqual(@as(?usize, 2), hub.victimBy(vram, &counts, 0, &.{ 4, 7 }, true));
+    // equal stamps: the higher line index goes first
+    stamp = .{ 10, 10, 20 };
+    try std.testing.expectEqual(@as(?usize, 1), hub.victimBy(vram, &counts, 0, &.{}, true));
 }

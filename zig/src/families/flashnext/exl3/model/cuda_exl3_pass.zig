@@ -136,7 +136,7 @@ pub fn pooled(st: cuda.Stream, ops: *load.Ops, pool: *pool_.Pool, plans: ?*const
     try st.d.check(st.d.api.cuMemcpyDtoHAsync_v2(host.ptr, picks, rows * slots * 4, st.handle), "cuMemcpyDtoHAsync");
     try st.synchronize();
     const t1 = std.Io.Clock.awake.now(io).toNanoseconds();
-    const r = try pool.plan(host, rows);
+    const r = try pool.planHitFirst(host, rows);
     pool.stats.cut_ns += @intCast(t1 - t0);
     pool.stats.plan_ns += @intCast(std.Io.Clock.awake.now(io).toNanoseconds() - t1);
     pool.stats.blocks += 1;

@@ -350,9 +350,7 @@ fn uniq_view(r: *const Round) []const u16 {
 
 /// The policy's victim order (`vramCold`): lower lifetime count, then older stamp, then the higher line index.
 fn colder(v: Vram, layer: u8, counts: *const [shape.layers][shape.experts]u32, i: usize, b: usize) bool {
-    const ci = offload.countAt(counts, layer, v.slots[i]);
-    const cb = offload.countAt(counts, layer, v.slots[b]);
-    return ci < cb or (ci == cb and v.stamp[i] < v.stamp[b]) or (ci == cb and v.stamp[i] == v.stamp[b] and i > b);
+    return offload.evictsBefore(v, layer, counts, i, b);
 }
 
 /// Smallest pool that never needs a second pass for `rows` decode rows: every row's routed picks must fit at once.

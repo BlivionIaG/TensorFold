@@ -48,9 +48,13 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         defer ld.free(gpu.gpa);
         const all = std.mem.eql(u8, mode, "all");
         if (all or std.mem.eql(u8, mode, "equal")) {
-            try equal.equalRun(gpu, &ex, s, ld, 10, 0, 0x10 + layer);
-            try equal.equalRun(gpu, &ex, s, ld, 24, 4, 0x24 + layer);
-            try equal.equalRun(gpu, &ex, s, ld, 64, 0, 0x64 + layer);
+            try equal.equalRun(gpu, &ex, s, ld, 10, 0, 0x10 + layer, 0);
+            try equal.equalRun(gpu, &ex, s, ld, 24, 4, 0x24 + layer, 0);
+            try equal.equalRun(gpu, &ex, s, ld, 64, 0, 0x64 + layer, 0);
+            // the same rounds with hits first: a round's held experts run while its misses copy
+            try equal.equalRun(gpu, &ex, s, ld, 10, 0, 0x10 + layer, 1);
+            try equal.equalRun(gpu, &ex, s, ld, 24, 4, 0x24 + layer, 1);
+            try equal.equalRun(gpu, &ex, s, ld, 64, 0, 0x64 + layer, 1);
         }
         if (all or std.mem.eql(u8, mode, "graph")) try equal.graphRun(gpu, &ex, s, ld);
         if (std.mem.eql(u8, mode, "bench")) try bench.benchRun(gpu, &ex, s, ld);

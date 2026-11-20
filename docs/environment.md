@@ -47,9 +47,13 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
 | `TF_FLASHNEXT_EXL3_ARCH` | Exactly `unqualified`; unset requires the qualified architecture |
 | `TENSORFOLD_MEMORY_RESERVE_GIB` | Finite nonnegative GiB; memory admission separately enforces its 0.5 GiB floor (2 on unified memory) and total memory size |
 | `TF_FLASHNEXT_EXL3_LINE_DELTAS` | `POOL:+N,POOL:-N` without control characters; pool validation requires balanced line transfers |
+| `TF_FLASHNEXT_EXL3_HIT_FIRST` | Whole native-size nonnegative count of held experts; default 0 keeps every decode round as planned |
+| `TF_FLASHNEXT_EVICT` | Exactly `count` or `lru`; default `count` |
+| `TF_FLASHNEXT_TABLE_BATCH` | `0` or `1`; default 0 writes each loaded expert's table entries one word at a time |
 | `TF_FLASHNEXT_EXL3_STREAMS` | Positive whole stream count; default 1; `--parallel` wins |
 | `TF_FLASHNEXT_EXPERT_LINES` | Whole expert-line count per layer; pool construction requires at least 10; unset derives the count from memory |
 | `TF_FLASHNEXT_EXPERT_RESERVE_MB` | Whole MiB from 0 through 17592186044415; unset uses the server reserve |
+| `TF_FLASHNEXT_PLE_PREFETCH` | `0` or `1`; default 0 leaves the n-gram rows to be read when the verify window gathers them |
 | `TF_FLASHNEXT_PLE_READ` | Exactly `map` or `pread`; default `map` |
 | `TF_FLASHNEXT_EXL3_PROFILE_DIR` | Directory path without control characters; unset disables persisted expert-use profiles |
 | `TF_FLASHNEXT_EXL3_ROUTED` | Exactly `host` or `device`; default `host` |
