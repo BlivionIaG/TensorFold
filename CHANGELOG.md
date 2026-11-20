@@ -4,7 +4,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
-- DeepSeek-V4.1 EXL3: experimental, opt-in GLP v3 rank-one additive and projective steering,
+- DeepSeek-V4.1 EXL3: experimental, opt-in GLP v3 rank-one additive and projective steering ([fork #104](https://github.com/BlivionIaG/TensorFold/pull/104)),
   pairing the pre-Engram folded-stream edit with its attention-writer edit and isolating handoff state by policy.
   Credits: Matt Suiche's weightless/GLP concept and format, Arditi et al.'s directional-ablation research,
   llama.cpp's control-vector convention and TensorFold #1835's native reader.
