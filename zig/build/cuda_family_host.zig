@@ -106,7 +106,9 @@ pub fn steps(b: *std.Build, cuda: *std.Build.Module, mods: anytype, step: *std.B
     b.step("test-proposal-head-cuda-host", "Common proposal projection and keyed draw recording without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = cuda, .filters = &.{"proposal rows:"} })).step);
     const proposal_metal = b.createModule(.{ .root_source_file = b.path("zig/src/metal/metal.zig"), .target = host, .optimize = .debug, .link_libc = true });
     const proposal_affine = b.createModule(.{ .root_source_file = b.path("zig/src/core/affine_mm.zig"), .target = host, .optimize = .debug, .imports = &.{.{ .name = "metal", .module = proposal_metal }} });
-    const proposal_encoder = b.createModule(.{ .root_source_file = b.path("zig/proposal_metal_host.zig"), .target = host, .optimize = .debug, .imports = &.{ .{ .name = "metal", .module = proposal_metal }, .{ .name = "core", .module = mods.core }, .{ .name = "affine_mm", .module = proposal_affine } } });
+    // core's root also imports frags.zig, which affine_mm owns here; the encoder takes only the rows' file
+    const proposal_rows_only = b.createModule(.{ .root_source_file = b.path("zig/src/core/proposal_rows.zig"), .target = host, .optimize = .debug });
+    const proposal_encoder = b.createModule(.{ .root_source_file = b.path("zig/proposal_metal_host.zig"), .target = host, .optimize = .debug, .imports = &.{ .{ .name = "metal", .module = proposal_metal }, .{ .name = "proposal_rows", .module = proposal_rows_only }, .{ .name = "affine_mm", .module = proposal_affine } } });
     b.step("compile-proposal-metal-host", "Compile the existing shared affine encoder without executing Metal").dependOn(&b.addObject(.{ .name = "proposal-affine-host", .root_module = proposal_encoder }).step);
     const timing_probe = b.addExecutable(.{ .name = "qwen-round-timing-probe", .root_module = b.createModule(.{ .root_source_file = b.path("zig/qwen35_round_timing_probe.zig"), .target = host, .optimize = .debug, .link_libc = true, .imports = &.{ .{ .name = "qwen35", .module = mods.qwen35 }, .{ .name = "lanes", .module = mods.lanes } } }) });
     const timing_options = b.addOptions();
