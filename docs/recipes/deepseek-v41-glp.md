@@ -149,8 +149,9 @@ controls, held-out capability results and the limitations of those measurements.
 Do not publish checkpoint tensors, private prompts or claims borrowed from another
 project's benchmarks.
 
-Device and model receipts belong to the source-bound draft PR. An unrun platform,
-precision setting or workload is not qualified by a successful run elsewhere.
+The source-bound [qualification receipt](../receipts/dsv41-glp/qualification.json)
+and draft PR record the reached hardware, measurements and limits. An unrun
+platform, precision setting or workload is not qualified by a successful run elsewhere.
 
 ## Numerical contract and stress fixtures
 
