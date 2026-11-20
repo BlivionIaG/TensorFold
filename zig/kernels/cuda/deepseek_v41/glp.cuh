@@ -5,6 +5,7 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include "common/reduce.cuh"
+#include "common/vec.cuh"
 
 namespace dsv41_glp {
 
@@ -50,9 +51,13 @@ template <int CTL> __device__ __forceinline__ uint32_t bits(float f) {       // 
     return h;
 }
 template <int CTL> __device__ __forceinline__ float rnd(float f) { return __uint_as_float(bits<CTL>(f) << 16); }
-template <int CTL> __device__ __forceinline__ uint4 pack8(const float (&f)[8]) {
-    return make_uint4(bits<CTL>(f[0]) | (bits<CTL>(f[1]) << 16), bits<CTL>(f[2]) | (bits<CTL>(f[3]) << 16),
-                      bits<CTL>(f[4]) | (bits<CTL>(f[5]) << 16), bits<CTL>(f[6]) | (bits<CTL>(f[7]) << 16));
+template <int CTL> __device__ __forceinline__ uint4 pack_controlled8(const float (&f)[8]) {
+    if constexpr (CTL == TRUNCATE) {
+        return make_uint4(bits<TRUNCATE>(f[0]) | (bits<TRUNCATE>(f[1]) << 16), bits<TRUNCATE>(f[2]) | (bits<TRUNCATE>(f[3]) << 16),
+                          bits<TRUNCATE>(f[4]) | (bits<TRUNCATE>(f[5]) << 16), bits<TRUNCATE>(f[6]) | (bits<TRUNCATE>(f[7]) << 16));
+    } else {
+        return tf_common::pack8(f);
+    }
 }
 __device__ __forceinline__ void load8(const float* p, float (&d)[8]) {
     const float4 a = __ldg(reinterpret_cast<const float4*>(p)), b = __ldg(reinterpret_cast<const float4*>(p) + 1);
@@ -136,13 +141,13 @@ template <int CTL> __device__ __forceinline__ void stream_body(const StreamArgs&
         for (int c = 0; c < 4; ++c) {
 #pragma unroll
             for (int k = 0; k < 8; ++k) y[c][k] = rnd<CTL>(edit(a.mode, f[c][k], s, a.alpha, d[k]));
-            *reinterpret_cast<uint4*>(xr + c * w + g * 8) = pack8<CTL>(y[c]);
+            *reinterpret_cast<uint4*>(xr + c * w + g * 8) = pack_controlled8<CTL>(y[c]);
         }
         if (a.tap != nullptr) {
             float tp[8];
 #pragma unroll
             for (int k = 0; k < 8; ++k) tp[k] = mean4<CTL>(y[0][k], y[1][k], y[2][k], y[3][k]);
-            *reinterpret_cast<uint4*>(a.tap + static_cast<long long>(r) * a.ts + g * 8) = pack8<CTL>(tp);
+            *reinterpret_cast<uint4*>(a.tap + static_cast<long long>(r) * a.ts + g * 8) = pack_controlled8<CTL>(tp);
         }
     }
 }
@@ -191,7 +196,7 @@ template <int CTL> __device__ __forceinline__ void writer_body(const WriterArgs&
         load8(a.dir + g * 8, d);
 #pragma unroll
         for (int k = 0; k < 8; ++k) y[k] = edit(a.mode, br[i][k], s, a.alpha, d[k]);
-        *reinterpret_cast<uint4*>(row + g * 8) = pack8<CTL>(y);
+        *reinterpret_cast<uint4*>(row + g * 8) = pack_controlled8<CTL>(y);
         for (int rk = 1; rk < a.world; ++rk) *reinterpret_cast<uint4*>(row + rk * a.gr + g * 8) = negzero;
     }
 }
@@ -213,7 +218,7 @@ template <int CTL> __device__ __forceinline__ void final_body(const FinalArgs& a
         for (int k = 0; k < 8; ++k)
             c[k] = rnd<CTL>(__fadd_rn(__fadd_rn(__fadd_rn(__fmul_rn(q0, x[0][k]), __fmul_rn(q1, x[1][k])),
                                                 __fmul_rn(q2, x[2][k])), __fmul_rn(q3, x[3][k])));
-        *reinterpret_cast<uint4*>(cs + g * 8) = pack8<CTL>(c);
+        *reinterpret_cast<uint4*>(cs + g * 8) = pack_controlled8<CTL>(c);
     }
     __syncthreads();
     const int nb = w / CB;
@@ -244,7 +249,7 @@ template <int CTL> __device__ __forceinline__ void final_body(const FinalArgs& a
         }
 #pragma unroll
         for (int k = 0; k < 8; ++k) o[k] = __fmul_rn(__fmul_rn(c[k], rn), wv[k]);
-        *reinterpret_cast<uint4*>(a.out + static_cast<long long>(r) * w + g * 8) = pack8<CTL>(o);
+        *reinterpret_cast<uint4*>(a.out + static_cast<long long>(r) * w + g * 8) = pack_controlled8<CTL>(o);
     }
 }
 
