@@ -42,6 +42,12 @@ test "DSpine config: Tencent's 27B drafter, its taps, bridge widths and 8,192 wi
     try t.expect(dspine.declared(doc.value));
 }
 
+test "DSpine config: the DSpineDraftModel spelling parses to the same shape as DFlashDraftModel's" {
+    const spined = try std.mem.replaceOwned(u8, a, fixture, "\"DFlashDraftModel\"", "\"DSpineDraftModel\"");
+    defer a.free(spined);
+    try t.expectEqual(try parsed(fixture), try parsed(spined));
+}
+
 test "DSpine config: another second pass, decode mode, write mode or a non-causal block is refused" {
     const edits = [_][2][]const u8{
         .{ "\"mode\":\"serial_table\"", "\"mode\":\"parallel\"" },
@@ -83,4 +89,18 @@ test "DSpine table: the walk follows the sender's row; the sender is the chosen 
     try t.expectEqual(@as(?usize, 1), dspine.sender(1, cand[0..2], 11));
     try t.expectEqual(@as(?usize, 0), dspine.sender(0, cand[0..2], 99));
     try t.expectEqual(@as(?usize, null), dspine.sender(1, cand[0..2], 99));
+}
+
+test "DSpine narrowed: a served window between the block and the checkpoint's own replaces it; 0 keeps it" {
+    var doc = try std.json.parseFromSlice(std.json.Value, a, fixture, .{});
+    defer doc.deinit();
+    const s = try dspine.parse(doc.value);
+    try t.expectEqual(s, try dspine.narrowed(s, 0));
+    var narrow = s;
+    narrow.window = 2048;
+    try t.expectEqual(narrow, try dspine.narrowed(s, 2048));
+    try t.expectEqual(@as(usize, 16), (try dspine.narrowed(s, 16)).window);
+    try t.expectError(error.DSpineWindowOutOfRange, dspine.narrowed(s, 15));
+    try t.expectError(error.DSpineWindowOutOfRange, dspine.narrowed(s, 8193));
+    try t.expectError(error.DSpineWindowOutOfRange, dspine.narrowed(narrow, 4096)); // never wider than trained
 }

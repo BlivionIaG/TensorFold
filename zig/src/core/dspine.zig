@@ -78,7 +78,8 @@ pub fn parse(root: std.json.Value) !Shape {
     const o = root.object;
     const arch = o.get("architectures") orelse return error.BadDraftConfig;
     if (arch != .array or arch.array.items.len != 1 or arch.array.items[0] != .string) return error.BadDraftConfig;
-    if (!std.mem.eql(u8, arch.array.items[0].string, "DFlashDraftModel")) return error.UnsupportedDraftConfig;
+    const name = arch.array.items[0].string; // Tencent's revs spell the same drafter either way
+    if (!std.mem.eql(u8, name, "DFlashDraftModel") and !std.mem.eql(u8, name, "DSpineDraftModel")) return error.UnsupportedDraftConfig;
     const d = try object(o, "dflash_config");
     const bridge = try object(d, "selected_prefix_code_bridge");
     const second = try object(o, "code_bridge_second_pass");
@@ -135,6 +136,15 @@ pub fn parse(root: std.json.Value) !Shape {
     if (s.code % 64 != 0 or s.rank % 64 != 0 or s.hidden % 64 != 0) return error.UnsupportedDraftConfig;
     if (s.window < s.block or s.window > most_window) return error.UnsupportedDraftConfig;
     return s;
+}
+
+/// A served window (TF_DSPINE_WINDOW): a block up to the checkpoint's sliding_window, never wider; 0 keeps it.
+pub fn narrowed(s: Shape, window: usize) error{DSpineWindowOutOfRange}!Shape {
+    if (window == 0) return s;
+    if (window < s.block or window > s.window) return error.DSpineWindowOutOfRange;
+    var out = s;
+    out.window = window;
+    return out;
 }
 
 /// Row r's sender for `pred`: 0 on row 0 (all hold the pending token), else its index in the row before's candidates.
