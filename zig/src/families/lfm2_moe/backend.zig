@@ -246,6 +246,14 @@ pub const Metal = struct {
         }
     };
 
+    fn prefillWith(self: *Metal, stream: *lanes.Stream, sink: ?be.FeatureSink) !void {
+        const f = try self.opening(stream, sink != null);
+        errdefer self.drop(stream);
+        const r: Run = .{ .m = self, .cache = try self.cacheOf(stream), .sink = sink, .later = false };
+        while (!try steps.step(r, stream, f, self.options.chunk, false)) {}
+        _ = self.fills.remove(stream);
+    }
+
     /// The stream's cache made and a kept state restored into it: its pass from the returned fill's row.
     fn opening(self: *Metal, stream: *lanes.Stream, drafting: bool) !*steps.Fill {
         const ids = stream.prompt();
