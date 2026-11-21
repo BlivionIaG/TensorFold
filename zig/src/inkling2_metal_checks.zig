@@ -19,13 +19,8 @@ fn logits(m: *fl.Model, rows: usize) []const f32 {
     return m.logits.slice(f32, rows * m.config.text.unpadded_vocab);
 }
 
-fn imageEncode(ptr: *anyopaque, image: lanes.stream.Image) !mtl.Buffer {
-    const tower: *fl.vision.Tower = @ptrCast(@alignCast(ptr));
-    return tower.encodeInput(image.pixels, image.gh, image.gw);
-}
-
-fn reply(engine: *lanes.Engine, ids: []const u32, images: []const lanes.stream.Image, drafts: bool, settings: ?lanes.Sampling) ![]u32 {
-    var stream = try lanes.Stream.init(t.allocator, .{ .id = "inkling2-smoke", .prompt = ids, .max_new = 16, .images = images, .drafts = drafts, .sampling = settings });
+fn reply(engine: *lanes.Engine, ids: []const u32, drafts: bool, settings: ?lanes.Sampling) ![]u32 {
+    var stream = try lanes.Stream.init(t.allocator, .{ .id = "inkling2-smoke", .prompt = ids, .max_new = 16, .drafts = drafts, .sampling = settings });
     defer stream.deinit(t.allocator);
     try engine.addStream(&stream);
     while (engine.activeCount() != 0) try engine.step();
@@ -44,11 +39,11 @@ fn firstOf(backend: lanes.backend.Backend, stream: *lanes.Stream) !struct { toke
     return .{ .token = token, .row = try backend.firstRow(stream) };
 }
 
-test "inkling2 Mini Metal loop forward, shared rows, exact rollback, snapshots, images and DSpark" {
+test "inkling2 Mini Metal loop forward, shared rows, exact rollback, snapshots and DSpark" {
     const dir = try fixture();
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
-    const m = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 4, .rows = 32, .drafts = true, .vision = true });
+    const m = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 4, .rows = 32, .drafts = true });
     defer m.deinit();
     // the loop is real: more logical visits than physical layers, every visit with its own KV and convolution state
     try t.expect(m.config.text.executionLayers() > m.config.text.layers);
@@ -93,23 +88,8 @@ test "inkling2 Mini Metal loop forward, shared rows, exact rollback, snapshots, 
     try m.restore(&c, &snap);
     try m.forward(&.{.{ .state = &c, .ids = &.{ 33, 34, 70 } }});
     try t.expectEqualSlices(f32, kept, logits(m, 1));
-    // The tower's real output replaces a template image row, rather than treating it as an ordinary token.
-    const tower = try fl.vision.Tower.loadFromCheckpoint(t.allocator, m.device, m.queue, &m.config, .{ .max_tokens = 4 }, &m.checkpoint);
-    defer tower.deinit();
-    const pixels = try t.allocator.alloc(f32, 4 * 1200);
-    defer t.allocator.free(pixels);
-    for (pixels, 0..) |*p, i| p.* = @as(f32, @floatFromInt(i % 17)) / 8 - 1;
-    const encoded = try tower.encodeInput(pixels, 1, 1);
-    defer encoded.deinit();
-    const prompt = [_]u32{ 1, m.config.image_token, 2, 3 };
-    m.reset(&c);
-    try m.forward(&.{.{ .state = &c, .ids = &prompt, .images = &.{.{ .row = 1, .rows = 1, .buf = encoded, .off = 0 }} }});
-    const pictured = try t.allocator.dupe(f32, logits(m, 1));
-    defer t.allocator.free(pictured);
-    m.reset(&d);
-    try m.forward(&.{.{ .state = &d, .ids = &prompt }});
-    try t.expect(!std.mem.eql(f32, pictured, logits(m, 1)));
-    const target = try native.Target.init(t.allocator, m, .{ .capacity = 128, .streams = 4, .rows = 32, .drafts = true, .images = .{ .ctx = tower, .encode = imageEncode } });
+    const prompt = [_]u32{ 1, 4, 2, 3 };
+    const target = try native.Target.init(t.allocator, m, .{ .capacity = 128, .streams = 4, .rows = 32, .drafts = true });
     defer target.deinit();
     const backend = target.backend();
     // A masked first draw outside the alternatives must retain its raw logprob, not the argmax's row.
@@ -161,19 +141,18 @@ test "inkling2 Mini Metal loop forward, shared rows, exact rollback, snapshots, 
         try t.expectEqual(want.token, retried.token);
         try t.expectEqual(want.row.logprob, retried.row.logprob);
     }
-    const images = [_]lanes.stream.Image{.{ .pixels = pixels, .gh = 1, .gw = 1, .at = 1, .tokens = 1 }};
     var plain_cfg = try lanes.Config.init(t.allocator, target.facts(), 16, 15);
     defer plain_cfg.deinit(t.allocator);
     var clock = lanes.backend.WallClock{ .io = t.io };
     var engine = lanes.Engine.init(t.allocator, &plain_cfg, backend, clock.clock());
     defer engine.deinit();
-    const expected = try reply(&engine, &prompt, &images, false, null);
+    const expected = try reply(&engine, &prompt, false, null);
     defer t.allocator.free(expected);
     const sampled: lanes.Sampling = .{ .seed = 7, .temperature = 0.7, .top_k = 20, .top_p = 0.95 };
-    const expected_sampled = try reply(&engine, &prompt, &images, false, sampled);
+    const expected_sampled = try reply(&engine, &prompt, false, sampled);
     defer t.allocator.free(expected_sampled);
     // a lane released and pooled again serves the same reply
-    const again = try reply(&engine, &prompt, &images, false, null);
+    const again = try reply(&engine, &prompt, false, null);
     defer t.allocator.free(again);
     try t.expectEqualSlices(u32, expected, again);
     const draft = try fl.draft.Adapter.init(t.allocator, t.io, dir, m.device, m.queue, &m.config, .{ .embed = m.weights.embed, .embed_norm = m.weights.embed_norm, .unembed = m.weights.unembed }, .{ .streams = 4, .capacity = 128 });
@@ -185,19 +164,19 @@ test "inkling2 Mini Metal loop forward, shared rows, exact rollback, snapshots, 
     defer drafted_cfg.deinit(t.allocator);
     var drafted = lanes.Engine.init(t.allocator, &drafted_cfg, wrapped.backend(), clock.clock());
     defer drafted.deinit();
-    const got = try reply(&drafted, &prompt, &images, true, null);
+    const got = try reply(&drafted, &prompt, true, null);
     defer t.allocator.free(got);
     try t.expectEqualSlices(u32, expected, got);
-    const got_sampled = try reply(&drafted, &prompt, &images, true, sampled);
+    const got_sampled = try reply(&drafted, &prompt, true, sampled);
     defer t.allocator.free(got_sampled);
     try t.expectEqualSlices(u32, expected_sampled, got_sampled);
-    const other_prompt = [_]u32{ 7, m.config.image_token, 8, 9 };
+    const other_prompt = [_]u32{ 7, 4, 8, 9 };
     const other_sampled: lanes.Sampling = .{ .seed = 11, .temperature = 0.7, .top_k = 20, .top_p = 0.95 };
-    const other = try reply(&drafted, &other_prompt, &images, true, other_sampled);
+    const other = try reply(&drafted, &other_prompt, true, other_sampled);
     defer t.allocator.free(other);
-    var one = try lanes.Stream.init(t.allocator, .{ .id = "one", .prompt = &prompt, .max_new = 16, .images = &images, .drafts = true, .sampling = sampled });
+    var one = try lanes.Stream.init(t.allocator, .{ .id = "one", .prompt = &prompt, .max_new = 16, .drafts = true, .sampling = sampled });
     defer one.deinit(t.allocator);
-    var two = try lanes.Stream.init(t.allocator, .{ .id = "two", .prompt = &other_prompt, .max_new = 16, .images = &images, .drafts = true, .sampling = other_sampled });
+    var two = try lanes.Stream.init(t.allocator, .{ .id = "two", .prompt = &other_prompt, .max_new = 16, .drafts = true, .sampling = other_sampled });
     defer two.deinit(t.allocator);
     try drafted.addStream(&one);
     try drafted.addStream(&two);

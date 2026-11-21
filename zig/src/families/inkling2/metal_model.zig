@@ -22,8 +22,6 @@ pub const Options = struct {
     rows: u32 = 16,
     /// Draft head requested: allocates the tap buffer (needs mtp_config).
     drafts: bool = false,
-    /// Image rows requested: forward accepts Item.images only when set.
-    vision: bool = false,
 };
 
 /// Per-forward activations for `rows` rows: row-major, stage by stage in the order the graph writes them.
@@ -233,7 +231,7 @@ pub const Model = struct {
         return total;
     }
 
-    /// Resident mapped checkpoint bytes (dense, routed, and vision weights share one buffer).
+    /// Resident mapped checkpoint bytes, including any unused tensors in the same mapping.
     pub fn weightBytes(m: *const Model) u64 {
         return m.checkpoint.residentBytes();
     }

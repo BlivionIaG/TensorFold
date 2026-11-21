@@ -17,12 +17,7 @@ const ring_size = 4096;
 const Snap = @typeInfo(@typeInfo(@TypeOf(fl.Model.save)).@"fn".return_type.?).error_union.payload;
 const Kept = struct { target: *const Target, snap: Snap };
 
-pub const Images = struct {
-    ctx: *anyopaque,
-    encode: *const fn (*anyopaque, lanes.stream.Image) anyerror!mtl.Buffer,
-};
-
-pub const Options = struct { capacity: u32, streams: u32, rows: u32, drafts: bool = true, images: ?Images = null };
+pub const Options = struct { capacity: u32, streams: u32, rows: u32, drafts: bool = true };
 
 /// A stream's state, first-draw logits, and draft taps that outlive the shared forward buffers.
 const Lane = struct {
@@ -160,6 +155,7 @@ pub const Target = struct {
 
     /// An idle lane at length 0 for `stream`; `stream.cached` starts at 0.
     fn newLane(self: *Target, stream: *lanes.Stream) !*Lane {
+        if (stream.images.len != 0) return error.InklingVisionDisabled;
         const ids = stream.prompt();
         if (self.active.contains(stream) or self.idle_n == 0 or ids.len == 0 or
             ids.len > self.options.capacity or stream.max_new > self.options.capacity - ids.len)
@@ -224,40 +220,14 @@ pub const Target = struct {
         const ids = stream.prompt();
         if (sink != null and stream.reuse.saved != null) return error.InklingDraftsNeedFullPrompt;
         self.restoreKept(lane, stream, ids.len);
-        const hidden: usize = self.model.config.text.hidden;
-        const first_row = lane.state.len;
-        const image_rows = try self.gpa.alloc(fl.ImageRows, stream.images.len);
-        defer self.gpa.free(image_rows);
-        var made: usize = 0;
-        defer for (image_rows[0..made]) |im| im.buf.deinit();
-        for (stream.images) |im| {
-            if (im.at > ids.len or im.tokens > ids.len - im.at) return error.BadInklingImageRows;
-            if (im.at + im.tokens <= first_row) continue; // inside the restored prefix: its rows are already in the state
-            const encoder = self.options.images orelse return error.InklingVisionDisabled;
-            const buffer = try encoder.encode(encoder.ctx, im);
-            image_rows[made] = .{ .row = im.at, .rows = im.tokens, .buf = buffer, .off = 0 };
-            made += 1;
-            if (buffer.length() < @as(usize, im.tokens) * hidden * 2) return error.BadInklingImageRows;
-        }
-        const chunk_images = try self.gpa.alloc(fl.ImageRows, made);
-        defer self.gpa.free(chunk_images);
         var last: struct { start: u32, rows: u32 } = .{ .start = 0, .rows = 0 };
         while (lane.state.len < ids.len) {
             if (stream.isCancelled()) return error.Cancelled;
             const start = lane.state.len;
             const end = cutAt(stream.reuse.marks, cutAt(stream.chunks, @min(ids.len, start + self.options.rows), start), start);
-            var count: usize = 0;
-            for (image_rows[0..made]) |im| {
-                const from = @max(start, im.row);
-                const to = @min(end, im.row + im.rows);
-                if (from >= to) continue;
-                chunk_images[count] = .{ .row = @intCast(from - start), .rows = @intCast(to - from), .buf = im.buf, .off = im.off + (from - im.row) * hidden * 2 };
-                count += 1;
-            }
             try self.model.forward(&.{.{
                 .state = &lane.state,
                 .ids = ids[start..end],
-                .images = chunk_images[0..count],
                 .logit_rows = @intFromBool(end == ids.len),
                 .taps = sink != null,
             }});
@@ -511,6 +481,13 @@ fn row(values: []const f32, pick: u32, count: u8) lanes.LogprobRow {
     result.logprob = @floatCast(@as(f64, values[pick]) - lse);
     for (0..result.count) |i| result.logprobs[i] = @floatCast(@as(f64, best[i]) - lse);
     return result;
+}
+
+test "inkling2 target refuses images before taking a lane" {
+    var target: Target = undefined;
+    var stream: lanes.Stream = undefined;
+    stream.images = &.{.{ .pixels = &.{0}, .gh = 1, .gw = 1, .at = 0, .tokens = 1 }};
+    try std.testing.expectError(error.InklingVisionDisabled, Target.prefill(&target, &stream));
 }
 
 test "inkling2 target keeps float32 logits and obeys a grammar mask" {

@@ -3,7 +3,7 @@ const std = @import("std");
 const mtl = @import("metal");
 const ck = @import("../../core/checkpoint_metal.zig");
 const config = @import("config.zig");
-const gm = @import("metal_vision_gemm.zig");
+const gm = @import("metal_draft_gemm.zig");
 
 pub const Ref = gm.Ref;
 

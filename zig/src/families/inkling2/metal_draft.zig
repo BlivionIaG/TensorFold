@@ -4,7 +4,7 @@ const mtl = @import("metal");
 const lanes = @import("lanes");
 const config = @import("config.zig");
 const core_mod = @import("metal_draft_core.zig");
-const gm = @import("metal_vision_gemm.zig");
+const gm = @import("metal_draft_gemm.zig");
 
 const dr = lanes.drafter;
 const Core = core_mod.Core;

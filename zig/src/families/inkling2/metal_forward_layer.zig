@@ -22,15 +22,11 @@ pub const max_items = 64;
 pub const Item = struct {
     state: *st.State,
     ids: []const u32,
-    images: []const ImageRows = &.{},
     /// Trailing rows of this item that get logits (0: none).
     logit_rows: u32 = 1,
     /// Capture the draft taps of every row of this item.
     taps: bool = false,
 };
-
-/// Image-tower rows substituted for the embeddings of `ids[row .. row + rows]` (raw projector output, BF16 [rows, H]).
-pub const ImageRows = struct { row: u32, rows: u32, buf: mtl.Buffer, off: usize = 0 };
 
 fn v(b: mtl.Buffer, off: usize) View {
     return .{ .buffer = b, .offset = off };
@@ -129,7 +125,7 @@ pub const Run = struct {
         }
     }
 
-    /// Embeddings of every row, image rows substituted.
+    /// Token embeddings of every row.
     pub fn embed(r: *Run) !void {
         const m = r.m;
         const h = r.hidden();
@@ -143,16 +139,6 @@ pub const Run = struct {
             .hidden = h,
             .eps = m.config.text.eps,
         });
-        for (r.items, 0..) |it, k| for (it.images) |img| {
-            try m.ops.copyRows(r.e, .{
-                .src = v(img.buf, img.off),
-                .src_ld = h,
-                .dst = rows16(m.scratch.hid(0), r.base[k] + img.row, h),
-                .dst_ld = h,
-                .rows = img.rows,
-                .cols = h,
-            });
-        };
     }
 
     /// Bank the previous pass before resetting the partial. The original prefix blocks

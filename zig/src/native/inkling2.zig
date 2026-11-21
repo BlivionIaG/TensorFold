@@ -16,10 +16,8 @@ pub const model_type = "inkling2_loop";
 
 const Host = struct {
     gpa: Allocator,
-    io: std.Io,
     model: *fl.Model,
     target: *target.Target,
-    vision: ?*fl.vision.Tower = null,
     draft: ?*fl.draft.Adapter = null,
     wrapped: ?lanes.drafted.Drafted = null,
     cache: ?api.prompt_cache.Store = null, // kept prompt states (engine thread only); null: none
@@ -29,13 +27,11 @@ const Host = struct {
     clock: lanes.backend.WallClock,
     core: lanes.Engine,
     host: api.LaneHost,
-    markers: [1]u32,
 
     fn dropResidency(h: *Host) void {
         h.model.setResident(null);
         h.target.setResident(null);
         if (h.draft) |d| d.setResident(null);
-        if (h.vision) |v| v.setResident(null);
         if (h.resident) |*r| r.deinit();
         h.resident = null;
     }
@@ -50,28 +46,15 @@ const Host = struct {
         h.dropResidency();
         h.target.deinit();
         if (h.draft) |d| d.deinit();
-        if (h.vision) |v| v.deinit();
         h.model.deinit();
         h.gpa.destroy(h);
-    }
-
-    fn encode(ptr: *anyopaque, image: lanes.stream.Image) !mtl.Buffer {
-        const h: *Host = @ptrCast(@alignCast(ptr));
-        const tower = h.vision orelse return error.InklingVisionDisabled;
-        if (image.tokens != @as(u64, image.gh) * image.gw) return error.BadInklingImageGrid;
-        return tower.encodeInput(image.pixels, image.gh, image.gw);
-    }
-
-    fn prepare(ptr: *anyopaque, a: Allocator, bytes: []const u8, cap: u32) !api.PreparedImage {
-        const h: *Host = @ptrCast(@alignCast(ptr));
-        const prepared = try fl.vision.prepare(h.io, a, bytes, cap);
-        return .{ .pixels = prepared.pixels, .gh = prepared.gh, .gw = prepared.gw, .tokens = prepared.tokens, .hash = prepared.hash };
     }
 };
 
 fn refusal(a: Allocator, o: api.Open) !?[]const u8 {
     if (!std.mem.eql(u8, o.model_type, model_type))
         return try std.fmt.allocPrint(a, "the Inkling 2 Metal engine serves Inkling 2 Mini (model_type {s}) only, not {s}", .{ model_type, o.model_type });
+    if (o.vision != null) return "Inkling 2 Mini's Metal engine is text-only; --vision is unsupported";
     if (try o.slideRefusal(a, "Macs")) |why| return why;
     if (o.ssd_experts_gib != null) return "Inkling 2 Mini keeps every expert resident; --ssd-experts is unsupported";
     if (o.speed_up != null) return "Inkling 2 Mini serves one Metal device; --speed-up is unsupported";
@@ -140,7 +123,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     }
     const requested: u32 = @intCast(o.context orelse 8192);
     const drafted = o.drafts;
-    const model = fl.Model.load(gpa, io, o.dir, .{ .capacity = requested, .streams = o.lanes, .rows = target.max_rows, .drafts = drafted, .vision = o.vision != null }) catch |err| {
+    const model = fl.Model.load(gpa, io, o.dir, .{ .capacity = requested, .streams = o.lanes, .rows = target.max_rows, .drafts = drafted }) catch |err| {
         problem.* = switch (err) {
             error.InvalidOptions => try std.fmt.allocPrint(a, "--context {d} is outside this Inkling 2 Mini checkpoint's window", .{requested}),
             error.NoDraftHead => "this Inkling 2 Mini checkpoint has no DSpark head; serve with --no-drafts",
@@ -159,44 +142,32 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     var started = false;
     defer if (!started) gpa.destroy(h);
     h.gpa = gpa;
-    h.io = io;
     h.model = model;
-    h.vision = null;
     h.draft = null;
     h.wrapped = null;
     h.cache = null;
     h.resident = null;
-    h.markers = .{model.config.image_token};
     defer if (!started) {
         if (h.draft) |d| d.deinit();
-        if (h.vision) |v| v.deinit();
     };
-    if (o.vision) |v| {
-        h.vision = fl.vision.Tower.loadFromCheckpoint(gpa, model.device, model.queue, &model.config, .{ .max_tokens = v.image_tokens }, &model.checkpoint) catch |err| {
-            problem.* = try std.fmt.allocPrint(a, "Inkling 2 cannot load its native image tower ({s})", .{@errorName(err)});
-            return null;
-        };
-    }
     if (drafted) {
         h.draft = fl.draft.Adapter.init(gpa, io, o.dir, model.device, model.queue, &model.config, .{ .embed = model.weights.embed, .embed_norm = model.weights.embed_norm, .unembed = model.weights.unembed }, .{ .streams = o.lanes, .capacity = window, .depth = o.mtp_drafts orelse 0 }) catch |err| {
             problem.* = try std.fmt.allocPrint(a, "Inkling 2 cannot load its bundled DSpark head ({s}); check mtp.safetensors", .{@errorName(err)});
             return null;
         };
     }
-    const image_bytes: u64 = if (o.vision) |v| @as(u64, v.max_images) * v.image_tokens * (@as(u64, model.config.text.hidden) * 2 + 1200 * @sizeOf(f32)) else 0;
-    const stream_bytes = target.Target.laneBytes(model, drafted) + (if (h.draft) |d| d.laneBytes() else 0) + image_bytes;
+    const stream_bytes = target.Target.laneBytes(model, drafted) + (if (h.draft) |d| d.laneBytes() else 0);
     const sampling_bytes = target.Target.samplingBytes(model);
     // Some shared buffers are backed by mapped storage: do not depend solely on device or footprint sampling.
-    const tower_bytes = if (h.vision) |v| v.bytes() else 0;
     const draft_bytes = if (h.draft) |d| d.bytes() else 0;
-    const fixed_bytes = model.fixedBytes() + tower_bytes + draft_bytes;
+    const fixed_bytes = model.fixedBytes() + draft_bytes;
     const left = @min(admit.room(model.device), room -| fixed_bytes) -| sampling_bytes;
     const count = try admit.streams(a, "Inkling 2 Mini", stream_bytes, left, o, window, problem) orelse return null;
     // The adapter's lanes are lazy; cap them to the count that actually fits.
     if (h.draft) |d| d.opts.streams = count;
     const cache_left = left -| (stream_bytes * count) -| cache_fit.MARGIN;
     const budget = try cacheBudget(a, o, cache_left, drafted, problem) orelse return null;
-    h.target = try target.Target.init(gpa, model, .{ .capacity = window, .streams = count, .rows = target.max_rows, .drafts = drafted, .images = if (h.vision != null) .{ .ctx = h, .encode = Host.encode } else null });
+    h.target = try target.Target.init(gpa, model, .{ .capacity = window, .streams = count, .rows = target.max_rows, .drafts = drafted });
     errdefer h.target.deinit();
     var backend = h.target.backend();
     var facts = h.target.facts();
@@ -214,7 +185,6 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     errdefer h.core.deinit();
     h.host = api.LaneHost.init(gpa, io, &h.core, .{ .name = "inkling2-mini-metal", .lanes = count, .context_window = window, .prefill_step = target.max_rows, .structures = true, .logprobs = true, .plain_only = h.draft == null, .decode_share = o.decode_share });
     if (h.draft != null) h.host.info_.draft_sources = .{ .drafter = .{ .name = "DSpark", .kind = "DSpark" } };
-    if (o.vision) |v| h.host.info_.vision = .{ .ctx = h, .prepare = Host.prepare, .image_token = model.config.image_token, .markers = &h.markers, .part_type = "image", .image_tokens = v.image_tokens, .max_images = v.max_images };
     if (budget > 0) {
         // prompt rows are cut on the chunk grid: a kept state is resumed only where a pass of this width stood
         const rules: api.prompt_cache.Rules = .{ .planned = true, .grid = target.max_rows, .tail = true };
@@ -228,13 +198,12 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     if (h.resident) |*r| {
         model.setResident(r.follow());
         h.target.setResident(r.follow());
-        if (h.vision) |v| v.setResident(r.follow());
         if (h.draft) |d| d.setResident(r.follow());
         r.addNow(&.{});
         h.warm = r.target();
     } else h.warm = .{ .queue = model.queue };
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
-    std.log.info("inkling2 mini: {d} streams, {d}-token context, {d} logical layers over {d} physical; weights {d:.2} GiB resident, dense+scratch {d:.2} GiB; DSpark {s}, images {s}, prompt cache {d:.2} GiB", .{ count, window, model.config.text.executionLayers(), model.config.text.layers, @as(f64, @floatFromInt(model.weightBytes())) / (1 << 30), @as(f64, @floatFromInt(model.fixedBytes())) / (1 << 30), if (h.draft != null) "on" else "off", if (h.vision != null) "on" else "off", @as(f64, @floatFromInt(budget)) / (1 << 30) });
+    std.log.info("inkling2 mini: {d} streams, {d}-token context, {d} logical layers over {d} physical; weights {d:.2} GiB resident, dense+scratch {d:.2} GiB; DSpark {s}, prompt cache {d:.2} GiB", .{ count, window, model.config.text.executionLayers(), model.config.text.layers, @as(f64, @floatFromInt(model.weightBytes())) / (1 << 30), @as(f64, @floatFromInt(model.fixedBytes())) / (1 << 30), if (h.draft != null) "on" else "off", @as(f64, @floatFromInt(budget)) / (1 << 30) });
     try h.host.start();
     started = true;
     transfer = true;
@@ -285,6 +254,13 @@ test "inkling2 Mini refuses options it cannot honour before any load" {
     o.prompt_cache_gib = 2;
     o.keep = 0;
     try std.testing.expect((try refusal(a, o)) == null);
+}
+
+test "inkling2 Mini refuses --vision before opening Metal or loading the checkpoint" {
+    const a = std.testing.allocator;
+    var problem: []const u8 = "";
+    try std.testing.expect((try open(a, a, std.testing.io, .{ .dir = "missing", .model_type = model_type, .vision = .{} }, &problem)) == null);
+    try std.testing.expectEqualStrings("Inkling 2 Mini's Metal engine is text-only; --vision is unsupported", problem);
 }
 
 test "inkling2 DSpark is the checkpoint's bundled head: --drafter is refused, not substituted" {

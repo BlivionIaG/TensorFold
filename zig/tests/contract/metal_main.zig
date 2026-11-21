@@ -203,11 +203,6 @@ pub fn main(init: std.process.Init) !u8 {
     };
     defer inkling2_experts.deinit();
     try inkling2_experts.collect(o.only);
-    var inkling2_media: @import("metal_inkling2_media_suite.zig").Suite = .{
-        .a = a, .device = device, .queue = queue, .kernels = &kernels,
-    };
-    defer inkling2_media.deinit();
-    try inkling2_media.collect(o.only);
     for (gemma.all_entries) |v| {
         if (!wanted(o, v.name)) continue;
         if (!@import("metal_support.zig").gemma(tensor, v.kind, v.name)) continue;

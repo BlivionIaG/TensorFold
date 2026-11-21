@@ -52,14 +52,13 @@ pub const Dims = struct {
 /// test widths: same layer plan, window, block, taps and head ratio; 6 query heads over 2 (as 24 over 8), width 128.
 pub fn tinyConfig(a: std.mem.Allocator) !config.Config {
     var why: config.Why = .{};
-    var c = try config.parse(a, @embedFile("fixtures/mini_media_config.json"), &why);
+    var c = try config.parse(a, @embedFile("fixtures/loop_config.json"), &why);
     const m = &c.mtp.?;
     c.text.hidden = 128;
     m.q_heads = 6;
     m.kv_heads = 2;
     m.inter = 128;
     m.rank = 8;
-    c.vision.text_hidden = 128;
     return c;
 }
 

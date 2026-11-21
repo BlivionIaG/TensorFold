@@ -5,7 +5,7 @@ const ks = @import("kernel_sources");
 const frags = @import("../../core/frags.zig");
 const ck = @import("../../core/checkpoint_metal.zig");
 const config = @import("config.zig");
-const gm = @import("metal_vision_gemm.zig");
+const gm = @import("metal_draft_gemm.zig");
 const wt = @import("metal_draft_weights.zig");
 
 const Ref = gm.Ref;

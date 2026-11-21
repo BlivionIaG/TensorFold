@@ -9,7 +9,6 @@ const Model = @import("metal_model.zig").Model;
 const View = @import("../../core/exl3_projection.zig").View;
 
 pub const Item = layer.Item;
-pub const ImageRows = layer.ImageRows;
 pub const max_items = layer.max_items;
 pub const Snapshot = snapshot.Snapshot;
 
@@ -21,8 +20,6 @@ pub const Error = error{
     DuplicateState,
     StateFailed,
     InvalidToken,
-    InvalidImageRows,
-    ImagesDisabled,
     NoTaps,
     LogitRows,
     RollbackTooFar,
@@ -61,12 +58,6 @@ fn check(m: *const Model, items: []const Item) Error!void {
         if (it.taps and m.taps == null) return Error.NoTaps;
         for (items[0..k]) |other| if (other.state == s) return Error.DuplicateState;
         for (it.ids) |id| if (id >= t.vocab) return Error.InvalidToken;
-        if (it.images.len > 0 and !m.options.vision) return Error.ImagesDisabled;
-        for (it.images) |img| {
-            const end = @as(usize, img.row) + img.rows;
-            if (img.rows == 0 or end > n or img.off + @as(usize, img.rows) * t.hidden * 2 > img.buf.length()) return Error.InvalidImageRows;
-            for (it.ids[img.row..end]) |id| if (id != m.config.image_token) return Error.InvalidImageRows;
-        }
         total += n;
     }
     if (total > m.options.rows) return Error.RowsExceeded;
