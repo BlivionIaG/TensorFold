@@ -468,7 +468,7 @@ fn planChances(e: *Engine, p: Plan, n: usize) ![]const f64 {
     if (!p.context_copy or p.branch_from == 0 or p.parents == null or n < p.branch_from) return nodeChances(e, p.stream, n);
     const drafts = p.branch_from - 1;
     const out = try e.arena.allocator().alloc(f64, n);
-    if (drafts > 0) @memcpy(out[0..drafts], try nodeChances(e, p.stream, drafts));
+    if (drafts > 0) try nodeChancesInto(e, p.stream, out[0..drafts]);
     const rate = copyRate(e, p.stream, p.copy_trusted);
     for (out[drafts..], p.parents.?[drafts..n]) |*o, parent| o.* = rate * (if (parent >= 0) out[@intCast(parent)] else 1);
     return out;
@@ -535,15 +535,20 @@ test "a copy is trusted after a long match, or out of the prompt early in the re
 
 /// The head's chance for each held draft, else chain chances from the stream's per-depth acceptance.
 pub fn nodeChances(e: *Engine, s: *Stream, n: usize) ![]const f64 {
-    const a = e.arena.allocator();
+    const out = try e.arena.allocator().alloc(f64, n);
+    try nodeChancesInto(e, s, out);
+    return out;
+}
+
+/// The same chances written into a caller's buffer: a round's final buffer is its only probability allocation.
+fn nodeChancesInto(e: *Engine, s: *Stream, out: []f64) !void {
     if (e.cfg.node_probabilities) {
         if (e.backend.vtable.probabilities) |chances| {
-            const out = try a.alloc(f64, n);
-            if (try chances(e.backend.ptr, s, out)) return out;
+            if (try chances(e.backend.ptr, s, out)) return;
         }
     }
     if (e.cfg.draft_confidence != null) return error.NoDraftProbabilities;
-    return alloc.chainProbabilities(a, try e.rule.rates(who(s)), n);
+    alloc.chainProbabilitiesInto(try e.rule.rates(who(s)), out);
 }
 
 /// The grammar walk stays shared by serial windows and parallel per-stream jobs.
