@@ -188,6 +188,9 @@ pub fn main(init: std.process.Init) !u8 {
     var lfm3_suite: @import("metal_lfm3_suite.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
     defer lfm3_suite.deinit();
     try lfm3_suite.collect(o.only);
+    var inkling2 = @import("metal_inkling2_main.zig").Suites.init(a, device, queue, &kernels);
+    defer inkling2.deinit();
+    try inkling2.collect(o.only);
     for (gemma.all_entries) |v| {
         if (!wanted(o, v.name)) continue;
         if (!@import("metal_support.zig").gemma(tensor, v.kind, v.name)) continue;
@@ -433,6 +436,21 @@ pub fn main(init: std.process.Init) !u8 {
     var glm_launches = @import("metal_glm_launch.zig").Suite.init(a, device, queue, &kernels);
     defer glm_launches.deinit();
     try glm_launches.collect(o.only);
+    var glm_dflash_head: @import("metal_glm_dflash_head.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer glm_dflash_head.deinit();
+    try glm_dflash_head.collect(o.only);
+    var glm_dflash_attention: @import("metal_glm_dflash_attention.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer glm_dflash_attention.deinit();
+    try glm_dflash_attention.collect(o.only);
+    var glm_dflash_topk: @import("metal_glm_dflash_topk.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer glm_dflash_topk.deinit();
+    try glm_dflash_topk.collect(o.only);
+    var glm_dflash_accept: @import("metal_glm_dflash_accept.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer glm_dflash_accept.deinit();
+    try glm_dflash_accept.collect(o.only);
+    var glm_dflash_follow: @import("metal_glm_dflash_follow.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer glm_dflash_follow.deinit();
+    try glm_dflash_follow.collect(o.only);
     var flint: @import("metal_flint.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
     defer flint.deinit();
     try flint.collect(o.only);
@@ -460,6 +478,9 @@ pub fn main(init: std.process.Init) !u8 {
     var gemma_attention: @import("metal_gemma4_attention.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
     defer gemma_attention.deinit();
     try gemma_attention.collect(o.only);
+    var gemma_glu: @import("metal_gemma4_glu.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer gemma_glu.deinit();
+    try gemma_glu.collect(o.only);
     var nemotron_unroll: @import("metal_nemotron_unroll.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
     defer nemotron_unroll.deinit();
     try nemotron_unroll.collect(o.only);

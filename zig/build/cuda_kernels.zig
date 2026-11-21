@@ -149,6 +149,7 @@ pub const kernels = [_]Kernel{
     .{ .name = "glm_ops", .flags = &.{"-O3"} }, // ours: GLM's integer work the Python family did in torch (the DSA token lists)
     .{ .name = "glm_index", .flags = &.{"-O3"} }, // a prompt chunk's DSA scores and top-512 pools
     .{ .name = "hy4_indexpool", .src = "hy4_flash/indexpool", .flags = &.{ "-O3", "--fmad=false" } },
+    .{ .name = "hy4_engram", .src = "hy4_flash/engram", .flags = &.{ "-O3", "--fmad=false" } },
     .{ .name = "affine_experts", .flags = &.{ "-O3", "--fmad=false" } },
     .{ .name = "hy4_index_recall", .src = "hy4_flash/index_recall", .flags = &.{ "-O3", "--fmad=false" } },
     .{ .name = "hy4_attention_sink", .src = "hy4_flash/attention_sink", .flags = &.{ "-O3", "--fmad=false" } },
@@ -160,6 +161,8 @@ pub const kernels = [_]Kernel{
     .{ .name = "idol", .flags = glue }, // ours: Idol's denoiser glue and its fp16 head-64 attention
     .{ .name = "inkling2_attn", .src = "inkling2/attention", .flags = &.{"-O3"} }, // ours: Inkling 2's relative-bias attention
     .{ .name = "inkling2_pattn", .src = "inkling2/prompt_attention", .flags = &.{"-O3"} }, // ours: Inkling 2's global-layer prompt attention
+    .{ .name = "inkling2_ops", .src = "inkling2/ops", .flags = glue }, // ours: Inkling 2's residual mix, convs, router, SwiGLU
+    .{ .name = "inkling2_rows", .src = "inkling2/rows", .flags = glue }, // ours: Inkling 2's router row dots on prompt rows
     .{ .name = "glm_quant", .flags = torch_ops }, // ours: GLM's draft-only weight quantizers, torch at load in the Python family
     .{ .name = "exl3_linear", .flags = &.{ "-O3", "--expt-relaxed-constexpr" } }, // exl3/linear.cu's device code, tensorfold_exl3_linear_v5
     .{ .name = "exl3_experts", .flags = &.{ "-O3", "--expt-relaxed-constexpr" } }, // exl3/experts.cu's device code, tensorfold_exl3_experts

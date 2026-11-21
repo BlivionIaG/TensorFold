@@ -53,6 +53,7 @@ const valid = [_]Case{
     .{ .name = "TENSORFOLD_RESTORE_PREFETCH_GIB", .raw = "16777217", .n = 16777217 },
     .{ .name = "TENSORFOLD_RESTORE_PREFETCH_MS", .raw = "1099511627777", .n = 1099511627777 },
     .{ .name = "TENSORFOLD_TOOL_ID_KEY_FILE", .raw = "/etc/tensorfold/tool id.key", .n = 0 },
+    .{ .name = "TF_INKLING2_MINI_SMOKE", .raw = "/checkpoints/inkling2-mini", .n = 0 },
     .{ .name = "TF_STARTUP_RECEIPT", .raw = "0", .n = 0 },
     .{ .name = "TF_STARTUP_RECEIPT", .raw = "1", .n = 1 },
     .{ .name = "TF_SHARED_PRICE_LOG", .raw = "0", .n = 0 },
@@ -97,6 +98,7 @@ const valid = [_]Case{
     .{ .name = "TF_DRAFT_NODES", .raw = "0", .n = 0 },
     .{ .name = "TF_DRAFT_NODES", .raw = "64", .n = 64 },
     .{ .name = "TF_QMMF_HALF_BELOW", .raw = "0", .n = 0 },
+    .{ .name = "TF_HY4_MEM_FLOOR_GIB", .raw = "10", .n = 10 },
     .{ .name = "TENSORFOLD_PROMPT_CACHE_KEEP_OTHERS", .raw = "0", .n = 0 },
     .{ .name = "TENSORFOLD_PROMPT_CACHE_KEEP_OTHERS", .raw = "1", .n = 1 },
     .{ .name = "TF_PROMPT_INTERMEDIATE", .raw = "0", .n = 0 },
@@ -194,6 +196,11 @@ const valid = [_]Case{
     .{ .name = "TF_MINIMAX_WORLD", .raw = "2", .n = 2 },
     .{ .name = "TF_HY4_ENGRAM", .raw = "gpu", .n = 2 },
     .{ .name = "TF_HY4_DRAFT_BITS", .raw = "8", .n = 8 },
+    .{ .name = "TENSORFOLD_PARALLEL", .raw = "4", .n = 4 },
+    .{ .name = "TENSORFOLD_PARALLEL", .raw = " 8\t", .n = 8 },
+    .{ .name = "TENSORFOLD_PARALLEL", .raw = "4096", .n = 4096 },
+    .{ .name = "TENSORFOLD_PARALLEL", .raw = "auto", .n = 0 },
+    .{ .name = "TENSORFOLD_PARALLEL", .raw = "AUTO", .n = 0 },
 };
 
 test "environment: valid forms remain raw numbers before existing consumer clamps and defaults" {
@@ -447,4 +454,20 @@ test "rank aliases name their flag and refuse from their retirement release" {
     }
     try t.expect(e.retired("TF_GLM_PROF", "9.9.9") == null);
     try t.expect(e.retired("TF_NOT_A_ROW", "9.9.9") == null);
+}
+
+test "environment: TENSORFOLD_PARALLEL takes the flag over the setting, blank keeps the default, garbage is refused" {
+    try t.expectEqualStrings("4", (try e.parallel("4", "8")).?);
+    try t.expectEqualStrings("auto", (try e.parallel("auto", "8")).?);
+    try t.expectEqualStrings("8", (try e.parallel(null, " 8 ")).?);
+    try t.expectEqualStrings("Auto", (try e.parallel(null, "Auto")).?); // the text passes through; cli.parallel matches it without case
+    try t.expect((try e.parallel(null, null)) == null);
+    try t.expect((try e.parallel(null, " \t")) == null);
+    for ([_][]const u8{ "0", "4097", "typo", "-1", "8\nwrong" }) |raw| {
+        try t.expectError(error.InvalidEnvironment, e.parallel(null, raw));
+        const why = (try e.refusal(a, Env{ .name = "TENSORFOLD_PARALLEL", .raw = raw }, all)).?;
+        defer a.free(why);
+        try t.expect(std.mem.indexOf(u8, why, "TENSORFOLD_PARALLEL") != null);
+        try t.expect(std.mem.indexOf(u8, why, "or auto") != null);
+    }
 }

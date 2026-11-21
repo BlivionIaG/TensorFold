@@ -60,6 +60,22 @@ fn resolve(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch, comp
     var text: []const u8 = undefined;
     var head: []const u8 = "";
     var frags = false;
+    if (std.mem.startsWith(u8, d.name, "inkling2 ops ")) {
+        if (!assemble) return undefined;
+        return .{ .decl = d, .function = fun, .here = sources.inkling2_ops, .pre_m5 = sources.inkling2_ops };
+    }
+    if (std.mem.startsWith(u8, d.name, "inkling2 loop ") or std.mem.startsWith(u8, d.name, "inkling2 experts ")) {
+        if (!assemble) return undefined;
+        const src = if (std.mem.startsWith(u8, d.name, "inkling2 loop ")) sources.inkling2_loop_ops else sources.inkling2_experts;
+        return .{ .decl = d, .function = fun, .here = src, .pre_m5 = src };
+    }
+    if (std.mem.startsWith(u8, d.name, "inkling2 vision ") or
+        std.mem.startsWith(u8, d.name, "inkling2 draft ") or std.mem.startsWith(u8, d.name, "inkling2 media "))
+    {
+        if (!assemble) return undefined;
+        const raw = if (std.mem.startsWith(u8, d.name, "inkling2 draft ")) sources.inkling2_draft else sources.inkling2_vision;
+        return .{ .decl = d, .function = fun, .here = try tf.frags.source(device, a, raw), .pre_m5 = try preM5(a, "", raw) };
+    }
     if (std.mem.startsWith(u8, d.name, "qwen3 heads ")) {
         if (!assemble) return undefined;
         return .{ .decl = d, .function = fun, .here = sources.qwen3_heads, .pre_m5 = sources.qwen3_heads };
@@ -143,7 +159,7 @@ fn resolve(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch, comp
     }
     if (std.mem.startsWith(u8, d.name, "lfm3 ")) {
         if (!assemble) return undefined;
-        const lfm3_head = if (has(d.name, " range-skip ")) "#define L3_RANGE_SKIP_REPAIR 1\n" else if (has(d.name, " range-clear ")) "#define L3_RANGE_CLEAR_RISK 1\n" else if (has(d.name, " postnorm-bad ")) "#define L3_POSTNORM_SKIP_ROUND 1\n" else if (has(d.name, " conv-state-bad ")) "#define L3_CONV_BAD_STATE 1\n" else if (has(d.name, " segment-bad ")) "#define L3_SEGMENT_BAD_TAIL 1\n" else if (has(d.name, " square-bad ")) "#define L3_SQUARE_ACC half\n" else if (has(d.name, " attention-bad ")) "#define L3_ATTN_ACC half\n" else "";
+        const lfm3_head = if (has(d.name, " range-skip ")) "#define L3_RANGE_SKIP_REPAIR 1\n" else if (has(d.name, " range-clear ")) "#define L3_RANGE_CLEAR_RISK 1\n" else if (has(d.name, " postnorm-bad ")) "#define L3_POSTNORM_SKIP_ROUND 1\n" else if (has(d.name, " conv-state-bad ")) "#define L3_CONV_BAD_STATE 1\n" else if (has(d.name, " segment-bad ")) "#define L3_SEGMENT_BAD_TAIL 1\n" else if (has(d.name, " qk-stream-bad ")) "#define L3_QK_BAD_STREAM 1\n" else if (has(d.name, " square-bad ")) "#define L3_SQUARE_ACC half\n" else if (has(d.name, " attention-bad ")) "#define L3_ATTN_ACC half\n" else "";
         const body = try std.mem.concat(a, u8, &.{ lfm3_head, sources.lfm3, "\n", sources.lfm3_attention });
         return .{ .decl = d, .function = fun, .here = body, .pre_m5 = body };
     }
@@ -287,6 +303,18 @@ fn resolve(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch, comp
     } else if (std.mem.startsWith(u8, d.name, "nemotron geometry ")) {
         if (!assemble) return undefined;
         text = if (has(d.name, " up ")) tf.nemotron.kernels.geo_up else tf.nemotron.kernels.geo_down;
+    } else if (std.mem.startsWith(u8, d.name, "glm dflash2 accept ")) {
+        if (!assemble) return undefined;
+        text = sources.glm_draft_accept;
+    } else if (std.mem.startsWith(u8, d.name, "glm dflash2 follow ")) {
+        if (!assemble) return undefined;
+        text = sources.glm_draft_follow;
+    } else if (std.mem.startsWith(u8, d.name, "glm dflash2 topk ")) {
+        if (!assemble) return undefined;
+        text = sources.glm_draft_topk;
+    } else if (std.mem.startsWith(u8, d.name, "glm dflash2 attention ")) {
+        if (!assemble) return undefined;
+        text = try tf.glm.metal_dflash_attention.source(a, .{ .heads = 32, .kv_heads = 8, .dim = 128 });
     } else if (std.mem.startsWith(u8, d.name, "glm ")) {
         if (!assemble) return undefined;
         const key = d.name[4..std.mem.indexOfScalarPos(u8, d.name, 4, ' ').?];

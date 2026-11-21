@@ -84,6 +84,7 @@ pub const flint = @import("families/flint/flint.zig");
 pub const lfm2_moe = @import("families/lfm2_moe/lfm2_moe.zig");
 pub const flashnext_pack = @import("families/flashnext/pack.zig");
 pub const lfm3 = @import("families/lfm3/lfm3.zig");
+pub const inkling2_metal = @import("families/inkling2/metal.zig");
 
 test {
     std.testing.refAllDecls(@This());
@@ -91,6 +92,7 @@ test {
     _ = lora_merge;
     _ = @import("families/lfm3/backend.zig");
     _ = @import("families/lfm3/state.zig");
+    _ = @import("families/lfm3/qk_segments_test.zig"); // a shared round's qk in one dispatch (Metal)
     _ = @import("families/lfm3/snapshot.zig");
     _ = @import("families/nemotron/prefill_kernels.zig"); // Compile the prompt-chunk sources in tests.
     _ = @import("families/nemotron/simd_attention.zig"); // The pre-M5 attention rewrite finds its lines.
@@ -160,6 +162,7 @@ pub const bf16_topk_gpu = @import("bf16_topk_gpu");
 pub const tree_commit_gpu = @import("tree_commit_gpu");
 
 pub const tree_slots = @import("core/tree_slots.zig");
+pub const recurrent_workspace = @import("core/recurrent_workspace.zig");
 
 pub const weight_only = @import("core/weight_only.zig");
 pub const weight_only_contract = @import("core/contract/weight_only.zig");

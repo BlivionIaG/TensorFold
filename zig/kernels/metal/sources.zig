@@ -3,6 +3,10 @@
 /// DeepSeek-V4.1's sources live beside their kernels: users say sources.dsv41.NAME.
 pub const dsv41 = @import("deepseek_v41/sources.zig");
 
+pub const inkling2_ops = @import("inkling2/ops_sources.zig").ops;
+pub const inkling2_loop_ops = @import("inkling2/loop_sources.zig").ops;
+pub const inkling2_experts = @import("inkling2/experts_sources.zig").experts;
+
 pub const hy4_flash_indexpool = @embedFile("hy4_flash/indexpool.metal");
 pub const hy4_flash_index_recall = @embedFile("hy4_flash/index_recall.metal");
 pub const hy4_flash_index_build = @embedFile("hy4_flash/index_build.metal");
@@ -40,6 +44,9 @@ pub const gemma4_prompt_attention = @embedFile("gemma4/prompt_attention.metal");
 const gemm_nax = @embedFile("prefill/gemm_nax.metal") ++ @embedFile("prefill/gemm_nax_kernel.metal");
 /// gemm_nax and the image towers' shared glue: bf16 rounding, threadgroup sum and max, row softmax.
 const vision_glue = gemm_nax ++ @embedFile("prefill/vision_glue.metal");
+const inkling2_media = vision_glue ++ @embedFile("inkling2/gemm.metal");
+pub const inkling2_vision = inkling2_media ++ @embedFile("inkling2/vision.metal");
+pub const inkling2_draft = inkling2_media ++ @embedFile("inkling2/draft.metal");
 /// Gemma 4's image tower: gemm_nax and its glue (families/gemma4/vision.zig).
 pub const gemma4_vision = vision_glue ++ @embedFile("gemma4/vision.metal");
 
@@ -289,3 +296,11 @@ pub const lfm2_prompt_masked = @import("lfm2/prompt_masked.zig");
 
 /// Qwen3 embeddings' projected-head RMS norm (128-wide Q and K, V unchanged).
 pub const qwen3_heads = @embedFile("qwen3/heads.metal");
+/// GLM-5.3-Flash's DFlash2 drafter attention: Q/K rotary + normalized GQA partials and their merge.
+pub const glm_draft_attention = @embedFile("glm_draft_attention.metal");
+/// GLM-5.3-Flash's DFlash2 drafter top-k: row-wise top 16 over vocabulary logits into packed candidates.
+pub const glm_draft_topk = @embedFile("glm_draft_topk.metal");
+/// GLM-5.3-Flash's DFlash2 inline chain accept: compares verified picks against drafted tokens on the GPU.
+pub const glm_draft_accept = @embedFile("glm_draft_accept.metal");
+/// GLM-5.3-Flash's DFlash2 inline follow: copies accepted tap rows into the drafter ring ahead of its block.
+pub const glm_draft_follow = @embedFile("glm_draft_follow.metal");
