@@ -26,6 +26,14 @@ fn sync() callconv(.c) c_int {
 fn streamSync(_: abi.Stream) callconv(.c) c_int {
     return sync();
 }
+fn contextDevice(out: *abi.Device) callconv(.c) c_int {
+    out.* = 0;
+    return 0;
+}
+fn deviceAttribute(out: *c_int, _: abi.DeviceAttribute, _: abi.Device) callconv(.c) c_int {
+    out.* = 0;
+    return 0;
+}
 fn alloc(out: *u64, n: usize) callconv(.c) c_int {
     if (alloc_fail) return abi.error_not_ready;
     at = (at + 255) / 256 * 256;
@@ -101,8 +109,10 @@ pub fn model() !*h3.Model {
     const m = try std.testing.allocator.create(h3.Model);
     m.* = undefined;
     m.gpa = std.testing.allocator;
-    m.driver.lib = try std.DynLib.open(if (@import("builtin").os.tag == .macos) "/usr/lib/libSystem.B.dylib" else "libc.so.6");
+    m.driver.lib = try @TypeOf(m.driver.lib).open(if (@import("builtin").os.tag == .macos) "/usr/lib/libSystem.B.dylib" else "libc.so.6");
     m.driver.api.cuCtxSetCurrent = current;
+    m.driver.api.cuCtxGetDevice = contextDevice;
+    m.driver.api.cuDeviceGetAttribute = deviceAttribute;
     m.driver.api.cuCtxSynchronize = sync;
     m.driver.api.cuStreamSynchronize = streamSync;
     m.driver.api.cuMemAlloc_v2 = alloc;
@@ -124,7 +134,7 @@ pub fn model() !*h3.Model {
     m.blocks = try m.gpa.alloc(h3.Block, 1);
     m.blocks[0] = .{ .qkvc = empty, .out = empty, .fc1 = empty, .fc2 = empty, .norms = empty };
     m.gemms = .{ .gpa = m.gpa, .lt = undefined, .workspace = empty };
-    m.gemms.lt.lib = try std.DynLib.open(if (@import("builtin").os.tag == .macos) "/usr/lib/libSystem.B.dylib" else "libc.so.6");
+    m.gemms.lt.lib = try @TypeOf(m.gemms.lt.lib).open(if (@import("builtin").os.tag == .macos) "/usr/lib/libSystem.B.dylib" else "libc.so.6");
     m.hidden = 128;
     m.inner = 128;
     m.heads = 1;

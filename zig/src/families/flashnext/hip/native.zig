@@ -12,12 +12,16 @@ const lanes_mod = @import("lanes.zig");
 const worker = @import("worker.zig");
 
 pub const model_type = "qwen4_exp";
+/// Most MTP drafts `--mtp-drafts` may ask of the head.
+pub const mtp_max_drafts = @import("facts.zig").mtp_max_drafts;
 /// The MLX affine checkpoints the plan admits; the HIP products read 2- to 8-bit codes in groups of 32 to 128.
 pub const formats: []const []const u8 = &.{ "mlx-q3g32", "mlx-q4g32", "mlx-q6g32" };
 /// Positions a stream holds when neither --context nor the checkpoint's config names a window.
 pub const default_context: i64 = 32768;
 /// The engine cuts prompts itself.
 pub const prefill_step: u32 = 0;
+/// Flash Next's MTP floor on one RDNA 3.5 GPU serving alone, unless `--mtp-confidence` says otherwise.
+pub const mtp_confidence_rdna3_5: f64 = 0.8;
 /// Device bytes a rank keeps for the forward's scratch until the engine counts its own.
 pub const scratch_bytes: u64 = 2 << 30;
 
@@ -128,11 +132,13 @@ fn engineOf(
         .policy = dev.policy,
         .capacity = capacity(o.window),
         .chunk = @max(dev.policy.prefill_step, dev.policy.fill_rows),
+        .fallback = if (dev.fallback_step) |s| @max(s, dev.policy.fill_rows) else null,
+        .want = @max(o.streams, 1),
     });
 }
 
 /// One rank's engine at the window every rank took, and the streams every rank's memory holds.
-const Prepared = struct { e: *Engine, window: usize, fit: usize, per: usize, room: u64 };
+const Prepared = struct { e: *Engine, window: usize, fit: usize, per: usize, room: u64, shared: bool = false };
 
 /// Every rank, in steps over the link: rank 0's window, this rank's admission and engine, then the streams that fit.
 fn prepare(
@@ -171,7 +177,7 @@ fn prepare(
         .{@errorName(err)},
     );
     const room = pool.room(hip.usage(false).device);
-    const per = streamBytes(e, capacity(mine.window));
+    const per = e.streamBytes(capacity(mine.window));
     // the least over the ranks: a follower takes a stream's caches when rank 0 begins it
     const fit: usize = @intCast((try steps.together(a, .{ room / per, 0 }, .least, problem))[0]);
     // every rank holds the same least, so every rank refuses here alike
@@ -182,7 +188,8 @@ fn prepare(
             "lower --context or add ranks (--tp)",
         .{ mine.window, gibs(per), gibs(room) },
     );
-    return .{ .e = e, .window = mine.window, .fit = fit, .per = per, .room = room };
+    const shared = hip.admission.sharesHost(gpa, io, e.ctx);
+    return .{ .e = e, .window = mine.window, .fit = fit, .per = per, .room = room, .shared = shared };
 }
 
 const Owned = struct {
@@ -206,18 +213,46 @@ const Owned = struct {
     }
 };
 
+/// The prompt cache's bytes: the flag's, else 16 GiB; on shared pages no more than the room the streams leave.
+fn promptCacheBytes(flag: ?f64, shared: bool, room: u64, streams: u64) u64 {
+    if (flag) |g| return @intFromFloat(g * (1 << 30));
+    const most: u64 = 16 << 30;
+    return if (shared) @min(most, room -| streams) else most;
+}
+
+test promptCacheBytes {
+    const g: u64 = 1 << 30;
+    // a card: host RAM is apart
+    try std.testing.expectEqual(@as(u64, 16 * g), promptCacheBytes(null, false, 20 * g, 16 * g));
+    // shared: what the streams leave
+    try std.testing.expectEqual(@as(u64, 4 * g), promptCacheBytes(null, true, 20 * g, 16 * g));
+    // shared, roomy: the default
+    try std.testing.expectEqual(@as(u64, 16 * g), promptCacheBytes(null, true, 40 * g, 8 * g));
+    // nothing left: no cache
+    try std.testing.expectEqual(@as(u64, 0), promptCacheBytes(null, true, 16 * g, 16 * g));
+    // the flag wins
+    try std.testing.expectEqual(@as(u64, 12 * g), promptCacheBytes(12.0, true, 16 * g, 16 * g));
+}
+
 /// Rank 0's lanes over `p.e` for `streams` streams, with the server's startup line.
 fn lanesOf(gpa: std.mem.Allocator, dev: hip.Device, o: anytype, p: Prepared, streams: usize) !*Owned {
     const own = try gpa.create(Owned);
     errdefer gpa.destroy(own);
     const fx = try lanes_mod.Fx.init(gpa, p.e, streams);
     errdefer fx.deinit();
-    // kept prompt states live in host memory: --prompt-cache-gib, else 16 GiB
-    fx.keepPrompts(@intFromFloat((o.cache_gib orelse 16.0) * (1 << 30)));
+    // the first stream's caches at load: a first prompt otherwise waits on allocating and clearing them
+    try p.e.makeFirstSlot();
+    // kept prompt states live in host memory: --prompt-cache-gib, else 16 GiB (on shared pages, what the streams leave)
+    fx.keepPrompts(promptCacheBytes(o.cache_gib, p.shared, p.room, p.per * streams));
+    var why: [96]u8 = undefined;
+    const narrowed = if (p.e.narrowed) |n|
+        std.fmt.bufPrint(&why, " ({d}-row chunks would admit fewer of the streams asked for)", .{n}) catch ""
+    else
+        "";
     const startup = try std.fmt.allocPrint(
         gpa,
         "HIP {s} device {d}, rank {d} of {d}: Flash Next, {d:.2} GiB on the device, " ++
-            "{d} stream{s} of {d} positions, {d:.2} GiB each; prompts in {d}-row chunks",
+            "{d} stream{s} of {d} positions, {d:.2} GiB each; prompts in {d}-row chunks{s}",
         .{
             hip.kernels.arch,
             dev.index,
@@ -229,6 +264,7 @@ fn lanesOf(gpa: std.mem.Allocator, dev: hip.Device, o: anytype, p: Prepared, str
             capacity(p.window),
             gibs(p.per),
             p.e.o.chunk,
+            narrowed,
         },
     );
     own.* = .{ .gpa = gpa, .e = p.e, .fx = fx, .startup = startup };
@@ -275,20 +311,6 @@ pub fn open(
         .streams = streams,
         .startup = own.startup,
     };
-}
-
-/// Device bytes a stream takes at `cap` positions: its caches, window snapshots, the head's caches and its rows.
-fn streamBytes(e: *const Engine, cap: usize) usize {
-    var buf: [config.max_layers]bool = undefined;
-    const kinds = e.kinds(&buf) catch return std.math.maxInt(usize);
-    const l = cache.Layout.of(e.weights.model.dims, kinds, cap, e.act);
-    var head: usize = 0;
-    if (e.weights.model.mtp) |h| {
-        const hl = cache.Layout.of(h.dims, &.{false}, cap, e.act);
-        head = hl.bytes() + hl.cinBytes() + 4;
-    }
-    return l.bytes() + l.windowBytes() + l.cinBytes() + head +
-        cache.max_window * e.weights.model.dims.wide() * e.act.size();
 }
 
 /// A rank above 0: holds its share of the model and runs rank 0's steps until rank 0 stops.

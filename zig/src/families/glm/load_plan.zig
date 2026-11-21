@@ -1,4 +1,4 @@
-//! GLM-5.3-Flash's load plan: the checkpoint's identity, the bytes its weights and caches take, the chunk height, the limit.
+//! GLM-5.3-Flash's load plan: checkpoint identity, the bytes its weights and caches take, the chunk height, the limit.
 const std = @import("std");
 const platform = @import("sys");
 const mtl = @import("metal");
@@ -29,6 +29,12 @@ pub fn planBytes(gpa: std.mem.Allocator, device: mtl.Device, dir: []const u8, c:
     const plan = try wts.load(gpa, device, dir, c, 16, true);
     defer gpa.destroy(plan);
     defer plan.deinit();
+    var buf: [256]u8 = undefined;
+    const widths = wts.tally(plan, c).summary(&buf);
+    const gb = @as(f64, @floatFromInt(plan.bytes)) / 1e9;
+    const mtp = if (plan.mtp != null) " and the MTP layer" else "";
+    std.debug.print("glm plan: {d} of {d} layers{s}, {d:.2} GB in buffers, " ++
+        "every tensor's name, dtype and shape checked; {s}\n", .{ c.run, c.layers, mtp, gb, widths });
     return plan.bytes;
 }
 
@@ -74,8 +80,14 @@ pub fn expertBytes(l: anytype, i: usize) !usize {
     const every = i == c.layers;
     const m: usize = if (every) c.moe_inter else c.inter[1] - c.inter[0];
     const lo: usize = if (every) 0 else c.own[0];
-    const per = affine.bytes(m, D, try l.widths.expert(i, lo, "gate_proj")) + affine.bytes(m, D, try l.widths.expert(i, lo, "up_proj")) + affine.bytes(D, m, try l.widths.expert(i, lo, "down_proj"));
+    const per = try projBytes(l, i, lo, "gate_proj", m, D) + try projBytes(l, i, lo, "up_proj", m, D) + try projBytes(l, i, lo, "down_proj", D, m);
     return (if (every) c.experts else c.own[1] - c.own[0]) * per + 9 * 256;
+}
+
+/// An expert's `proj` [n, k]: the FP8 checkpoint's codes and scales, else its affine width's.
+fn projBytes(l: anytype, i: usize, e: usize, proj: []const u8, n: usize, k: usize) !usize {
+    if (@import("fp8.zig").isExpert(l, i, e, proj)) return affine.fp8Bytes(n, k);
+    return affine.bytes(n, k, try l.widths.expert(i, e, proj));
 }
 
 /// A stack's bytes: its rows, padded to `pad` a run (a part each once widths differ), at the costliest bytes a row.
@@ -96,7 +108,7 @@ fn stackBytes(l: anytype, comptime fmt: []const u8, args: anytype, parts: []cons
     return (std.mem.alignForward(usize, rows, pad) + (runs - 1) * pad) * most + runs * 3 * 256;
 }
 
-/// The fewest bytes of caches and buffers a load of `cap` tokens takes (the shortest prompt chunks), counted, not allocated.
+/// Fewest bytes of caches and buffers a load of `cap` tokens takes (shortest prompt chunks), counted, not allocated.
 pub fn leastArena(gpa: std.mem.Allocator, c: *const cfg.Config, cap: u32, chunked: bool) !usize {
     var dry: st.Arena = .{ .device = undefined, .gpa = gpa, .dry = true };
     const both = try st.init(&dry, c, cap);

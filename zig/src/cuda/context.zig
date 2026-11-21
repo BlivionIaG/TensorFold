@@ -21,6 +21,23 @@ pub const Context = struct {
     }
 
     pub fn init(d: *const Driver, ordinal: c_int) Error!Context {
+        // a -Dgpu server's images run on that one SM: refuse another GPU here, before any engine loads an image
+        if (@import("kernels.zig").built_sm) |sm| {
+            var buf: [192]u8 = undefined;
+            if (@import("driver.zig").gpuRefusal(sm, try d.capability(ordinal), ordinal, &buf)) |why| {
+                std.log.err("{s}", .{why});
+                return error.WrongGpu;
+            }
+        } else if (@import("kernels.zig").target_sms.len > 0) {
+            const actual_sm = try d.capability(ordinal);
+            var gpu_name: [256]u8 = undefined;
+            var message: [1024]u8 = undefined;
+            if (@import("kernels.zig").supports(actual_sm) == false) {
+                const gpu = d.deviceName(ordinal, &gpu_name) catch "unknown NVIDIA GPU";
+                std.log.err("{s}", .{releaseRefusal(gpu, actual_sm, ordinal, @import("kernels.zig").target_sms, &message)});
+                return error.WrongGpu;
+            }
+        }
         var dev: abi.Device = 0;
         try d.check(d.api.cuDeviceGet(&dev, ordinal), "cuDeviceGet");
         var ctx: abi.Context = null;
@@ -96,6 +113,12 @@ pub const Context = struct {
         return std.mem.sliceTo(buf, 0);
     }
 
+    pub fn uuid(self: *const Context) Error![16]u8 {
+        var id: [16]u8 = undefined;
+        try self.d.check(self.d.api.cuDeviceGetUuid_v2(&id, self.device), "cuDeviceGetUuid");
+        return id;
+    }
+
     pub const MemInfo = struct { free: usize, total: usize };
 
     pub fn memInfo(self: *const Context) Error!MemInfo {
@@ -104,3 +127,12 @@ pub const Context = struct {
         return m;
     }
 };
+
+/// The release refusal is composed before retaining a context or loading any module.
+pub fn releaseRefusal(name: []const u8, capability: u32, ordinal: c_int, sms: []const u32, buffer: []u8) []const u8 {
+    var w = std.Io.Writer.fixed(buffer);
+    w.print("CUDA device {d} ({s}) has compute capability {d}.{d} (sm_{d}); this build has kernels for SMs [", .{ ordinal, name, capability / 10, capability % 10, capability }) catch return "this build has no kernels for the selected GPU";
+    for (sms, 0..) |sm, i| w.print("{s}{d}", .{ if (i == 0) "" else ",", sm }) catch break;
+    w.writeAll("]: use a build with kernels for this GPU") catch {};
+    return w.buffered();
+}

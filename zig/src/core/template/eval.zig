@@ -18,13 +18,28 @@ pub const Activation = struct {
 
 /// Macro nesting limit; Python's own frame budget runs out earlier, so this only guards the stack.
 const max_depth = 400;
+/// A render's steps, stack and scratch bytes; only a template written to exhaust the server reaches one of them.
+pub const Limits = struct { steps: u64 = 50_000_000, stack: usize = 4 << 20, bytes: usize = 1 << 30 };
 
 pub const Ctx = struct {
     rt: v.Rt,
     vars: *const v.Map,
     out: *v.Buffer,
     depth: usize = 0,
-    acc: v.Buffer = .{},
+    limits: Limits = .{},
+    steps: u64 = 0,
+    /// The stack where the render began; frames differ too much in size for a count of levels to bound it.
+    base: usize = 0,
+    /// Where each request message's own output began (template.zig `renderMarked`); null: not recorded.
+    marks: ?*Marks = null,
+
+    /// One more statement list or loop-filter test: a step of the render, taken only while the stack has room.
+    fn enter(c: *Ctx) Error!void {
+        c.steps += 1;
+        if (c.steps > c.limits.steps) return c.rt.fail("the chat template ran more than {d} steps", .{c.limits.steps});
+        if (c.base == 0) c.base = @frameAddress();
+        if (c.base -| @frameAddress() > c.limits.stack) return c.rt.fail("the chat template recursed more than {d} KiB of stack deep", .{c.limits.stack >> 10});
+    }
 
     fn resolve(c: *Ctx, name: []const u8) Error!Value {
         if (c.vars.get(name)) |x| return x;
@@ -33,26 +48,43 @@ pub const Ctx = struct {
     }
 };
 
+pub const Marks = @import("marks.zig").Marks;
+
 const acc_min = 4096;
 
-fn isAcc(c: *const Ctx, s: []const u8) bool {
-    return s.len > 0 and s.ptr == c.acc.text.items.ptr and s.len == c.acc.text.items.len;
+fn accumulator(s: v.Str) ?*v.Buffer {
+    const b = s.accumulator orelse return null;
+    const current = b.str();
+    if (s.s.ptr != current.s.ptr or s.s.len != current.s.len) return null;
+    if (s.spans.ptr != current.spans.ptr or s.spans.len != current.spans.len) return null;
+    return b;
 }
 
 fn join(c: *Ctx, l: v.Str, r: v.Str) Error!v.Str {
+    const s = try joinText(c, l, r);
+    if (c.marks) |m| try m.joined(l, r, s);
+    return s;
+}
+
+fn joinText(c: *Ctx, l: v.Str, r: v.Str) Error!v.Str {
     const a = c.rt.a;
-    if (l.s.len < acc_min and !isAcc(c, l.s)) {
+    const owned = accumulator(l);
+    if (l.s.len < acc_min and owned == null) {
         var out: v.Buffer = .{};
         try out.append(a, l);
         try out.append(a, r);
         return out.str();
     }
-    if (!isAcc(c, l.s)) {
-        c.acc = .{};
-        try c.acc.append(a, l);
-    }
-    try c.acc.append(a, r);
-    return c.acc.str();
+    const out = owned orelse blk: {
+        const b = try a.create(v.Buffer);
+        b.* = .{};
+        try b.appendRetained(a, l);
+        break :blk b;
+    };
+    try out.appendRetained(a, r);
+    var result = out.str();
+    result.accumulator = out;
+    return result;
 }
 
 const Flow = enum { normal, brk, cont };
@@ -105,17 +137,22 @@ fn assignByName(c: *Ctx, act: *Activation, t: ast.Target, x: Value) Error!void {
 }
 
 fn exec(c: *Ctx, act: *Activation, body: []const ast.Stmt) Error!Flow {
+    try c.enter();
     for (body) |st| switch (st) {
         .output => |pieces| for (pieces) |pc| switch (pc) {
             .text => |t| try c.out.literal(c.rt.a, t),
-            .expr => |e| try c.out.append(c.rt.a, try v.asStr(&c.rt, try eval(c, act, e))),
+            .expr => |e| try emit(c, try v.asStr(&c.rt, try eval(c, act, e))),
         },
         .for_ => |f| try execFor(c, act, f),
         .if_ => |n| {
             const flow = try execIf(c, act, n);
             if (flow != .normal) return flow;
         },
-        .assign => |as| try assign(c, act, as.target, try eval(c, act, as.value)),
+        .assign => |as| {
+            const x = try eval(c, act, as.value);
+            if (c.marks) |m| m.bind(c.out, x);
+            try assign(c, act, as.target, x);
+        },
         .block_set => |b| {
             const inner = try enter(c, act, b.frame);
             var text = Value{ .str = try capture(c, inner, b.body) };
@@ -127,11 +164,17 @@ fn exec(c: *Ctx, act: *Activation, body: []const ast.Stmt) Error!Flow {
             mv.* = .{ .node = m, .closure = act, .name = m.name.id };
             (try slotOf(c, act, m.name.frame, m.name.slot)).* = .{ .macro = mv };
         },
-        .scoped => |sc| try c.out.append(c.rt.a, try capture(c, try enter(c, act, sc.frame), sc.body)),
+        .scoped => |sc| try emit(c, try capture(c, try enter(c, act, sc.frame), sc.body)),
         .break_ => return .brk,
         .continue_ => return .cont,
     };
     return .normal;
+}
+
+fn emit(c: *Ctx, s: v.Str) Error!void {
+    const base = c.out.text.items.len;
+    try c.out.append(c.rt.a, s);
+    if (c.marks) |m| try m.carry(c.out, s, base);
 }
 
 fn capture(c: *Ctx, act: *Activation, body: []const ast.Stmt) Error!v.Str {
@@ -140,6 +183,7 @@ fn capture(c: *Ctx, act: *Activation, body: []const ast.Stmt) Error!v.Str {
     c.out = &buf;
     defer c.out = saved;
     _ = try exec(c, act, body);
+    if (c.marks) |m| try m.close(&buf, buf.str());
     return buf.str();
 }
 
@@ -155,6 +199,7 @@ fn execFor(c: *Ctx, act: *Activation, f: *const ast.For) Error!void {
         const tf = try enter(c, act, f.test_frame);
         var kept: std.ArrayList(Value) = .empty;
         for (items) |item| {
+            try c.enter(); // the filter runs no statement list, so each item it tests is a step of its own
             try assignByName(c, tf, f.target, item);
             if (v.truthy(try eval(c, tf, t))) try kept.append(c.rt.a, item);
         }
@@ -168,7 +213,12 @@ fn execFor(c: *Ctx, act: *Activation, f: *const ast.For) Error!void {
         const body = try enter(c, act, f.body_frame);
         if (f.uses_loop) body.slots[f.loop_name.slot] = .{ .loop = loop };
         try assign(c, body, f.target, item);
-        switch (try exec(c, body, f.body)) {
+        const at = c.out.text.items.len;
+        var saved: Marks.Saved = undefined;
+        if (c.marks) |m| saved = m.begin(c.out);
+        const flow = try exec(c, body, f.body);
+        if (c.marks) |m| try m.end(saved, c.out, at, item);
+        switch (flow) {
             .brk => break,
             .cont => continue,
             .normal => completed = true,
@@ -216,6 +266,10 @@ pub fn call(c: *Ctx, callee: Value, pos: []const Value, kw: []const Kw) Error!Va
 
 /// Jinja2's Macro.__call__: positions first, keywords only for the rest, then defaults in the macro's frame.
 fn callMacro(c: *Ctx, m: *const v.Macro, pos: []const Value, kw: []const Kw) Error!Value {
+    if (c.marks) |mk| {
+        for (pos) |x| mk.bind(c.out, x);
+        for (kw) |k| mk.bind(c.out, k.value); // keyword arguments bind as positional ones do
+    }
     const node: *const ast.Macro = @ptrCast(@alignCast(m.node));
     const params = node.params;
     if (pos.len > params.len) return c.rt.fail("macro '{s}' takes not more than {d} argument(s)", .{ m.name, params.len });
@@ -372,10 +426,12 @@ fn binop(c: *Ctx, op: ast.BinOp, l: Value, r: Value) Error!Value {
         return .{ .str = out };
     }
     if (op == .add and l == .list and r == .list and l.list.seq == r.list.seq and (l.list.seq == .list or l.list.seq == .tuple))
-        return rt.list(try std.mem.concat(rt.a, Value, &.{ l.list.items, r.list.items }), l.list.seq);
+        return .{ .list = try l.list.concat(rt.a, r.list) };
     if (op == .mul and (l == .str or l == .list or r == .str or r == .list) and (isNum(l) or isNum(r)) and l != .float and r != .float) {
         const seq = if (isNum(l)) r else l;
-        const n = @max(0, intOf(if (isNum(l)) l else r));
+        // an empty sequence stays empty at any count, and the loops below would still count it out
+        const empty = if (seq == .str) seq.str.s.len == 0 else seq.list.items.len == 0;
+        const n = if (empty) 0 else @max(0, intOf(if (isNum(l)) l else r));
         if (seq == .str) {
             var out: v.Buffer = .{};
             for (0..@intCast(n)) |_| try out.append(rt.a, seq.str);
@@ -385,7 +441,7 @@ fn binop(c: *Ctx, op: ast.BinOp, l: Value, r: Value) Error!Value {
         }
         if (seq.list.seq == .list or seq.list.seq == .tuple) {
             var out: std.ArrayList(Value) = .empty;
-            for (0..@intCast(n)) |_| try out.appendSlice(rt.a, seq.list.items);
+            for (0..@intCast(n)) |_| try out.appendSlice(rt.a, try seq.list.values(rt.a));
             return rt.list(out.items, seq.list.seq);
         }
     }

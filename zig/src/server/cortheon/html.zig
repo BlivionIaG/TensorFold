@@ -16,6 +16,8 @@ const entities = [_]struct { []const u8, []const u8 }{
     .{ "middot", "\u{b7}" },  .{ "bull", "\u{2022}" },  .{ "times", "\u{d7}" },   .{ "copy", "\u{a9}" },     .{ "reg", "\u{ae}" },
     .{ "trade", "\u{2122}" }, .{ "deg", "\u{b0}" },     .{ "rarr", "\u{2192}" },  .{ "larr", "\u{2190}" },   .{ "zwj", "" },
     .{ "zwnj", "" },          .{ "shy", "" },
+    .{ "AMP", "&" },       .{ "LT", "<" },       .{ "GT", ">" },           .{ "QUOT", "\"" }, // HTML's uppercase names
+    .{ "COPY", "\u{a9}" }, .{ "REG", "\u{ae}" }, .{ "TRADE", "\u{2122}" },
 };
 
 fn isName(ch: u8) bool {
@@ -301,17 +303,29 @@ pub fn hrefs(a: Allocator, page: []const u8, max: usize, budget: ?*Budget) Alloc
         if (budget) |b| if (b.out()) break;
         const lt = std.ascii.findIgnoreCasePos(page, from, "<a") orelse break;
         from = lt + 2;
-        if (from >= page.len or !(page[from] == ' ' or page[from] == '\t' or page[from] == '\n')) continue;
+        if (from >= page.len or !(page[from] == ' ' or page[from] == '\t' or page[from] == '\n' or page[from] == '\r')) continue; // a carriage return is whitespace before href
         const end = tagEnd(page, lt);
         from = end; // the next link starts after this tag, so an unclosed one is read once
         const tag = page[lt..end];
-        const at = std.ascii.findIgnoreCase(tag, "href=") orelse continue;
-        var v = tag[at + 5 ..];
+        var scan: usize = 0;
+        var eq: ?usize = null;
+        while (std.ascii.findIgnoreCasePos(tag, scan, "href")) |name| { // HREF is the same attribute
+            var after = name + 4;
+            while (after < tag.len and std.ascii.isWhitespace(tag[after])) after += 1; // href = is the same attribute
+            if (after < tag.len and tag[after] == '=') {
+                eq = after;
+                break;
+            }
+            scan = name + 1; // hreflang, or a value that only says href, is not the attribute
+        }
+        const at = eq orelse continue;
+        var v = tag[at + 1 ..];
+        while (v.len > 0 and std.ascii.isWhitespace(v[0])) v = v[1..]; // a newline may sit before the quotes
         const q: u8 = if (v.len > 0 and (v[0] == '"' or v[0] == '\'')) v[0] else ' ';
         if (q != ' ') v = v[1..];
-        const stop = std.mem.indexOfAny(u8, v, if (q == ' ') " >" else &.{q}) orelse v.len;
+        const stop = std.mem.indexOfAny(u8, v, if (q == ' ') " \t\r\n>" else &.{q}) orelse v.len;
         const raw = std.mem.trim(u8, v[0..stop], " \t\r\n");
-        if (raw.len == 0 or raw[0] == '#' or std.ascii.startsWithIgnoreCase(raw, "javascript:") or std.ascii.startsWithIgnoreCase(raw, "mailto:")) continue;
+        if (raw.len == 0 or raw[0] == '#' or std.ascii.startsWithIgnoreCase(raw, "javascript:") or std.ascii.startsWithIgnoreCase(raw, "mailto:") or std.ascii.startsWithIgnoreCase(raw, "data:")) continue; // a data URL is not a page
         var text: std.ArrayList(u8) = .empty;
         var i: usize = 0;
         while (i < raw.len) {
@@ -328,11 +342,23 @@ pub fn hrefs(a: Allocator, page: []const u8, max: usize, budget: ?*Budget) Alloc
     return out.items;
 }
 
+fn utf8Len(b: u8) usize {
+    if (b < 0x80) return 1;
+    if (b & 0xe0 == 0xc0) return 2;
+    if (b & 0xf0 == 0xe0) return 3;
+    if (b & 0xf8 == 0xf0) return 4;
+    return 1;
+}
+
 /// The largest length up to `max` that ends on a UTF-8 character boundary.
 pub fn cutAt(text: []const u8, max: usize) usize {
-    if (text.len <= max) return text.len;
-    var n = max;
-    while (n > 0 and (text[n] & 0xc0) == 0x80) n -= 1;
+    var n: usize = @min(text.len, max);
+    while (n > 0 and n < text.len and (text[n] & 0xc0) == 0x80) n -= 1;
+    var i = n;
+    while (i > 0 and (text[i - 1] & 0xc0) == 0x80) i -= 1;
+    if (i == 0) return 0;
+    const start = i - 1;
+    if (start + utf8Len(text[start]) > n) return start; // a partial character at the end is left out
     return n;
 }
 
@@ -358,6 +384,8 @@ test "title, main content, blocks, lists and entities" {
     try std.testing.expect(std.mem.indexOf(u8, t.text, "| a | b") != null);
     for ([_][]const u8{ "alert", "Home", "legal", "hidden", "color" }) |gone| try std.testing.expect(std.mem.indexOf(u8, t.text, gone) == null);
     try std.testing.expect(!t.truncated);
+    const cased = try toText(a, "<p>Version&AMP;0.17 &rArr; &rarr;</p>", 1000, null);
+    try std.testing.expectEqualStrings("Version&0.17 &rArr; \u{2192}", cased.text); // &rArr; stays; &AMP; is defined
 }
 
 test "bare ampersands are text, and a page full of them reads in linear time" {
@@ -396,9 +424,9 @@ test "a page of unclosed tags reads in linear time" {
             for (page.*, 0..) |*c, i| c.* = case[0][i % case[0].len];
         }
         defer for (u.pages) |page| std.testing.allocator.free(page);
-        const ns = try @import("../linear_time.zig").fastest(3, &u, Unclosed.run);
-        try std.testing.expect(ns[1] < 5 * std.time.ns_per_s); // 2 MiB took minutes while each '<' rescanned the rest
-        try std.testing.expect(ns[1] < 24 * @max(ns[0], 1)); // 8x the bytes: near 8x the time, not a quadratic's 64x
+        const f = try @import("../linear_time.zig").fastest(3, &u, Unclosed.run);
+        try std.testing.expect(f.ns[1] < 5 * std.time.ns_per_s); // 2 MiB took minutes while each '<' rescanned the rest
+        try std.testing.expect(f.work[1] < 24 * @max(f.work[0], 1)); // 8x the bytes: near 8x, not a quadratic's 64x
     }
 }
 
@@ -430,6 +458,63 @@ test "link targets are read from anchors, decoded, without fragments or scripts"
     try std.testing.expectEqualStrings("rel/page", got[2]);
 }
 
+test "a data URL is not kept as a page link" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const got = try hrefs(a, "<p><a href=\"data:text/html,hi\">d</a> <a href=\"/docs\">x</a></p>", 10, null);
+    try std.testing.expectEqual(@as(usize, 1), got.len);
+    try std.testing.expectEqualStrings("/docs", got[0]);
+}
+
+test "a page link keeps its target when a space precedes href's equals" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const got = try hrefs(a, "<a href =\"https://b.org/x\">n</a>", 10, null);
+    try std.testing.expectEqual(@as(usize, 1), got.len);
+    try std.testing.expectEqualStrings("https://b.org/x", got[0]);
+}
+
+test "a page link keeps its target when a newline follows href's equals" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const got = try hrefs(a, "<a href=\n\"https://b.org/y\">n</a>", 10, null);
+    try std.testing.expectEqual(@as(usize, 1), got.len);
+    try std.testing.expectEqualStrings("https://b.org/y", got[0]);
+}
+
+test "an unquoted page link ends at a tab" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const got = try hrefs(a, "<a href=https://b.org/z\ttitle=n>z</a>", 10, null);
+    try std.testing.expectEqual(@as(usize, 1), got.len);
+    try std.testing.expectEqualStrings("https://b.org/z", got[0]);
+    const cr = try hrefs(a, "<a href=https://b.org/w\r\ntitle=n>w</a>", 10, null);
+    try std.testing.expectEqualStrings("https://b.org/w", cr[0]);
+}
+
+test "a page link keeps its target when href is not the first href in the tag" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const got = try hrefs(a, "<a hreflang=\"de\" href=\"https://b.org/de\">de</a> <a title=\"href\" href=\"/t\">t</a> <a class=\"nav-href\" href = \"/n\">n</a>", 10, null);
+    try std.testing.expectEqual(@as(usize, 3), got.len);
+    try std.testing.expectEqualStrings("https://b.org/de", got[0]);
+    try std.testing.expectEqualStrings("/t", got[1]);
+    try std.testing.expectEqualStrings("/n", got[2]);
+}
+
+test "a link broken onto the next line by a carriage return is kept" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try std.testing.expectEqualStrings("https://b.org/x", (try hrefs(a, "<a\nhref=\"https://b.org/x\">n</a>", 10, null))[0]);
+    try std.testing.expectEqualStrings("https://b.org/y", (try hrefs(a, "<a\r\nhref=\"https://b.org/y\">n</a>", 10, null))[0]);
+}
+
 test "a spent budget stops the text and the links, keeping what was read" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
@@ -449,4 +534,7 @@ test "a cut never splits a character" {
     try std.testing.expectEqual(@as(usize, 2), cutAt(s, 3));
     try std.testing.expectEqual(@as(usize, 5), cutAt(s, 5));
     try std.testing.expectEqual(s.len, cutAt(s, 100));
+    const partial = "ab\xe2\x82";
+    try std.testing.expectEqual(@as(usize, 2), cutAt(partial, partial.len));
+    try std.testing.expect(std.unicode.utf8ValidateSlice(partial[0..cutAt(partial, partial.len)]));
 }

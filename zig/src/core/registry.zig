@@ -31,6 +31,10 @@ pub const Shape = struct {
     words_aligned: bool = true,
     /// A plan's items; 0 is a plain product.
     items: u32 = 0,
+    /// A routed plan's pairs (rows x slots); 0: not given, and no pairs bound refuses it.
+    plan_pairs: u32 = 0,
+    /// A routed prompt plan's average rows per expert; 0: not given.
+    expert_rows: u32 = 0,
     /// Parts the groups are split into.
     parts: u32 = 1,
     /// Inside a lane round: the decode tile keeps every row count.
@@ -87,6 +91,9 @@ pub fn Entry(comptime Launch: type) type {
 /// Room for the entries' tuned rows: a Registry sits in a backend's kernel table, so its size is fixed.
 pub const max_entries = 64;
 
+/// The widths a format's codes come in: the list a tuning row's bound is checked against.
+pub const widths = tuning.widths;
+
 /// The most rows the family rule is checked at.
 pub const rule_rows = 256;
 
@@ -106,6 +113,15 @@ pub fn Registry(comptime Launch: type) type {
             return r;
         }
 
+        /// The tuned row of entry `e`, or null for one this GPU's table does not name or the registry does not hold.
+        pub fn rowOf(r: *const Self, e: *const E) ?tuning.Row {
+            const at = @intFromPtr(e);
+            const first = @intFromPtr(r.entries.ptr);
+            if (at < first) return null;
+            const i = (at - first) / @sizeOf(E);
+            return if (i < r.entries.len) r.tuned[i] else null;
+        }
+
         /// The cost of entry `i` at `shape`, or null where its row has no room for the shape.
         fn cost(r: *const Self, i: usize, shape: Shape, env: Env) ?f32 {
             const e = &r.entries[i];
@@ -114,7 +130,11 @@ pub fn Registry(comptime Launch: type) type {
             if (plan and !t.routed) return null;
             if (!plan and !t.plain) return null;
             if (t.items != 0 and plan and shape.items > t.items) return null;
-            // a routed prompt's kernel is chosen by its items, whatever rows they hold
+            if (t.pairs_per_item > 0 and plan and shape.plan_pairs != 0 and
+                @as(f64, @floatFromInt(shape.plan_pairs)) > @as(f64, t.pairs_per_item) * @as(f64, @floatFromInt(shape.items))) return null;
+            // wider codes than the bound are refused; so is a row made by hand whose bound is no code width
+            if (!tuning.widthBound(t.max_bits) or (t.max_bits != 0 and shape.bits > t.max_bits)) return null;
+            // a routed prompt's kernel ignores the rows one item holds (`m`): its items and pairs bound it
             if (!plan or e.path == .decode) {
                 const limit = if (t.rows_matrix != 0 and env.matrix_on and env.matrix) t.rows_matrix else t.rows;
                 if (!(e.round_any and shape.round) and limit != 0 and shape.m > limit) return null;
@@ -158,7 +178,7 @@ pub fn Registry(comptime Launch: type) type {
         pub fn verify(r: *const Self, env: Env, format: quant.Format) error{FamilyChanges}!void {
             // the reference decode tiles and the reference GEMM tile are the Python engine's rules, by row count
             if (!env.stream_on or !env.gemm_on) return;
-            for ([_]u8{ 2, 3, 4, 5, 6, 8 }) |bits| for ([_]u16{ 32, 64, 128 }) |group| {
+            for (widths) |bits| for ([_]u16{ 32, 64, 128 }) |group| {
                 var base: Shape = .{ .m = 1, .n = 4096, .k = 4096, .bits = bits, .group = group, .fp16 = !env.bf16, .tables = if (env.bf16) .bf16 else .f16 };
                 base.round = true;
                 try r.rule(env, format, .project, .decode, base, false);
@@ -267,6 +287,23 @@ test "the cheapest entry that has room for the rows runs" {
     try std.testing.expect(std.mem.endsWith(u8, partial.select(toy_env, .mlx, .project, .decode, shape).?.id, "any"));
 }
 
+test "an entry's tuned row is the table's, and null for an entry the table or the registry does not hold" {
+    const entries = [_]ToyEntry{
+        toy("a.decode.before", .decode, .lanes, false),
+        toy("a.decode.few", .decode, .stream, true),
+        toy("a.decode.any", .decode, .lanes, false),
+        toy("a.decode.after", .decode, .lanes, false),
+    };
+    const rows = [_]tuning.Row{.{ .id = "a.decode.few", .cost = 1, .few_rows = 8 }};
+    // the registry holds the two entries in the middle, and the table names the first of them
+    const r = Toy.init(&.{ .gfx = "toy", .rows = &rows }, entries[1..3]);
+    try std.testing.expectEqual(@as(u32, 8), r.rowOf(&entries[1]).?.few_rows);
+    try std.testing.expect(r.rowOf(&entries[2]) == null);
+    // an entry before or after the registry's own has no row
+    try std.testing.expect(r.rowOf(&entries[0]) == null);
+    try std.testing.expect(r.rowOf(&entries[3]) == null);
+}
+
 test "a plan is chosen by its items, a plain product by its rows" {
     const entries = [_]ToyEntry{
         toy("a.prefill.short", .prefill, .gemm, false),
@@ -290,6 +327,74 @@ test "a plan is chosen by its items, a plain product by its rows" {
     try std.testing.expect(std.mem.endsWith(u8, r.select(toy_env, .mlx, .project, .prefill, shape).?.id, "plan"));
     shape.items = 301;
     try std.testing.expect(std.mem.endsWith(u8, r.select(toy_env, .mlx, .project, .prefill, shape).?.id, "big"));
+}
+
+test "a plan past its entry's pairs per item takes the next entry" {
+    const entries = [_]ToyEntry{
+        toy("a.prefill.k3", .prefill, .gemm, false),
+        toy("a.prefill.k1", .prefill, .gemm, false),
+        toy("a.prefill.big", .prefill, .gemm, false),
+    };
+    const rows = [_]tuning.Row{
+        .{ .id = "a.prefill.k3", .cost = 1, .items = 300, .pairs_per_item = 3, .plain = false },
+        .{ .id = "a.prefill.k1", .cost = 2, .items = 300, .pairs_per_item = 4 },
+        .{ .id = "a.prefill.big", .cost = 3 },
+    };
+    const r = Toy.init(&.{ .gfx = "toy", .rows = &rows }, &entries);
+    var shape = toy_shape;
+    shape.items = 100;
+    const want = [_]struct { u32, []const u8 }{ .{ 0, "k3" }, .{ 1, "k3" }, .{ 300, "k3" }, .{ 301, "k1" }, .{ 400, "k1" }, .{ 401, "big" } };
+    for (want) |w| {
+        shape.plan_pairs = w[0];
+        try std.testing.expect(std.mem.endsWith(u8, r.select(toy_env, .mlx, .project, .prefill, shape).?.id, w[1]));
+    }
+    // the items bound still holds, and a plain product has no pairs bound
+    shape.plan_pairs = 1;
+    shape.items = 301;
+    try std.testing.expect(std.mem.endsWith(u8, r.select(toy_env, .mlx, .project, .prefill, shape).?.id, "big"));
+    shape.items = 0;
+    shape.plan_pairs = 5000;
+    try std.testing.expect(std.mem.endsWith(u8, r.select(toy_env, .mlx, .project, .prefill, shape).?.id, "k1"));
+    // a fractional bound: 3.5 pairs an item over 100 items takes 350 pairs and refuses 351
+    var half = rows;
+    half[0].pairs_per_item = 3.5;
+    const h = Toy.init(&.{ .gfx = "toy", .rows = &half }, &entries);
+    shape.items = 100;
+    shape.plan_pairs = 350;
+    try std.testing.expect(std.mem.endsWith(u8, h.select(toy_env, .mlx, .project, .prefill, shape).?.id, "k3"));
+    shape.plan_pairs = 351;
+    try std.testing.expect(std.mem.endsWith(u8, h.select(toy_env, .mlx, .project, .prefill, shape).?.id, "k1"));
+}
+
+test "an entry bounded by the codes' width takes no wider product, and none when its bound is no code width" {
+    const entries = [_]ToyEntry{
+        toy("a.prefill.narrow", .prefill, .gemm, false),
+        toy("a.prefill.any", .prefill, .gemm, false),
+    };
+    const rows = [_]tuning.Row{
+        .{ .id = "a.prefill.narrow", .cost = 1, .max_bits = 3 },
+        .{ .id = "a.prefill.any", .cost = 2 },
+    };
+    const r = Toy.init(&.{ .gfx = "toy", .rows = &rows }, &entries);
+    var shape = toy_shape;
+    const want = [_]struct { u8, []const u8 }{ .{ 2, "narrow" }, .{ 3, "narrow" }, .{ 4, "any" }, .{ 5, "any" }, .{ 6, "any" }, .{ 8, "any" } };
+    for ([_]u32{ 0, 100 }) |items| for (want) |w| {
+        // a plan is bounded as a plain product is
+        shape.items = items;
+        shape.bits = w[0];
+        try std.testing.expect(std.mem.endsWith(u8, r.select(toy_env, .mlx, .project, .prefill, shape).?.id, w[1]));
+    };
+    // a bound that is no code width is a table error: its row takes nothing, where 7 or 9 would have taken 3-bit codes
+    shape.items = 0;
+    for ([_]u8{ 1, 7, 9, 255 }) |bound| {
+        var wrong = rows;
+        wrong[0].max_bits = bound;
+        const w = Toy.init(&.{ .gfx = "toy", .rows = &wrong }, &entries);
+        for (widths) |bits| {
+            shape.bits = bits;
+            try std.testing.expect(std.mem.endsWith(u8, w.select(toy_env, .mlx, .project, .prefill, shape).?.id, "any"));
+        }
+    }
 }
 
 test "the family rule refuses a path whose family changes with the rows" {

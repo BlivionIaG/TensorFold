@@ -147,6 +147,20 @@ fn constTuple(tokens: []const Tok, text: []const u8, name: []const u8) ?usize {
     return null;
 }
 
+/// The nearest preceding constant expression, used for a locally selected kernel handle.
+fn constValue(tokens: []const Tok, text: []const u8, name: []const u8, before: usize) ?Span {
+    var result: ?Span = null;
+    var i: usize = 0;
+    while (i + 3 < before) : (i += 1) {
+        if (tokens[i].tag != .keyword_const or tokens[i + 1].tag != .identifier or tokens[i + 2].tag != .equal) continue;
+        if (!std.mem.eql(u8, text[tokens[i + 1].loc.start..tokens[i + 1].loc.end], name)) continue;
+        var end = i + 3;
+        while (end < before and tokens[end].tag != .semicolon) : (end += 1) {}
+        if (end < before) result = .{ .start = i + 3, .end = end };
+    }
+    return result;
+}
+
 /// The handles and the signature name in one argument.
 fn readArg(a: std.mem.Allocator, tokens: []const Tok, text: []const u8, span: Span, handles: *std.ArrayList([]const u8)) !?[]const u8 {
     var k = span.start;
@@ -154,9 +168,15 @@ fn readArg(a: std.mem.Allocator, tokens: []const Tok, text: []const u8, span: Sp
         if (tokens[k].tag != .identifier or tokens[k + 1].tag != .period or tokens[k + 3].tag != .period) continue;
         if (tokens[k + 2].tag != .identifier or tokens[k + 4].tag != .identifier) continue;
         const middle = text[tokens[k + 2].loc.start..tokens[k + 2].loc.end];
-        if (!std.mem.eql(u8, middle, "fns") and !std.mem.eql(u8, middle, "fp8")) continue;
+        if (!std.mem.eql(u8, middle, "fns") and !std.mem.eql(u8, middle, "fp8") and !std.mem.eql(u8, middle, "mt2")) continue;
         try handles.append(a, text[tokens[k].loc.start..tokens[k + 4].loc.end]);
         k += 4;
+    }
+    k = span.start;
+    while (k + 2 < span.end) : (k += 1) {
+        if (tokens[k].tag != .identifier or tokens[k + 1].tag != .period or tokens[k + 2].tag != .identifier) continue;
+        const handle = text[tokens[k].loc.start..tokens[k + 2].loc.end];
+        if (sig.byHandle(handle) != null) try handles.append(a, handle);
     }
     if (span.end - span.start != 3) return null;
     if (tokens[span.start].tag != .identifier or tokens[span.start + 1].tag != .period or tokens[span.start + 2].tag != .identifier) return null;
@@ -209,6 +229,10 @@ fn sitesIn(a: std.mem.Allocator, path: []const u8, text: [:0]const u8, out: *std
         for (spans.items) |span| {
             const found = try readArg(a, list, text, span, &handles);
             if (found) |n| named = n;
+            if (span.end - span.start == 1 and list[span.start].tag == .identifier) {
+                const local = constValue(list, text, text[list[span.start].loc.start..list[span.start].loc.end], i);
+                if (local) |value| _ = try readArg(a, list, text, value, &handles);
+            }
         }
         if (handles.items.len == 0) continue;
         const last = spans.items[spans.items.len - 1];
@@ -355,4 +379,42 @@ test "the launch scanner counts a tuple's elements and finds a local one" {
     try std.testing.expectEqual(@as(usize, 1), sites.items.len);
     try std.testing.expectEqual(@as(usize, 6), sites.items[0].elements.len);
     try std.testing.expectEqualStrings("e.fns.attn_merge", sites.items[0].handles[0]);
+}
+
+test "the launch scanner follows local choices and direct engine handles" {
+    const source =
+        \\const selected = if (small) e.mt2.paged else e.fp8.attn_rows;
+        \\const args = .{ geo, e.qn };
+        \\try launch(e, selected, sig.attn_rows8, .{1,1,1}, .{128,1,1}, args);
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var sites: std.ArrayList(Site) = .empty;
+    try sitesIn(arena.allocator(), "inline", source, &sites);
+    try std.testing.expectEqual(@as(usize, 1), sites.items.len);
+    try std.testing.expectEqual(@as(usize, 2), sites.items[0].handles.len);
+    try std.testing.expectEqualStrings("attn_rows8", sites.items[0].named.?);
+}
+
+test "Qwen3.5 prompt tiles predicate padded rows against the actual forward total" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const common = try std.Io.Dir.cwd().readFileAlloc(io, "zig/kernels/cuda/qwen35.cuh", a, .limited(1 << 20));
+    defer a.free(common);
+    const qwen = try std.Io.Dir.cwd().readFileAlloc(io, "zig/kernels/cuda/qwen35.cu", a, .limited(8 << 20));
+    defer a.free(qwen);
+    const int8 = try std.Io.Dir.cwd().readFileAlloc(io, "zig/kernels/cuda/w4a8_prefill.cu", a, .limited(4 << 20));
+    defer a.free(int8);
+
+    // Qwen3.5 row kernels return when their block's row reaches P[2] (the forward's total).
+    try std.testing.expect(std.mem.indexOf(u8, common, "return P != nullptr && m >= P[2];") != null);
+    try std.testing.expect(std.mem.indexOf(u8, qwen, "if (past_rows(P, blockIdx.x)) return;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, qwen, "if (past_rows(P, w)) return;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, qwen, "if (past_rows(P, blockIdx.z)) return;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, qwen, "if (past_rows(P, blockIdx.x / heads)) return;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, qwen, "if (past_rows(P, blockIdx.y)) return;") != null);
+
+    // W4A8 rounds its row tiles up, but masks loads and stores against M; padded rows never write out.
+    try std.testing.expect(std.mem.indexOf(u8, int8, "m0 + r < M") != null);
+    try std.testing.expect(std.mem.indexOf(u8, int8, "if (row >= M || col >= N) continue;") != null);
 }

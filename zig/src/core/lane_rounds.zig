@@ -9,6 +9,7 @@ const status = @import("lane_host_status.zig");
 const ends = @import("lane_host_end.zig");
 const rows_host = @import("lane_host_rows.zig");
 const pressure = @import("lane_host_pressure.zig");
+const load = @import("lane_host_load.zig");
 const LaneHost = host.LaneHost;
 const Job = LaneHost.Job;
 const Allocator = std.mem.Allocator;
@@ -22,16 +23,22 @@ pub const Rounds = struct {
         pub fn step(h: *LaneHost) bool {
             return round(h, h.rounds.?);
         }
+        /// Ends every request a stepped host still holds (a family's test has no engine thread to stop).
+        pub fn close(h: *LaneHost) void {
+            ends.closeAll(h);
+        }
     } else struct {};
 
-    pub const Verdict = enum { admit, wait, skip, refuse };
+    /// Why a request stays queued (wait_reason.zig): the planner names it with its `wait` or `skip`.
+    pub const Wait = @import("wait_reason.zig").Wait;
+    pub const Verdict = union(enum) { admit, wait: Wait, skip: Wait, refuse };
     pub const Piece = struct { key: usize, start: u64, end: u64, save: bool, run: bool = true };
     pub const Ask = struct { key: usize, prompt: []const u32, max_tokens: u32, submitted_s: f64 };
 
     pub const VTable = struct {
         /// An admission pass starts (a lane is free and requests wait).
         begin_admit: *const fn (ctx: *anyopaque) void,
-        /// The next queued request: start it, wait (it and those behind it), skip past it, or refuse it (`words`).
+        /// The next queued request: start it, wait (it and those behind) or skip it, each naming why, or refuse it.
         admit: *const fn (ctx: *anyopaque, ask: Ask, words: *[]const u8) Verdict,
         /// The pass is decided: what runs before the admitted streams begin.
         admitted: *const fn (ctx: *anyopaque) anyerror!void,
@@ -68,6 +75,7 @@ fn round(h: *LaneHost, rd: Rounds) bool {
         rd.vtable.begin_admit(rd.ctx);
         var free = h.info_.lanes - h.admitted.items.len;
         var i: usize = 0;
+        var rest: ?Rounds.Wait = null; // why the jobs from `i` on wait, when the planner said
         while (i < h.queued.items.len and free > 0 and !pressure.holds(h)) {
             const job = h.queued.items[i];
             var why: []const u8 = "";
@@ -83,18 +91,32 @@ fn round(h: *LaneHost, rd: Rounds) bool {
                     _ = h.queued.orderedRemove(i);
                     free -= 1;
                 },
-                .wait => break,
-                .skip => i += 1,
+                .wait => |r| {
+                    rest = r;
+                    break;
+                },
+                .skip => |r| {
+                    job.wait_reason = r;
+                    i += 1;
+                },
                 .refuse => {
                     if (refused.append(h.gpa, .{ .job = job, .why = why })) |_| {} else |_| break;
                     _ = h.queued.orderedRemove(i);
+                    h.load.failures[@backingInt(load.Failure.planner_refused)] += 1; // its reply: a failure, no code
                 },
             }
         }
+        // those behind a wait wait with it (FIFO); else the pass ran out of lanes, or pressure came
+        const behind: Rounds.Wait = rest orelse if (pressure.holds(h)) .memory_pressure else .engine_busy;
+        for (h.queued.items[@min(i, h.queued.items.len)..]) |job| job.wait_reason = behind;
+    } else {
+        const why: Rounds.Wait = if (h.stale) .engine_unavailable else if (pressure.holds(h)) .memory_pressure else .engine_busy;
+        for (h.queued.items) |job| job.wait_reason = why;
     }
     h.unlock();
     for (refused.items) |x| h.finish(x.job, .failed, x.why);
     rd.vtable.admitted(rd.ctx) catch |e| {
+        ends.failed(h, e);
         ends.failAll(h, h.words(e));
         return true;
     };
@@ -103,13 +125,15 @@ fn round(h: *LaneHost, rd: Rounds) bool {
         if (!lane_stream.open(h, job)) continue;
         rd.vtable.arm(rd.ctx, @intFromPtr(job));
         const b = h.core.beginStream(&job.stream) catch |e| {
-            _ = h.drop(job, h.words(e));
+            _ = ends.dropFailed(h, job, e);
             continue;
         };
+        if (b.damaged) load.fellBack(h, job); // its saved prefix was dropped: it prefills from 0 and is still served
         rd.vtable.began(rd.ctx, @intFromPtr(job), b.damaged);
     }
     // this round's pieces, a decode round of the streams decoding, then the prompts whose rows are in
     rd.vtable.plan(rd.ctx, &h.pieces, &h.finals) catch |e| {
+        ends.failed(h, e);
         ends.failAll(h, h.words(e));
         return true;
     };
@@ -132,6 +156,7 @@ fn round(h: *LaneHost, rd: Rounds) bool {
                 n += 1;
             }
             if (n > 0) h.core.pieces(list[0..n]) catch |e| {
+                ends.failed(h, e);
                 for (jobs[0..n], 0..) |job, i| {
                     const seen = for (jobs[0..i]) |previous| {
                         if (previous == job) break true;
@@ -146,6 +171,7 @@ fn round(h: *LaneHost, rd: Rounds) bool {
         const job: *Job = @ptrFromInt(piece.key);
         if (job.stream.finished) continue;
         h.core.piece(&job.stream, piece.start, piece.end, piece.save) catch |e| {
+            ends.failed(h, e);
             dropPiece(h, job, h.words(e));
         };
     }
@@ -158,10 +184,14 @@ fn round(h: *LaneHost, rd: Rounds) bool {
     }
     if (h.core.activeCount() > 0) {
         did = true;
+        const lt = @import("lane_trace.zig");
+        var traced = if (h.trace) |t| lt.Event.round(t, h.core.live.items.len) else undefined;
         h.core.step() catch |e| {
-            ends.failAll(h, @errorName(e));
+            if (h.trace) |t| t.endFailed(&traced);
+            ends.failRound(h, e);
             return true;
         };
+        if (h.trace) |t| t.end(&traced);
     }
     if (!join and h.finals.items.len > 0) {
         did = true;
@@ -188,6 +218,7 @@ fn dropPiece(h: *LaneHost, job: *Job, message: []const u8) void {
     while (i < h.finals.items.len) {
         if (h.finals.items[i] == key) _ = h.finals.orderedRemove(i) else i += 1;
     }
+    load.failed(h, .backend_prompt);
     _ = h.drop(job, message);
 }
 
@@ -212,6 +243,7 @@ fn runFinals(h: *LaneHost) void {
                 n += 1;
             }
             h.core.prepareFinals(ss[0..n]) catch |e| {
+                ends.failed(h, e);
                 ends.failAll(h, h.words(e));
                 return;
             };
@@ -241,7 +273,7 @@ fn runFinals(h: *LaneHost) void {
             if (joined > 0) std.log.info("join drafts: {d} of {d} finished prompts drafted in one pass", .{ joined, n });
             for (jobs[0..n], errs[0..n]) |job, x| {
                 if (x) |e| {
-                    _ = if (e == error.Cancelled) h.cancel(job) else h.drop(job, h.words(e));
+                    _ = if (e == error.Cancelled) h.cancel(job) else ends.dropFailed(h, job, e);
                     continue;
                 }
                 h.prefilled(job, job.began);
@@ -253,7 +285,7 @@ fn runFinals(h: *LaneHost) void {
         const job: *Job = @ptrFromInt(key);
         if (job.stream.finished) continue;
         h.core.finishStream(&job.stream) catch |e| {
-            _ = if (e == error.Cancelled) h.cancel(job) else h.drop(job, h.words(e));
+            _ = if (e == error.Cancelled) h.cancel(job) else ends.dropFailed(h, job, e);
             continue;
         };
         h.prefilled(job, job.began);
@@ -263,6 +295,9 @@ fn runFinals(h: *LaneHost) void {
 /// The engine thread under a round planner; an idle round waits for an arrival, a cancel or a short timeout.
 pub fn run(h: *LaneHost, rd: Rounds) void {
     while (true) {
+        @import("lane_host_backlog.zig").step(h); // holds precede activity: waits are idle
+        var activity = @import("lane_activity.zig").Activity.enter(h.activity);
+        defer activity.end();
         ends.takeCancels(h);
         pressure.step(h);
         rows_host.answer(h);
@@ -287,6 +322,7 @@ pub fn run(h: *LaneHost, rd: Rounds) void {
             continue;
         }
         if (!work) {
+            activity.end();
             if (rows_host.idle(h)) continue;
             if (h.cancels.items.len == 0) h.wake.waitTimeout(h.io, &h.mutex, .{ .duration = .{ .raw = .fromMilliseconds(100), .clock = .awake } }) catch {};
             h.unlock();

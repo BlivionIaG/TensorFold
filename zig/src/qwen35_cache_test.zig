@@ -181,10 +181,12 @@ test "Qwen retained: malformed positions and lengths refuse before changing a ca
 }
 
 const Harness = struct {
+    gpa: std.mem.Allocator = a,
     metal: q.Metal = undefined,
     store: pc.Store = undefined,
     active: ?*st.Cache = null,
     cancel_at: ?usize = null,
+    yield_at: ?usize = null,
     fail_at: ?usize = null,
 
     fn init(h: *Harness) void {
@@ -205,6 +207,10 @@ const Harness = struct {
         const h: *Harness = @ptrCast(@alignCast(ptr));
         return if (h.cancel_at) |at| h.active.?.len >= at else false;
     }
+    fn waits(ptr: *anyopaque) bool {
+        const h: *Harness = @ptrCast(@alignCast(ptr));
+        return if (h.yield_at) |at| h.active.?.len >= at else false;
+    }
     fn advance(h: *Harness, cache: *st.Cache, ids: []const u32) !void {
         if (h.fail_at) |at| if (cache.len >= at) return error.FakeForward;
         try step({}, cache, ids);
@@ -212,7 +218,7 @@ const Harness = struct {
     fn pass(h: *Harness, cache: *st.Cache, ids: []const u32, cuts: []const u32) !u32 {
         const lookup = try h.store.lookup(a, ids, 128, &.{}, cuts, &.{});
         defer a.free(lookup.marks);
-        var stream = try lanes.Stream.init(a, .{ .id = "fixture", .prompt = ids, .max_new = 8, .chunks = cuts, .cancel_check = .{ .ptr = h, .check = cancelled }, .reuse = .{
+        var stream = try lanes.Stream.init(a, .{ .id = "fixture", .prompt = ids, .max_new = 8, .chunks = cuts, .cancel_check = .{ .ptr = h, .check = cancelled }, .yield_check = .{ .ptr = h, .check = waits }, .reuse = .{
             .saved = if (lookup.entry) |entry| entry.saved else null,
             .at = if (lookup.entry) |entry| entry.at else 0,
             .marks = lookup.marks,
@@ -288,6 +294,28 @@ test "Qwen retained: cancellation after restore preserves the valid prefix and a
     try t.expect(h.store.counts.failed > 0);
 }
 
+test "Qwen retained: foreground work arriving after a chunk yields at the boundary and keeps the prefix" {
+    var allocations: mtl.Allocations = .{};
+    const device: mtl.Device = .{ .allocations = &allocations };
+    const ids = tokens();
+    var h: Harness = .{};
+    h.init();
+    defer h.deinit();
+    h.yield_at = 128;
+    var yielded = try st.Cache.init(a, device, 400);
+    defer yielded.deinit();
+    seed(&yielded);
+    try t.expectError(error.Yielded, h.pass(&yielded, ids[0..300], &.{}));
+    try t.expectEqual(@as(usize, 128), yielded.len); // one chunk ran, not the whole prompt
+
+    // The completed prefix is kept before the pass steps aside, so the next pass resumes at it.
+    h.yield_at = null;
+    var resumed = try st.Cache.init(a, device, 410);
+    defer resumed.deinit();
+    seed(&resumed);
+    try t.expectEqual(@as(u32, 128), try h.pass(&resumed, &ids, &.{}));
+}
+
 test "Qwen retained: a failed chunk never captures its incomplete state" {
     var allocations: mtl.Allocations = .{};
     const device: mtl.Device = .{ .allocations = &allocations };
@@ -301,4 +329,26 @@ test "Qwen retained: a failed chunk never captures its incomplete state" {
     seed(&failed);
     try t.expectError(error.FakeForward, h.pass(&failed, ids[0..300], &.{}));
     try t.expectEqual(@as(usize, 0), h.store.entries.items.len);
+}
+
+test "Qwen retained: completed widths record actual chunks and one pass" {
+    const Context = struct {
+        gpa: std.mem.Allocator = a,
+        fn advance(_: @This(), cache: *st.Cache, ids: []const u32) !void {
+            try step({}, cache, ids);
+        }
+    };
+    var allocations: mtl.Allocations = .{};
+    const device: mtl.Device = .{ .allocations = &allocations };
+    const ids: [23]u32 = @splat(7);
+    for ([_]bool{ false, true }) |chunked| {
+        var cache = try st.Cache.init(a, device, 128);
+        defer cache.deinit();
+        seed(&cache);
+        var stream = try lanes.Stream.init(a, .{ .id = "widths", .prompt = &ids, .max_new = 4, .chunks = if (chunked) &.{ 5, 18 } else &.{} });
+        defer stream.deinit(a);
+        try prefill.run(&cache, &stream, 128, Context{}, Context.advance);
+        try t.expectEqualSlices(u32, if (chunked) &.{ 5, 13, 5 } else &.{23}, stream.prefill_widths.items);
+        try t.expectEqual(@as(usize, 23), cache.len);
+    }
 }

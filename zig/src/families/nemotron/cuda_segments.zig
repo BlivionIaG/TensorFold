@@ -1,4 +1,4 @@
-//! Nemotron's prompt as staggered segments (cuda/segments.zig): each segment is a whole serial chunk, so the bits match.
+//! Nemotron's prompt as staggered segments (cuda/segments.zig): each segment a whole serial chunk, so the bits match.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -61,7 +61,7 @@ const Hooks = struct {
     }
 };
 
-/// The prompt from a reset state, `parts` chunks a call (`cancel` asked between calls); leaves the head and prompt buffers as serial does.
+/// Prompt from a reset state, `parts` chunks a call (`cancel` asked between); head and prompt buffers end as in serial.
 pub fn prefill(e: *Engine, s: *Segments, prompt: []const u32, head: ?*Head, parts: usize, cancel: ?Cancel) !void {
     if (parts < 2 or parts > s.n) return error.Segments;
     const R = state.prefill_rows;
@@ -90,6 +90,7 @@ pub fn prefill(e: *Engine, s: *Segments, prompt: []const u32, head: ?*Head, part
             f.page_elems = e.pageBytes() / 2;
             f.untaught = e.bound.untaught;
             f.vision = e.vision;
+            f.audio = e.audio;
             seg[k] = .{ .f = f, .walk = .{ .rows = rows, .pos = e.pos + k * R } };
         }
         try e.copied.record(e.stream);

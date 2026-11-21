@@ -7,7 +7,7 @@ revision `707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7` (`gemma4_unified`), its lang
 [`google/gemma-4-12B-it-assistant`](https://huggingface.co/google/gemma-4-12B-it-assistant/tree/46d4c6f13f0ac0ad827b915669b8df9b81c64c51)
 (revision `46d4c6f13f0ac0ad827b915669b8df9b81c64c51`) as the drafter. It runs on the native Gemma 4 family that serves
 [the 31B](gemma-4-native.md), on M5 tensor-unit GPUs. Build with Zig **0.17.0** and Xcode's Metal toolchain, as
-described in [the native preview](../../ZIG-PREVIEW.md#build).
+described in [the native preview](../zig-preview.md#build).
 
 ```bash
 hf download google/gemma-4-12B-it --revision 707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7 --local-dir "$HOME/models/gemma-4-12b-hf"
@@ -60,7 +60,7 @@ Served, one stream decodes at 140-248 tokens a second with it (prose 140, code 2
 | --- | --- |
 | The converted 12B, M5 Ultra, macOS 27 | Greedy and sampled decode, prompts to 252k, shared rounds, MTP drafts, structured output, prompt reuse, the server, below. |
 | `google/gemma-4-12B-it-assistant` `46d4c6f1` | The one MTP assistant admitted for the 12B. |
-| M1 to M4 | Refused: the lane projection needs M5 tensor units. |
+| M1 to M4 | Served through the row path (the fused lane projection needs M5 tensor units); the drafters refuse. |
 | Images | `--vision`: PNG and JPEG, 256 to 280 tokens an image, [below](#images). |
 | Audio | Not read: the converter drops the audio input, and the server takes no audio. |
 | Other widths | MLX affine 2-6 or 8 bits in groups of 64, uniform or per module: [other widths](#other-widths). |

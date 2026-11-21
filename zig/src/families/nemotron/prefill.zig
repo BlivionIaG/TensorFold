@@ -80,6 +80,7 @@ pub const Scratch = struct {
     up: Buffer,
     upr: Buffer,
     sh: Buffer,
+    attention_pick: Buffer,
 
     pub fn init(device: mtl.Device, c: cfg.Config, rows: usize) !Scratch {
         @setEvalBranchQuota(20000);
@@ -107,6 +108,7 @@ pub const Scratch = struct {
             .{ "rowids", pairs * 4 },                              .{ "inv", pairs * 4 },                              .{ "xr", pairs * d * 2 },
             .{ "y1", pairs * c.expert_width * 2 },                 .{ "y1r", pairs * c.expert_width * 2 },             .{ "y2", pairs * d * 2 },
             .{ "up", rows * c.shared_width * 2 },                  .{ "upr", rows * c.shared_width * 2 },              .{ "sh", rows * d * 2 },
+            .{ "attention_pick", 64 },
         };
         var s: Scratch = undefined;
         var made: usize = 0;
@@ -117,6 +119,7 @@ pub const Scratch = struct {
             @field(s, f[0]) = try device.buffer(@max(f[1], 64), opts);
             made += 1;
         }
+        @memset(s.attention_pick.slice(u32, 16), 0);
         return s;
     }
 
@@ -146,8 +149,8 @@ pub const Chunk = struct {
 
     /// x [rows, K] times a projection: lane_qmm to 128 rows, else MLX's 4-bit matmul; other widths on the row kernels.
     pub fn linear(self: Chunk, comptime key: []const u8, comptime sums: []const u8, lin: wts.Linear, raw: Raw, x: Buffer, out: Buffer) void {
-        if (lin.tiles == null and self.rows > lane_rows and self.f.wide(self.e, lin, x, out, self.rows)) return;
-        if (lin.tiles == null) return self.f.coop(self.e, key, lin, x, 0, self.p.s.xs, out, self.rows);
+        if (!lin.lane() and self.rows > lane_rows and self.f.wide(self.e, lin, x, out, self.rows)) return;
+        if (!lin.lane()) return self.f.coop(self.e, key, lin, x, 0, self.p.s.xs, out, self.rows);
         if (self.rows <= lane_rows) {
             self.f.xsum(self.e, sums, lin.k, x, 0, self.p.s.xs, self.rows);
             self.f.coop(self.e, key, lin, x, 0, self.p.s.xs, out, self.rows);

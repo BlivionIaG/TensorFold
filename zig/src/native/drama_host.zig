@@ -13,6 +13,7 @@ const Limit = if (is_cuda) @import("drama_limit.zig").Limit else struct {
     fn deinit(_: *@This()) void {}
 };
 const Warm = if (is_cuda) struct {} else d3.residency.Warm;
+const Voice = @import("drama_host_voice.zig").For(Host);
 const Session = struct {
     e: *d3.Engine,
     t: *d3.tts.Tts,
@@ -21,8 +22,9 @@ const Session = struct {
     cache: Snap = .{},
     guide: ?Guide = null,
 };
-/// Metal snapshot buffers belong to the shared GPU owner; CUDA keeps its uncached path.
+/// Metal snapshot buffers belong to the shared GPU owner; CUDA's cache is the host's `refs`, shared by its lanes.
 const Snap = if (is_cuda) struct {} else d3.Snapshot;
+const Refs = if (is_cuda) @import("drama_reference.zig").Cache(d3.Engine) else struct {};
 const Guide = if (is_cuda) struct {} else d3.guidance.Guide;
 const Job = struct {
     id: api.Id,
@@ -44,6 +46,7 @@ pub const Options = struct {
     silence: api.speech_guard.Config = .{},
     max_frames: ?u32 = null,
     prefill_rows: u32 = @intCast(d3.common.single_row), // rows a prompt chunk: one row until a caller opts in
+    reference_entries: u32 = @import("drama_reference.zig").default_entries, // CUDA, TF_DRAMA_REFERENCE_CACHE; 0: off
     cfg_enabled: bool = false,
     cfg_batched: bool = false,
 };
@@ -63,6 +66,8 @@ const Host = struct {
     worker: ?std.Thread = null,
     closing: bool = false,
     failed: completion.State = .{},
+    refs: Refs = .{},
+    voices: @import("drama_host_voice.zig").Queue = .{},
     const vtable: api.Engine.VTable = .{
         .info = info,
         .submit = submitText,
@@ -72,6 +77,7 @@ const Host = struct {
         .memory = memory,
         .keepalive = if (is_cuda) null else keepalive,
         .drain = drain,
+        .encode_voice = Voice.encode,
     };
     fn self(p: *anyopaque) *Host {
         return @ptrCast(@alignCast(p));
@@ -160,6 +166,7 @@ const Host = struct {
         if (is_cuda) h.sessions[0].e.ctx.makeCurrent() catch {
             h.lock();
             h.closing = true;
+            Voice.refuse(h);
             h.unlock();
             while (true) {
                 h.lock();
@@ -171,6 +178,7 @@ const Host = struct {
         };
         while (true) {
             h.lock();
+            if (Voice.step(h)) continue;
             const work = h.queue.next() orelse {
                 if (h.closing or h.failed.closed) {
                     h.unlock();
@@ -203,14 +211,8 @@ const Host = struct {
         const r = j.request;
         if (work.stage == .prompt) {
             if (is_cuda) {
-                if (!j.state.started) {
-                    try s.e.startPrompt(r.frames);
-                    try s.t.c.reset(s.t.cs);
-                    j.state.started = true;
-                }
-                const count = s.e.o.promptRows(r.frames.len - j.state.prompt);
-                try s.e.promptChunk(r.frames.len, j.state.prompt, count, null);
-                j.state.prompt += count;
+                if (!j.state.started) try s.t.c.reset(s.t.cs);
+                try h.refs.prompt(s.e, r.frames, r.reference_rows, &j.state);
             } else {
                 const ref_rows = reference.prefillRows(r.frames.len, r.reference_rows, s.e.o.max_rows);
                 if (!j.state.started) {
@@ -335,6 +337,8 @@ const Host = struct {
             return;
         }
         if (!is_cuda) h.warm.drop(h.sessions[0].e.g);
+        if (is_cuda) h.sessions[0].e.ctx.makeCurrent() catch {};
+        if (is_cuda) h.refs.deinit();
         var i = h.queue.lanes;
         while (i > 0) {
             i -= 1;
@@ -357,14 +361,8 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, _: []const u8, 
     try o.silence.validate();
     const h = try gpa.create(Host);
     errdefer gpa.destroy(h);
-    h.* = .{
-        .gpa = gpa,
-        .io = io,
-        .limit = undefined,
-        .queue = try rounds.Queue.init(o.lanes),
-        .info_ = .{},
-        .silence = o.silence,
-    };
+    h.* = .{ .gpa = gpa, .io = io, .limit = undefined, .queue = try rounds.Queue.init(o.lanes), .info_ = .{}, .silence = o.silence };
+    if (is_cuda) h.refs = .{ .gpa = gpa, .capacity = o.reference_entries };
     try h.limit.init(gpa, io, o.device);
     errdefer h.limit.deinit();
     var made: usize = 0;

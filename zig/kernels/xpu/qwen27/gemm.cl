@@ -76,6 +76,8 @@ kernel void rowsum(global const half *A, global float *Asum, int M, int Mp, int 
   Asum[g * Mp + m] = s;
 }
 
+// The scale of group g, column tile j (a kernel may preload several groups' scales and redefine this)
+#define SCALE_AT(g, j) ((float)S[(g) * N + n0 + 16 * j + lane] * 16777216.0f)
 // Common body: one group g, DPAS partial sum, then acc += s*part + b*sum a; R rows per A read, PF prefetch.
 #define GROUP_STEP(SG_M, SG_N, R, READ_A, PF, g, acc) GROUP_STEP_B(SG_M, SG_N, R, READ_A, PF, 1, g, acc)
 // BIAS = 0: without the b·Σa term (s4dpb family, bias by DPAS at the end of the kernel).
@@ -96,7 +98,7 @@ kernel void rowsum(global const half *A, global float *Asum, int M, int Mp, int 
       for (int j = 0; j < SG_N / 16; j++) {                                                                          \
         intel_sub_group_2d_block_read_32b_8r16x1c((global void *)W, N * 4, K / 8, N * 4, (int2)(n0 + 16 * j, kb * 8), w[j]); \
         if (u == 0) {                                                                                                \
-          s[j] = (float)S[(g) * N + n0 + 16 * j + lane] * 16777216.0f;                                               \
+          s[j] = SCALE_AT(g, j);                                               \
           if (BIAS) b[j] = (float)B[(g) * N + n0 + 16 * j + lane];                                                   \
         }                                                                                                            \
       }                                                                                                              \
@@ -239,25 +241,34 @@ W4S3_KERNEL(w4s3_prompt, 32, 16, 2, 8, 32, READ32, 1, 1)
 W4S3_SPLIT_KERNEL(w4s3_dsplit, 16, 32, 1, 4, 16, READ16)
 
 // --- Bias by DPAS (dpb family): sum_g Asum[g, m]*b[g, n] as a small GEMM of depth K / GSZ, Asum split in hi/lo fp16.
+#define GSTRIDE(g) (max(32, ((int)(g) + 7) & ~7))
+
 kernel void rowsum_hl(global const half *A, global half *Ahi, global half *Alo, int M, int Mp, int K, int G) {
-  const int m = get_global_id(0), g = get_global_id(1);
+  const int m = get_global_id(0), g = get_global_id(1), gp = GSTRIDE(G);
   if (m >= Mp) return;
   float s = 0.0f;
   if (m < M)
     for (int k = 0; k < GSZ; k++) s += (float)A[(long)m * K + g * GSZ + k];
   s *= 1.0f / GSZ;
   const half hi = convert_half_rte(s * ASC);
-  Ahi[(long)m * G + g] = hi;
-  Alo[(long)m * G + g] = convert_half_rte(s * ASC - (float)hi);
+  Ahi[(long)m * gp + g] = hi;
+  Alo[(long)m * gp + g] = convert_half_rte(s * ASC - (float)hi);
+  if (g == 0) {
+    for (int z = G; z < gp; z++) {
+      Ahi[(long)m * gp + z] = 0.0h;
+      Alo[(long)m * gp + z] = 0.0h;
+    }
+  }
 }
 
 // --- s4dpb family: fixed K slices summed from 0, then the bias by DPAS on the total; same bits for any partitioning.
 #define BIAS_TILE(tot, i, j)                                                                                         \
   for (int st = 0; st < (G + 15) / 16; st++) {                                                                       \
+    const int gp_ = GSTRIDE(G);                                                                                      \
     ushort8 ah, al;                                                                                                  \
     uint8 bb;                                                                                                        \
-    intel_sub_group_2d_block_read_16b_8r16x1c((global void *)Ahi, G * 2, M, G * 2, (int2)(16 * st, m0 + 8 * (i)), (private ushort *)&ah); \
-    intel_sub_group_2d_block_read_16b_8r16x1c((global void *)Alo, G * 2, M, G * 2, (int2)(16 * st, m0 + 8 * (i)), (private ushort *)&al); \
+    intel_sub_group_2d_block_read_16b_8r16x1c((global void *)Ahi, gp_ * 2, M, gp_ * 2, (int2)(16 * st, m0 + 8 * (i)), (private ushort *)&ah); \
+    intel_sub_group_2d_block_read_16b_8r16x1c((global void *)Alo, gp_ * 2, M, gp_ * 2, (int2)(16 * st, m0 + 8 * (i)), (private ushort *)&al); \
     intel_sub_group_2d_block_read_transform_16b_16r16x1c((global void *)Bg, N * 2, G, N * 2, (int2)(n0 + 16 * (j), 16 * st), (private uint *)&bb); \
     tot = intel_sub_group_f16_f16_matrix_mad_k16(as_short8(ah), as_int8(bb), tot);                                  \
     tot = intel_sub_group_f16_f16_matrix_mad_k16(as_short8(al), as_int8(bb), tot);                                  \
@@ -305,11 +316,11 @@ kernel void rowsum_hl(global const half *A, global half *Ahi, global half *Alo, 
     local float8 buf[SLICES][TI][TJ][16];                                                                            \
     const int sg = get_sub_group_id(), lane = get_sub_group_local_id();                                             \
     const int m0 = get_group_id(0) * SG_M, n0 = get_group_id(1) * SG_N;                                             \
-    const int per = G / SLICES;                                                                                      \
+    const int g0 = (sg * G) / SLICES, g1 = ((sg + 1) * G) / SLICES;                                                  \
     float8 acc[TI][TJ];                                                                                              \
     for (int i = 0; i < TI; i++)                                                                                     \
       for (int j = 0; j < TJ; j++) acc[i][j] = 0.0f;                                                                 \
-    for (int g = sg * per; g < (sg + 1) * per; g++) GROUP_STEP_B(SG_M, SG_N, R, READ_A, 2, 0, g, acc)                \
+    for (int g = g0; g < g1; g++) GROUP_STEP_B(SG_M, SG_N, R, READ_A, 2, 0, g, acc)                                  \
     for (int i = 0; i < TI; i++)                                                                                     \
       for (int j = 0; j < TJ; j++) buf[sg][i][j][lane] = acc[i][j];                                                  \
     barrier(CLK_LOCAL_MEM_FENCE);                                                                                    \
@@ -339,3 +350,79 @@ W4K_KERNEL_SL(w4k1_d16, 16, 16, 4, 16, READ16, 2, 1)
 W4K_KERNEL_SL(w4k1_d64, 16, 64, 4, 16, READ16, 2, 1)
 W4K_KERNEL_SL(w4k1_w8, 16, 32, 8, 16, READ16, 2, 1)
 W4K_KERNEL_SL(w4k1_v32, 32, 32, 4, 32, READ32, 2, 1)
+
+// --- Scales loaded ahead (Gemma 4 E4B decode, narrow N): PRE groups' scales at once, then the same groups in order.
+#undef SCALE_AT
+#define SCALE_AT(g, j) (sv[(g) - g0][j])
+#define PRE 8
+#define PRELOAD_SCALES(g0)                                                                                           \
+  float sv[PRE][SG_N / 16];                                                                                          \
+  _Pragma("unroll") for (int u_ = 0; u_ < PRE; u_++)                                                                 \
+    for (int j = 0; j < SG_N / 16; j++) sv[u_][j] = (float)S[((g0) + u_) * N + n0 + 16 * j + lane] * 16777216.0f;
+
+// W4K_KERNEL_SL with SL = 1.
+#define W4K_KERNEL_PS(NAME, SG_M_, SG_N_, WG_N, R, READ_A, PF)                                                       \
+  KERNEL_HEAD_K(NAME, 16 * WG_N) {                                                                                   \
+    enum { SG_M = SG_M_, SG_N = SG_N_ };                                                                             \
+    const global half *B = 0;                                                                                        \
+    const global float *Asum = 0;                                                                                    \
+    const int sg = get_sub_group_id(), lane = get_sub_group_local_id();                                             \
+    const int m0 = get_group_id(0) * SG_M, n0 = (get_group_id(1) * WG_N + sg) * SG_N;                               \
+    float8 total[SG_M / 8][SG_N / 16];                                                                               \
+    for (int i = 0; i < SG_M / 8; i++)                                                                               \
+      for (int j = 0; j < SG_N / 16; j++) total[i][j] = 0.0f;                                                        \
+    {                                                                                                                \
+      float8 acc[SG_M / 8][SG_N / 16];                                                                               \
+      for (int i = 0; i < SG_M / 8; i++)                                                                             \
+        for (int j = 0; j < SG_N / 16; j++) acc[i][j] = 0.0f;                                                        \
+      for (int g0 = 0; g0 < G; g0 += PRE) {                                                                          \
+        PRELOAD_SCALES(g0)                                                                                           \
+        _Pragma("unroll") for (int u_ = 0; u_ < PRE; u_++) {                                                         \
+          const int g = g0 + u_;                                                                                     \
+          GROUP_STEP_B(SG_M, SG_N, R, READ_A, PF, 0, g, acc)                                                         \
+        }                                                                                                            \
+      }                                                                                                              \
+      for (int i = 0; i < SG_M / 8; i++)                                                                             \
+        for (int j = 0; j < SG_N / 16; j++) total[i][j] += acc[i][j];                                                \
+    }                                                                                                                \
+    for (int i = 0; i < SG_M / 8; i++)                                                                               \
+      for (int j = 0; j < SG_N / 16; j++) BIAS_TILE(total[i][j], i, j)                                               \
+    STORE_HALF(total)                                                                                                \
+  }
+
+// W4KS_KERNEL (one slice per subgroup).
+#define W4KS_KERNEL_PS(NAME, SG_M_, SG_N_, R, READ_A)                                                                \
+  KERNEL_HEAD_K(NAME, 64) {                                                                                          \
+    enum { SG_M = SG_M_, SG_N = SG_N_, TI = SG_M_ / 8, TJ = SG_N_ / 16 };                                            \
+    const global half *B = 0;                                                                                        \
+    const global float *Asum = 0;                                                                                    \
+    local float8 buf[SLICES][TI][TJ][16];                                                                            \
+    const int sg = get_sub_group_id(), lane = get_sub_group_local_id();                                             \
+    const int m0 = get_group_id(0) * SG_M, n0 = get_group_id(1) * SG_N;                                             \
+    const int per = G / SLICES;                                                                                      \
+    float8 acc[TI][TJ];                                                                                              \
+    for (int i = 0; i < TI; i++)                                                                                     \
+      for (int j = 0; j < TJ; j++) acc[i][j] = 0.0f;                                                                 \
+    for (int g0 = sg * per; g0 < (sg + 1) * per; g0 += PRE) {                                                        \
+      PRELOAD_SCALES(g0)                                                                                             \
+      _Pragma("unroll") for (int u_ = 0; u_ < PRE; u_++) {                                                           \
+        const int g = g0 + u_;                                                                                       \
+        GROUP_STEP_B(SG_M, SG_N, R, READ_A, 2, 0, g, acc)                                                            \
+      }                                                                                                              \
+    }                                                                                                                \
+    for (int i = 0; i < TI; i++)                                                                                     \
+      for (int j = 0; j < TJ; j++) buf[sg][i][j][lane] = acc[i][j];                                                  \
+    barrier(CLK_LOCAL_MEM_FENCE);                                                                                    \
+    for (int t = sg; t < TI * TJ; t += SLICES) {                                                                     \
+      const int i = t / TJ, j = t % TJ;                                                                              \
+      if (m0 + 8 * i >= M) break;                                                                                    \
+      float8 tot = 0.0f;                                                                                             \
+      for (int s = 0; s < SLICES; s++) tot += buf[s][i][j][lane];                                                    \
+      BIAS_TILE(tot, i, j)                                                                                           \
+      half8 h = convert_half8_rte(tot);                                                                              \
+      intel_sub_group_2d_block_write_16b_8r16x1c(C, N * 2, M, N * 2, (int2)(n0 + 16 * j, m0 + 8 * i), (private ushort *)&h); \
+    }                                                                                                                \
+  }
+
+W4K_KERNEL_PS(w4k1_d16s, 16, 16, 4, 16, READ16, 2)
+W4KS_KERNEL_PS(w4k_s16x16s, 16, 16, 16, READ16)

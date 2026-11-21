@@ -11,13 +11,14 @@ pub fn wire(b: *std.Build, module: *std.Build.Module) void {
 pub fn generate(a: std.mem.Allocator) ![]const u8 {
     const serving = try gen.Gdn.cuda(a, @embedFile("../kernels/cuda/flashnext_gdn.cu"));
     var text = try ctl.cuda(a, serving);
+    text = try edit.once(a, text, "#include \"common/act.cuh\"", @embedFile("../kernels/cuda/common/act.cuh"));
     const update = try edit.function(text, "void update(");
     const start = (std.mem.indexOfScalar(u8, update, '{') orelse return error.GdnUpdate) + 1;
     var body = update[start .. update.len - 1];
     body = try std.mem.replaceOwned(u8, a, body, "vrow[", "vs[");
     text = try edit.once(a, text, update, "");
-    const reduce = try edit.function(text, "float warp_sum(");
-    text = try edit.once(a, text, reduce, "");
+    text = try edit.once(a, text, "#include \"common/reduce.cuh\"", "");
+    text = try edit.once(a, text, "using tf_common::warp_sum;", "");
     const call = "update(s, kk, vs, warp, g, beta);";
     if (std.mem.count(u8, text, call) != 5) return error.GdnUpdate;
     text = try std.mem.replaceOwned(u8, a, text, call, try std.mem.concat(a, u8, &.{ "{\n", body, "\n}" }));

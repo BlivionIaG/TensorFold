@@ -3,17 +3,54 @@ const std = @import("std");
 const cuda = @import("cuda");
 const geometry = @import("cuda_geometry.zig");
 const engine = @import("cuda_engine.zig");
+const platform = @import("sys");
 
 const Engine = engine.Engine;
 const DeviceBuffer = cuda.DeviceBuffer;
 const recurrent = @import("cuda_recurrent.zig");
 
-/// Rows a drafter's tap ring holds a stream: its window and a prompt chunk more.
-pub const tap_rows = 2048 + engine.max_rows;
+/// Rows a drafter's tap ring holds a stream behind a forward's rows (Engine.tapRows): its window at most.
+pub const tap_window = 2048;
+
+/// Kept rows a cache may hold pending, and the pending count at which a recorded slot scan writes the state back.
+pub const pend_cap = 48;
+pub const pend_commit = 24;
+
+/// TF_QWEN_KEEP_LATE=1 defers a keep's rows to the next slot scan (#1824): opt-in, its copy failed served chats.
+pub fn keepLate() bool {
+    const S = struct {
+        var on: ?bool = null;
+    };
+    if (S.on) |v| return v;
+    const v = platform.environment.read(bool, "TF_QWEN_KEEP_LATE", false) catch false;
+    S.on = v;
+    return v;
+}
+
+/// One kept row's decay, write and key in one linear layer: the head of its log row (qwen35.cuh pend_row).
+pub fn headBytes(g: anytype) usize {
+    return g.v_heads * 4 + g.v_heads * geometry.dk * 4 + g.k_heads * geometry.dk * 2;
+}
+
+/// A cache's pending buffer: pend_cap rows of every linear layer's head.
+pub fn pendBytes(g: anytype) usize {
+    return pend_cap * g.deltas() * headBytes(g);
+}
 
 /// qwen35.cuh's Seg and Path.
-pub const Seg = extern struct { rec: u64, conv: u64, kv: u64, tap: u64, log: u64, before: u64, cap: c_int, len: c_int, row0: c_int, rows: c_int, tap_rows: c_int, taps: c_int, delta: c_int, pt: u64 = 0, ps: u64 = 0, ptok: c_int = 0 };
+pub const Seg = extern struct { rec: u64, conv: u64, kv: u64, tap: u64, log: u64, before: u64, cap: c_int, len: c_int, row0: c_int, rows: c_int, tap_rows: c_int, taps: c_int, delta: c_int, pt: u64 = 0, ps: u64 = 0, ptok: c_int = 0, pn: c_int = 0, plog: u64 = 0 };
 pub const Path = extern struct { n: c_int, rows: [engine.most_window]c_int };
+
+/// Whether two of the forward's parts' paged caches start on one KV page (the shared store's prefix): the join kernels.
+pub fn anyShares(parts: anytype) bool {
+    for (parts, 0..) |p, i| if (firstPage(p.cache)) |f| for (parts[0..i]) |q| if (firstPage(q.cache)) |g| if (f == g) return true;
+    return false;
+}
+
+fn firstPage(c: *const Cache) ?u32 {
+    const p = c.paged orelse return null;
+    return if (p.ids.len > 0) p.ids[0] else null;
+}
 
 /// A cache's keys and values as pages (qwen35.cuh kv_row): page i of the stream's positions at `base` + ids[i] pages.
 pub const Paged = struct {
@@ -35,14 +72,18 @@ pub const Paged = struct {
 
 /// TF_QWEN_KV_PAGE_TEST=n: each cache's own buffer read through a table of n-position pages in reverse order (checks).
 pub fn pageTest() !usize {
-    const v = std.c.getenv("TF_QWEN_KV_PAGE_TEST") orelse return 0;
-    return parsePageTest(std.mem.span(v));
+    const n = try platform.environment.read(u64, "TF_QWEN_KV_PAGE_TEST", 0);
+    return if (n == 0) 0 else parsePageTestValue(n);
+}
+
+pub fn parsePageTestValue(n: usize) !usize {
+    if (!validPageTokens(n)) return error.BadQwenPageTest;
+    return n;
 }
 
 pub fn parsePageTest(v: []const u8) !usize {
     const n = std.fmt.parseInt(usize, v, 10) catch return error.BadQwenPageTest;
-    if (!validPageTokens(n)) return error.BadQwenPageTest;
-    return n;
+    return parsePageTestValue(n);
 }
 
 pub fn validPageTokens(n: usize) bool {
@@ -67,6 +108,24 @@ pub fn pageExtra(g: geometry.Geometry, cap: usize, tokens: usize, kv8: bool) !us
     return std.math.add(usize, padding, try std.math.mul(usize, rows / tokens, 4));
 }
 
+/// Where a cache's before sits in its log's bytes: past the first row, which is all a one-row window logs.
+pub fn overlay(e: *const Engine) @import("core").recurrent_workspace.Overlay {
+    return .init(e.g.stateBytes(), e.g.logBytes(1), engine.most_window);
+}
+
+/// What a cache's log and before take: one overlaid block, or with adaptive scratch the bound its owner holds.
+pub fn scratchBytes(e: *const Engine) usize {
+    return if (recurrent.enabled(e)) recurrent.bound(e) else overlay(e).bytes;
+}
+
+fn logView(e: *const Engine, at: u64) DeviceBuffer {
+    return .{ .d = e.d, .ptr = at, .len = e.g.logBytes(engine.most_window), .borrowed = true };
+}
+
+fn beforeView(e: *const Engine, at: u64) DeviceBuffer {
+    return .{ .d = e.d, .ptr = at + overlay(e).before_at, .len = e.g.stateBytes(), .borrowed = true };
+}
+
 pub const Cache = struct {
     owner: ?*recurrent.Pool = null,
     log_lease: ?recurrent.Lease = null,
@@ -82,8 +141,10 @@ pub const Cache = struct {
     state: DeviceBuffer,
     /// The exact state before a recorded one-row round advances its stable slot in place.
     before: ?DeviceBuffer = null,
+    /// A window's log and before in one block (recurrent_workspace.Overlay); runs and adaptive caches have none.
+    block: ?DeviceBuffer = null,
     kv: DeviceBuffer,
-    /// A drafter's tapped rows (`Engine.taps`), a ring of tap_rows: the row at position p in slot p % tap_rows.
+    /// A drafter's tapped rows (`Engine.taps`), a ring of tapRows(): the row at position p in slot p % tapRows().
     tap: ?DeviceBuffer = null,
     /// The newest verify window's records (qwen35.cuh's LogRow), held until its keep completes.
     log: DeviceBuffer,
@@ -92,8 +153,12 @@ pub const Cache = struct {
     /// Positions the newest forward wrote up to: a tap ring holds them until the next forward, whatever `keep` lands.
     written: usize = 0,
     logits: []u16,
-    /// The newest verify window, until its path is kept: where it started, its rows.
-    last: ?struct { start: usize, rows: usize } = null,
+    /// The newest verify window, until its path is kept: where it started, its rows, and whether it copied `before`.
+    last: ?struct { start: usize, rows: usize, undo: bool = true } = null,
+    /// Kept rows (rows 0..pend-1 of `pbuf`) the state does not hold yet: recorded slot scans replay them.
+    pend: c_int = 0,
+    /// The pending heads (pendBytes), allocated at the first deferred keep.
+    pbuf: ?DeviceBuffer = null,
     /// An image prompt's rotary shift (get_rope_index's rope_delta): rows after its prompt rotate at position + delta.
     pub fn init(gpa: std.mem.Allocator, e: *Engine, cap: usize) !Cache {
         const test_pages = try pageTest();
@@ -132,38 +197,40 @@ pub const Cache = struct {
         return .{ .state = none, .before = none, .kv = none, .paged = .{ .base = base, .table = table, .ids = &.{}, .tokens = tokens, .own_ids = false }, .log = none, .cap = 0, .logits = try gpa.alloc(u16, e.g.vocab) };
     }
 
-    /// Bytes of a pool lane's run: state, before, log, tap ring and a drafter's ring (`ring`), each 256-aligned.
+    /// Bytes of a pool lane's run: state, log with its rollback copy, tap ring and a drafter's ring, each 256-aligned.
     pub fn runBytes(e: *const Engine, ring: usize) usize {
         var n: usize = 0;
         for (runParts(e, ring)) |len| n += std.mem.alignForward(usize, len, 256);
         return n;
     }
 
-    fn runParts(e: *const Engine, ring: usize) [5]usize {
-        return .{ e.g.stateBytes(), e.g.stateBytes(), e.g.logBytes(engine.most_window), e.tapBytes(), ring };
+    fn runParts(e: *const Engine, ring: usize) [4]usize {
+        return .{ e.g.stateBytes(), overlay(e).bytes, e.tapBytes(), ring };
     }
 
-    /// A lane's state, before, log, taps and drafter ring as views of the run at `base`; a short run is refused.
+    /// A lane's state, log and before, taps and drafter ring as views of the run at `base`; a short run is refused.
     pub fn mapRun(self: *Cache, e: *const Engine, base: u64, len: usize, ring: usize) !void {
         if (runBytes(e, ring) > len) return error.QwenRunTooShort;
         var at = base;
-        var views: [5]DeviceBuffer = undefined;
+        var views: [4]DeviceBuffer = undefined;
         for (runParts(e, ring), &views) |n, *v| {
             v.* = .{ .d = e.d, .ptr = at, .len = n, .borrowed = true };
             at += std.mem.alignForward(usize, n, 256);
         }
         self.state = views[0];
-        self.before = views[1];
-        self.log = views[2];
-        self.tap = if (e.n_taps > 0) views[3] else null;
-        self.drafter_ring = if (ring > 0) views[4].ptr else null;
-        for ([_]DeviceBuffer{ views[2], views[3], views[4] }) |v| if (v.len > 0) try v.fill8(0, e.stream.handle);
+        self.pend = 0;
+        self.log = logView(e, views[1].ptr);
+        self.before = beforeView(e, views[1].ptr);
+        self.tap = if (e.n_taps > 0) views[2] else null;
+        self.drafter_ring = if (ring > 0) views[3].ptr else null;
+        for ([_]DeviceBuffer{ self.log, views[2], views[3] }) |v| if (v.len > 0) try v.fill8(0, e.stream.handle);
     }
 
     /// A closed lane's views dropped: its run went back to the pool.
     pub fn unmapRun(self: *Cache, e: *const Engine) void {
         const none: DeviceBuffer = .{ .d = e.d, .ptr = 0, .len = 0, .borrowed = true };
         self.state = none;
+        self.pend = 0;
         self.before = none;
         self.log = none;
         self.tap = null;
@@ -175,12 +242,12 @@ pub const Cache = struct {
         var state = try DeviceBuffer.alloc(e.d, e.g.stateBytes());
         errdefer state.free();
         const adaptive = recurrent.enabled(e);
-        var before: ?DeviceBuffer = null;
-        errdefer if (before) |*b| b.free();
-        if (!adaptive) before = try DeviceBuffer.alloc(e.d, e.g.stateBytes());
-        var log: DeviceBuffer = .{ .d = e.d, .ptr = 0, .len = 0, .borrowed = true };
-        if (!adaptive) log = try DeviceBuffer.alloc(e.d, e.g.logBytes(engine.most_window));
-        errdefer log.free();
+        var block: ?DeviceBuffer = null;
+        errdefer if (block) |*b| b.free();
+        if (!adaptive) block = try DeviceBuffer.alloc(e.d, overlay(e).bytes);
+        const before: ?DeviceBuffer = if (block) |b| beforeView(e, b.ptr) else null;
+        const none: DeviceBuffer = .{ .d = e.d, .ptr = 0, .len = 0, .borrowed = true };
+        const log = if (block) |b| logView(e, b.ptr) else none;
         var tap: ?DeviceBuffer = null;
         errdefer if (tap) |*t| t.free();
         if (e.n_taps > 0) {
@@ -195,12 +262,14 @@ pub const Cache = struct {
         try e.stream.synchronize();
         const scratch = if (adaptive) recurrent.bound(e) else 0;
         e.rec_scratch.cap += scratch;
-        return .{ .owner = if (adaptive) &e.rec_scratch else null, .scratch = scratch, .state = state, .before = before, .kv = kv, .paged = paged, .tap = tap, .log = log, .cap = cap, .logits = logits };
+        var c: Cache = .{ .owner = if (adaptive) &e.rec_scratch else null, .scratch = scratch, .state = state, .before = before, .kv = kv, .paged = paged, .tap = tap, .log = log, .cap = cap, .logits = logits };
+        c.block = block;
+        return c;
     }
 
     /// Publish a completed forward's metadata, including one-row slots that already advanced in place.
-    pub fn advanced(self: *Cache, rows: usize, record: bool) void {
-        self.last = if (record) .{ .start = self.len, .rows = rows } else null;
+    pub fn advanced(self: *Cache, rows: usize, record: bool, undo: bool) void {
+        self.last = if (record) .{ .start = self.len, .rows = rows, .undo = undo } else null;
         self.len += rows;
         self.written = self.len;
     }
@@ -212,6 +281,7 @@ pub const Cache = struct {
         self.written = 0;
         self.last = null;
         self.untaught = false;
+        self.pend = 0;
         self.delta = 0;
         try self.state.fill8(0, e.stream.handle);
     }
@@ -221,17 +291,19 @@ pub const Cache = struct {
         if (self.owner) |p| p.cap -= self.scratch;
         self.state.free();
         if (self.before) |*b| b.free();
+        if (self.block) |*b| b.free();
         self.kv.free();
         if (self.paged) |*p| freePaged(gpa, p);
         self.log.free();
         if (self.tap) |*t| t.free();
+        if (self.pbuf) |*b| b.free();
         gpa.free(self.logits);
     }
 
     /// The stream's window of `rows` rows from forward row `row0`, after `len` cached positions.
     pub fn seg(self: *const Cache, e: *const Engine, len: usize, row0: usize, rows: usize) Seg {
         const g = e.g;
-        var sg: Seg = .{ .rec = self.state.ptr, .conv = self.state.ptr + g.deltas() * g.recBytes(), .kv = self.kv.ptr, .tap = if (self.tap) |t| t.ptr else 0, .log = self.log.ptr, .before = if (self.before) |b| b.ptr else 0, .cap = @intCast(self.cap), .len = @intCast(len), .row0 = @intCast(row0), .rows = @intCast(rows), .tap_rows = tap_rows, .taps = @intCast(e.n_taps), .delta = self.delta };
+        var sg: Seg = .{ .rec = self.state.ptr, .conv = self.state.ptr + g.deltas() * g.recBytes(), .kv = self.kv.ptr, .tap = if (self.tap) |t| t.ptr else 0, .log = self.log.ptr, .before = if (self.before) |b| b.ptr else 0, .cap = @intCast(self.cap), .len = @intCast(len), .row0 = @intCast(row0), .rows = @intCast(rows), .tap_rows = @intCast(e.tapRows()), .taps = @intCast(e.n_taps), .delta = self.delta };
         if (self.paged) |p| {
             sg.kv = p.base;
             sg.pt = p.table.ptr;
@@ -246,6 +318,7 @@ pub const Cache = struct {
         const last = self.last orelse return error.NothingToKeep;
         if (path.len == 0) {
             if (last.rows == 1) {
+                if (!last.undo) return error.QwenNoRollbackCopy;
                 try recurrent.mark(self, true);
                 try self.state.copyFrom(0, (self.before orelse return error.MissingQwenBefore).ptr, e.g.stateBytes(), e.stream.handle);
             }
@@ -269,11 +342,66 @@ pub const Cache = struct {
         const g = e.g;
         const sg = self.seg(e, last.start, 0, last.rows);
         try recurrent.mark(self, false);
-        try e.run(e.keeps.apply, .{ 1, geometry.dk / 4, g.v_heads * g.deltas() }, .{ 32, 4, 1 }, .{ e.geo, sg, p });
+        // the path's rows join the pending ones; without a log, with the switch off or past pend_cap they land now
+        const deferred = keepLate() and self.log.len > 0 and path.len <= pend_cap;
+        if (!deferred) {
+            try self.flush(e);
+            try e.run(e.keeps.apply, .{ 1, geometry.dk / 4, g.v_heads * g.deltas() }, .{ 32, 4, 1 }, .{ e.geo, sg, p });
+        }
         try e.run(e.keeps.conv, .{ g.deltas(), (g.convBytes() / 2 + 255) / 256, 1 }, .{ 256, 1, 1 }, .{ e.geo, sg, @as(c_int, @intCast(path[path.len - 1])) });
         if (!prefix and g.attentions() > 0) try e.run(if (e.kv8) e.fp8.compact else e.keeps.compact, .{ g.attentions(), g.kv_heads, 1 }, .{ geometry.head_dim, 1, 1 }, .{ e.geo, sg, p });
+        if (deferred) try self.pendRows(e, sg.log, path);
         self.last = null;
         self.len = last.start + path.len;
+    }
+
+    /// The kept path's heads after the pending rows, a run of consecutive rows one copy; a full buffer lands first.
+    fn pendRows(self: *Cache, e: *Engine, log: u64, path: []const u32) !void {
+        const g = e.g;
+        if (self.pbuf == null) self.pbuf = try DeviceBuffer.alloc(e.d, pendBytes(g));
+        if (@as(usize, @intCast(self.pend)) + path.len > pend_cap) try self.flush(e);
+        const hb = headBytes(g);
+        const row_log = g.deltas() * g.logRowBytes();
+        const base = self.pbuf.?.ptr;
+        var j: usize = 0;
+        while (j < path.len) {
+            var run: usize = 1;
+            while (j + run < path.len and path[j + run] == path[j] + run) run += 1;
+            const at: usize = @as(usize, @intCast(self.pend)) + j;
+            const m: cuda.abi.Memcpy2D = .{ .src = log + path[j] * row_log, .src_pitch = g.logRowBytes(), .dst = base + at * g.deltas() * hb, .dst_pitch = hb, .width = hb, .height = run * g.deltas() };
+            // a copy past the log or the pending buffer is refused here, not by the driver mid-reply
+            const src_end = m.src - log + (m.height - 1) * m.src_pitch + m.width;
+            const dst_end = m.dst - base + (m.height - 1) * m.dst_pitch + m.width;
+            if (src_end > self.log.len or dst_end > self.pbuf.?.len) {
+                std.log.err("qwen3_5 pending keep: path {d} rows after {d} pending, path row {d} (window row {d}), run {d}: source end {d} of a {d}-byte log, destination end {d} of a {d}-byte buffer; head {d} bytes, log row {d}", .{ path.len, self.pend, j, path[j], run, src_end, self.log.len, dst_end, self.pbuf.?.len, hb, g.logRowBytes() });
+                return error.QwenPendingOutOfBounds;
+            }
+            try e.d.check(e.d.api.cuMemcpy2DAsync_v2(&m, e.stream.handle), "cuMemcpy2DAsync");
+            j += run;
+        }
+        self.pend += @intCast(path.len);
+    }
+
+    /// The pending rows landed in the state now (before anything but a recorded slot scan reads it).
+    pub fn flush(self: *Cache, e: *Engine) !void {
+        if (self.pend == 0) return;
+        var sg = self.seg(e, self.len, 0, 0);
+        sg.plog = self.pbuf.?.ptr;
+        const n = self.pend;
+        self.pend = 0;
+        const g = e.g;
+        try e.run(e.keeps.apply_pend, .{ 1, geometry.dk / 4, g.v_heads * g.deltas() }, .{ 32, 4, 1 }, .{ e.geo, sg, n });
+    }
+
+    /// This forward's scan entry with the pending rows, written back (a positive count) at one row or pend_commit.
+    pub fn fold(self: *Cache, seg_: Seg) Seg {
+        var sg = seg_;
+        if (self.pend == 0) return sg;
+        sg.plog = self.pbuf.?.ptr;
+        const commit = seg_.rows == 1 or self.pend >= pend_commit;
+        sg.pn = if (commit) self.pend else -self.pend;
+        if (commit) self.pend = 0;
+        return sg;
     }
 
     /// The newest window kept whole (the round loop keeps nothing when every row landed), before the next forward.
@@ -290,6 +418,14 @@ fn freePaged(gpa: std.mem.Allocator, p: *Paged) void {
     if (p.own_ids) gpa.free(p.ids);
 }
 
+test "TF_QWEN_KEEP_LATE and TF_QWEN_KV_PAGE_TEST: the platform parses unset, valid and malformed text" {
+    try std.testing.expectEqual(@as(?u64, null), try platform.environment.parse("TF_QWEN_KEEP_LATE", null));
+    try std.testing.expectEqual(@as(?u64, 1), try platform.environment.parse("TF_QWEN_KEEP_LATE", "1"));
+    try std.testing.expectError(error.InvalidEnvironment, platform.environment.parse("TF_QWEN_KEEP_LATE", "on"));
+    try std.testing.expectEqual(@as(?u64, 512), try platform.environment.parse("TF_QWEN_KV_PAGE_TEST", "512"));
+    try std.testing.expectError(error.InvalidEnvironment, platform.environment.parse("TF_QWEN_KV_PAGE_TEST", "0"));
+}
+
 test "KV page dimensions: diagnostic rows fit the signed kernel argument" {
     try std.testing.expectEqual(@as(usize, 48), try parsePageTest("48"));
     try std.testing.expectError(error.BadQwenPageTest, parsePageTest("0"));
@@ -303,4 +439,16 @@ test "KV page dimensions: diagnostic admission includes its padded rows and devi
     for ([_]bool{ false, true }) |fp8| try std.testing.expectEqual(31 * g.kvBytes(1, fp8) + 8, try pageExtra(g, 65, 48, fp8));
     try std.testing.expectError(error.BadQwenPageTest, cacheRows(2147483647, 48));
     try std.testing.expectError(error.BadQwenPageTest, cacheRows(std.math.maxInt(usize), 48));
+}
+
+test "Qwen share faults: a forward joins only when two parts' paged caches start on one page" {
+    var ids = [_][2]u32{ .{ 4, 5 }, .{ 4, 9 }, .{ 7, 5 } };
+    var cs: [4]Cache = undefined;
+    for (cs[0..3], &ids) |*c, *i| c.paged = .{ .base = 0, .table = undefined, .ids = i, .tokens = 16, .own_ids = false };
+    cs[3].paged = null;
+    const P = struct { cache: *const Cache };
+    const all = [_]P{ .{ .cache = &cs[0] }, .{ .cache = &cs[1] }, .{ .cache = &cs[2] }, .{ .cache = &cs[3] } };
+    try std.testing.expect(anyShares(all[0..]) and anyShares(all[0..2]));
+    // a later page in common, no table, or the first page's holder alone in the forward: no join
+    try std.testing.expect(!anyShares(all[1..]) and !anyShares(all[0..1]) and !anyShares(&[_]P{ all[0], all[2], all[3] }));
 }

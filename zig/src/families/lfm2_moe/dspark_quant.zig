@@ -30,11 +30,11 @@ pub fn toF32(v: u16) f32 {
     return @bitCast(@as(u32, v) << 16);
 }
 
-/// Round to nearest even, as MLX casts.
+/// Round to nearest even, as MLX casts; a NaN keeps a quiet bit even when its payload sat below the high word.
 pub fn toBf16(f: f32) u16 {
     const b: u32 = @bitCast(f);
-    if ((b & 0x7f80_0000) == 0x7f80_0000) return @truncate(b >> 16);
-    return @truncate((b + 0x7fff + ((b >> 16) & 1)) >> 16);
+    if (std.math.isNan(f)) return @truncate((b >> 16) | 0x40);
+    return @truncate((b +% 0x7fff +% ((b >> 16) & 1)) >> 16);
 }
 
 /// A matrix's codes [n][k * bits / 8], scales and biases [n][k / 64], each written by one thread's rows.

@@ -51,6 +51,7 @@ test "Draft precision: DFlash real absorb adapter forwards both row roles and re
     driver.api.cuLaunchKernel = Record.launch;
     var e: q.engine.Engine = undefined;
     e.kit = null;
+    e.scratch_rows = q.engine.grid_rows;
     e.d = &driver;
     e.stream = .{ .d = &driver, .handle = null };
     var d: q.draft.Draft = undefined;
@@ -72,6 +73,7 @@ test "Draft precision: MTP real absorb adapter forwards both row roles and resto
     driver.api.cuLaunchKernel = Record.launch;
     var e: q.engine.Engine = undefined;
     e.kit = null;
+    e.scratch_rows = q.engine.grid_rows;
     e.d = &driver;
     e.stream = .{ .d = &driver, .handle = null };
     e.g.hidden = 256;
@@ -83,7 +85,8 @@ test "Draft precision: MTP real absorb adapter forwards both row roles and resto
     d.ring_fns.gather_taps = function(&driver);
     d.ring_fns.gather_rows = function(&driver);
     d.taps_in = 1;
-    var ctx: q.mtp.Ctx = .{ .ring = .{ .d = &driver, .ptr = 1, .len = 1 }, .last = .{ .d = &driver, .ptr = 1, .len = 1 } };
+    d.batch = false; // the serial absorb's roles and refusals; the batch has its own GPU check
+    var ctx: q.mtp.Ctx = .{ .ring = .{ .d = &driver, .ptr = 1, .len = 1 }, .last = .{ .d = &driver, .ptr = 1, .len = 1 }, .step = .{ .d = &driver, .ptr = 1, .len = 1 } };
     var s = try lanes.Stream.init(T.allocator, .{ .id = "mtp", .prompt = &.{1}, .max_new = 8 });
     defer s.deinit(T.allocator);
     try check(&d, &ctx, &s);

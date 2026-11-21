@@ -1,4 +1,4 @@
-//! The MTP draft head (layer 45): enorm(embed(next)) | hnorm(h), eh_proj, a plain MLA + MoE block, its norm and the LM head.
+//! MTP draft head (layer 45): enorm(embed(next)) | hnorm(h), eh_proj, a plain MLA + MoE block, its norm, the LM head.
 const std = @import("std");
 const mtl = @import("metal");
 const fwd = @import("forward.zig");
@@ -14,7 +14,7 @@ fn add(x: *const fwd.Ctx, e: mtl.ComputeEncoder, a: Ref, b: Ref, out: Ref, n: u3
     e.dispatchThreads(mtl.Size.of(n, 1, 1), mtl.Size.of(256, 1, 1));
 }
 
-/// `rows` rows of h with their next tokens at head positions pos..: output rows into m_x (pre-norm), drafts into `picks`.
+/// `rows` rows of h with next tokens at head positions pos..: output rows into m_x (pre-norm), drafts into `picks`.
 pub fn run(x: *fwd.Ctx, e: mtl.ComputeEncoder, h: Ref, next: Ref, rows: u32, pos: u32, picks: ?Ref) void {
     layer(x, e, h, next, rows, pos);
     const out = picks orelse return; // the rows absorbed into the head's cache only, no draft
@@ -55,6 +55,7 @@ pub fn finish(x: *fwd.Ctx, e: mtl.ComputeEncoder, res: Ref, normed: Ref, rows: u
     if (gathered) { // the rows' queries and indexer weights, as the absorb computed them where the rows were
         fwd.qmv(x, e, x.k.qmv_x, normed, L.attn.mla.x_proj, sc.xp, rows);
         fwd.indexWeights(x, e, sc.xp, c.xProj(), sc.iw, rows);
+        x.q_normed = false; // the queries from this x_proj: mlaAttend norms them
     }
     fwd.mlaAttend(x, e, mi, &L.attn.mla, rows, pos);
     add(x, e, res, sc.branch, sc.m_out, rows * D);
@@ -65,12 +66,12 @@ pub fn finish(x: *fwd.Ctx, e: mtl.ComputeEncoder, res: Ref, normed: Ref, rows: u
     add(x, e, sc.m_out, sc.branch, sc.m_x, rows * D);
 }
 
-/// Drafts for `rows` pre-norm head outputs at `out`: the head's norm, then the LM head over the draft vocabulary.
+/// Drafts for `rows` head outputs at `out`: the norm, then shared_head.head when stored, else lm_head (drafts only).
 pub fn drafts(x: *const fwd.Ctx, e: mtl.ComputeEncoder, out: Ref, rows: u32, picks: Ref) void {
     const c = x.c;
     const D = c.hidden;
     fwd.rms(x, e, out, x.w.mtp.?.norm, x.sc.m_hn, rows, D, D, D, c.eps);
-    fwd.headOver(x, e, x.sc.m_hn, x.sc.m_logits.at(@as(usize, x.m_row) * c.vocab * 2), picks, rows, x.draft_vocab, true);
+    fwd.headWith(x, e, x.w.draft_head orelse x.w.head, x.sc.m_hn, x.sc.m_logits.at(@as(usize, x.m_row) * c.vocab * 2), picks, rows, x.draft_vocab, true);
 }
 
 /// One chained draft from `h` (a row of the head's previous output, m_x) and the draft before it (`token`, u32).

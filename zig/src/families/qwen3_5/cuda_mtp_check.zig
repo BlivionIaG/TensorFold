@@ -3,7 +3,7 @@ const std = @import("std");
 const cuda = @import("cuda");
 const lanes = @import("lanes");
 const Mtp = @import("cuda_mtp.zig").Mtp;
-const max_rows = @import("cuda_engine.zig").max_rows;
+const max_rows = @import("cuda_engine.zig").grid_rows;
 
 /// Siblings 0 and 1 at depth 0, six siblings 3 to 8 at depth 1, lane 9 at depth 2 under 3 and 0; each has a child.
 const parents = [_]i32{ -1, -1, -1, 0, 0, 0, 0, 1, 1, 3, 4, 5, 6, 7, 8, 9 };
@@ -93,6 +93,9 @@ pub fn run(gpa: std.mem.Allocator, d: *Mtp, tap: u64, ids: []const u32) !bool {
         try download(d, chain.v[lane * kw ..][0..kw], d.vb);
     }
     ok = report("six siblings a depth, tree rows vs each lane's path chained", tree, chain, &internal) and ok;
+    // batched shared rounds against one stream at a time, on the same tap ring
+    ok = try @import("cuda_mtp_batch_check.zig").run(gpa, d, tap, ids) and ok;
+    ok = try @import("cuda_mtp_yarn_check.zig").run(gpa, d, tap, ids) and ok;
     return ok;
 }
 

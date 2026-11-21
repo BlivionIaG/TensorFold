@@ -47,8 +47,8 @@ fn words(_: ?*anyopaque, err: anyerror) ?[]const u8 {
 
 /// Streams fitting beside the weights under the load limit, at most `want` (`fixed`: all or none); pooled: KDA only.
 fn fit(eng: *const ge.Engine, want: u32, fixed: bool) !u32 {
-    const per = glm.state.stateBytes(&eng.c, if (glm.pool.on(eng)) 0 else eng.s.cap, true) + 64 * 1024;
-    const used = eng.w.bytes + eng.arena.bytes + glm.vision.heldBytes(eng.vision);
+    const per = glm.state.stateBytes(&eng.c, if (glm.pool.on(eng)) 0 else eng.s.cap, true) + 64 * 1024 + glm.metal_dflash_load.streamBytes(eng);
+    const used = eng.w.bytes + eng.arena.bytes + glm.vision.heldBytes(eng.vision) + glm.metal_dflash_load.heldBytes(eng);
     const limit = eng.limit.bytes;
     const room: u64 = if (limit > used) (limit - used) / per else 0;
     const n: u32 = @intCast(@min(@as(u64, @max(want, 1)), 1 + room));
@@ -65,7 +65,7 @@ const cache_rules: api.prompt_cache.Rules = .{ .lookahead = 1, .planned = true, 
 /// Kept prompt states' room: --prompt-cache-gib, else 16 GiB, inside what the load limit read at load leaves.
 fn cacheBudget(eng: *const ge.Engine, gib: ?f64) u64 {
     const want: u64 = @intFromFloat((gib orelse 16) * (1 << 30));
-    const used = eng.w.bytes + eng.arena.bytes + glm.vision.heldBytes(eng.vision);
+    const used = eng.w.bytes + eng.arena.bytes + glm.vision.heldBytes(eng.vision) + glm.metal_dflash_load.heldBytes(eng);
     const limit = eng.limit.bytes;
     return if (limit > used) @min(want, limit - used) else 0;
 }
@@ -77,18 +77,19 @@ fn readMemory(ctx: ?*anyopaque, reset_peak: bool) ?api.Memory {
 }
 
 /// Learned states under `root` by checkpoint, split, chip, OS build, kernel sources and a probe's prompt-pass bits.
-fn learnedStates(gpa: Allocator, io: std.Io, eng: *const ge.Engine, sl: *glm.slots.Slots, root: []const u8, cap: u64) !api.prompt_imprint.Imprint {
-    const m = try api.prompt_imprint.Imprint.open(gpa, root, (try glm_disk.identity(io, eng, sl)).id, cap);
+fn learnedStates(gpa: Allocator, io: std.Io, dir: []const u8, eng: *const ge.Engine, sl: *glm.slots.Slots, root: []const u8, cap: u64) !api.prompt_imprint.Imprint {
+    const m = try api.prompt_imprint.Imprint.open(gpa, root, (try glm_disk.identity(gpa, io, dir, eng, sl)).id, cap);
     std.log.info("glm: learned prompt states in {s} ({d} known, {d} of {d} MiB)", .{ m.dir, m.metas.items.len, m.total() >> 20, cap >> 20 });
     return m;
 }
 
 /// A GLM-5.3-Flash checkpoint served: `window` tokens of cache a stream, warmed first (the pair: `speed_up`).
-pub fn open(gpa: Allocator, io: std.Io, dir: []const u8, window: u32, speed_up: ?[]const u8, streams: u32, fixed: bool, cache_gib: ?f64, learn: ?Learn, vision: ?api.VisionOpen) !*Host {
+pub fn open(gpa: Allocator, io: std.Io, dir: []const u8, window: u32, speed_up: ?[]const u8, streams: u32, fixed: bool, cache_gib: ?f64, decode_share: ?f64, learn: ?Learn, vision: ?api.VisionOpen, drafter: ?[]const u8, drafter_name: ?[]const u8, drafter_bits: u8) !*Host {
     // a prompt's tower rows and images: the images' budget, and every video's frame groups beside it
     const limits: ?glm.vision.Limits = if (vision) |v| .{ .image_tokens = v.image_tokens + v.video_tokens, .max_images = v.max_images + v.max_videos * ((v.max_frames + 1) / 2) } else null;
     const eng = try ge.Engine.loadWith(gpa, io, dir, window + 64, speed_up, learn != null, limits, true);
     errdefer eng.deinit();
+    if (drafter) |d| try glm.metal_dflash_load.load(gpa, io, eng, d, drafter_bits); // freed with the engine
     var toks: [96]u32 = undefined;
     for (&toks, 0..) |*t, i| t.* = @intCast(1000 + i);
     var dummy: u8 = 0;
@@ -102,10 +103,24 @@ pub fn open(gpa: Allocator, io: std.Io, dir: []const u8, window: u32, speed_up: 
     h.slots = try glm.slots.Slots.init(gpa, eng, try fit(eng, streams, fixed));
     errdefer h.slots.deinit(gpa);
     glm.residency.wire(eng, io);
+    try glm.metal_dflash_load.joinResidency(gpa, eng);
     const n: u32 = @intCast(h.slots.slots.len);
     h.back = .{ .gpa = gpa, .sl = &h.slots };
     errdefer h.back.deinit();
+    if (eng.dflash) |d| {
+        const r = try glm.metal_dflash_rounds.Rounds.init(gpa, &h.slots, d.model, d.taps);
+        h.back.rounds = r;
+        if (eng.residency) |*res| r.follow = res.follow();
+        r.prepare(); // every slot's context made now, so it joins the target residency set
+        if (eng.residency) |*res| _ = res.tryAddNow(&.{});
+        if (eng.ep == null) {
+            const x = try glm.metal_dflash_inline.Inline.init(gpa, r, eng.device);
+            r.inline_pass = x;
+            h.slots.follow = x.hook();
+        }
+    }
     if (eng.ep != null) h.back.costs = try glm.timing.measure(&h.slots, gpa, io); // both Macs in step, as the warm-up
+    if (h.back.rounds) |r| try r.priceHead(h.back.headFacts()); // the MTP head's rounds beside DFlash2 cost main's
     h.cfg = try lanes.Config.init(gpa, h.back.facts(), glm.state.max_rows, glm.state.max_rows - 1);
     errdefer h.cfg.deinit(gpa);
     h.wall = .{ .io = io };
@@ -124,13 +139,13 @@ pub fn open(gpa: Allocator, io: std.Io, dir: []const u8, window: u32, speed_up: 
         }
     }
     // sampled draws on one Mac (the pair refuses them per request)
-    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .name = "glm-zig", .lanes = n, .context_window = serves, .prefill_step = eng.chunk_rows, .greedy_only = eng.ep != null, .admit = if (h.slots.pool != null) .{ .ctx = &h.back, .fits = glm.backend.Backend.fits } else null, .vision = offer });
+    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .benchmark_ranks = if (eng.ep != null) 2 else 1, .benchmark_group = if (eng.ep) |p| p.benchmark_group else null, .name = "glm-zig", .lanes = n, .context_window = serves, .prefill_step = eng.chunk_rows, .decode_share = decode_share, .greedy_only = eng.ep != null, .draft_sources = .{ .drafter = if (drafter) |d| .{ .kind = "DFlash2", .name = drafter_name orelse d } else null }, .admit = if (h.slots.pool != null) .{ .ctx = &h.back, .fits = glm.backend.Backend.fits } else null, .vision = offer });
     h.host.memory = .{ .ctx = h, .read = readMemory };
     h.cache = null;
     const budget = cacheBudget(eng, cache_gib);
     if (!eng.followsPeer() and budget > 0) {
         const B = glm.backend.Backend;
-        h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = &h.back, .vtable = &.{ .bytes = B.snapBytes, .save = B.snapSave, .restore = B.snapRestore, .drop = B.snapDrop, .write = B.snapWrite, .read = B.snapRead, .forget = B.snapForget, .forget_checked = B.snapForgetChecked, .reclaim = B.snapReclaim, .peer_other_used = B.peerOtherUsed, .peer_other_next = B.peerOtherNext, .peer_other_bytes = B.peerOtherBytes, .peer_other_remove = B.peerOtherRemove, .peer_need = B.peerNeed, .peer_reclaim = B.peerReclaim, .peer_reserve = B.peerReserve, .peer_finish = B.peerFinish, .rows = &glm_disk.image } }, cache_rules, budget);
+        h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = &h.back, .vtable = &.{ .bytes = B.snapBytes, .save = B.snapSave, .restore = B.snapRestore, .drop = B.snapDrop, .charged = B.snapCharged, .write = B.snapWrite, .read = B.snapRead, .forget = B.snapForget, .forget_checked = B.snapForgetChecked, .reclaim = B.snapReclaim, .peer_other_used = B.peerOtherUsed, .peer_other_next = B.peerOtherNext, .peer_other_bytes = B.peerOtherBytes, .peer_other_remove = B.peerOtherRemove, .peer_need = B.peerNeed, .peer_reclaim = B.peerReclaim, .peer_reserve = B.peerReserve, .peer_finish = B.peerFinish, .rows = &glm_disk.image } }, cache_rules, budget);
         h.host.cache = &h.cache.?;
         h.host.info_.prompt_cache = true;
         h.slots.grow = .{ .ctx = h, .f = growSnap }; // a resident state made whole before its slot writes below it
@@ -141,12 +156,12 @@ pub fn open(gpa: Allocator, io: std.Io, dir: []const u8, window: u32, speed_up: 
     if (learn) |l| if (l.conversations) {
         if (eng.ep != null) return error.LearnConversationsOnPair;
         if (h.cache) |*store| {
-            const id = try glm_disk.identity(io, eng, &h.slots);
+            const id = try glm_disk.identity(gpa, io, dir, eng, &h.slots);
             const r = try api.prompt_cache.rows.attach(gpa, store, .{ .root = l.root, .identity = id.id, .cap = l.cap, .floor = l.floor, .daily = l.daily, .lookahead = cache_rules.lookahead, .planned = cache_rules.planned, .spill = l.spill, .slots = l.slots });
             r.prefill_rate = id.rate;
         }
     } else {
-        h.learned = try learnedStates(gpa, io, eng, &h.slots, l.root, l.cap);
+        h.learned = try learnedStates(gpa, io, dir, eng, &h.slots, l.root, l.cap);
         h.learned.?.admission.floor = l.floor;
         h.slots.disk.admission.floor = l.floor;
         h.slots.disk.cap = l.cap;

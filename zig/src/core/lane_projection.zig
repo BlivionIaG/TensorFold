@@ -1,8 +1,11 @@
-//! Affine lane projections for 1-16 bf16 rows on Metal. No family or model dependency.
+//! Affine lane projections in independent 16-row blocks on Metal. No family or model dependency.
 const std = @import("std");
 const mtl = @import("metal");
 const ks = @import("kernel_sources");
-const frags = @import("frags.zig");
+/// nax.h inlined for this GPU, for family prompt kernels on the same fragments.
+pub const frags = @import("frags.zig");
+/// The tensor units' affine products by expert, beside the lane layouts (one module for their shared fragments).
+pub const affine_mm = @import("affine_mm.zig");
 
 pub const weight_layout = "u32[ceil(N/32)][K/group][32][group*bits/32], low-bit-first codes, columns past N zero";
 pub const reg_layout = "u32[N/32][K/64][2][32 lanes][4] 4-bit codes, regBlock order";
@@ -34,18 +37,27 @@ pub const Layout = struct {
     cooperative: bool = false,
     /// 4-bit g64 codes in reg_layout, unpacked into tensor-op registers; every word equals the cooperative kernel's.
     reg: bool = false,
+    /// Row capacity for reg layouts and opted-in row blocks; cooperative and scalar layouts take 16.
+    rows: usize = reg_rows,
+    /// Non-reg prompt callers opt into independent 16-row blocks on the grid's y.
+    row_blocks: bool = false,
     /// Elements between output rows (default N): a member of a fused stack writes its columns of the fused rows.
     y_stride: ?usize = null,
+    /// Reg layouts: the kernel adds its rows' group sums with the sums pass's loop (no sums dispatch, same words).
+    inline_sums: bool = false,
 
     pub fn validate(l: Layout) !void {
         try l.format.validate();
         if (l.cooperative and l.format.bits != 4) return error.UnsupportedCooperativeFormat;
-        if (l.reg and (l.cooperative or l.format.bits != 4 or l.format.group != 64 or !l.precompute_sums)) return error.UnsupportedRegFormat;
+        if (l.reg and (l.cooperative or (l.format.bits != 4 and l.format.bits != 8) or l.format.group != 64 or !l.precompute_sums)) return error.UnsupportedRegFormat;
         if ((l.cooperative or l.reg) and l.n % 32 != 0) return error.InvalidShape;
         if (l.y_stride) |s| if (s < l.n or s > std.math.maxInt(i32) / 16) return error.InvalidOutputStride;
         if (l.n == 0 or l.n % 16 != 0 or l.k == 0 or l.k % l.format.group != 0 or
             l.n > std.math.maxInt(i32) / 16 or l.k > std.math.maxInt(i32) / 16) return error.InvalidShape;
         if (l.sk == 0 or l.sk > 32 or (l.pf != 1 and l.pf != 2)) return error.InvalidSchedule;
+        if (l.cooperative) {
+            if (l.rows != reg_rows) return error.InvalidSchedule;
+        } else if (l.rows < @as(usize, if (l.reg) reg_rows else 16) or l.rows % 16 != 0 or l.rows > max_reg_rows) return error.InvalidSchedule;
         const g = l.groupCut();
         if (g[1] == 0 or g[0] >= l.k / l.format.group or g[1] > l.k / l.format.group - g[0]) return error.InvalidGroupCut;
         if (l.groups != null and l.output != .f32) return error.PartialOutputNeedsFloat;
@@ -113,7 +125,9 @@ pub fn source(a: std.mem.Allocator, l: Layout) ![]u8 {
     }
     try text.appendSlice(a, if (l.ranges.len == 0) "  return j;\n}\n" else "  return 0;\n}\n");
     try text.print(a, "#define TF_PRECOMPUTE_SUMS {d}\n", .{@intFromBool(l.precompute_sums)});
+    try text.print(a, "#define TF_ROW_BLOCKS {d}\n", .{@intFromBool(l.row_blocks and !l.reg and !l.cooperative and l.rows > 16)});
     if (l.reg) try text.appendSlice(a, "#define TF_REG 1\n");
+    if (l.inline_sums) try text.appendSlice(a, "#define TF_INLINE_SUMS 1\n");
     if (l.y_stride) |s| try text.print(a, "#define TF_YS {d}\n", .{s});
     try text.appendSlice(a, ks.core_lane_projection);
     return text.toOwnedSlice(a);
@@ -162,6 +176,25 @@ pub fn regBlock(tiled: *const [256]u32, out: *[256]u32) void {
 }
 
 pub const Order = struct { w: Ref, n: usize, k: usize };
+
+/// Rewrites host-visible tile-order 8-bit g64 words in place into the 8-bit reg layout (the 4-bit reg order, bytes).
+pub fn regOrder8(words: []u32, n: usize, k: usize) !void {
+    if (n == 0 or n % 32 != 0 or k == 0 or k % 64 != 0 or words.len != n * k / 4) return error.InvalidShape;
+    var block: [512]u32 = undefined;
+    var at: usize = 0;
+    while (at < words.len) : (at += 512) {
+        const tiled = words[at..][0..512]; // [32 columns][16 words], word i: codes 4i..4i+3
+        for (0..32) |lane| for (0..8) |w| {
+            const col = ((lane >> 1) & 3) + 4 * ((lane >> 4) & 1) + 8 * (w >> 1);
+            const first = 2 * (((lane >> 3) & 1) + 4 * (w & 1)) + (lane & 1);
+            const q = w >> 1;
+            const j = 2 * (w & 1);
+            block[(q * 32 + lane) * 4 + j] = tiled[col * 16 + first];
+            block[(q * 32 + lane) * 4 + j + 1] = tiled[col * 16 + first + 4];
+        };
+        @memcpy(tiled, &block);
+    }
+}
 
 /// The reg_layout rewrite on the GPU: one library and queue for any number of runs.
 pub const RegOrder = struct {
@@ -219,6 +252,7 @@ pub const Ref = struct { buf: mtl.Buffer, off: usize = 0 };
 
 pub const Projection = struct {
     pipe: mtl.Pipeline,
+    external_sums: bool = false,
     n: usize,
     k: usize,
     group_count: usize,
@@ -232,11 +266,20 @@ pub const Projection = struct {
     sums_buffer: ?mtl.Buffer = null,
     threads_per_slice: usize = 32,
     reg: bool = false,
+    cooperative: bool = false,
+    /// The kernel adds its own group sums: encode runs no sums pass, and the sums buffer is only bound.
+    inline_sums: bool = false,
+    /// Capacity is the reg or opted-in row count on tensor units, otherwise 16.
+    max_rows: u32 = reg_rows,
 
     pub fn init(a: std.mem.Allocator, device: mtl.Device, l: Layout) !Projection {
         try l.validate();
-        if (!device.tensorUnits() and (l.format.bits != 6 or l.format.group != 32 or l.cooperative or l.reg or l.precompute_sums)) return error.TensorUnitsRequired;
-        const text = try source(a, l);
+        const units = device.tensorUnits();
+        if (!units and (l.format.bits != 6 or l.format.group != 32 or l.cooperative or l.reg or l.precompute_sums)) return error.TensorUnitsRequired;
+        const capacity: usize = if (l.cooperative or !units or (!l.reg and !l.row_blocks)) 16 else l.rows;
+        var kernel_layout = l;
+        if (!units and !l.cooperative and !l.reg) kernel_layout.rows = capacity;
+        const text = try source(a, kernel_layout);
         defer a.free(text);
         const adapted = try frags.source(device, a, text);
         defer a.free(adapted);
@@ -250,9 +293,9 @@ pub const Projection = struct {
         if (l.precompute_sums) {
             sums_pipe = try mtl.Pipeline.init(device, lib, "tf_lane_sums", false);
             errdefer sums_pipe.?.deinit();
-            sums_buffer = try device.buffer(@as(usize, if (l.reg) reg_rows else 16) * (l.k / l.format.group) * 4, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
+            sums_buffer = try device.buffer(capacity * (l.k / l.format.group) * 4, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
         }
-        return .{ .pipe = p, .n = l.n, .k = l.k, .group_count = l.k / l.format.group, .weight_bytes = l.weightWords() * 4, .metadata_bytes = l.metadataElements() * 2, .output_bytes = if (l.output == .f32) 4 else 2, .y_stride = l.y_stride orelse l.n, .tile_count = l.tiles(), .sk = l.sk, .sums_pipe = sums_pipe, .sums_buffer = sums_buffer, .threads_per_slice = if (l.cooperative) 64 else 32, .reg = l.reg };
+        return .{ .pipe = p, .external_sums = l.precompute_sums and l.format.bits == 8 and l.format.group == 64 and !l.cooperative, .n = l.n, .k = l.k, .group_count = l.k / l.format.group, .weight_bytes = l.weightWords() * 4, .metadata_bytes = l.metadataElements() * 2, .output_bytes = if (l.output == .f32) 4 else 2, .y_stride = l.y_stride orelse l.n, .tile_count = l.tiles(), .sk = l.sk, .sums_pipe = sums_pipe, .sums_buffer = sums_buffer, .threads_per_slice = if (l.cooperative) 64 else 32, .reg = l.reg, .cooperative = l.cooperative, .inline_sums = l.reg and l.inline_sums, .max_rows = @intCast(capacity) };
     }
 
     pub fn deinit(p: Projection) void {
@@ -266,23 +309,23 @@ pub const Projection = struct {
         return p.encodeImpl(e, x, w, sb, null, y, rows);
     }
 
-    /// The reg kernel on group sums its input's producer wrote (tf_lane_sums' order): no sums dispatch, no barrier.
+    /// Prepared group sums from the input producer: reg or 8-bit g64 lanes, with no sums dispatch or barrier.
     pub fn encodeSums(p: Projection, e: mtl.ComputeEncoder, x: Ref, w: Ref, sb: Ref, sums: Sums, y: Ref, rows: u32) !void {
-        if (!p.reg) return error.SumsNeedReg;
-        if (rows == 0 or rows > reg_rows or sums.stride < rows) return error.InvalidRows;
+        if (!p.reg and !p.external_sums) return error.PreparedSumsRequired;
+        if (rows == 0 or rows > p.max_rows or sums.stride < rows) return error.InvalidRows;
         try checkRef(sums.ref, ((p.group_count - 1) * @as(usize, sums.stride) + rows) * 4, 4);
         return p.encodeImpl(e, x, w, sb, sums, y, rows);
     }
 
     fn encodeImpl(p: Projection, e: mtl.ComputeEncoder, x: Ref, w: Ref, sb: Ref, given: ?Sums, y: Ref, rows: u32) !void {
-        if (rows == 0 or rows > @as(u32, if (p.reg) reg_rows else 16)) return error.InvalidRows;
+        if (rows == 0 or rows > p.max_rows) return error.InvalidRows;
         const blocks = (rows + 15) / 16;
         const stride: u32 = if (given) |g| g.stride else 16 * blocks;
         try checkRef(x, rows * p.k * 2, 2);
         try checkRef(w, p.weight_bytes, if (p.reg) 16 else 8);
         try checkRef(sb, p.metadata_bytes, 16);
         try checkRef(y, ((rows - 1) * p.y_stride + p.n) * p.output_bytes, p.output_bytes);
-        if (given == null) if (p.sums_pipe) |pipe| {
+        if (given == null and !p.inline_sums) if (p.sums_pipe) |pipe| {
             e.setPipeline(pipe);
             e.setBuffer(x.buf, x.off, 0);
             e.setValue(@as(i32, @intCast(rows)), 1);
@@ -298,13 +341,15 @@ pub const Projection = struct {
         e.setValue([2]i32{ @intCast(rows), @intCast(stride) }, 3);
         e.setBuffer(y.buf, y.off, 4);
         if (given) |g| e.setBuffer(g.ref.buf, g.ref.off, 5) else if (p.sums_buffer) |buffer| e.setBuffer(buffer, 0, 5);
-        e.dispatchGroups(mtl.Size.of(p.tile_count, if (p.reg) blocks else 1, 1), mtl.Size.of(p.threads_per_slice * p.sk, 1, 1));
-        if (given == null and p.sums_buffer != null) e.barrier();
+        e.dispatchGroups(mtl.Size.of(p.tile_count, if (p.cooperative) 1 else blocks, 1), mtl.Size.of(p.threads_per_slice * p.sk, 1, 1));
+        if (given == null and p.sums_buffer != null and !p.inline_sums) e.barrier();
     }
 };
 
 /// Rows one reg encode takes, as 16-row blocks on the grid's y (a prompt chunk's rows in one weight read).
 pub const reg_rows = 128;
+/// Rows one reg encode may take when its layout says so (`Layout.rows`): a whole prompt chunk in one dispatch.
+pub const max_reg_rows = 2048;
 
 /// Group sums of a projection's input: XS[group * stride + row], fp32, each group's values added in order from zero.
 pub const Sums = struct { ref: Ref, stride: u32 };
@@ -313,6 +358,26 @@ fn checkRef(r: Ref, need: usize, alignment: usize) !void {
     if (r.off % alignment != 0) return error.MisalignedBuffer;
     const len = r.buf.length();
     if (r.off > len or need > len - r.off) return error.BufferTooSmall;
+}
+
+test "a reg layout's rows size its sums scratch, never its kernel source" {
+    const base = Layout{ .n = 34816, .k = 5120, .format = .{ .bits = 4, .group = 64 }, .precompute_sums = true, .reg = true };
+    var long = base;
+    long.rows = max_reg_rows;
+    try long.validate();
+    const short_text = try source(std.testing.allocator, base);
+    defer std.testing.allocator.free(short_text);
+    const long_text = try source(std.testing.allocator, long);
+    defer std.testing.allocator.free(long_text);
+    try std.testing.expectEqualStrings(short_text, long_text);
+    for ([_]usize{ 0, 64, 1000, max_reg_rows + 16 }) |rows| {
+        long.rows = rows;
+        try std.testing.expectError(error.InvalidSchedule, long.validate());
+    }
+    var plain = base;
+    plain.reg = false;
+    plain.rows = max_reg_rows + 16;
+    try std.testing.expectError(error.InvalidSchedule, plain.validate());
 }
 
 test "layouts reject unsupported formats, schedules, cuts and overlapping tile reads" {

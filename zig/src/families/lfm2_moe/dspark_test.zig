@@ -270,3 +270,16 @@ test "lfm2 dspark: a settled hold refuses a NaN, infinity or invalid pick as the
     picks[3 * ds.pass_rows] = .{ .nonfinite = 1 }; // a step past the block's depth is not read
     try block.copyPicks(&picks, &chains, &.{ 2, 2 });
 }
+
+test "lfm2 dspark: toBf16 is ties-to-even on every carry edge, 0xffffffff gives a NaN" {
+    try std.testing.expect(std.math.isNan(@as(f32, @bitCast(@as(u32, quant.toBf16(@bitCast(@as(u32, 0xffff_ffff)))) << 16))));
+    var prng = std.Random.DefaultPrng.init(1863);
+    for (0..1 << 19) |i| { // every bf16 value's tie and carry edges, then random words
+        const lo = [_]u32{ 0x7fff, 0x8000, 0x8001, 0xffff };
+        const w: u32 = if (i < 1 << 18) @as(u32, @intCast(i >> 2)) << 16 | lo[i & 3] else prng.random().int(u32);
+        const v: f32 = @bitCast(w);
+        if (std.math.isNan(v)) {
+            try std.testing.expect(std.math.isNan(@as(f32, @bitCast(@as(u32, quant.toBf16(v)) << 16))));
+        } else try std.testing.expectEqual(@as(u16, @intCast((w +% 0x7fff +% ((w >> 16) & 1)) >> 16)), quant.toBf16(v));
+    }
+}

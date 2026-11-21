@@ -1,5 +1,6 @@
 //! The 27B's Living Weights trainer: packed passes through Forward.chunks and the loss back to the lowest nudged layer.
 const std = @import("std");
+const platform = @import("sys");
 const cuda = @import("cuda");
 const core = @import("core");
 const living = @import("living");
@@ -247,7 +248,7 @@ pub const Trainer = struct {
     /// The rows the backward still needs, each nudged sequence's from its first nudged row on (null: every row).
     fn tailRows(t: *Trainer, rows: usize) ?to.Tail {
         if (!t.k.wide) return null;
-        if (@import("sys").c.getenv("TF_Q27_TAIL")) |v| if (std.mem.eql(u8, std.mem.span(v), "off")) return null;
+        if ((platform.environment.read(u64, "TF_Q27_TAIL", 1) catch 1) == 0) return null;
         const list = t.tails.slice(i32, pack_rows);
         const mask = t.tails.host.bytes[pack_rows * 4 ..][0..pack_rows];
         @memset(mask[0..rows], 0);
@@ -317,7 +318,7 @@ pub const Trainer = struct {
         defer t.gpa.free(raw);
         const d = t.e.d;
         try t.e.stream.synchronize();
-        try d.check(d.api.cuMemcpyDtoH_v2(raw.ptr, t.e.layers[l].post_norm, out.len * 2), "cuMemcpyDtoH");
+        try cuda.memory.download(d, t.e.layers[l].post_norm, std.mem.sliceAsBytes(raw)[0 .. out.len * 2]);
         for (out, raw) |*o, b| o.* = @bitCast(@as(u32, b) << 16);
     }
 
@@ -329,7 +330,7 @@ pub const Trainer = struct {
         if (at == 0) return t.resid;
         const d = t.e.d;
         t.e.stream.synchronize() catch return t.resid;
-        d.check(d.api.cuMemcpyDtoH_v2(t.resid.ptr, at + row * t.g.hidden * 2, t.g.hidden * 2), "cuMemcpyDtoH") catch return t.resid;
+        cuda.memory.download(d, at + row * t.g.hidden * 2, std.mem.sliceAsBytes(t.resid)[0 .. t.g.hidden * 2]) catch return t.resid;
         return t.resid;
     }
 
@@ -563,4 +564,10 @@ test "Save recovery: dense constructor allocation failure after one and seven re
 test "Save recovery: dense constructor pending work drains or exits before any owner is released" {
     if (!cuda.kernels.available) return error.SkipZigTest;
     try @import("cuda_train_init_test.zig").pendingFailure(Trainer.initWithWeights);
+}
+
+test "TF_Q27_TAIL: the platform parses unset, valid and malformed text" {
+    try std.testing.expectEqual(@as(?u64, null), try platform.environment.parse("TF_Q27_TAIL", null));
+    try std.testing.expectEqual(@as(?u64, 0), try platform.environment.parse("TF_Q27_TAIL", "off"));
+    try std.testing.expectError(error.InvalidEnvironment, platform.environment.parse("TF_Q27_TAIL", "on"));
 }

@@ -11,19 +11,25 @@ const qwen27 = @import("qwen27_served.zig");
 const flashnext = @import("flashnext_host.zig");
 const glm = @import("glm_host.zig");
 const glm_dsa = @import("glm_dsa_host.zig");
-const slide_adapter = @import("slide_adapter.zig");
-const Slide = slide_adapter.Adapter(nemotron.slide);
+const metal_slide = @import("metal_slide.zig");
+const learners = metal_slide.Registry(.{nemotron});
 const cache_fit = @import("cache_fit.zig");
 const metal_admit = @import("metal_admit.zig");
 const Resident = @import("resident.zig").Resident;
 const nemo_disk = @import("nemotron_disk.zig");
 const fsr_options = @import("fsr_options.zig");
 const linkProblem = @import("metal_link.zig").problem;
-
+const metal_shared = @import("metal_shared.zig");
+pub const chip = metal_shared.chip;
+pub const deviceName = metal_shared.deviceName;
+const prefillStep = metal_shared.prefillStep;
+const modelContext = metal_shared.modelContext;
+const gibBytes = metal_shared.gibBytes;
 pub const backends: []const []const u8 = &.{"metal"};
+/// `tensorfold device`: the share of RAM the load limit grants (cache_fit's ceiling).
+pub const load_share_percent: u64 = cache_fit.SHARE_PERCENT;
 pub const serves: []const []const u8 = &.{ "--checkpoint-slots", "--spill-gib" };
 const spill = @import("metal_spill.zig");
-
 /// Every checkpoint-wide MLX affine width the per-module readers take (oQ quants): 2-8 bits but 7, groups 32-128.
 const affine_widths = blk: {
     var out: [18][]const u8 = undefined;
@@ -33,71 +39,40 @@ const affine_widths = blk: {
     const done = out;
     break :blk &done;
 };
-
 /// Gemma 4's: MLX affine 2-6 or 8 bits in groups of 64, uniform or per module (oQ packs).
 const gemma4_widths: []const []const u8 = &.{ "mlx-q2g64", "mlx-q3g64", "mlx-q4g64", "mlx-q5g64", "mlx-q6g64", "mlx-q8g64" };
 
 pub const families: []const api.Family = &.{
+    .{ .model_type = "kimi_k3", .formats = &.{"mxfp4"} },
+    .{ .model_type = "kimi_k31", .formats = &.{"mxfp4"} },
     .{ .model_type = "qwen4", .formats = @import("qwen4").family.native_host.formats },
     .{ .model_type = "qwen4_text", .formats = @import("qwen4").family.native_host.formats },
-    .{ .model_type = "fish_omni", .formats = &.{"fp8-block128"} },
+    .{ .model_type = "fish_omni", .formats = &.{ "fp8-block128", "nvfp4" } },
     .{ .model_type = "nemotron_h", .formats = affine_widths },
+    .{ .model_type = "nemotron_h_puzzle", .formats = affine_widths },
     .{ .model_type = "qwen4_exp", .formats = affine_widths },
     .{ .model_type = "glm5_next", .formats = &.{"mlx-q4g64"} },
     .{ .model_type = "qwen3_5", .formats = affine_widths },
+    .{ .model_type = "qwen3_5_moe", .formats = affine_widths },
+    .{ .model_type = "lfm3", .formats = &.{ "mlx-q4g32", "mlx-q4g64", "mlx-q6g64", "mlx-q8g64" } },
+    .{ .model_type = "lfm3_vl", .formats = &.{ "mlx-q4g32", "mlx-q4g64", "mlx-q6g64", "mlx-q8g64" } },
     .{ .model_type = "lfm2_moe", .formats = &.{ "mlx-q4g64", "mlx-q6g64", "mlx-q8g64" } },
     .{ .model_type = "glm_moe_dsa", .formats = &.{"exlr8"} },
     .{ .model_type = "gemma4", .formats = gemma4_widths },
     .{ .model_type = "gemma4_unified", .formats = gemma4_widths },
     .{ .model_type = "step5_vl", .formats = &.{"mlx-q2g128"} },
     .{ .model_type = "spark2_5", .formats = &.{ "bf16", "mlx-q2g64", "mlx-q3g64", "mlx-q4g64", "mlx-q5g64", "mlx-q6g64", "mlx-q8g64" } },
+    .{ .model_type = "minimax_m3_vl", .formats = &.{ "mlx-q3g64", "mlx-q8g64" } },
+    .{ .model_type = "hy_v4_flash", .formats = &.{ "mlx-q4g64", "mlx-q8g64" } },
+    .{ .model_type = "qwen3", .formats = &.{"bf16"} },
+    .{ .model_type = "llama", .formats = &.{ "bf16", "compressed-tensors-int4-g32" } },
+    .{ .model_type = "flint", .formats = &.{"mlx-q4g64"} },
+    .{ .model_type = "unlimited-ocr", .formats = &.{"bf16"} },
 };
 
 /// Gemma 4 31B (gemma4) and 12B (gemma4_unified, its text model): one native family, gemma4.zig's host.
 fn isGemma4(model_type: []const u8) bool {
     return std.mem.eql(u8, model_type, "gemma4") or std.mem.eql(u8, model_type, "gemma4_unified");
-}
-
-/// The chip class gate entries name ("apple-m5" for an Apple M5 Max); null without an Apple GPU.
-pub fn chip(a: Allocator) ?[]const u8 {
-    const device = mtl.Device.init() catch return null;
-    defer device.deinit();
-    const gen = generation(std.mem.span(device.name())) orelse return null;
-    return std.fmt.allocPrint(a, "apple-m{d}", .{gen}) catch null;
-}
-
-/// The name of the system GPU the Metal engines open ("Apple M5 Max"); null without one.
-pub fn deviceName(a: Allocator, _: ?u32) ?[]const u8 {
-    const device = mtl.Device.init() catch return null;
-    defer device.deinit();
-    return a.dupe(u8, std.mem.span(device.name())) catch null;
-}
-
-/// The M generation in a Metal device name ("Apple M5 Max": 5).
-fn generation(name: []const u8) ?u32 {
-    var words = std.mem.tokenizeScalar(u8, name, ' ');
-    if (!std.ascii.eqlIgnoreCase(words.next() orelse return null, "apple")) return null;
-    const word = words.next() orelse return null;
-    if (word.len < 2 or std.ascii.toLower(word[0]) != 'm') return null;
-    const gen = std.fmt.parseInt(u32, word[1..], 10) catch return null;
-    return if (gen >= 1) gen else null;
-}
-
-/// Python's prompt chunk: 8,192 rows with tensor units (M5 on) where memory allows, else its 2,048.
-fn prefillStep(device: mtl.Device) u32 {
-    const gen = generation(std.mem.span(device.name())) orelse 0;
-    return if (gen >= 5 and device.maxWorkingSet() >= 48 << 30) 8192 else 2048;
-}
-
-/// The model's window (config.json's max_position_embeddings, text_config's first), 0 when it names none.
-fn modelContext(a: Allocator, io: std.Io, dir: []const u8) i64 {
-    const path = std.fs.path.join(a, &.{ dir, "config.json" }) catch return 0;
-    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(16 << 20)) catch return 0;
-    const doc = std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{}) catch return 0;
-    if (doc != .object) return 0;
-    const text = if (doc.object.get("text_config")) |t| (if (t == .object) t else doc) else doc;
-    const limit = text.object.get("max_position_embeddings") orelse doc.object.get("max_position_embeddings") orelse return 0;
-    return if (limit == .integer and limit.integer > 0) limit.integer else 0;
 }
 
 /// The host's memory counts: `cache_fit.hostMemory` from the process footprint (no configured load limit).
@@ -119,7 +94,7 @@ const Host = struct {
     cache: ?api.prompt_cache.Store = null, // kept prompt states (engine thread only); null: a zero budget
     learned: ?api.prompt_imprint.Imprint = null, // --learn: shared states on disk, read back by later servers
     round: nemotron.gpu_round.Options = .{ .depth = 8 }, // a lone greedy stream's GPU-side rounds, as the CLI runs them
-    slide: ?*Slide = null, // Sliding Weights' learner, with --slide
+    slide: ?metal_slide.Registration = null, // Sliding Weights' learner, with --slide
 
     /// A lone greedy stream's rounds on the GPU until it finishes, or a hand-over to the lane core (true).
     fn lone(ctx: *anyopaque, s: *lanes.Stream, hooks: api.LoneHooks) anyerror!bool {
@@ -138,10 +113,7 @@ const Host = struct {
     fn close(ctx: *anyopaque) void {
         const h: *Host = @ptrCast(@alignCast(ctx));
         h.host.stop();
-        if (h.slide) |s| {
-            s.deinit();
-            h.gpa.destroy(s);
-        }
+        if (h.slide) |s| s.deinit(h.gpa);
         const rows = if (h.cache) |*store| store.disk else null;
         if (h.cache) |*store| store.deinit();
         if (rows) |r| r.deinit(); // after the store: its entries leave the write queue as they go
@@ -160,8 +132,8 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     const report = @import("sys").optional_libraries.atBoundary();
     defer report.deinit();
     if (fsr_options.refuse(o, problem)) return null;
-    if (o.prompt_int8) {
-        problem.* = prompt_int8_refusal;
+    if (o.prompt_int8 or o.rope_yarn != null) {
+        problem.* = if (o.prompt_int8) prompt_int8_refusal else "--rope-yarn: the Metal engine has no YaRN rope; serve without --rope-yarn";
         return null;
     }
     if (std.mem.eql(u8, o.model_type, "fish_omni")) return @import("drama_open.zig").openMetal(a, gpa, io, o, problem);
@@ -170,41 +142,42 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         return null;
     }
     if (@import("save_admission.zig").refused(io, o.dir, problem)) return null;
+    if (std.mem.eql(u8, o.model_type, "kimi_k3") or std.mem.eql(u8, o.model_type, "kimi_k31"))
+        return @import("kimi_metal.zig").open(a, gpa, io, o, problem);
     if (std.mem.eql(u8, o.model_type, "qwen4") or std.mem.eql(u8, o.model_type, "qwen4_text")) return @import("qwen4_metal.zig").open(a, gpa, io, o, problem);
-    const dense = std.mem.eql(u8, o.model_type, "qwen3_5") and qwen27Engine(a, io, o.dir);
+    if (std.mem.eql(u8, o.model_type, "qwen3")) return @import("qwen3_metal.zig").open(a, gpa, io, o, problem);
+    if (std.mem.eql(u8, o.model_type, "hy_v4_flash")) return @import("hy4_metal.zig").open(a, gpa, io, o, problem);
+    const dense = ownsQwen27(a, io, o.model_type, o.dir);
     if (try refusal(a, o, dense)) |why| {
         problem.* = why;
         return null;
     }
-    if (o.drafter != null and !dense and !isGemma4(o.model_type) and !std.mem.eql(u8, o.model_type, "lfm2_moe")) {
-        problem.* = "--drafter is supported for Qwen3.8-27B-class checkpoints (qwen3_5 with its own output head), Gemma 4 dense and LFM2.5-24B-A2B";
-        return null;
-    }
+    if (std.mem.eql(u8, o.model_type, "lfm3") or std.mem.eql(u8, o.model_type, "lfm3_vl")) return @import("lfm3.zig").open(a, gpa, io, o, problem);
     if (dense) return openQwen27(a, gpa, io, o, problem);
     if (std.mem.eql(u8, o.model_type, "qwen4_exp")) return openFlashNext(a, gpa, io, o, problem);
     if (std.mem.eql(u8, o.model_type, "glm5_next")) return openGlm(a, gpa, io, o, problem);
     if (isGemma4(o.model_type)) return @import("gemma4.zig").open(a, gpa, io, o, problem);
-    if (o.vision != null and !std.mem.eql(u8, o.model_type, "step5_vl")) {
-        problem.* = try std.fmt.allocPrint(a, "--vision: the native engine reads images for GLM-5.3-Flash, Qwen3.8-27B, Qwen3.8 Flash Next, Gemma 4 and Step-5 only, not {s} checkpoints", .{o.model_type});
+    if (std.mem.eql(u8, o.model_type, "unlimited-ocr")) return @import("uocr.zig").open(a, gpa, io, o, problem);
+    if (o.vision != null and !std.mem.eql(u8, o.model_type, "step5_vl") and !std.mem.eql(u8, o.model_type, "minimax_m3_vl")) {
+        problem.* = try std.fmt.allocPrint(a, "--vision: the native engine reads images for GLM-5.3-Flash, Qwen3.8-27B, Qwen3.8 Flash Next, Gemma 4, Step-5, MiniMax-M3.1-Flash and Unlimited-OCR-2 only, not {s} checkpoints", .{o.model_type});
         return null;
     }
     if (std.mem.eql(u8, o.model_type, "glm_moe_dsa")) return openGlmDsa(a, gpa, io, o, problem);
     if (std.mem.eql(u8, o.model_type, "qwen3_5")) return @import("qwen35.zig").open(a, gpa, io, o, problem);
     if (std.mem.eql(u8, o.model_type, "step5_vl")) return @import("step5.zig").open(a, gpa, io, o, problem);
     if (std.mem.eql(u8, o.model_type, "spark2_5")) return @import("spark25.zig").open(a, gpa, io, o, problem);
+    if (std.mem.eql(u8, o.model_type, "minimax_m3_vl")) return @import("minimax_m3.zig").open(a, gpa, io, o, problem);
+    if (std.mem.eql(u8, o.model_type, "llama")) return @import("llama.zig").open(a, gpa, io, o, problem);
+    if (std.mem.eql(u8, o.model_type, "flint")) return @import("flint.zig").open(a, gpa, io, o, problem);
     if (std.mem.eql(u8, o.model_type, "lfm2_moe")) return @import("lfm2_moe.zig").open(a, gpa, io, o, problem);
-    if (!std.mem.eql(u8, o.model_type, "nemotron_h")) {
-        problem.* = try std.fmt.allocPrint(a, "the native engine has no backend for {s} checkpoints yet; the Python engine 0.6.6 may serve them: python -m pip install git+https://github.com/ashhart/TensorFold.git@v0.6.6", .{o.model_type});
+    if (!std.mem.eql(u8, o.model_type, "nemotron_h") and !std.mem.eql(u8, o.model_type, "nemotron_h_puzzle")) {
+        problem.* = try @import("no_backend.zig").message(a, o.model_type);
         return null;
     }
-    if (o.slide) if (try slide_adapter.refusal(tf.shard_edit, a, io, o.dir, "`cp -cRL` (an APFS clone that follows links)")) |why| {
+    if (try metal_slide.refusal(nemotron, a, io, o)) |why| {
         problem.* = why;
         return null;
-    };
-    if (o.slide) if (try slideWidths(a, io, o.dir)) |why| {
-        problem.* = why;
-        return null;
-    };
+    }
     const native = modelContext(a, io, o.dir);
     const window: i64 = o.context orelse native;
     if (window < 0 or (native > 0 and window > native)) {
@@ -224,12 +197,13 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     h.m = m;
     h.resident = null;
     const step = prefillStep(h.m.device);
-    const capacity: usize = @intCast(if (window > 0) window else 1 << 18);
-    const positions = capacity + nemotron.backend.max_lanes + 1;
+    const positions = nemotron.backend.limits.positions(@intCast(@max(window, 0)));
     const mamba = nemotron.state.Pool;
     const per_stream = nemotron.state.Cache.bytes(m.config, positions, o.drafts and m.weights.mtp != null);
     const left = metal_admit.room(m.device) -| mamba.bytes(m.config, 3, 2); // the pool's spare slots and two replay ids
-    const served = try metal_admit.streams(a, "nemotron", per_stream + mamba.bytes(m.config, 2, 1), left, o, positions, problem) orelse {
+    const on = nemotron.kv_pages.on(); // TF_NEMOTRON_METAL_KV_PAGES: the page plan sets the streams, else whole caches
+    const paged = if (on) try metal_admit.pages(a, "TF_NEMOTRON_METAL_KV_PAGES", nemotron.state.pagedLayout(m.config, o.drafts and m.weights.mtp != null), m.device, o, positions, left, problem) else null;
+    const served = (if (on) if (paged) |p| @min(p.lanes, o.lanes) else null else try metal_admit.streams(a, "nemotron", per_stream + mamba.bytes(m.config, 2, 1), left, o, positions, problem)) orelse {
         m.deinit();
         gpa.destroy(h);
         return null;
@@ -242,6 +216,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         .batch_rows = @min(128, @max(64, 4 * served)), // four rows a lane, so 32 and 64 sessions keep their drafts
     });
     errdefer h.metal.deinit();
+    if (paged) |p| try nemotron.kv_pages.attach(h.metal, p.layout, p.pages, positions, served);
     nemotron.slide.loadLiving(gpa, io, h.metal) catch |e| {
         problem.* = try std.fmt.allocPrint(a, "the native engine cannot read the saved lessons in {s} ({s})", .{ o.dir, @errorName(e) });
         return null;
@@ -253,12 +228,12 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     h.clock = .{ .b = h.metal, .wall = .{ .io = io } };
     h.core = lanes.Engine.init(gpa, &h.cfg, h.metal.backend(), h.clock.clock());
     errdefer h.core.deinit();
-    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = served, .context_window = @intCast(@max(window, 0)), .prefill_step = step, .structures = true });
+    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = served, .context_window = @intCast(@max(window, 0)), .reported_context_window = if (window > 0) null else nemotron.backend.limits.reported(0, positions), .prefill_step = step, .decode_share = o.decode_share, .structures = true });
     h.host.memory = .{ .ctx = h, .read = readMemory };
     h.round = .{ .depth = 8 };
     h.cache = null;
     var why: []const u8 = "";
-    const later = @as(u64, served) * per_stream;
+    const later = @as(u64, served) * if (paged) |p| p.layout.fixed_bytes else per_stream; // paged: the pages are taken
     const plan = cache_fit.budgetBeside(o.prompt_cache_gib, o.prompt_cache_over_cap, h.m.device.maxWorkingSet() -| h.m.device.allocated() -| (8 << 30), later, a, &why, "") catch |e| {
         if (e == error.CacheOverCap) problem.* = why;
         return e;
@@ -298,76 +273,70 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
     h.slide = null;
     if (o.slide) {
-        const s = try gpa.create(Slide);
-        errdefer gpa.destroy(s);
-        s.* = Slide.init(gpa, io, h.metal);
+        const s = try metal_slide.init(nemotron, gpa, io, h.metal, o.dir);
         h.slide = s;
-        h.host.learner = s.hook();
-        h.host.info_.slide_conversations = s.learner.readsConversations();
+        h.host.learner = s.hook;
+        h.host.info_.slide_conversations = s.conversations;
     }
-    errdefer if (h.slide) |s| {
-        s.deinit();
-        gpa.destroy(s);
-    };
+    errdefer if (h.slide) |s| s.deinit(gpa);
     try h.host.start();
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h, .halt = Host.halt };
 }
 
 const prompt_int8_refusal = "--prompt-precision int8 is the CUDA Qwen3.5 engine's; the Metal engines prompt in bf16: serve without it";
-
-/// --slide writes 4-bit codes into the shards: a checkpoint with any other width is refused by its first such matrix.
-fn slideWidths(a: Allocator, io: std.Io, dir: []const u8) !?[]const u8 {
-    const c = nemotron.config.Config.read(a, io, dir) catch return null; // the load names a config.json it cannot read
-    var buf: [96]u8 = undefined;
-    const m = c.other(&buf) orelse return null;
-    return try std.fmt.allocPrint(a, "--slide learns into checkpoints at 4-bit in groups of 64, and {s} in {s} is {d}-bit in groups of {d}: serve it without --slide", .{ m.name, dir, m.width.bits, m.width.group });
-}
-
 /// Flash Next's replay engine copies on the GPU from its own history: it reads no Recall record yet.
 const recall_refusal = "--recall drafts from a record in the lane engine's rounds; " ++
     "Flash Next's replay engine copies from its own history on the GPU and reads no record yet: " ++
     "serve it without --recall, --recall-dir, --recall-gib or --recall-read-only";
 
-/// Refused before any weights load: --slide but on Nemotron, as CUDA does, and --learn where nothing is kept on disk.
+/// Refused before any weights load: absent family learners and unsupported disk-state options.
 fn refusal(a: Allocator, o: api.Open, dense: bool) !?[]const u8 {
     const t = o.model_type;
     if (o.kv8) return "--kv-cache fp8 keeps fp8 caches on CUDA; the Metal engines keep bf16: serve without it";
     if (o.prompt_int8) return prompt_int8_refusal;
-    if (o.slide and !std.mem.eql(u8, t, "nemotron_h")) return try std.fmt.allocPrint(a, "--slide: {s} checkpoints do not learn on Macs yet", .{t});
-    const one_mac: ?[]const u8 = if (std.mem.eql(u8, t, "nemotron_h")) "Nemotron" else if (std.mem.eql(u8, t, "lfm2_moe")) "LFM2.5-24B-A2B" else if (isGemma4(t)) "Gemma 4" else if (std.mem.eql(u8, t, "step5_vl")) "Step-5" else if (std.mem.eql(u8, t, "spark2_5")) "Spark-X2.6" else if (!std.mem.eql(u8, t, "qwen3_5")) null else if (dense) "Qwen3.8-27B" else "Qwen3.5-2B";
+    if (!learners.supports(t)) if (try o.slideRefusal(a, "Macs")) |why| return why;
+    if (o.drafter != null and !dense and !isGemma4(t) and !std.mem.eql(u8, t, "llama") and !std.mem.eql(u8, t, "qwen3_5_moe") and !std.mem.eql(u8, t, "flint") and !std.mem.eql(u8, t, "glm5_next")) return "--drafter is supported for Qwen3.8-27B-class checkpoints (qwen3_5 with its own output head), Qwen3.5-MoE (qwen3_5_moe), GLM-5.3-Flash (glm5_next), Gemma 4 dense, Flint (DFlash2 on M5) and Llama (a smaller Llama on the same tokenizer)";
+    const one_mac: ?[]const u8 = if (std.mem.eql(u8, t, "nemotron_h")) "Nemotron" else if (std.mem.eql(u8, t, "nemotron_h_puzzle")) "Nemotron 3.5 Bolt" else if (std.mem.eql(u8, t, "lfm2_moe")) "LFM2.5-24B-A2B" else if (isGemma4(t)) "Gemma 4" else if (std.mem.eql(u8, t, "step5_vl")) "Step-5" else if (std.mem.eql(u8, t, "spark2_5")) "Spark-X2.6" else if (std.mem.eql(u8, t, "minimax_m3_vl")) "MiniMax-M3.1-Flash" else if (std.mem.eql(u8, t, "qwen3_5_moe")) "Qwen3.5-MoE" else if (std.mem.eql(u8, t, "llama")) "Llama" else if (std.mem.eql(u8, t, "flint")) "Flint" else if (std.mem.eql(u8, t, "unlimited-ocr")) "Unlimited-OCR-2" else if (!std.mem.eql(u8, t, "qwen3_5")) null else if (dense) "Qwen3.8-27B" else "Qwen3.5-2B";
     if (o.speed_up != null) if (one_mac) |name| return try std.fmt.allocPrint(a, "--speed-up joins two Macs for Flash Next, GLM-5.3-Flash and GLM-5.3 only: serve {s} without it", .{name});
     if (o.recall and std.mem.eql(u8, t, "qwen4_exp")) return recall_refusal;
     if (spill.refusal(o)) |why| return why;
     if (o.learn == null) return null;
     // the 27B writes conversation states
     if (o.learn_conversations and std.mem.eql(u8, t, "qwen3_5") and dense) return null;
-    const name: []const u8 = if (std.mem.eql(u8, t, "glm_moe_dsa")) "GLM-5.3 (EXLR8)" else if (std.mem.eql(u8, t, "lfm2_moe")) "LFM2.5-24B-A2B" else if (isGemma4(t)) "Gemma 4" else if (std.mem.eql(u8, t, "step5_vl")) "Step-5" else if (std.mem.eql(u8, t, "spark2_5")) "Spark-X2.6" else if (!std.mem.eql(u8, t, "qwen3_5")) return null else if (dense) "Qwen3.8-27B" else "Qwen3.5-2B";
+    const name: []const u8 = if (std.mem.eql(u8, t, "glm_moe_dsa")) "GLM-5.3 (EXLR8)" else if (std.mem.eql(u8, t, "lfm2_moe")) "LFM2.5-24B-A2B" else if (isGemma4(t)) "Gemma 4" else if (std.mem.eql(u8, t, "step5_vl")) "Step-5" else if (std.mem.eql(u8, t, "spark2_5")) "Spark-X2.6" else if (std.mem.eql(u8, t, "minimax_m3_vl")) "MiniMax-M3.1-Flash" else if (std.mem.eql(u8, t, "qwen3_5_moe")) "Qwen3.5-MoE" else if (std.mem.eql(u8, t, "llama")) "Llama" else if (std.mem.eql(u8, t, "flint")) "Flint" else if (std.mem.eql(u8, t, "unlimited-ocr")) "Unlimited-OCR-2" else if (!std.mem.eql(u8, t, "qwen3_5")) return null else if (dense) "Qwen3.8-27B" else "Qwen3.5-2B";
     if (o.learn_conversations) return try std.fmt.allocPrint(a, "{s} keeps conversation states on disk for Qwen3.8-27B, Nemotron, Flash Next and GLM-5.3-Flash: serve {s} without it", .{ spill.flag(o), name });
-    const or_talks: []const u8 = if (dense) " (Qwen3.8-27B keeps conversation states on disk with --learn-conversations)" else "";
+    const or_talks: []const u8 = if (dense and std.mem.eql(u8, t, "qwen3_5")) " (Qwen3.8-27B keeps conversation states on disk with --learn-conversations)" else "";
     return try std.fmt.allocPrint(a, "--learn learns prompt prefixes for Nemotron, Flash Next and GLM-5.3-Flash only{s}: serve {s} without --learn, --learn-dir or --learn-gib", .{ or_talks, name });
 }
 
-/// A qwen3_5 checkpoint opens the 27B engine unless it has the pinned 2B's hidden size or a tied head, which stay on the 2B's.
-fn qwen27Engine(a: Allocator, io: std.Io, dir: []const u8) bool {
-    const path = std.fs.path.join(a, &.{ dir, "config.json" }) catch return true;
-    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(16 << 20)) catch return true;
-    const doc = std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{}) catch return true;
-    if (doc != .object) return true;
-    const text = if (doc.object.get("text_config")) |t| (if (t == .object) t else doc) else doc;
-    for ([_]std.json.Value{ doc, text }) |o| {
-        if (o.object.get("tie_word_embeddings")) |v| if (v == .bool and v.bool) return false;
-        if (o.object.get("hidden_size")) |v| if (v == .integer and v.integer == tf.qwen35.config.hidden) return false;
-    }
-    return true;
+/// Whether `dir` opens on the Qwen3.8-27B-class engine: the 27B-class qwen3_5 checkpoints, and Qwen3.5-MoE.
+fn ownsQwen27(a: Allocator, io: std.Io, t: []const u8, dir: []const u8) bool {
+    return (std.mem.eql(u8, t, "qwen3_5") and @import("qwen27_engine.zig").owns(a, io, dir)) or std.mem.eql(u8, t, "qwen3_5_moe");
 }
 
-/// Qwen3.8-27B on the lane host: `--parallel` streams in shared rounds, DFlash2 drafts from --drafter for one of them.
-fn openQwen27(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
-    const context = o.context orelse 32768;
-    if (context <= 0 or context > 262144) {
-        problem.* = try std.fmt.allocPrint(a, "--context {d} is outside Qwen3.8-27B's 1 to 262,144 tokens", .{context});
+/// The context a Qwen3.8-27B-class start serves (--context, else 32,768); null with `problem` set past 1 to 262,144.
+fn qwen27Context(a: Allocator, context: ?i64, problem: *[]const u8) !?u32 {
+    const n = context orelse 32768;
+    if (n <= 0 or n > 262144) {
+        problem.* = try std.fmt.allocPrint(a, "--context {d} is outside this Qwen checkpoint's 1 to 262,144 tokens", .{n});
         return null;
     }
+    return @intCast(n);
+}
+pub const Qwen27Budget = @import("qwen27_reserve.zig").Budget;
+/// What a Qwen3.8-27B-class start keeps free of its working set.
+pub const qwen27_margin = tf.qwen27.prompt_memory.margin;
+
+/// `serve`'s startup charge for a Qwen3.8-27B-class `dir` (no drafter or images); null for others or a refused context.
+pub fn qwen27Budget(a: Allocator, io: std.Io, t: []const u8, dir: []const u8, weights: u64, context: ?i64, streams: u32, fixed: bool, problem: *[]const u8) !?Qwen27Budget {
+    if (!ownsQwen27(a, io, t, dir)) return null;
+    const n = try qwen27Context(a, context, problem) orelse return null;
+    return try @import("qwen27_reserve.zig").budget(a, io, dir, weights, n, streams, fixed);
+}
+
+/// Qwen3.8-27B and Qwen3.5-MoE on the lane host: shared rounds, DFlash2 drafts for up to TF_Q27_DRAFT_SLOTS streams.
+fn openQwen27(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
+    const context = try qwen27Context(a, o.context, problem) orelse return null;
     if (o.drafts and o.drafter != null and o.drafter_bits != 0 and o.drafter_bits != 4) {
         problem.* = "--drafter-bits takes 0 (bf16) or 4";
         return null;
@@ -375,20 +344,19 @@ fn openQwen27(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[
     var why: []const u8 = "";
     const drafter = if (o.drafts) o.drafter else null;
     const learn: ?@import("qwen27_disk.zig").Learn = if (o.learn_conversations) if (o.learn) |root| .{ .root = root, .dir = o.dir, .drafter = drafter, .cap = gibBytes(o.learn_gib), .floor = gibBytes(o.learn_min_free_gib), .daily = gibBytes(o.learn_daily_gib), .spill = o.spill, .slots = spill.slots(o) } else null else null;
-    const h = qwen27.open(gpa, io, o.dir, .{ .context = @intCast(context), .streams = o.lanes, .streams_fixed = o.lanes_fixed, .drafter = drafter, .drafter_name = o.drafter_name, .drafter_bits = o.drafter_bits, .cache_gib = o.prompt_cache_gib, .cache_over_cap = o.prompt_cache_over_cap, .learn = learn, .vision = o.vision }, a, &why) catch |err| {
-        problem.* = if (why.len > 0) why else try std.fmt.allocPrint(a, "the native Qwen3.8-27B engine cannot load {s} ({s})", .{ o.dir, @errorName(err) });
+    const h = qwen27.open(gpa, io, o.dir, .{ .context = @intCast(context), .streams = o.lanes, .streams_fixed = o.lanes_fixed, .drafter = drafter, .drafter_name = o.drafter_name, .drafter_bits = o.drafter_bits, .cache_gib = o.prompt_cache_gib, .cache_over_cap = o.prompt_cache_over_cap, .decode_share = o.decode_share, .learn = learn, .vision = o.vision }, a, &why) catch |err| {
+        problem.* = if (why.len > 0) why else try std.fmt.allocPrint(a, "the native Qwen engine (27B class) cannot load {s} ({s})", .{ o.dir, @errorName(err) });
         return null;
     };
     return .{ .engine = h.engine(), .close = qwen27.close, .ctx = h };
 }
 
-/// A GiB count's bytes (the flags allow 0 up to below 2^34).
-fn gibBytes(g: f64) u64 {
-    return @intFromFloat(g * (1 << 30));
-}
-
 /// Flash Next uses the dump named by TF_FLASHNEXT_DUMP, or the checked-in kernels when that variable is unset.
 pub fn openFlashNext(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
+    if (try o.slideRefusal(a, "Macs")) |why| {
+        problem.* = why;
+        return null;
+    }
     if (fsr_options.refuse(o, problem)) return null;
     const dump: ?[]const u8 = if (platform.c.getenv("TF_FLASHNEXT_DUMP")) |d| std.mem.span(d) else null;
     const native = modelContext(a, io, o.dir);
@@ -416,7 +384,7 @@ pub fn openFlashNext(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, prob
     if (tf.flashnext_batch_meta.shared(o.lanes_fixed, o.lanes, paired, writes_behind)) {
         var why: []const u8 = "";
         const shared: ?api.Opened = shared: {
-            const opened = @import("flashnext_batch_host.zig").openConfigured(gpa, io, o.dir, dump, if (window > 0) @min(window, cap - margin) else cap - margin, if (o.lanes_fixed) o.lanes else tf.flashnext_replay.MAXR, o.lanes_fixed, o.prompt_cache_gib, o.prompt_cache_over_cap, o.vision, learn, a, &why, choice.settings) catch |err| {
+            const opened = @import("flashnext_batch_host.zig").openConfigured(gpa, io, o.dir, dump, if (window > 0) @min(window, cap - margin) else cap - margin, if (o.lanes_fixed) o.lanes else tf.flashnext_replay.MAXR, o.lanes_fixed, o.prompt_cache_gib, o.prompt_cache_over_cap, o.decode_share, o.vision, learn, a, &why, choice.settings) catch |err| {
                 problem.* = tf.flashnext_engine.quantizationProblem(err) orelse if (err == error.CacheOverCap or why.len > 0) why else if (err == error.BadLoadLimit) "FLASHNEXT_LOAD_LIMIT_GB is not a load limit: give a number of GB above 0, or unset it for 70% of RAM" else if (err == error.OverMemoryLimit) "the native Flash Next batching engine cannot open (OverMemoryLimit): the sessions and the given prompt cache do not fit under the load limit (70% of RAM, or FLASHNEXT_LOAD_LIMIT_GB) past the loaded model; fewer streams, a smaller --context or --prompt-cache-gib, or a higher FLASHNEXT_LOAD_LIMIT_GB" else try std.fmt.allocPrint(a, "the native Flash Next batching engine cannot open ({s})", .{@errorName(err)});
                 return null;
             };
@@ -435,6 +403,9 @@ pub fn openFlashNext(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, prob
 }
 
 test {
+    _ = @import("kimi_metal.zig");
+    _ = metal_slide;
+    _ = @import("metal_slide_test.zig");
     _ = @import("draft_sources_metal_test.zig");
     _ = flashnext;
     _ = glm;
@@ -447,11 +418,12 @@ test {
     _ = @import("qwen27_landing.zig");
     _ = spill;
     _ = @import("metal_link.zig");
+    _ = metal_shared;
+    _ = @import("uocr.zig");
 }
 
 /// GLM-5.3-Flash's caches hold this many tokens unless --context asks otherwise (its window is 1,048,576).
 const glm_window: i64 = 131072;
-
 fn openGlm(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
     const native = modelContext(a, io, o.dir);
     const window: i64 = o.context orelse @min(glm_window, if (native > 0) native else glm_window);
@@ -465,8 +437,13 @@ fn openGlm(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]co
         problem.* = try std.fmt.allocPrint(a, "--vision is served on one Mac; the --speed-up pair reads text only", .{});
         return null;
     }
+    const drafter = if (o.drafts) o.drafter else null;
+    if (drafter != null) if (tf.glm.metal_dflash_load.refusal(.{ .speed_up = o.speed_up != null, .drafter_bits = o.drafter_bits })) |why| {
+        problem.* = why;
+        return null;
+    };
     const learn: ?glm.Learn = if (o.learn) |root| .{ .root = root, .cap = gibBytes(o.learn_gib), .floor = gibBytes(o.learn_min_free_gib), .daily = gibBytes(o.learn_daily_gib), .conversations = o.learn_conversations, .spill = o.spill, .slots = spill.slots(o) } else null;
-    const h = glm.open(gpa, io, o.dir, @intCast(window), o.speed_up, o.lanes, o.lanes_fixed, o.prompt_cache_gib, learn, o.vision) catch |e| {
+    const h = glm.open(gpa, io, o.dir, @intCast(window), o.speed_up, o.lanes, o.lanes_fixed, o.prompt_cache_gib, o.decode_share, learn, o.vision, drafter, o.drafter_name orelse drafter, o.drafter_bits) catch |e| {
         if (e == error.BadResidency) problem.* = mtl.residency_policy.invalid_flag else if (e == error.LearnConversationsOnPair) problem.* = "--learn-conversations keeps states on one Mac only: serve GLM-5.3-Flash without --speed-up, or without the flag" else if (e == error.BadLoadLimit) problem.* = "GLM_LOAD_LIMIT_GB is not a load limit: give a number of GB above 0, or unset it for 70% of RAM" else problem.* = if (linkProblem(e)) |link| try std.fmt.allocPrint(a, "the native GLM-5.3-Flash engine cannot load {s}: {s}", .{ o.dir, link }) else try std.fmt.allocPrint(a, "the native GLM-5.3-Flash engine cannot load {s} ({s})", .{ o.dir, @errorName(e) });
         return null;
     };
@@ -489,40 +466,11 @@ fn openGlmDsa(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[
     if (platform.c.sysctlbyname("hw.memsize", &ram, &len, null, 0) != 0) return error.NoRamSize;
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
-    const h = glm_dsa.open(gpa, io, o.dir, @intCast(window), settings, @max(1, @min(o.lanes, 16)), ram / 100 * 66, o.prompt_cache_gib) catch |e| {
+    const h = glm_dsa.open(gpa, io, o.dir, @intCast(window), settings, @max(1, @min(o.lanes, 16)), ram / 100 * 66, o.prompt_cache_gib, o.decode_share) catch |e| {
         problem.* = if (linkProblem(e)) |link| try std.fmt.allocPrint(a, "the native GLM-5.3 (EXLR8) engine cannot load {s}: {s}", .{ o.dir, link }) else try std.fmt.allocPrint(a, "the native GLM-5.3 (EXLR8) engine cannot load {s} ({s})", .{ o.dir, @errorName(e) });
         return null;
     };
     return .{ .engine = h.engine(), .close = glm_dsa.close, .ctx = h };
-}
-
-test "chip classes from Metal device names" {
-    try std.testing.expectEqual(@as(?u32, 5), generation("Apple M5 Max"));
-    try std.testing.expectEqual(@as(?u32, 12), generation("Apple M12"));
-    try std.testing.expectEqual(@as(?u32, null), generation("AMD Radeon Pro"));
-    try std.testing.expectEqual(@as(?u32, null), generation("Apple Mx"));
-}
-
-test "a qwen3_5 checkpoint opens the 27B engine unless it has the 2B's geometry or a tied head" {
-    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
-    const io = std.testing.io;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const dir = try std.fmt.allocPrint(a, ".zig-cache/tmp/{s}", .{tmp.sub_path});
-    try std.testing.expect(qwen27Engine(a, io, dir)); // no config.json: the 27B's loader explains the refusal
-    const cases = [_]struct { config: []const u8, big: bool }{
-        .{ .config = "{\"model_type\":\"qwen3_5\",\"text_config\":{\"tie_word_embeddings\":true}}", .big = false },
-        .{ .config = "{\"model_type\":\"qwen3_5\",\"tie_word_embeddings\":true,\"text_config\":{}}", .big = false },
-        .{ .config = "{\"model_type\":\"qwen3_5\",\"tie_word_embeddings\":false,\"text_config\":{\"tie_word_embeddings\":false}}", .big = true },
-        .{ .config = "{\"model_type\":\"qwen3_5\",\"hidden_size\":5120}", .big = true },
-        .{ .config = "{\"model_type\":\"qwen3_5\",\"text_config\":{\"tie_word_embeddings\":false,\"hidden_size\":2048}}", .big = false },
-    };
-    for (cases) |c| {
-        try tmp.dir.writeFile(io, .{ .sub_path = "config.json", .data = c.config });
-        try std.testing.expectEqual(c.big, qwen27Engine(a, io, dir));
-    }
 }
 
 test "--learn is refused for the 27B, the 2B and GLM-5.3 (EXLR8), and not for the families that keep prompt states on disk" {
@@ -553,7 +501,7 @@ test "--spill-gib with --checkpoint-slots opens the four families with a disk st
     try std.testing.expectStringStartsWith((try refusal(a, .{ .dir = "d", .model_type = "glm5_next", .keep = 2 }, false)) orelse "", "--checkpoint-slots");
 }
 
-test "--speed-up is refused by Nemotron, the 27B and the 2B before any load, and not by the two-Mac families" {
+test "--speed-up is refused by Nemotron, Bolt, the 27B and the 2B before any load, and not by the two-Mac families" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -562,6 +510,9 @@ test "--speed-up is refused by Nemotron, the 27B and the 2B before any load, and
     try std.testing.expectStringEndsWith((try refusal(a, two, true)) orelse "", try std.fmt.allocPrint(a, tail, .{"Qwen3.8-27B"}));
     try std.testing.expectStringEndsWith((try refusal(a, two, false)) orelse "", try std.fmt.allocPrint(a, tail, .{"Qwen3.5-2B"}));
     try std.testing.expectStringEndsWith((try refusal(a, .{ .dir = "d", .model_type = "nemotron_h", .speed_up = "pair.json" }, false)) orelse "", try std.fmt.allocPrint(a, tail, .{"Nemotron"}));
+    try std.testing.expectStringEndsWith((try refusal(a, .{ .dir = "d", .model_type = "nemotron_h_puzzle", .speed_up = "pair.json" }, false)) orelse "", try std.fmt.allocPrint(a, tail, .{"Nemotron 3.5 Bolt"}));
+    try std.testing.expectStringEndsWith((try refusal(a, .{ .dir = "d", .model_type = "qwen3_5_moe", .speed_up = "pair.json" }, true)) orelse "", try std.fmt.allocPrint(a, tail, .{"Qwen3.5-MoE"}));
+    try std.testing.expectEqualStrings("--learn learns prompt prefixes for Nemotron, Flash Next and GLM-5.3-Flash only: serve Qwen3.5-MoE without --learn, --learn-dir or --learn-gib", (try refusal(a, .{ .dir = "d", .model_type = "qwen3_5_moe", .learn = "/x" }, true)) orelse "");
     for ([_][]const u8{ "qwen4_exp", "glm5_next", "glm_moe_dsa" }) |t| try std.testing.expect((try refusal(a, .{ .dir = "d", .model_type = t, .speed_up = "pair.json" }, false)) == null);
 }
 
@@ -594,4 +545,56 @@ test "prompt precision: Metal refuses int8 before any model or family-specific l
         try std.testing.expect(opened == null);
         try std.testing.expectEqualStrings(prompt_int8_refusal, why);
     }
+}
+
+test "slide admission: Metal entry points refuse before checkpoint or device access" {
+    const check = @import("slide_open_test.zig").check;
+    const kimi = @import("kimi_metal.zig");
+    for (families) |f| {
+        if (std.mem.eql(u8, f.model_type, "nemotron_h")) continue;
+        if (std.mem.eql(u8, f.model_type, "kimi_k3") or std.mem.eql(u8, f.model_type, "kimi_k31")) {
+            const want = "Kimi: learned states and on-disk prompt states are not implemented";
+            try @import("slide_open_test.zig").message(open, f.model_type, want);
+            try @import("slide_open_test.zig").message(kimi.open, f.model_type, want);
+        } else try check(open, "Macs", &.{f.model_type});
+    }
+    try check(@import("qwen35.zig").open, "Macs", &.{"qwen3_5"});
+    try check(@import("gemma4.zig").open, "Macs", &.{"gemma4"});
+    try check(@import("lfm2_moe.zig").open, "Macs", &.{"lfm2_moe"});
+    try check(@import("step5.zig").open, "Macs", &.{"step5_vl"});
+    try check(@import("spark25.zig").open, "Macs", &.{"spark2_5"});
+    try check(@import("minimax_m3.zig").open, "Macs", &.{"minimax_m3_vl"});
+    try check(@import("uocr.zig").open, "Macs", &.{"unlimited-ocr"});
+    try check(openFlashNext, "Macs", &.{"qwen4_exp"});
+}
+
+test "Metal capabilities: fish_omni retains FP8 and includes its native NVFP4 expert format" {
+    var fp8 = false;
+    var nvfp4 = false;
+    for (families) |family| if (std.mem.eql(u8, family.model_type, "fish_omni")) {
+        for (family.formats) |format| {
+            fp8 = fp8 or std.mem.eql(u8, format, "fp8-block128");
+            nvfp4 = nvfp4 or std.mem.eql(u8, format, "nvfp4");
+        }
+    };
+    try std.testing.expect(fp8 and nvfp4);
+}
+
+test "plain sharing: Nemotron without a head shares streams without widening its window" {
+    var b: nemotron.backend.Metal = undefined;
+    b.o = .{ .capacity = 4096, .streams = 4, .batch_rows = 32, .drafts = false };
+    b.head = null;
+    b.costs = .{};
+    const facts = b.facts();
+    try std.testing.expect(facts.plain_share and facts.hidden_rows);
+    try std.testing.expectEqual(@as(u32, 1), facts.exact_width);
+    try std.testing.expect(!facts.mtp and !facts.speculate and !facts.allocate_shared_drafts);
+    var config = try lanes.Config.init(std.testing.allocator, facts, nemotron.backend.max_window, nemotron.backend.max_window - 1);
+    defer config.deinit(std.testing.allocator);
+    try std.testing.expect(config.family_streams and config.pipelined);
+    try std.testing.expectEqual(@as(u32, 4), config.batch_streams);
+    try std.testing.expectEqual(@as(u32, 1), config.family_width);
+    try std.testing.expectEqual(@as(u32, 0), config.max_copy);
+    try std.testing.expectEqual(@as(u32, 0), config.most_drafts);
+    try std.testing.expect(!config.family_mtp);
 }

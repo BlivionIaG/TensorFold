@@ -159,6 +159,9 @@ pub const Engine = struct {
     pub fn keepStates(e: *Engine) !void {
         return @import("engine_rounds.zig").keepStates(e);
     }
+    pub fn keepLoneStates(e: *Engine) !void {
+        return @import("engine_rounds.zig").keepLoneStates(e);
+    }
 
     /// Host-driven calls (prompt chunks, the head's first drafts) read the host's metadata buffers.
     pub fn hostMode(e: *Engine) void {
@@ -191,7 +194,9 @@ pub const Engine = struct {
     /// A prompt call of up to `left` rows: one chunk, as two staggered segments once each gets SEG_MIN rows.
     pub fn chunkCall(e: *const Engine, left: usize) segments.Call {
         const step = fz.chunkRows(e.m.pos, e.pr.step); // past the trained window a chunk scores more blocks a row
-        return if (e.segments) segments.next(left, step, SEG_MIN) else .{ .rows = @min(step, left), .parts = 1 };
+        const call: segments.Call = if (e.segments) segments.next(left, step, SEG_MIN) else .{ .rows = @min(step, left), .parts = 1 };
+        std.debug.assert(call.parts == 1 or e.pr2 != e.pr);
+        return call;
     }
 
     pub fn isEos(eos: []const u32, tok: u32) bool {

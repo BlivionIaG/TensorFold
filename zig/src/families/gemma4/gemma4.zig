@@ -12,12 +12,15 @@ pub const dflash_weights = @import("dflash_weights.zig");
 pub const assistant = @import("assistant.zig");
 pub const assistant_weights = @import("assistant_weights.zig");
 pub const image = @import("image.zig");
+pub const image_steps = image.For(@import("../../core/picture/picture.zig"));
 pub const vision = @import("vision.zig");
 pub const vision_unified = @import("vision_unified.zig");
 pub const residency = @import("residency.zig");
 pub const snapshot = @import("snapshot.zig");
 
 test {
+    _ = backend;
+    _ = @import("model.zig");
     _ = assistant;
     _ = assistant_weights;
     _ = config;
@@ -25,6 +28,7 @@ test {
     _ = image;
     _ = snapshot;
     _ = vision;
+    _ = weights;
 }
 
 pub const affine_mm = @import("affine_mm.zig");

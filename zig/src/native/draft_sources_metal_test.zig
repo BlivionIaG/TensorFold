@@ -4,6 +4,32 @@ const check = @import("draft_sources_check.zig").check;
 const present = @import("draft_sources_check.zig").present;
 const std = @import("std");
 
+test "qwen27 window: weak serial copies stay off while a confident continuation remains eligible" {
+    const a = std.testing.allocator;
+    const policy = @import("qwen27_window.zig");
+    const minimum = policy.serialCopyMatch(true, 16, null);
+    try std.testing.expectEqual((tf.lanes.proposer.Params{}).confident_match, minimum);
+    for ([_]u32{ 16, 32, 64 }) |width| {
+        try std.testing.expectEqual(@as(i64, 5), policy.serialCopyMatch(false, width, null));
+        try std.testing.expectEqual(@as(i64, 5), policy.serialCopyMatch(true, width, "0"));
+        try std.testing.expectEqual(@as(i64, 5), policy.serialCopyMatch(true, width, "1"));
+    }
+    var history: [65]u32 = undefined;
+    for (history[0..32], 0..) |*token, i| token.* = @intCast(i + 10);
+    history[32] = 999;
+    @memcpy(history[33..], history[0..32]);
+    var legacy = try tf.lanes.SuffixLookup.init(a, .{ .min_match = 5 });
+    defer legacy.deinit();
+    var strict = try tf.lanes.SuffixLookup.init(a, .{ .min_match = minimum });
+    defer strict.deinit();
+    // The former five-token rule takes this short repeated fragment; the default requires a long match.
+    try std.testing.expect((try legacy.propose(history[0..42], 16)).len > 0);
+    try std.testing.expectEqual(@as(usize, 0), (try strict.propose(history[0..42], 16)).len);
+    const copied = try strict.propose(history[0..57], 16);
+    try std.testing.expect(copied.len >= 8 and strict.last_confident);
+    try std.testing.expectEqualSlices(u32, history[24..32], copied[0..8]);
+}
+
 test "draft sources: Metal Nemotron follows the loaded MTP head" {
     var b: tf.nemotron.backend.Metal = undefined;
     b.costs = .{};
@@ -32,12 +58,18 @@ test "draft sources: Metal Qwen2B and LFM2 MoE follow qualified verification wid
 test "draft sources: Metal Qwen27 copies and DFlash2 use actual slot and head facts" {
     const q = @import("qwen27_lanes.zig");
     var runner: tf.qwen27.decode_round.Runner = undefined;
+    var model: tf.qwen27.model.Model = undefined;
+    model.config.experts = 0;
+    runner.model = &model;
     var b: q.Metal = undefined;
     b.runner = &runner;
     b.draft = null;
     b.timed = 0;
+    b.window = 16;
+    b.copies = false;
     b.nodes = 15;
     b.draft_slots = 1;
+    b.tensor_units = false;
     runner.slots = 1;
     try check(b.facts(), null, false, false);
     runner.slots = 4;
@@ -46,6 +78,10 @@ test "draft sources: Metal Qwen27 copies and DFlash2 use actual slot and head fa
     try check(b.facts(), .{ .kind = "DFlash2", .name = "example/draft" }, true, false);
     runner.slots = 1;
     try check(b.facts(), .{ .kind = "DFlash2", .name = "example/draft" }, false, false);
+    try std.testing.expect(!b.facts().plain_guard);
+    // routed experts (qwen3_5_moe) guard plain rounds against drafted depths
+    model.config.experts = 256;
+    try std.testing.expect(b.facts().plain_guard);
 }
 
 test "draft sources: Metal Gemma and Spark have copies without a checkpoint head" {
@@ -71,18 +107,28 @@ test "draft sources: Metal Step5 follows the checkpoint MTP layer count" {
 }
 
 test "draft sources: Metal GLM and GLM DSA follow actual MTP weights" {
+    const objc = @import("metal").objc;
+    // A host object with no Metal architecture answers the capability query without opening a GPU.
+    const no_arch = objc.msg(objc.Id, objc.class("NSObject"), "new", .{});
+    defer objc.release(no_arch);
     var e: tf.glm.engine.Engine = undefined;
     var weights: @typeInfo(@TypeOf(e.w)).pointer.child = undefined;
     e.w = &weights;
     e.ep = null;
+    e.device = .{ .id = no_arch };
     var slots: tf.glm.slots.Slots = undefined;
     var b: tf.glm.backend.Backend = .{ .gpa = std.testing.allocator, .sl = &slots };
     slots.e = &e;
     slots.slots = &.{};
     e.w.mtp = null;
-    try check(b.facts(), null, true, false);
+    const facts = b.facts();
+    try std.testing.expect(facts.learn_row_costs);
+    try check(facts, null, true, false);
     e.w.mtp = @as(@TypeOf(e.w.mtp.?), undefined);
     try check(b.facts(), null, true, true);
+    e.dflash = present(@TypeOf(e.dflash.?)); // the DFlash2 drafter's own facts branch
+    try check(b.facts(), .{ .kind = "DFlash2", .name = "example/draft" }, true, false);
+    e.dflash = null;
     var d: tf.glm_dsa.engine.Engine = undefined;
     var db: tf.glm_dsa.backend.Backend = undefined;
     db.e = &d;
@@ -111,4 +157,127 @@ test "draft sources: Metal Flash Next replay and shared rounds name the checkpoi
     b.sessions = &.{};
     b.serial_drafts = false;
     try check(b.facts(), null, true, true);
+}
+
+test "qwen27 window: native facts expose device width, node budget and hybrid copy policy" {
+    const q = @import("qwen27_lanes.zig");
+    const policy = @import("qwen27_window.zig");
+    var runner: tf.qwen27.decode_round.Runner = undefined;
+    var model: tf.qwen27.model.Model = undefined;
+    model.config.experts = 0;
+    runner.model = &model;
+    var b: q.Metal = undefined;
+    b.runner = &runner;
+    b.draft = present(@TypeOf(b.draft.?));
+    b.timed = 0;
+    b.draft_slots = 1;
+    b.tensor_units = false;
+    runner.slots = 1;
+    for ([_]bool{ false, true }) |units| for ([_]bool{ false, true }) |copies| {
+        b.tensor_units = units;
+        for ([_][]const u8{ "16", "32", "64" }, [_]u32{ 16, 32, 64 }) |text, width| {
+            b.window = try policy.requested(units, text);
+            b.nodes = policy.nodes(b.window, copies);
+            b.copies = copies;
+            b.timed = width;
+            for (b.costs[0..width], 0..) |*cost, i| cost.* = .{ .width = @intCast(i + 1), .ms = 20 };
+            const facts = b.facts();
+            try std.testing.expectEqual(width, facts.exact_width);
+            try std.testing.expect(facts.allocate_shared_drafts);
+            try std.testing.expect(facts.mtp and facts.speculate);
+            try std.testing.expectEqual(width - 1, facts.drafts);
+            try std.testing.expectEqual(width, facts.batch_rows);
+            try std.testing.expectEqual(width, facts.window_costs.len);
+            try std.testing.expectEqual(width, facts.window_costs[width - 1].width);
+            try std.testing.expectEqual(copies, facts.lone_copies);
+            try std.testing.expectEqual(copies, facts.context_copies);
+        }
+    };
+}
+
+test "qwen27 window: measured shared row cliffs retain the lone window's exact prices" {
+    const native = @import("qwen27_lanes.zig");
+    const lanes = @import("lanes");
+    var runner: tf.qwen27.decode_round.Runner = undefined;
+    var model: tf.qwen27.model.Model = undefined;
+    model.config.experts = 0;
+    runner.model = &model;
+    runner.slots = 4;
+    var b: native.Metal = undefined;
+    b.runner = &runner;
+    b.draft = present(@TypeOf(b.draft.?));
+    b.window = 16;
+    b.nodes = 15;
+    b.copies = false;
+    b.tensor_units = true;
+    b.draft_slots = 8;
+    b.timed = 64;
+    for (&b.costs, 1..) |*cost, rows| cost.* = .{
+        .width = @intCast(rows),
+        .ms = if (rows <= 16) 20 else if (rows <= 32) 28 else 44,
+    };
+    const facts = b.facts();
+    try std.testing.expectEqual(@as(usize, 16), facts.window_costs.len);
+    try std.testing.expectEqual(@as(usize, 48), facts.shared_costs.len);
+    try std.testing.expectEqual(@as(u32, 17), facts.shared_costs[0].width);
+    var cfg = try lanes.Config.init(std.testing.allocator, facts, 16, 15);
+    defer cfg.deinit(std.testing.allocator);
+    for (1..17) |rows| {
+        try std.testing.expectEqual(@as(?f64, 20), cfg.family_costs.get(@intCast(rows)));
+        try std.testing.expectEqual(@as(?f64, 20), cfg.shared_costs.get(@intCast(rows)));
+    }
+    try std.testing.expectEqual(@as(?f64, 28), cfg.shared_costs.get(17));
+    try std.testing.expectEqual(@as(?f64, 28), cfg.shared_costs.get(32));
+    try std.testing.expectEqual(@as(?f64, 44), cfg.shared_costs.get(33));
+    try std.testing.expectEqual(@as(u32, 16), facts.exact_width);
+    try std.testing.expect(facts.mtp and facts.draft_streams);
+}
+
+test "qwen27 window: a copied continuation preserves the matching native tree prefix" {
+    const native = @import("qwen27_lanes.zig");
+    var copy_stream = try @import("lanes").Stream.init(std.testing.allocator, .{ .id = "copy-prefix", .prompt = &.{1}, .max_new = 32 });
+    defer copy_stream.deinit(std.testing.allocator);
+    var copy_backend: native.Metal = undefined;
+    copy_backend.trees = @splat(null);
+    copy_backend.trees[0] = .{ .gpa = std.testing.allocator, .tokens = @constCast(&[_]u32{ 10, 11, 12 }), .parents = @constCast(&[_]i32{ -1, 0, 1 }), .scores = @constCast(&[_]f64{ -0.1, -0.2, -0.3 }) };
+    var up = [_]i32{ -1, 0, 1, 2 };
+    var window: @import("lanes").backend.Window = .{ .stream = &copy_stream, .pending = 1, .held = 0, .tokens = &.{ 10, 11, 99 }, .parents = &up, .positions = &.{ 0, 1, 2, 3 } };
+    try std.testing.expectEqual(@as(usize, 2), copy_backend.treeRows(window));
+    up[2] = 0;
+    try std.testing.expectEqual(@as(usize, 1), copy_backend.treeRows(window));
+    window.tokens = &.{ 99, 11, 12 };
+    try std.testing.expectEqual(@as(usize, 0), copy_backend.treeRows(window));
+}
+
+test "qwen27 window: an early keep refuses prompts, unrelated rounds and absent verify tails" {
+    var early_runner: tf.qwen27.decode_round.Runner = undefined;
+    var early_round: tf.qwen27.round_plan.Round = undefined;
+    var other_round: tf.qwen27.round_plan.Round = undefined;
+    early_runner.failed = false;
+    early_runner.accepted_chain = false;
+    early_runner.current_round = null;
+    early_runner.tail = null;
+    early_runner.active = null;
+    try std.testing.expectError(error.RoundNotReady, early_runner.checkDeviceKeep(&early_round));
+    try std.testing.expectError(error.RoundNotReady, early_runner.prepareDeviceKeep(&early_round, undefined, undefined, undefined));
+    early_runner.current_round = &other_round;
+    try std.testing.expectError(error.RoundNotReady, early_runner.prepareDeviceKeep(&early_round, undefined, undefined, undefined));
+    early_runner.current_round = &early_round;
+    try std.testing.expectError(error.RoundNotReady, early_runner.prepareDeviceKeep(&early_round, undefined, undefined, undefined));
+    early_runner.accepted_chain = true;
+    try std.testing.expectError(error.RoundNotReady, early_runner.prepareDeviceKeep(&early_round, undefined, undefined, undefined));
+}
+
+test "qwen27 window: tensor-unit admission publishes the first token before preparing drafts" {
+    const native = @import("qwen27_lanes.zig");
+    var runner: tf.qwen27.decode_round.Runner = undefined;
+    var backend: native.Metal = undefined;
+    backend.runner = &runner;
+    for ([_]u32{ 1, 16 }) |slots| {
+        runner.slots = slots;
+        for ([_]bool{ false, true }) |units| {
+            backend.tensor_units = units;
+            try std.testing.expectEqual(units, backend.backend().first_before_draft);
+        }
+    }
 }

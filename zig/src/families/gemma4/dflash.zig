@@ -86,7 +86,7 @@ pub const Drafter = struct {
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, target: *Model, dir: []const u8, options: Options) !*Drafter {
         // the draft's own weights are the lane layout: M5 only. The target's row path does not serve them.
-        if (!target.device.tensorUnits()) return error.GemmaDraftNeedsTensorUnits;
+        if (!@import("kernels.zig").draftAvailable(target.device)) return error.GemmaDraftNeedsTensorUnits;
         const d = try gpa.create(Drafter);
         errdefer gpa.destroy(d);
         d.* = undefined;
@@ -109,7 +109,7 @@ pub const Drafter = struct {
         d.ops = try ops.Ops.init(target.device);
         errdefer d.ops.deinit();
         const keys_max = @max(options.capacity + block_rows, c.window - 1 + block_rows);
-        d.attention = try attention.Attention.init(gpa, target.device, .{ .query_heads = c.heads, .kv_heads = c.kv_heads, .head_dim = c.head_dim, .rotary_dim = c.head_dim, .capacity = keys_max, .output = .bf16 });
+        d.attention = try attention.Attention.init(gpa, target.device, .{ .query_heads = c.heads, .kv_heads = c.kv_heads, .head_dim = c.head_dim, .capacity = keys_max, .output = .bf16 });
         errdefer d.attention.deinit();
         d.picks = try round.Ops.init(target.device);
         errdefer d.picks.deinit();
@@ -176,7 +176,7 @@ pub const Drafter = struct {
     /// Chains of up to 15, always drafted, no plain guard: a block costs the same at any depth, a guard bills per row.
     fn factsFn(ptr: *anyopaque) dr.Facts {
         const d = cast(ptr);
-        return .{ .depth = block_rows - 1, .step_ms = d.step_ms, .prior = &prior, .plain_guard = false, .batched = true, .stream_bytes = d.laneBytes(d.options.capacity) };
+        return .{ .limit_shared_drafts = true, .depth = block_rows - 1, .step_ms = d.step_ms, .prior = &prior, .plain_guard = false, .batched = true, .stream_bytes = d.laneBytes(d.options.capacity) };
     }
 
     fn laneBytes(d: *const Drafter, capacity: usize) usize {

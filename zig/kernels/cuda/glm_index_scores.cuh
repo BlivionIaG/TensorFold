@@ -1,9 +1,15 @@
 // GLM-5.3-Flash DSA indexer, a prompt chunk's pool scores: tf_glm_scores' arithmetic with each key tile staged once.
 #pragma once
 
+#include "glm_pdl.cuh"
+
 #include <cuda_bf16.h>
 #include <math.h>
 #include <stdint.h>
+#include "common/cp_async.cuh"
+#ifndef GLM_INDEX_HOST
+#include "common/qmm_frag.cuh"
+#endif
 
 namespace glm_index {
 
@@ -11,25 +17,17 @@ constexpr int D = 128, BP = 64, RB = 8, KQ = D / 16;  // key width, pools a tile
 
 #ifndef GLM_INDEX_HOST  // tools/glm_index_emulate supplies these on the host
 __device__ __forceinline__ void cp16(void* dst, const void* src, bool ok) {
-  const unsigned d = static_cast<unsigned>(__cvta_generic_to_shared(dst));
-  asm volatile("cp.async.cg.shared.global [%0], [%1], 16, %2;\n" ::"r"(d), "l"(src), "r"(ok ? 16 : 0));
+  tf_common::cp16z(dst, src, ok);
 }
-__device__ __forceinline__ void cp_commit() { asm volatile("cp.async.commit_group;\n" ::); }
-__device__ __forceinline__ void cp_wait() { asm volatile("cp.async.wait_group 0;\n" ::); }
+using tf_common::cp_commit;
+using tf_common::cp_wait;
 
 __device__ __forceinline__ void ldm4(uint32_t* r, const void* p) {
-  const unsigned a = static_cast<unsigned>(__cvta_generic_to_shared(p));
-  asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];\n"
-               : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
-               : "r"(a));
+  qmm_frag::ldmatrix4(r, tf_common::smem(p));
 }
 
 __device__ __forceinline__ void mma16816(float* c, const uint32_t* a, const uint32_t* b) {
-  asm volatile(
-      "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 {%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, "
-      "{%0, %1, %2, %3};"
-      : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
-      : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
+  qmm_frag::mma_v(c, a, b);
 }
 #endif
 
@@ -48,6 +46,7 @@ extern "C" __global__ void __launch_bounds__(glm_index::RB * 32)
     tf_glm_index_scores(const __nv_bfloat16* qi, const __nv_bfloat16* wts, int64_t w_stride, const __nv_bfloat16* pk,
                         float* out, const int* pos, int64_t rows, int64_t np, int64_t nb, float scale, float wscale,
                         int64_t heads, int loop, const int* pt, int64_t ps) {
+  glm_pdl::enter();
   using namespace glm_index;
   __shared__ __align__(16) __nv_bfloat16 tile[2][BP * D];  // two key tiles
   const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, g = lane >> 2, q = lane & 3;
@@ -91,7 +90,7 @@ extern "C" __global__ void __launch_bounds__(glm_index::RB * 32)
   for (int j = 0; j < loop; ++j) {
     const int64_t pb = first + j, p0 = pb * BP;
     if (pb >= nb) break;
-    cp_wait();
+    cp_wait<0>();
     __syncthreads();  // tile j is in, and every warp is done with tile j - 1
     if (any(j + 1)) stage((j + 1) & 1, pb + 1);
     cp_commit();

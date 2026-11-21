@@ -28,12 +28,12 @@ test "qwen27 speed: shared in-place verify then empty and full keeps restore sta
     var window = try Window.init(a, 9, &.{-1}, 2, 64);
     defer window.deinit();
     for ([_]bool{ false, true }) |empty_second| {
-        var pool: gpu.Pool = undefined;
-        pool.budget = try @import("families/qwen27/gdn_pool.zig").Budget.init(shape, 1, 2, 2);
-        pool.before = null;
-        pool.before_slots = 0;
-        pool.profiler = null;
-        pool.tree_mode = .auto;
+        var pool: gpu.Pool = .{
+            .budget = try @import("families/qwen27/gdn_pool.zig").Budget.init(shape, 1, 2, 2),
+            .buffers = undefined,
+            .kernels = undefined,
+            .scratch = gpu.Pool.emptyScratch(a),
+        };
         for (&pool.buffers, 0..) |*b, i| {
             b.* = .{ .id = i + 1, .data = try a.alignedAlloc(u8, .@"16", 2 * shape.state * 4) };
             @memset(b.data, 0);
@@ -77,7 +77,7 @@ test "qwen27 speed: shared in-place verify then empty and full keeps restore sta
         var record: metal.Recorder = .{};
         const e = metal.ComputeEncoder{ .record = &record };
         var allocations: metal.Allocations = .{};
-        defer pool.releaseBefore();
+        defer pool.deinitScratch();
         try pool.prepare(.{ .allocations = &allocations }, plan, false);
         try pool.forward(0, .{ .host = plan, .metadata = metadata }, refs, e);
         try std.testing.expect(!std.mem.eql(u8, original, state));

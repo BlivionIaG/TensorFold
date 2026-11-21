@@ -32,7 +32,7 @@ static void quant8_head(float v[16], float levels) {
 // Attention output brought back from the rotated basis (KV8 & 1): O bf16 [T, 24, 256], grid (T, 24).
 KERNEL(16) void rot_heads(global ushort *O) {
   const int t = get_group_id(0), hh = get_group_id(1), lane = get_sub_group_local_id();
-  global ushort *o = O + ((long)t * 24 + hh) * 256;
+  global ushort *o = O + ((long)t * Q27_AQ + hh) * 256;
   float v[16];
   for (int i = 0; i < 16; i++) v[i] = bf2f(o[i * 16 + lane]);
   fwht256(v);
@@ -46,16 +46,24 @@ static void store_kv8(global ushort *C, long row, int h, const float v[16], int 
   for (int i = 0; i < 16; i++) m = fmax(m, fabs(v[i]));
   m = sub_group_reduce_max(m);
   const float s = m > 0.0f ? m / 127.0f : 1.0f;
-  global char *c = (global char *)C + (row * 4 + h) * 256;
+  global char *c = (global char *)C + (row * Q27_AKV + h) * 256;
   for (int i = 0; i < 16; i++) c[i * 16 + lane] = (char)rint(v[i] / s);
-  if (lane == 0) ((global float *)((global char *)C + (long)cap * 1024))[row * 4 + h] = s;
+  if (lane == 0) ((global float *)((global char *)C + (long)cap * Q27_KVROW))[row * Q27_AKV + h] = s;
 }
 
 KERNEL(256) void attn_prep(global const half *P, global const ushort *QN, global const ushort *KN,
                            global const float *INVF, global ushort *Q, global ushort *KC, global ushort *VC, int p0,
                            float eps, global const int *TREE, global const ulong *MT, global const int *POS, int kv8,
+#ifdef Q27_MROPE
+                           int cap, global const int *ROPE) {
+#else
                            int cap) {
+#endif
   // cap > 0: int8 K/V cache (store_kv8)
+
+#ifdef Q27_MROPE
+  // ROPE if non-null: (t, h, w) at ROPE[3*t]. Pair j uses h if j%3==1 and j<33, w if j%3==2 and j<30, else t.
+#endif
 
   // kv8 (K/V cache study): & 1 rotates q, k, v by Hadamard; & 2 quantizes k, v per head (int4 with & 4)
 
@@ -70,20 +78,20 @@ KERNEL(256) void attn_prep(global const half *P, global const ushort *QN, global
     KC = (global ushort *)MT[t * 8];
     VC = (global ushort *)MT[t * 8 + 1];
   }
-  for (int hh = sg; hh < 32; hh += 16) {               // 0-23 : q, 24-27 : k, 28-31 : v
-    if (hh >= 28) {
+  for (int hh = sg; hh < Q27_AH; hh += 16) {           // 27B: 0-23 : q, 24-27 : k, 28-31 : v
+    if (hh >= Q27_AV0) {
       float vv[16];
-      for (int i = 0; i < 16; i++) vv[i] = (float)P[(long)t * 14336 + 13312 + (hh - 28) * 256 + i * 16 + lane];
+      for (int i = 0; i < 16; i++) vv[i] = (float)P[(long)t * Q27_ATT_IN + Q27_AV0C + (hh - Q27_AV0) * 256 + i * 16 + lane];
       if (kv8 & 1) fwht256(vv);
       if (kv8 & 2) quant8_head(vv, (kv8 & 4) ? 7.0f : 127.0f);
       if (cap)
-        store_kv8(VC, krow, hh - 28, vv, cap);
+        store_kv8(VC, krow, hh - Q27_AV0, vv, cap);
       else
-        for (int i = 0; i < 16; i++) VC[(krow * 4 + hh - 28) * 256 + i * 16 + lane] = f2bf(vv[i]);
+        for (int i = 0; i < 16; i++) VC[(krow * Q27_AKV + hh - Q27_AV0) * 256 + i * 16 + lane] = f2bf(vv[i]);
       continue;
     }
-    const bool isq = hh < 24;
-    const long src = (long)t * 14336 + (isq ? hh * 512 : 12288 + (hh - 24) * 256);
+    const bool isq = hh < Q27_AQ;
+    const long src = (long)t * Q27_ATT_IN + (isq ? hh * 512 : Q27_AK0 + (hh - Q27_AQ) * 256);
     float v[16], ss = 0.0f;
     for (int i = 0; i < 16; i++) {
       v[i] = (float)P[src + i * 16 + lane];
@@ -93,7 +101,13 @@ KERNEL(256) void attn_prep(global const half *P, global const ushort *QN, global
     for (int i = 0; i < 16; i++) v[i] = rbf(v[i] * inv * bf2f((isq ? QN : KN)[i * 16 + lane]));
     // RoPE: dimensions 0-31 (x1) and 32-63 (x2), i.e. v[0], v[1] (x1) and v[2], v[3] (x2) for this lane.
     for (int i = 0; i < 2; i++) {
+#ifdef Q27_MROPE
+      const int j = i * 16 + lane;
+      const int ax = (j % 3 == 1 && j < 33) ? 1 : (j % 3 == 2 && j < 30) ? 2 : 0;
+      const float ang = (ROPE ? (float)ROPE[t * 3 + ax] : pos) * INVF[j], c = cos(ang), s = sin(ang);
+#else
       const float ang = pos * INVF[i * 16 + lane], c = cos(ang), s = sin(ang);
+#endif
       const float x1 = v[i], x2 = v[i + 2];
       v[i] = x1 * c - x2 * s;
       v[i + 2] = x2 * c + x1 * s;
@@ -101,10 +115,10 @@ KERNEL(256) void attn_prep(global const half *P, global const ushort *QN, global
     if (kv8 & 1) fwht256(v);
     if ((kv8 & 2) && !isq) quant8_head(v, (kv8 & 4) ? 7.0f : 127.0f);
     if (!isq && cap) {
-      store_kv8(KC, krow, hh - 24, v, cap);
+      store_kv8(KC, krow, hh - Q27_AQ, v, cap);
       continue;
     }
-    global ushort *dst = isq ? Q + ((long)t * 24 + hh) * 256 : KC + (krow * 4 + hh - 24) * 256;
+    global ushort *dst = isq ? Q + ((long)t * Q27_AQ + hh) * 256 : KC + (krow * Q27_AKV + hh - Q27_AQ) * 256;
     for (int i = 0; i < 16; i++) dst[i * 16 + lane] = f2bf(v[i]);
   }
 }
@@ -112,20 +126,20 @@ KERNEL(256) void attn_prep(global const half *P, global const ushort *QN, global
 // Attention output: fp16(bf16(o·σ(gate))) [T, 6 144] and its row sums, or (A8) its W4A8 quantization.
 KERNEL(256) void attn_gate(global const ushort *O, global const half *P, global half *H, global half *AHI,
                            global half *ALO, int gs, int rot, global char *A8, global float *SA, int MS) {
-  local half hl[6144];
+  local half hl[Q27_OD];
   const int t = get_group_id(0), lane = get_sub_group_local_id();
-  for (int b = get_sub_group_id(); b < 48; b += get_num_sub_groups()) {   // blocks of 128, block reads
-    const ushort8 ov = intel_sub_group_block_read_us8(O + (long)t * 6144 + b * 128);
-    const half8 gv = as_half8(intel_sub_group_block_read_us8((global const ushort *)(P + (long)t * 14336 + (b / 2) * 512 + 256 + (b % 2) * 128)));
+  for (int b = get_sub_group_id(); b < Q27_OB; b += get_num_sub_groups()) {   // blocks of 128, block reads
+    const ushort8 ov = intel_sub_group_block_read_us8(O + (long)t * Q27_OD + b * 128);
+    const half8 gv = as_half8(intel_sub_group_block_read_us8((global const ushort *)(P + (long)t * Q27_ATT_IN + (b / 2) * 512 + 256 + (b % 2) * 128)));
     half8 o;
     for (int i = 0; i < 8; i++) {
       o[i] = convert_half_rte(rbf(bf2f(ov[i]) * sigmoid_f((float)gv[i])));
       hl[b * 128 + i * 16 + lane] = o[i];
     }
-    if (!rot) intel_sub_group_block_write_us8((global ushort *)(H + (long)t * 6144 + b * 128), as_ushort8(o));
+    if (!rot) intel_sub_group_block_write_us8((global ushort *)(H + (long)t * Q27_OD + b * 128), as_ushort8(o));
   }
   barrier(CLK_LOCAL_MEM_FENCE);
-  out_rows(hl, 6144, H, t, rot, gs, A8, SA, MS, AHI, ALO);
+  out_rows(hl, Q27_OD, H, t, rot, gs, A8, SA, MS, AHI, ALO);
 }
 
 // SwiGLU: act = fp16(bf16(SiLU(g)·u)) and its row sums, a group of 256 per 1 024 columns; ilv: gate|up by 16.
@@ -133,33 +147,43 @@ KERNEL(256) void swiglu(global const half *GU, global half *H, global half *AHI,
                         int rot) {
   local half hl[1024];
   const int t = get_group_id(0), blk = get_group_id(1), lid = get_local_id(0);
+  const int valid_cols = min(1024, max(0, (int)Q27_FF - blk * 1024));
   {                                                   // 4 consecutive columns per work-item, vector reads and write
     const int e = lid * 4, c = blk * 1024 + e;
-    const long gc = ilv ? (c / 16) * 32 + c % 16 : c, uc = ilv ? gc + 16 : 17408 + c;
-    const half4 gv = vload4(0, GU + (long)t * 34816 + gc), uv = vload4(0, GU + (long)t * 34816 + uc);
-    half4 o;
-    for (int i = 0; i < 4; i++) o[i] = convert_half_rte(rbf(silu((float)gv[i]) * (float)uv[i]));
-    if (!rot) vstore4(o, 0, H + (long)t * 17408 + c);
+    half4 o = (half4)(0.0h);
+    if (c < Q27_FF) {
+      const long gc = ilv ? (c / 16) * 32 + c % 16 : c, uc = ilv ? gc + 16 : Q27_FF + c;
+      const half4 gv = vload4(0, GU + (long)t * (2 * Q27_FF) + gc), uv = vload4(0, GU + (long)t * (2 * Q27_FF) + uc);
+      for (int i = 0; i < 4; i++) o[i] = convert_half_rte(rbf(silu((float)gv[i]) * (float)uv[i]));
+      if (!rot) vstore4(o, 0, H + (long)t * Q27_FF + c);
+    }
     vstore4(o, 0, hl + e);
   }
   barrier(CLK_LOCAL_MEM_FENCE);
-  if (rot) {                                          // the 8 blocks of 128 of these 1 024 columns
-    if (get_sub_group_id() < 8) {
+  if (rot) {                                          // the blocks of 128 of these columns
+    if (get_sub_group_id() < valid_cols / 128) {
       const int o = get_sub_group_id() * 128 + get_sub_group_local_id() * 8;
       vstore8(rot128_reg(vload8(0, hl + o)), 0, hl + o);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    vstore4(vload4(0, hl + lid * 4), 0, H + (long)t * 17408 + blk * 1024 + lid * 4);
+    if (lid * 4 < valid_cols) vstore4(vload4(0, hl + lid * 4), 0, H + (long)t * Q27_FF + blk * 1024 + lid * 4);
   }
-  const int lane = get_sub_group_local_id(), per = gs / 16, ng = 1024 / gs;
-  for (int g = get_sub_group_id(); g < ng; g += 16) {
+  const int lane = get_sub_group_local_id(), per = gs / 16, ng = 1024 / gs, rem_ng = valid_cols / gs;
+  const int nff = Q27_FF / gs, gp = Q27_GSTRIDE(nff);
+  for (int g = get_sub_group_id(); g < rem_ng; g += 16) {
     float s = 0.0f;
     for (int k = 0; k < per; k++) s += (float)hl[g * gs + lane * per + k];
     s = sub_group_reduce_add(s) * (1.0f / gs);
     if (lane == 0) {
       const half hi = convert_half_rte(s * ASC);
-      AHI[(long)t * (17408 / gs) + blk * ng + g] = hi;
-      ALO[(long)t * (17408 / gs) + blk * ng + g] = convert_half_rte(s * ASC - (float)hi);
+      AHI[(long)t * gp + blk * ng + g] = hi;
+      ALO[(long)t * gp + blk * ng + g] = convert_half_rte(s * ASC - (float)hi);
+    }
+  }
+  if (blk + 1 == get_num_groups(1) && lane == 0) {
+    for (int g = nff + get_sub_group_id(); g < gp; g += 16) {
+      AHI[(long)t * gp + g] = 0.0h;
+      ALO[(long)t * gp + g] = 0.0h;
     }
   }
 }
@@ -167,10 +191,11 @@ KERNEL(256) void swiglu(global const half *GU, global half *H, global half *AHI,
 // Row sums of the activation written by the SwiGLU epilogue (H fp16 [T, 17 408]): grid T, groups of 256.
 KERNEL(128) void rowsums_ff(global half *H, global half *AHI, global half *ALO, int gs, int rot) {
   // the sums of rowsums read directly from global memory (same additions, same order: same bits)
-  const int t = get_group_id(0), lane = get_sub_group_local_id(), per = gs / 16;
-  global half *h = H + (long)t * 17408;
+  const int t = get_group_id(0), lane = get_sub_group_local_id(), per = gs / 16, nsg = get_num_sub_groups();
+  global half *h = H + (long)t * Q27_FF;
   if (rot) {                                          // rotated weights: rotate each block in place, then sum
-    for (int b = get_sub_group_id(); b < 17408 / 128; b += get_num_sub_groups()) {
+    const int nff = Q27_FF / 128, gp = Q27_GSTRIDE(nff);
+    for (int b = get_sub_group_id(); b < nff; b += nsg) {
       float v[8];
       for (int i = 0; i < 8; i++) v[i] = (float)h[b * 128 + i * 16 + lane];
       for (int m = 1; m < 16; m <<= 1)
@@ -194,13 +219,20 @@ KERNEL(128) void rowsums_ff(global half *H, global half *AHI, global half *ALO, 
       s = sub_group_reduce_add(s) * (1.0f / 128);
       if (lane == 0) {
         const half hi = convert_half_rte(s * ASC);
-        AHI[(long)t * 136 + b] = hi;
-        ALO[(long)t * 136 + b] = convert_half_rte(s * ASC - (float)hi);
+        AHI[(long)t * gp + b] = hi;
+        ALO[(long)t * gp + b] = convert_half_rte(s * ASC - (float)hi);
+      }
+    }
+    if (lane == 0) {
+      for (int b = nff + get_sub_group_id(); b < gp; b += nsg) {
+        AHI[(long)t * gp + b] = 0.0h;
+        ALO[(long)t * gp + b] = 0.0h;
       }
     }
     return;
   }
-  for (int g = get_sub_group_id(); g < 17408 / gs; g += get_num_sub_groups()) {
+  const int nff = Q27_FF / gs, gp = Q27_GSTRIDE(nff);
+  for (int g = get_sub_group_id(); g < nff; g += nsg) {
     float s = 0.0f;
     if (per == 8) {
       const half8 x = vload8(0, h + g * gs + lane * 8);
@@ -212,8 +244,14 @@ KERNEL(128) void rowsums_ff(global half *H, global half *AHI, global half *ALO, 
     s = sub_group_reduce_add(s) * (1.0f / gs);
     if (lane == 0) {
       const half hi = convert_half_rte(s * ASC);
-      AHI[(long)t * (17408 / gs) + g] = hi;
-      ALO[(long)t * (17408 / gs) + g] = convert_half_rte(s * ASC - (float)hi);
+      AHI[(long)t * gp + g] = hi;
+      ALO[(long)t * gp + g] = convert_half_rte(s * ASC - (float)hi);
+    }
+  }
+  if (lane == 0) {
+    for (int g = nff + get_sub_group_id(); g < gp; g += nsg) {
+      AHI[(long)t * gp + g] = 0.0h;
+      ALO[(long)t * gp + g] = 0.0h;
     }
   }
 }

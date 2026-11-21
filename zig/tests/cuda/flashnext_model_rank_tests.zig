@@ -8,7 +8,8 @@ const ranks = flash.rank_engine;
 
 pub fn run(gpu: check.Gpu, dir: []const u8, rank: usize, port: u16, ids_path: []const u8) !void {
     const context = 256;
-    const chunk = 32;
+    // TF_FLASHNEXT_CHUNK's rows a pass: past 64 a pass takes the expert exchange, at most 64 the all-reduce
+    const chunk = try prompt.chunkRows();
     const source = try std.Io.Dir.cwd().readFileAlloc(gpu.io, ids_path, gpu.gpa, .limited(1 << 20));
     defer gpu.gpa.free(source);
     var ids: std.ArrayList(u32) = .empty;
@@ -22,7 +23,7 @@ pub fn run(gpu: check.Gpu, dir: []const u8, rank: usize, port: u16, ids_path: []
     defer glue.deinit();
     const tri: flash.Tri = .{ .s = stream, .own = &glue };
     const identity = try ranks.identity(gpu.gpa, gpu.io, dir, context, chunk);
-    const session = try ranks.Session.init(gpu.gpa, gpu.io, "127.0.0.1", port, rank, identity);
+    const session = try ranks.Session.init(gpu.gpa, gpu.io, "127.0.0.1", port, rank, identity, ranks.linkWait());
     const engine = prompt.Engine.initRank(gpu.gpa, gpu.io, @constCast(gpu.d), &stream, dir, 2, rank) catch |err| {
         session.poison();
         session.deinit();
@@ -36,7 +37,7 @@ pub fn run(gpu: check.Gpu, dir: []const u8, rank: usize, port: u16, ids_path: []
     engine.collective = &session.collective;
     if (engine.chunk != chunk) return error.RankIdentity;
     const room = try session.room((try gpu.ctx.memInfo()).free);
-    try check.expect(room > prompt.seqBytes(context) * 3, "both ranks have room for experimental caches", .{});
+    try check.expect(room > prompt.seqBytes(context, engine.heads) * 3, "both ranks have room for experimental caches", .{});
     var logits = try cuda.DeviceBuffer.alloc(gpu.d, 2 * prompt.vocabulary * 2);
     defer logits.free();
     if (rank == 1) {
@@ -48,20 +49,21 @@ pub fn run(gpu: check.Gpu, dir: []const u8, rank: usize, port: u16, ids_path: []
     defer session.drop(&first);
     try session.forward(flash.Tri, tri, &first, ids.items, .{});
     check.pass("two-rank prompt completed ({d} tokens)", .{ids.items.len});
+    std.debug.print("LOGITS {x:0>16}\n", .{std.hash.Wyhash.hash(0, first.logits)});
     for (0..prompt.vocabulary) |i| {
         const value: f32 = @bitCast(@as(u32, std.mem.readInt(u16, first.logits[i * 2 ..][0..2], .little)) << 16);
         try check.expect(std.math.isFinite(value), "finite initial logits at {d}", .{i});
     }
-    const kept = try session.save(&first);
+    const kept = try session.save(&first, null);
     defer session.dropSaved(kept);
     const token = prompt.argmax(first.logits);
     try session.forward(flash.Tri, tri, &first, &.{token}, .{});
     const expected = try gpu.gpa.dupe(u8, first.logits);
     defer gpu.gpa.free(expected);
-    try session.restore(&first, kept);
+    try session.restore(&first, null, kept);
     try session.forward(flash.Tri, tri, &first, &.{token}, .{});
     try check.sameBytes("two-rank snapshot restore and replay", first.logits, expected);
-    try session.restore(&first, kept);
+    try session.restore(&first, null, kept);
     var second = try session.create(context);
     defer session.drop(&second);
     try session.forward(flash.Tri, tri, &second, ids.items, .{});

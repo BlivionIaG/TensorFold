@@ -25,7 +25,6 @@ pub const Reason = enum {
 };
 
 pub const Mode = enum { pipe, drain, verify, exit };
-
 pub const loop_max_period: usize = 8;
 pub const loop_min_run: usize = 256;
 pub const loop_warm_in: usize = 64;
@@ -92,6 +91,7 @@ pub const Reuse = struct {
 pub const MarkHook = struct {
     ptr: *anyopaque,
     at: *const fn (ptr: *anyopaque, s: *Stream, at: u32) void,
+    interrupted: ?*const fn (ptr: *anyopaque, s: *Stream, at: u32) void = null,
 };
 
 /// Drafts the backend holds for the stream's next round; a tree keeps its tokens and parents on the host.
@@ -108,6 +108,8 @@ pub const Image = struct {
     gw: u32,
     at: u32,
     tokens: u32,
+    /// Visible pixel height and width before padding, for towers with content-normalized positions.
+    content_size: ?[2]u32 = null,
     hash: u64 = 0, // core/picture/identity.zig's: the bytes and the grid, as the prompt cache's key names the image
 };
 
@@ -115,6 +117,7 @@ pub const Spec = struct {
     id: []const u8,
     prompt: []const u32,
     embedding: ?@import("embedding.zig").Batch = null,
+    readout: ?*const @import("readout.zig").Spec = null,
     max_new: u32,
     eos: []const u32 = &.{},
     sampling: ?Sampling = null,
@@ -133,6 +136,7 @@ pub const Spec = struct {
     loop_guard: bool = false,
     loop_stop: bool = false, // with loop_guard: finish where it fires instead of forcing the close
     chunks: []const u32 = &.{}, // where prefill chunks start after 0 (Python's PrefillPlan); empty: the backend's step
+    message_starts: []const u32 = &.{}, // where each templated message begins (api.Request.message_starts); not a cut
     history_len: u32 = 0, // prompt prefix lengths a backend may keep for a later turn: the rendered history,
     shared_prefixes: []const u32 = &.{}, // then shared system blocks
     reuse: Reuse = .{},
@@ -148,6 +152,7 @@ pub const Spec = struct {
 
 pub const Stream = struct {
     embedding: ?@import("embedding.zig").Batch = null,
+    readout: ?*const @import("readout.zig").Spec = null, // the request's; the backend writes its logits
     id: []const u8,
     prompt_len: usize,
     max_new: u32,
@@ -166,11 +171,13 @@ pub const Stream = struct {
     think_open: bool,
     answer_max: u32,
     answer_from: ?usize = null, // emitted() index after the first `think_end`: the answer starts there
+    think_seen: bool = false, // the think block's length is in srpt's estimate of how long reasoning runs
     loop_guard: bool,
     loop_stop: bool = false,
     loop_period: ?u32 = null,
     long_loop: long_loop.Index = .{}, // the reasoning's runs, for passages repeated verbatim (long_loop.zig)
     chunks: []const u32,
+    message_starts: []const u32,
     history_len: u32,
     shared_prefixes: []const u32,
     logprobs: ?u8 = null,
@@ -179,6 +186,8 @@ pub const Stream = struct {
     rows: std.ArrayList(Row) = .empty, // with `logprobs`: one a token of emitted(), in order
     prompt_logprobs: ?u8 = null,
     prompt_rows: std.ArrayList(Row) = .empty, // with `prompt_logprobs`: one a prompt token after the first, in order
+    prefill_widths: std.ArrayList(u32) = .empty, // completed target prompt passes, reported by an instrumented backend
+    prefill_widths_failed: bool = false, // an allocation failure invalidates this observation without failing the reply
     reuse: Reuse = .{},
     decode_spans: []const [2]u32 = &.{},
     decide: ?u32 = null,
@@ -225,6 +234,8 @@ pub const Stream = struct {
     measured: [plan_lanes.sizes.len + 1]plan_lanes.Measured = @splat(.{}), // each pick's round times past its table price
     priced: ?struct { choice: usize, ms: f64 } = null, // the pick that shaped the held window, at its table price
     min_rows: u32 = 0,
+    grammar_time: @import("grammar_time.zig").Sum = .{},
+    grammar_round: @import("grammar_time.zig").Round = .{},
     gpu_seconds: ?f64 = null, // a timed backend's passes this stream ran in (TF_Q27_PROFILE); null: untimed
     paused: bool = false,
     depth: ?State = null,
@@ -236,6 +247,8 @@ pub const Stream = struct {
     granted: ?u32 = null,
     grant_short: bool = false, // the last grant verified fewer drafts than the stream held
     grant_gain: ?f64 = null, // the drafts its last grant expected to keep (the chances it was priced by)
+    draft_chances: std.ArrayList(f64) = .empty, // last full head prices, retained through zero-row rounds
+    draft_chances_cut: ?usize = null, // first chance a cut left unknown (null: measured); a chances hook marks it
     copy_width: ?u32 = null,
 
     pub fn init(gpa: Allocator, spec: Spec) !Stream {
@@ -243,6 +256,7 @@ pub const Stream = struct {
             .id = spec.id,
             .prompt_len = spec.prompt.len,
             .embedding = spec.embedding,
+            .readout = spec.readout,
             .max_new = spec.max_new,
             .eos = spec.eos,
             .sampling = spec.sampling,
@@ -261,6 +275,7 @@ pub const Stream = struct {
             .loop_guard = spec.loop_guard,
             .loop_stop = spec.loop_stop,
             .chunks = spec.chunks,
+            .message_starts = spec.message_starts,
             .history_len = spec.history_len,
             .shared_prefixes = spec.shared_prefixes,
             .reuse = spec.reuse,
@@ -290,6 +305,7 @@ pub const Stream = struct {
         s.context.deinit(gpa);
         s.rows.deinit(gpa);
         s.prompt_rows.deinit(gpa);
+        s.prefill_widths.deinit(gpa);
         s.force.deinit(gpa);
         s.long_loop.deinit(gpa);
         s.dropRoundState(gpa);
@@ -306,6 +322,9 @@ pub const Stream = struct {
         s.granted = null;
         s.grant_short = false;
         s.grant_gain = null;
+        s.draft_chances.deinit(gpa);
+        s.draft_chances = .empty;
+        s.draft_chances_cut = null;
         s.copy_width = null;
         s.proposal_depth = null;
     }
@@ -322,6 +341,11 @@ pub const Stream = struct {
 
     pub fn prompt(s: *const Stream) []const u32 {
         return s.context.items[0..s.prompt_len];
+    }
+
+    /// A stream whose answer is a function of its prompt rows alone (an embedding or a readout): no token is drawn.
+    pub fn promptOnly(s: *const Stream) bool {
+        return s.embedding != null or s.readout != null;
     }
 
     pub fn emitted(s: *const Stream) []const u32 {
@@ -358,7 +382,7 @@ pub const Stream = struct {
     /// Keep a completed, resumable prompt prefix before cancellation releases the backend's state.
     pub fn keepInterruptedPrefill(s: *Stream, at: u32) void {
         if (at <= s.cached or at >= s.prompt_len) return;
-        if (s.reuse.hook) |hook| hook.at(hook.ptr, s, at);
+        if (s.reuse.hook) |hook| (hook.interrupted orelse hook.at)(hook.ptr, s, at);
     }
 
     /// Whether a background prompt pass should step aside now (false with no hook); asked before each chunk.

@@ -42,13 +42,21 @@ pub const Snaps = extern struct {
     pub const max = 16;
 };
 
+/// A batched draft's rows: each part's `a` (wa bytes a row) and `b` (wb bytes a row), its start and row count.
+pub const GatherRows = extern struct { a: [8]u64 = @splat(0), b: [8]u64 = @splat(0), rows: [8]c_int = @splat(0), row0: [8]c_int = @splat(0), wa: c_int = 0, wb: c_int = 0 };
+/// A span's last row: each part's source rows, moved to the destination rows in part order.
+pub const LastRows = extern struct { a: [8]u64 = @splat(0), b: [8]u64 = @splat(0) };
+/// A level's rows: each part's token and probability destinations, its start and row count, the level's words.
+pub const ScatterRows = extern struct { tok: [8]u64 = @splat(0), prob: [8]u64 = @splat(0), rows: [8]c_int = @splat(0), row0: [8]c_int = @splat(0), tok_at: c_int = 0, prob_at: c_int = 0 };
+
 pub const Kernels = struct {
     d: *const cuda.Driver,
-    mods: [22]cuda.Module,
+    mods: [21]cuda.Module,
     triton: ?cuda.aot.Set, // a captured Triton set for the glue (GB10's qualified one); null: our own glue kernels
     glue: glue.Fns,
     emb: cuda.embed_rows.EmbedRows,
     norms: cuda.norms.Norms,
+    moe: cuda.moe_glue.MoeGlue, // the shared top-k and combine
     affine: cuda.qlinear.Affine4Kernels, // the 4-bit projections: qmm_group, lane_gemv and qmm_prefill
     router: cuda.grouped.Router,
     experts: cuda.experts.Affine4Experts, // the 4-bit grouped experts: experts, experts_prefill and experts_pack
@@ -61,9 +69,11 @@ pub const Kernels = struct {
     pocket_in: [2]cuda.Function, // the pocket's two halves a block row a row, then tiled for a prompt chunk's rows
     pocket_out: [2]cuda.Function,
     add_row: cuda.Function,
-    latent_sum: cuda.Function, // LatentMoE: a row's routed latent outputs weighted and summed (Bolt)
     add_bf16: cuda.Function,
     splice_rows: cuda.Function, // an image prompt's rows take the vision tower's features (Bolt)
+    gather_rows: cuda.Function, // a batched draft's rows from each part into the head's rows
+    gather_last: cuda.Function, // a batched draft's last rows moved down, in order
+    scatter_rows: cuda.Function, // a level's tokens and probabilities to each part's buffers
     draws: cuda.sample.Draws, // sample.cu: the keyed draws and logprob rows
     grammar_mask: cuda.Function, // structured output: disallowed tokens -inf before the draw
     torch: torch_ops.Functions,
@@ -72,6 +82,7 @@ pub const Kernels = struct {
     latent: ?@import("cuda_latent.zig").Fns = null, // a latent MoE's glue (loadLatent), else never
     ck: ?cuda.ck.Ck = null, // the checkpoint's own math (loadCk): FP8 rows and NVFP4 experts, sm_120 on
     ggml: ?cuda.ggml.Kernels = null, // loaded by loadGgml for a checkpoint with ggml blocks (Bolt's IQ2_XXS and Q8_0)
+    bf16x: ?cuda.experts.Bf16Experts = null, // loaded by loadBf16Experts for a bf16 checkpoint's experts (Transcribe)
     gb10: bool,
     discrete: bool, // the card has its own memory: checkpoint bytes reach it through page-locked slots
 
@@ -82,7 +93,7 @@ pub const Kernels = struct {
         var k: Kernels = undefined;
         k.d = d;
         const kk = cuda.kernels;
-        const images = [_][]const u8{ kk.qmm_group, kk.qmm_prefill, kk.experts, kk.experts_prefill, kk.experts_pack, kk.prefill_attention, kk.scan_rows, kk.nemotron_ops, kk.torch_argmax, kk.torch_topk, kk.torch_pointwise, kk.torch_indexing, kk.torch_movement, kk.torch_nemotron_constants, kk.sample, kk.lane_gemv, kk.nemotron_norms, kk.nemotron_route, kk.nemotron_mamba, kk.nemotron_attention, kk.nemotron_keyed, kk.affine4_pack };
+        const images = [_][]const u8{ kk.qmm_group, kk.qmm_prefill, kk.experts, kk.experts_prefill, kk.experts_pack, kk.prefill_attention, kk.scan_rows, kk.nemotron_ops, kk.torch_argmax, kk.torch_topk, kk.torch_pointwise, kk.torch_indexing, kk.torch_movement, kk.torch_nemotron_constants, kk.sample, kk.lane_gemv, kk.nemotron_route, kk.nemotron_mamba, kk.nemotron_attention, kk.nemotron_keyed, kk.affine4_pack };
         var loaded: usize = 0;
         errdefer for (k.mods[0..loaded]) |*m| m.unload();
         for (images, 0..) |img, i| {
@@ -99,21 +110,26 @@ pub const Kernels = struct {
         k.pocket_in = .{ try k.mods[7].function("tf_pocket_in"), try k.mods[7].function("tf_pocket_in_rows") };
         k.pocket_out = .{ try k.mods[7].function("tf_pocket_out"), try k.mods[7].function("tf_pocket_out_rows") };
         k.add_row = try k.mods[7].function("tf_add_row");
-        k.latent_sum = try k.mods[7].function("tf_latent_sum");
         k.add_bf16 = try k.mods[7].function("tf_add_bf16");
         k.splice_rows = try k.mods[7].function("tf_splice_rows");
+        k.gather_rows = try k.mods[7].function("tf_nemo_gather_rows");
+        k.gather_last = try k.mods[7].function("tf_nemo_gather_last");
+        k.scatter_rows = try k.mods[7].function("tf_nemo_scatter_rows");
         k.torch = try torch_ops.Functions.resolve(k.mods[8..14]);
         k.draws = try cuda.sample.Draws.resolve(k.mods[14]);
-        k.glue = try glue.Fns.resolve(k.mods[16..21]);
+        k.glue = try glue.Fns.resolve(k.mods[16..20]);
         k.emb = try cuda.embed_rows.EmbedRows.load(d);
         errdefer k.emb.unload();
         k.norms = try cuda.norms.Norms.load(d);
         errdefer k.norms.unload();
+        k.moe = try cuda.moe_glue.MoeGlue.load(d);
+        errdefer k.moe.unload();
         k.grammar_mask = try k.mods[14].function("tf_grammar_mask");
         k.modelopt = null;
         k.latent = null;
         k.ck = null;
         k.ggml = null;
+        k.bf16x = null;
         k.triton = if (triton_dir) |dir| try cuda.aot.Set.load(gpa, io, d, ctx.device, dir) else null;
         errdefer if (k.triton) |*t| t.deinit();
         k.train = try train_ops.Kernels.load(d);
@@ -125,13 +141,14 @@ pub const Kernels = struct {
         const minor = try ctx.attribute(.compute_capability_minor);
         k.gb10 = major == 12 and minor == 1;
         k.discrete = try ctx.attribute(.integrated) == 0;
-        k.affine = try cuda.qlinear.Affine4Kernels.resolve(d, k.mods[0], k.mods[1], k.mods[15], k.mods[21], sms, k.gb10);
+        k.affine = try cuda.qlinear.Affine4Kernels.resolve(d, k.mods[0], k.mods[1], k.mods[15], k.mods[20], sms, k.gb10);
         return k;
     }
 
     pub fn deinit(k: *Kernels) void {
         k.emb.unload();
         k.norms.unload();
+        k.moe.unload();
         if (k.latent) |*x| x.unload();
         if (k.ck) |*x| x.unload();
         if (k.modelopt) |*m| {
@@ -141,6 +158,7 @@ pub const Kernels = struct {
             m.pack.unload();
         }
         if (k.ggml) |*g| g.unload();
+        if (k.bf16x) |*x| x.unload();
         k.affine.deinit();
         k.train.deinit();
         if (k.triton) |*t| t.deinit();
@@ -174,6 +192,12 @@ pub const Kernels = struct {
         var experts = try cuda.experts.Nvfp4Experts.load(k.d, sms);
         errdefer experts.unload();
         k.modelopt = .{ .lane = lane, .gemm = gemm, .experts = experts, .pack = try cuda.modelopt.Packer.load(k.d) };
+    }
+
+    /// The grouped bf16 experts a checkpoint's own bf16 experts run on (Nemotron 3.5 Transcribe).
+    pub fn loadBf16Experts(k: *Kernels, ctx: *const cuda.Context) !void {
+        if (k.bf16x != null) return;
+        k.bf16x = try cuda.experts.Bf16Experts.load(k.d, @intCast(try ctx.attribute(.multiprocessor_count)));
     }
 
     /// The ggml block kernels (IQ2_XXS experts, IQ2_XXS and Q8_0 projections, their repack) Bolt's export needs.
@@ -237,6 +261,16 @@ pub const Ops = struct {
         return o.k.draws.draw(o.s, logits, vocab, rule, meta, offset, out, rows, ids, prob);
     }
 
+    /// sample.cu's rows draw: row r under rule[r] at position meta[r] + 1, one launch (or a row a launch).
+    pub fn drawRows(o: Ops, logits: u64, vocab: usize, rule: u64, meta: u64, out: u64, rows: usize, scratch: ?u64) !void {
+        return o.k.draws.drawRows(o.s, logits, vocab, rule, meta, out, rows, scratch);
+    }
+
+    /// sample.cu's rows draw at an offset: row r under rule[r], columns mapped by `ids` (null: the whole head).
+    pub fn drawIdsRows(o: Ops, logits: u64, vocab: usize, rule: u64, meta: u64, offset: usize, out: u64, rows: usize, ids: ?u64, prob: ?u64) !void {
+        return o.k.draws.drawIdsRows(o.s, logits, vocab, rule, meta, offset, out, rows, ids, prob);
+    }
+
     /// sample.cu: `rows` bf16 logits rows' disallowed tokens -inf, their bits `words` words a row at `bits`.
     pub fn grammarMask(o: Ops, logits: u64, vocab: usize, bits: u64, words: usize, rows: usize) !void {
         var a: cuda.Args = .{};
@@ -252,6 +286,34 @@ pub const Ops = struct {
         return o.k.draws.logprobRows(o.s, logits, vocab, picks, k, rank, out, rows);
     }
 
+    /// A batched draft's rows: each part's rows of `g`'s sources into dst_a and dst_b, one launch.
+    pub fn gatherRows(o: Ops, g: GatherRows, dst_a: u64, dst_b: u64, rows: usize) !void {
+        var a: cuda.Args = .{};
+        a.add(g);
+        a.add(dst_a);
+        a.add(dst_b);
+        try o.go(o.k.gather_rows, .{ rows, 1, 1 }, 256, 0, &a);
+    }
+
+    /// A batched draft's last rows moved to the destination rows, ascending, one block.
+    pub fn gatherLast(o: Ops, g: LastRows, dst_a: u64, dst_b: u64, wa: usize, wb: usize, n: usize) !void {
+        var a: cuda.Args = .{};
+        a.add(g);
+        a.add(dst_a);
+        a.add(dst_b);
+        for ([_]usize{ wa, wb, n }) |v| a.add(@as(c_int, @intCast(v)));
+        try o.go(o.k.gather_last, .{ 1, 1, 1 }, 256, 0, &a);
+    }
+
+    /// A level's tokens and probabilities to each part's buffers, one launch.
+    pub fn scatterRows(o: Ops, g: ScatterRows, tok: u64, prob: u64, rows: usize) !void {
+        var a: cuda.Args = .{};
+        a.add(tok);
+        a.add(prob);
+        a.add(g);
+        try o.go(o.k.scatter_rows, .{ rows, 1, 1 }, 32, 0, &a);
+    }
+
     /// Every projection format the kernels loaded (cuda/qlinear.zig).
     pub fn linear(o: Ops) cuda.qlinear.Linear {
         const m = if (o.k.modelopt) |*x| x else null;
@@ -260,18 +322,12 @@ pub const Ops = struct {
 
     /// Every grouped-expert format the kernels loaded (cuda/experts.zig).
     pub fn grouped(o: Ops) cuda.experts.Grouped {
-        return .{ .affine4 = &o.k.experts, .nvfp4 = if (o.k.modelopt) |*x| &x.experts else null, .iq2xxs = if (o.k.ggml) |*g| g else null };
+        return .{ .affine4 = &o.k.experts, .nvfp4 = if (o.k.modelopt) |*x| &x.experts else null, .iq2xxs = if (o.k.ggml) |*g| g else null, .bf16 = if (o.k.bf16x) |*x| x else null };
     }
 
-    /// LatentMoE: z[r] = sum_k wt[r, k] y[r * k_slots + k], rows of `l` bf16 from fp32 pair rows (tf_latent_sum).
+    /// LatentMoE: z[r] = sum_k wt[r, k] y[r * k_slots + k], rows of `l` bf16 from fp32 pair rows (the shared combine).
     pub fn latentSum(o: Ops, y: u64, wt: u64, z: u64, rows: usize, k_slots: usize, l: usize) !void {
-        var a: cuda.Args = .{};
-        a.add(y);
-        a.add(wt);
-        a.add(z);
-        a.add(int(k_slots));
-        a.add(int(l));
-        try o.go(o.k.latent_sum, .{ rows, 1, 1 }, 256, 0, &a);
+        try o.k.moe.combine(o.s, y, .f32, wt, z, .bf16, rows, k_slots, l);
     }
 
     /// Rows of h whose src (i32, one a row) names a feature row take that row of `features` ([*, d] bf16).

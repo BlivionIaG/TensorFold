@@ -15,6 +15,7 @@ pub const cuda_pages = @import("cuda_pages.zig");
 pub const cuda_run = @import("cuda_run.zig");
 /// The native CUDA registry's entry (native/cuda.zig).
 pub const native = @import("cuda_native.zig");
+pub const cuda_disk = @import("cuda_disk.zig");
 
 test {
     _ = @import("config.zig");
@@ -24,8 +25,10 @@ test {
     _ = @import("ref.zig");
     _ = @import("cuda_weights.zig");
     _ = @import("cuda_model.zig");
+    _ = @import("rope_test.zig");
     _ = @import("cuda_kernels.zig");
     _ = @import("cuda_backend.zig");
+    _ = cuda_disk;
     _ = @import("cuda_snap.zig");
     _ = @import("cuda_pages.zig");
     _ = @import("cuda_run.zig");

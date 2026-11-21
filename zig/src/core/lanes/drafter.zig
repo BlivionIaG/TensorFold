@@ -8,6 +8,8 @@ const Allocator = @import("std").mem.Allocator;
 
 /// What the round loop's depth rule needs from the drafter itself (not from the target, whose own head may not exist).
 pub const Facts = struct {
+    fixed_block: bool = false, // every positive depth runs the same block pass
+    limit_shared_drafts: bool = false, // retain the depth rule's head-step price before reserving shared rows
     depth: u32, // drafts a round at most
     step_ms: f64, // one more draft's cost (timed at load); the rule prices a round as forward(rows) + step_ms x drafts
     prior: []const f64 = &.{}, // acceptance by depth until a stream has its own
@@ -17,6 +19,7 @@ pub const Facts = struct {
     trees: bool = false, // hold() takes a tree of lanes (Hold.lanes), each lane its parent's rank-r token
     window_costs: []const Cost = &.{}, // the target's window ms by rows (timed at load), for the depth rule
     lane_costs: []const Cost = &.{}, // the same for the lane planner (Model.lane_costs)
+    copy_match: i64 = 0, // matching tokens a copy needs beside this drafter's proposals (0: the target's copy_match)
     tree_nodes: u32 = 0, // hold() without lanes grows its own tree of up to `depth` nodes, at most this many (tree, chances)
     chances: bool = false, // chances() gives each held chain draft's chance: verify rows go by them (Model.granted_depth)
     confidence_floor: ?f64 = null, // with chances: every round drafts the deepest chain and verifies drafts this likely
@@ -33,6 +36,7 @@ pub const Absorb = struct {
     follow: []const u32,
     rows: ?[]const u32 = null,
     prompt: bool = true, // prompt ingestion keeps its historical arithmetic; accepted live rows set false
+    propose: bool = true, // false: retain committed context without computing unused proposal outputs
     offered: u32 = 0, // the drafter's grown tree's first nodes the verified window carried (0: none of its own)
 };
 
@@ -55,7 +59,7 @@ pub const Drafter = struct {
         hold: *const fn (ptr: *anyopaque, items: []const Hold) anyerror!void,
         hold_planned: ?*const fn (*anyopaque, []const Hold) anyerror!void = null,
         clear_proposals: ?*const fn (*anyopaque, *Stream) void = null,
-        /// Each stream's held drafts on the host: out[i] gets streams[i]'s first out[i].len (error if it holds fewer).
+        /// out[i] gets streams[i]'s first out[i].len held drafts (error if fewer); a hold holds exactly its depth.
         held: *const fn (ptr: *anyopaque, streams: []const *Stream, out: []const []u32) anyerror!void,
         /// The stream left the rounds (only called for an opened stream).
         release: *const fn (ptr: *anyopaque, s: *Stream) void,

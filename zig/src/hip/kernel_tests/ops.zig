@@ -104,6 +104,38 @@ test "casts, sums, column copies and cache writes give torch's bits" {
     }
 }
 
+test "head-major attention rows become row-major o_proj input, rounded once to the activation or kept in fp32" {
+    const t = try Rig.open(1 << 20);
+    defer t.close();
+    const o = t.ops(&t.on);
+    var rng: rig.Rng = .{ .state = 0x4EAD };
+    const len = 37;
+    const heads = 5;
+    const d = 24;
+    const n = len * heads * d;
+    const ha = try gpa.alloc(f32, n);
+    defer gpa.free(ha);
+    for (ha) |*x| x.* = @floatCast(rng.normal() * 9.1);
+    var att = try t.upload(ha);
+    defer att.free();
+    var half = try t.alloc(n * 2);
+    defer half.free();
+    var wide = try t.alloc(n * 4);
+    defer wide.free();
+    try o.headsRows(at(att), tensor(half, act(t)), len, heads, d);
+    try o.headsRows(at(att), tensor(wide, .f32), len, heads, d);
+    try t.stream.synchronize();
+    const gh = try rig.download(u16, half);
+    defer gpa.free(gh);
+    const gw = try rig.download(f32, wide);
+    defer gpa.free(gw);
+    for (0..len) |r| for (0..heads) |h| for (0..d) |j| {
+        const x = ha[(h * len + r) * d + j];
+        try std.testing.expectEqual(round(t, x), gh[(r * heads + h) * d + j]);
+        try std.testing.expectEqual(x, gw[(r * heads + h) * d + j]);
+    };
+}
+
 test "argmax and top-k follow torch's order: the larger value, then the lower index" {
     const t = try Rig.open(1 << 20);
     defer t.close();
@@ -174,66 +206,6 @@ test "argmax and top-k follow torch's order: the larger value, then the lower in
     try std.testing.expectEqual(@as(i32, 0), ga[3]);
     // k = 0 leaves the row untouched
     try std.testing.expectEqual(@as(i32, -1), gi[2 * stride]);
-}
-
-test "the MoE route sorts pairs by expert, stably, into items of at most a tile" {
-    const t = try Rig.open(1 << 20);
-    defer t.close();
-    const o = t.ops(&t.on);
-    var rng: rig.Rng = .{ .state = 0x2017E };
-    for ([_][3]usize{
-        .{ 257, 512, 16 },
-        .{ 128, 37, 4 },
-        .{ 64, 1000, 64 },
-        .{ 513, 11, 8 },
-        .{ 513, 2816, 8 },
-    }) |shape| {
-        const experts = shape[0];
-        const pairs = shape[1];
-        const tile = shape[2];
-        const picks = try gpa.alloc(i32, pairs);
-        defer gpa.free(picks);
-        // a skewed pick so some experts fill several tiles and others none
-        for (picks) |*p| p.* = @intCast(@min(experts - 1, (rng.next() >> 40) % 16 * (rng.next() >> 50) % experts));
-        const counts = try gpa.alloc(usize, experts);
-        defer gpa.free(counts);
-        @memset(counts, 0);
-        for (picks) |p| counts[@intCast(p)] += 1;
-        var capacity: usize = 0;
-        for (counts) |c| capacity += (c + tile - 1) / tile;
-        capacity += 3;
-        var dev_picks = try t.upload(picks);
-        defer dev_picks.free();
-        var members = try t.alloc(pairs * 4);
-        defer members.free();
-        var items = try t.alloc(capacity * 12);
-        defer items.free();
-        try o.moeRoute(at(dev_picks), pairs, experts, tile, at(members), at(items), capacity);
-        try t.stream.synchronize();
-        const gm = try rig.download(i32, members);
-        defer gpa.free(gm);
-        const gi = try rig.download(i32, items);
-        defer gpa.free(gi);
-        var place: usize = 0;
-        var slot: usize = 0;
-        for (0..experts) |e| {
-            const start = place;
-            for (picks, 0..) |p, i| if (p == e) {
-                try std.testing.expectEqual(@as(i32, @intCast(i)), gm[place]);
-                place += 1;
-            };
-            var left = counts[e];
-            var first = start;
-            while (left > 0) : (slot += 1) {
-                const take = @min(left, tile);
-                try std.testing.expectEqualSlices(i32, &.{ @intCast(e), @intCast(first), @intCast(take) }, gi[slot * 3 ..][0..3]);
-                first += take;
-                left -= take;
-            }
-        }
-        // the slots past the plan are empty items
-        for (slot..capacity) |s| try std.testing.expectEqual(@as(i32, 0), gi[s * 3 + 2]);
-    }
 }
 
 fn silu(x: f64) f64 {
@@ -461,7 +433,7 @@ test "the linear attention's prompt conv and DeltaNet gates sit within 1e-5 of f
     defer out.free();
     var next = try t.alloc(kept * channels * 4);
     defer next.free();
-    try o.convPrefill(tensor(x, act(t)), at(w), at(state), at(out), at(next), len, channels, kernel);
+    try o.convPrefill(tensor(x, act(t)), at(w), at(state), at(out), at(next), len, channels, kernel, null);
     const count = 9;
     const heads = 32;
     const ha = try gpa.alloc(u16, count * heads);

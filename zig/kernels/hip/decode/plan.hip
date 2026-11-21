@@ -11,6 +11,22 @@ __device__ __forceinline__ float wave_sum(float x) {
     return __shfl(x, 0, 32);
 }
 
+// x from lane ^ M of its 16-lane row (M < 16): a DPP row_xmask move, all lanes active.
+template <int M>
+__device__ __forceinline__ float row_xor(float x) {
+    return __builtin_bit_cast(float, __builtin_amdgcn_mov_dpp(__builtin_bit_cast(int, x), 0x160 + M, 0xf, 0xf, false));
+}
+
+// wave_sum's folds, own value then partner's at xor 16, 8, 4, 2, 1, without LDS: every lane ends with the sum.
+__device__ __forceinline__ float wave_sum_dpp(float x) {
+    const int w = __builtin_bit_cast(int, x);
+    x += __builtin_bit_cast(float, __builtin_amdgcn_permlanex16(w, w, 0x76543210u, 0xfedcba98u, false, false));
+    x += row_xor<8>(x);
+    x += row_xor<4>(x);
+    x += row_xor<2>(x);
+    return x + row_xor<1>(x);
+}
+
 // Row r's keys (already rotated, fp32) and values (the activation kind) into its slot's pages at its position.
 __device__ void plan_kv_write_body(const float* keys, const void* values, int kind, int rows, int kv_heads, int d,
                                      PlanArgs plan, int layer) {
@@ -43,8 +59,42 @@ __device__ void plan_kv_write_act_body(const void* keys, const void* values, int
 // Query heads a block takes together: they share a KV head, so its keys and values are read once for all of them.
 constexpr int kMaxGroup = 16;
 
-// score_keys over a plan's rows: a warp scores a key for each of the block's heads; q fp32 or of kind QKIND.
-template <int KIND, int QKIND = 0>
+// Keys a wave scores on long spans and on short ones: their loads go out together, each head's query read once.
+constexpr int kScoreKeys = 4;
+constexpr int kScoreKeysShort = 2;
+// Steps of its waves' keys a long-span block walks at d = 256 (launches/plan.zig's score_steps).
+constexpr int kScoreSteps = 8;
+// load() of a 16-bit cache element as a global load: a flat load also counts on lgkmcnt, which LDS reads wait on.
+__device__ __forceinline__ float cache_load(const void* p, int kind, long long i) {
+    const uint16_t bits = ((const __attribute__((address_space(1))) uint16_t*)p)[i];
+    return kind == 1 ? __half2float(__ushort_as_half(bits)) : bf16_to_float(bits);
+}
+
+// A wave's KEYS keys from key0 at d = 256 into k, lane l taking elements l + 32 i; keys past `visible` are not loaded.
+template <int KEYS>
+__device__ __forceinline__ void score_fetch(float (&k)[KEYS][8], const void* keys, int kind, const unsigned* pages,
+                                            unsigned pool, int kv, int key0, int visible, int lane) {
+#pragma unroll
+    for (int j = 0; j < KEYS; ++j) {
+        if (key0 + j >= visible) break;
+        const long long base = page_at(pages, pool, kv, key0 + j, 256);
+#pragma unroll
+        for (int i = 0; i < 8; ++i) k[j][i] = cache_load(keys, kind, base + lane + i * 32);
+    }
+}
+
+// Lane 0's KEYS scores of a head from `at`: one 16-byte store when `whole` (aligned rows, span a multiple of KEYS).
+template <int KEYS>
+__device__ __forceinline__ void score_store(float* at, const float (&sc)[KEYS], bool whole, int key0, int span) {
+    if (whole && KEYS == 4) {
+        *reinterpret_cast<float4*>(at) = make_float4(sc[0], sc[1 % KEYS], sc[2 % KEYS], sc[3 % KEYS]);
+    } else {
+        for (int j = 0; j < KEYS; ++j) if (key0 + j < span) at[j] = sc[j];
+    }
+}
+
+// score_keys over a plan's rows: a warp scores KEYS keys for each of the block's heads; q fp32 or of kind QKIND.
+template <int KEYS, int KIND, int QKIND = 0>
 __device__ void plan_score_body(const void* __restrict__ q, float* __restrict__ scores, int span, int heads,
                                   int kv_heads, int d, float scale, PlanArgs plan, int layer) {
     extern __shared__ float qs[];  // the block's query heads, group * d
@@ -61,35 +111,110 @@ __device__ void plan_score_body(const void* __restrict__ q, float* __restrict__ 
     __syncthreads();
     const int visible = min(plan.pos[batch] + 1, span);
     const int lane = threadIdx.x & 31;
-    const int key = blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5);
-    float kreg[8] = {};
-    if (key < visible) {
+    const int key0 = (blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5)) * KEYS;
+    float kreg[KEYS][8] = {};
+    if (key0 < visible) {
         const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
         const void* keys = reinterpret_cast<const void*>(desc[plan_first(layer)]);
-        const long long base = page_at(plan_pages(plan, desc), plan.pool, head0 / (heads / kv_heads), key, d);
+        const unsigned* pages = plan_pages(plan, desc);
+        const int kv = head0 / (heads / kv_heads);
 #pragma unroll
-        for (int i = 0; i < 8; ++i) {
-            const int idx = lane + i * 32;
-            if (idx < d) kreg[i] = load(keys, KIND, base + idx);
+        for (int j = 0; j < KEYS; ++j) {
+            if (key0 + j >= visible) break;
+            const long long base = page_at(pages, plan.pool, kv, key0 + j, d);
+#pragma unroll
+            for (int i = 0; i < 8; ++i) {
+                const int idx = lane + i * 32;
+                if (idx < d) kreg[j][i] = load(keys, KIND, base + idx);
+            }
         }
     }
 #pragma unroll
     for (int g = 0; g < kMaxGroup; ++g) {
         if (g < group) {  // the same for the whole block, so every lane reaches wave_sum
-            float partial = 0.f;
-            if (key < visible) {
+            float qv[8];
 #pragma unroll
-                for (int i = 0; i < 8; ++i) {
-                    const int idx = lane + i * 32;
-                    if (idx < d) partial += qs[g * d + idx] * kreg[i];
+            for (int i = 0; i < 8; ++i) qv[i] = lane + i * 32 < d ? qs[g * d + lane + i * 32] : 0.f;
+#pragma unroll
+            for (int j = 0; j < KEYS; ++j) {
+                const int key = key0 + j;
+                float partial = 0.f;
+                if (key < visible) {
+#pragma unroll
+                    for (int i = 0; i < 8; ++i) {
+                        if (lane + i * 32 < d) partial += qv[i] * kreg[j][i];
+                    }
+                }
+                const float dot = wave_sum_dpp(partial);
+                if (lane == 0 && key < span) {
+                    const float score = key < visible ? dot * scale : -INFINITY;
+                    scores[(static_cast<long long>(batch) * heads + head0 + g) * span + key] = score;
                 }
             }
-            const float dot = wave_sum(partial);
-            if (lane == 0 && key < span) {
-                const float score = key < visible ? dot * scale : -INFINITY;
-                scores[(static_cast<long long>(batch) * heads + head0 + g) * span + key] = score;
+        }
+    }
+}
+
+// plan_score_body on long spans at d = 256 (tf_plan_score256_*): no element tests, kScoreSteps steps a block.
+template <int KIND, int QKIND>
+__device__ void plan_score256_body(const void* __restrict__ q, float* __restrict__ scores, int span, int heads,
+                                   int kv_heads, int d, float scale, PlanArgs plan, int layer) {
+    constexpr int KEYS = kScoreKeys, STEPS = kScoreSteps;
+    extern __shared__ float qs[];  // the block's query heads, group * d
+    const int batch = blockIdx.z, group = heads / gridDim.y, head0 = blockIdx.y * group;
+    const long long q0 = (static_cast<long long>(batch) * heads + head0) * d;
+    for (int i = threadIdx.x; i < group * d; i += blockDim.x) qs[i] = load(q, QKIND, q0 + i);  // kind 0: q fp32
+    __syncthreads();
+    const int visible = min(plan.pos[batch] + 1, span);
+    const int lane = threadIdx.x & 31;
+    const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
+    float* __restrict__ rows = scores + (static_cast<long long>(batch) * heads + head0) * span;
+    const void* keys = reinterpret_cast<const void*>(desc[plan_first(layer)]);
+    const unsigned* pages = plan_pages(plan, desc);
+    const unsigned pool = plan.pool;
+    const int kv = head0 / (heads / kv_heads);
+    const int stride = (blockDim.x >> 5) * KEYS;  // keys a step of the block
+    const int first = blockIdx.x * STEPS * stride + (threadIdx.x >> 5) * KEYS;
+    const bool whole = (span % KEYS) == 0 && (reinterpret_cast<unsigned long long>(rows) & 15) == 0;
+    float kreg[KEYS][8] = {};
+    score_fetch<KEYS>(kreg, keys, KIND, pages, pool, kv, first, visible, lane);
+#pragma unroll 1
+    for (int step = 0; step < STEPS; ++step) {
+        const int key0 = first + step * stride;
+        if (key0 >= span) break;  // the same for the whole wave
+        float next[KEYS][8] = {};
+        score_fetch<KEYS>(next, keys, KIND, pages, pool, kv, step + 1 < STEPS ? key0 + stride : span, visible, lane);
+        if (key0 >= visible) {  // the wave's keys are all past the row's: -INFINITY wherever the span has them
+            float none[KEYS];
+            for (int j = 0; j < KEYS; ++j) none[j] = -INFINITY;
+            for (int g = 0; lane == 0 && g < group; ++g) {
+                score_store<KEYS>(rows + key0 + static_cast<long long>(g) * span, none, whole, key0, span);
+            }
+        } else {
+#pragma unroll
+            for (int g = 0; g < kMaxGroup; ++g) {
+                if (g < group) {  // the same for the whole block, so every lane reaches the folds
+                    float qv[8];
+#pragma unroll
+                    for (int i = 0; i < 8; ++i) qv[i] = qs[g * 256 + lane + i * 32];
+                    float dot[KEYS];
+#pragma unroll
+                    for (int j = 0; j < KEYS; ++j) {
+                        float partial = 0.f;
+#pragma unroll
+                        for (int i = 0; i < 8; ++i) partial += qv[i] * kreg[j][i];
+                        dot[j] = wave_sum_dpp(partial);
+                    }
+                    if (lane == 0) {
+                        float sc[KEYS];
+#pragma unroll
+                        for (int j = 0; j < KEYS; ++j) sc[j] = key0 + j < visible ? dot[j] * scale : -INFINITY;
+                        score_store<KEYS>(rows + key0 + static_cast<long long>(g) * span, sc, whole, key0, span);
+                    }
+                }
             }
         }
+        __builtin_memcpy(kreg, next, sizeof(kreg));
     }
 }
 
@@ -289,13 +414,27 @@ tf_plan_kv_write(const float* keys, const void* values, int kind, int rows, int 
 }
 
 __global__ void __launch_bounds__(128)
-tf_plan_score_f16(const float* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan, int layer) {
-    plan_score_body<1>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
+tf_plan_score_f16(const float* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan,
+                     int layer) {
+    plan_score_body<kScoreKeys, 1>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
 }
 
 __global__ void __launch_bounds__(128)
-tf_plan_score_bf16(const float* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan, int layer) {
-    plan_score_body<2>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
+tf_plan_score2_f16(const float* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan,
+                      int layer) {
+    plan_score_body<kScoreKeysShort, 1>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
+}
+
+__global__ void __launch_bounds__(128)
+tf_plan_score_bf16(const float* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan,
+                      int layer) {
+    plan_score_body<kScoreKeys, 2>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
+}
+
+__global__ void __launch_bounds__(128)
+tf_plan_score2_bf16(const float* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan,
+                       int layer) {
+    plan_score_body<kScoreKeysShort, 2>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
 }
 
 __global__ void __launch_bounds__(256)
@@ -304,15 +443,35 @@ tf_plan_kv_write_act(const void* keys, const void* values, int kind, int rows, i
     plan_kv_write_act_body(keys, values, kind, rows, kv_heads, d, plan, layer);
 }
 __global__ void __launch_bounds__(128)
-tf_plan_score_act_f16(const void* q, float* scores, int span, int heads, int kv_heads, int d, float scale,
-                      PlanArgs plan, int layer) {
-    plan_score_body<1, 1>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
+tf_plan_score_act_f16(const void* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan,
+                         int layer) {
+    plan_score_body<kScoreKeys, 1, 1>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
+}
+
+__global__ void __launch_bounds__(128)
+tf_plan_score2_act_f16(const void* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan,
+                          int layer) {
+    plan_score_body<kScoreKeysShort, 1, 1>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
 }
 __global__ void __launch_bounds__(128)
-tf_plan_score_act_bf16(const void* q, float* scores, int span, int heads, int kv_heads, int d, float scale,
-                       PlanArgs plan, int layer) {
-    plan_score_body<2, 2>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
+tf_plan_score_act_bf16(const void* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan,
+                          int layer) {
+    plan_score_body<kScoreKeys, 2, 2>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
 }
+
+__global__ void __launch_bounds__(128)
+tf_plan_score2_act_bf16(const void* q, float* scores, int span, int heads, int kv_heads, int d, float scale, PlanArgs plan,
+                           int layer) {
+    plan_score_body<kScoreKeysShort, 2, 2>(q, scores, span, heads, kv_heads, d, scale, plan, layer);
+}
+// tf_plan_score256_*: tf_plan_score_*'s arguments, q fp32 or (act) in the cache's kind; kScoreSteps steps a block.
+#define TF_PLAN_SCORE256(Name, Q, KIND, QKIND) __global__ void __launch_bounds__(128) Name(const Q* q, float* scores, \
+    int span, int heads, int kv_heads, int d, float scale, PlanArgs plan, int layer) {                              \
+    plan_score256_body<KIND, QKIND>(q, scores, span, heads, kv_heads, d, scale, plan, layer); }
+TF_PLAN_SCORE256(tf_plan_score256_f16, float, 1, 0)
+TF_PLAN_SCORE256(tf_plan_score256_bf16, float, 2, 0)
+TF_PLAN_SCORE256(tf_plan_score256_act_f16, void, 1, 1)
+TF_PLAN_SCORE256(tf_plan_score256_act_bf16, void, 2, 2)
 // tf_sum_partials into the activation kind, rounded as tf_cast rounds: the same bytes as the sum and the cast.
 __global__ void tf_sum_partials_act(const float* __restrict__ partials, void* __restrict__ out, int tiles, int d,
                                     int kind) {
@@ -321,8 +480,17 @@ __global__ void tf_sum_partials_act(const float* __restrict__ partials, void* __
     int lane = threadIdx.x;
     if (lane >= d) return;
     const float* col = partials + ((static_cast<long long>(batch) * gridDim.x + head) * tiles) * d + lane;
+    // sixteen tiles' loads go out together, then add in tile order
     float acc = 0.f;
-    for (int tile = 0; tile < tiles; ++tile) acc += col[static_cast<long long>(tile) * d];
+    int tile = 0;
+    for (; tile + 16 <= tiles; tile += 16) {
+        float ahead[16];
+#pragma unroll
+        for (int u = 0; u < 16; ++u) ahead[u] = col[static_cast<long long>(tile + u) * d];
+#pragma unroll
+        for (int u = 0; u < 16; ++u) acc += ahead[u];
+    }
+    for (; tile < tiles; ++tile) acc += col[static_cast<long long>(tile) * d];
     store(out, kind, (static_cast<long long>(batch) * gridDim.x + head) * d + lane, acc);
 }
 __global__ void __launch_bounds__(kAttendThreads)
@@ -398,6 +566,34 @@ tf_plan_keep(PlanArgs plan, const int* keep, const unsigned int* hidden, int hid
             window[static_cast<long long>(t) * channels + c] = at < 0 ? window[static_cast<long long>(taps + at) * channels + c] : samples[static_cast<long long>(at) * channels + c];
         }
     }
+}
+
+
+// Row r's 16-bit residual into its slot's tap ring (descriptor word before the page table; 0 skips) at its position.
+__global__ void __launch_bounds__(256)
+tf_plan_tap(const unsigned* x, int rows, int hidden, int tap, int taps, int tap_rows, PlanArgs plan) {
+    const long long i = gid();
+    const int pairs = hidden / 2;
+    if (i >= static_cast<long long>(rows) * pairs) return;
+    const int r = static_cast<int>(i / pairs);
+    const int j = static_cast<int>(i % pairs);
+    const unsigned long long* desc = plan_desc(plan, plan.slot[r]);
+    if (desc == nullptr) return;
+    unsigned* ring = reinterpret_cast<unsigned*>(desc[plan.pages - 1]);
+    if (ring == nullptr) return;
+    const long long at = (static_cast<long long>(plan.pos[r] % tap_rows) * taps + tap) * pairs + j;
+    ring[at] = x[i];
+}
+
+// tf_plan_tap for one stream's prompt rows, positions pos0 .. pos0 + rows, into `ring`.
+__global__ void __launch_bounds__(256)
+tf_tap_rows(const unsigned* x, unsigned* ring, int rows, int hidden, int tap, int taps, int tap_rows, long long pos0) {
+    const long long i = gid();
+    const int pairs = hidden / 2;
+    if (i >= static_cast<long long>(rows) * pairs) return;
+    const long long r = i / pairs;
+    const int j = static_cast<int>(i % pairs);
+    ring[((pos0 + r) % tap_rows * taps + tap) * pairs + j] = x[i];
 }
 
 }  // extern "C"

@@ -83,10 +83,12 @@ test "Qwen4 lanes: shared verify, prefix rejection, stale handles and cold-cut p
     defer left.deinit(a);
     var right = try L.Stream.init(a, .{ .id = "right", .prompt = &.{ 7, 8 }, .max_new = 10 });
     defer right.deinit(a);
-    try t.expect(!try b.vtable.prefill_step.?(b.ptr, &left));
+    try t.expect(!try b.vtable.prefill_step.?(b.ptr, &left, 0));
     try t.expectEqual(@as(u32, 3), left.fill_at.load(.acquire));
-    try t.expect(try b.vtable.prefill_step.?(b.ptr, &left));
+    try t.expect(try b.vtable.prefill_step.?(b.ptr, &left, 0));
     try b.prefill(&right);
+    try t.expectEqualSlices(u32, if (E.Gpu.kind == .metal) &.{ 3, 3 } else &.{}, left.prefill_widths.items);
+    try t.expectEqualSlices(u32, if (E.Gpu.kind == .metal) &.{2} else &.{}, right.prefill_widths.items);
     const lh = try b.first(&left, 6);
     const rh = try b.first(&right, 2);
     try t.expect(lh != rh);
@@ -104,6 +106,8 @@ test "Qwen4 lanes: shared verify, prefix rejection, stale handles and cold-cut p
     try t.expectError(error.Qwen4DrawPosition, b.verify(&bad, &verified));
     try t.expectEqual(begins, f.e.gpu.begins);
     try b.verify(&windows, &verified);
+    try t.expectEqualSlices(u32, if (E.Gpu.kind == .metal) &.{ 3, 3 } else &.{}, left.prefill_widths.items);
+    try t.expectEqualSlices(u32, if (E.Gpu.kind == .metal) &.{2} else &.{}, right.prefill_widths.items);
     try t.expectEqual(@as(usize, 4), f.e.gpu.project_rows);
     try t.expectEqualSlices(u32, &.{ 2, 3 }, &drafts0);
     try t.expectEqualSlices(u32, &.{ 0, 0, 0 }, &sample0);
@@ -145,7 +149,7 @@ test "Qwen4 lanes: kept full-prompt logits resume without replay and cancelled f
     var hook: Hook = .{};
     var cancelled = try L.Stream.init(a, .{ .id = "cancelled", .prompt = &.{ 1, 2, 3, 4, 5, 6, 7, 8 }, .max_new = 8, .reuse = .{ .hook = .{ .ptr = &hook, .at = Hook.save } } });
     defer cancelled.deinit(a);
-    try t.expect(!try b.vtable.prefill_step.?(b.ptr, &cancelled));
+    try t.expect(!try b.vtable.prefill_step.?(b.ptr, &cancelled, 0));
     const submitted = f.e.gpu.submits;
     try b.vtable.cancel_prefill.?(b.ptr, &cancelled);
     try t.expectEqual(@as(u32, 4), hook.at);

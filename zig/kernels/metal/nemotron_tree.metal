@@ -1,11 +1,11 @@
-// Tree windows for Nemotron: Mamba by parent, attention by logical key position, KV compaction, row gathers, draft top-k.
+// Nemotron's tree windows: Mamba by parent, attention by logical key position, KV compaction, row gathers, draft top-k.
 #include <metal_stdlib>
 using namespace metal;
 typedef bfloat bfloat16_t;
 #include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
 using namespace mpp::tensor_ops;
 
-// A segment's 8 ints: real first row, replayed rows, state slot in, replay id, parity in, save inputs, first virtual row.
+// Segment's 8 ints: real first row, replayed rows, state slot in, replay id, parity in, save inputs, first virtual row.
 #define SEG_B 0
 #define SEG_K 1
 #define SEG_IN 2
@@ -131,7 +131,7 @@ template <int H, int DH, int NG, int DS, int XD, int PROJ, int DTOFF, int SSZ>
   }
 }
 
-// A lane's 16 x n tensor-op results by layout (TF_SIMD_LAYOUT before the M5, as simd_attention.zig checks): rows, columns.
+// A lane's 16 x n tensor-op results by layout (TF_SIMD_LAYOUT pre-M5, as simd_attention.zig checks): rows, columns.
 #ifdef TF_SIMD_LAYOUT
 #define TT_FN(lane) short((((lane) & 8) >> 1) | (((lane) & 1) << 1))
 #define TT_COL(i, n) (((i) & 1) + 8 * (((i) >> 1) % ((n) / 8)))
@@ -146,7 +146,7 @@ template <int H, int DH, int NG, int DS, int XD, int PROJ, int DTOFF, int SSZ>
 #define TT_Y(b, k, hi) ((b) * 8 + (hi) * 4 + (k))
 #endif
 
-// A node's keys past the shared pass, gathered by logical position (dims: P, PT, NCA, NCB, NT): its one-row step's sums.
+// A node's keys past the shared pass, gathered by logical position (dims: P, PT, NCA, NCB, NT): one-row step's sums.
 template <int G, int D, int CK, int TK, int MAXD>
 [[kernel]] void tf_tree_tail(
   const device bfloat16_t* QP [[buffer(0)]],
@@ -310,7 +310,7 @@ template <int G, int D, int CK>
   for (int i = 0; i < DP; i++) OUT[((int64_t)h * NT + node) * D + lane * DP + i] = static_cast<bfloat>(o[i] / l);
 }
 
-// The kept path's keys and values to the cache's next rows (len + path[j] -> len + j); rows in order, never read after written.
+// Kept path's keys/values to the cache's next rows (len + path[j] -> len + j); rows in order, never read after written.
 kernel void tf_kv_compact(device bfloat* K [[buffer(0)]],
                           device bfloat* V [[buffer(1)]],
                           const device int32_t* path [[buffer(2)]],
@@ -411,5 +411,8 @@ kernel void tf_lane_tokens(const device uint* topk [[buffer(0)]],
 
 template [[host_name("tf_tree_conv")]] [[kernel]] decltype(tf_tree_conv<4096, 8, 128, 4, 10304, 4096>) tf_tree_conv<4096, 8, 128, 4, 10304, 4096>;
 template [[host_name("tf_tree_scan")]] [[kernel]] decltype(tf_tree_scan<64, 64, 8, 128, 4096, 10304, 10240, 524288>) tf_tree_scan<64, 64, 8, 128, 4096, 10304, 10240, 524288>;
+// nemotron_h_puzzle (Bolt): inner 8192, in_proj [z 8192 | xBC 10240 | dt 128] = 18560, state 1048576 (hand-authored)
+template [[host_name("tf_tree_conv_bolt")]] [[kernel]] decltype(tf_tree_conv<8192, 8, 128, 4, 18560, 8192>) tf_tree_conv<8192, 8, 128, 4, 18560, 8192>;
+template [[host_name("tf_tree_scan_bolt")]] [[kernel]] decltype(tf_tree_scan<128, 64, 8, 128, 8192, 18560, 18432, 1048576>) tf_tree_scan<128, 64, 8, 128, 8192, 18560, 18432, 1048576>;
 template [[host_name("tf_tree_tail")]] [[kernel]] decltype(tf_tree_tail<16, 128, 512, 64, 64>) tf_tree_tail<16, 128, 512, 64, 64>;
 template [[host_name("tf_tree_merge")]] [[kernel]] decltype(tf_tree_merge<16, 128, 512>) tf_tree_merge<16, 128, 512>;

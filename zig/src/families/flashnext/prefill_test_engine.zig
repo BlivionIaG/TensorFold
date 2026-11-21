@@ -40,6 +40,7 @@ pub const Fake = struct {
     gpa: std.mem.Allocator = a,
     target: lanes.fake.Fake = .{ .gpa = a },
     filling: std.AutoHashMapUnmanaged(*Stream, fill.State) = .empty,
+    fill_grows: bool = false,
     complete: std.AutoHashMapUnmanaged(*Stream, Summary) = .empty,
     table: lanes.backend.Backend.VTable = undefined,
     barrier: bool = false,
@@ -56,6 +57,7 @@ pub const Fake = struct {
     freed: usize = 0,
     max_slots: usize = 4,
     restored_at: u32 = 0,
+    decode_shrink: bool = true, // false: chunks keep the engine's full cuts beside decoders (the CUDA grid's shape)
     fail_image: bool = false,
     fail_chunk: bool = false,
     fail_completion: bool = false,
@@ -92,6 +94,7 @@ pub const Fake = struct {
         f.table = b.vtable.*;
         f.table.prefill = fill.Callbacks(Fake).whole;
         f.table.prefill_step = if (stepped) fill.Callbacks(Fake).one else null;
+        f.table.cancel_prefill = fill.Callbacks(Fake).cancelPrompt;
         f.table.release = release;
         f.table.verify = verify;
         f.table.keep = keep;
@@ -158,6 +161,7 @@ pub const Fake = struct {
         return .{ .stream = s, .slot = preferred orelse f.target.lanes.count() - 1, .at = at, .owner = o };
     }
     pub fn decoding(f: *const Fake) bool {
+        if (!f.decode_shrink) return false;
         var it = f.target.lanes.keyIterator();
         while (it.next()) |key| if (!f.filling.contains(key.*) and !key.*.finished and !key.*.paused) return true;
         return false;
@@ -216,11 +220,12 @@ pub const Fake = struct {
         if (o.pairs.items.len != @min(end, s.prompt_len - 1)) return error.LostPromptLookahead;
         o.normalized = true;
     }
-    pub fn markPrompt(f: *Fake, s: *Stream, at: u32) !void {
+    pub fn markPrompt(f: *Fake, s: *Stream, at: u32, interrupted: bool) !void {
+        if (interrupted) f.bound = s;
         if (f.fail_mark) return error.MarkFailed;
         if (f.bound != s or !f.owner(s).normalized) return error.WrongSession;
         if (f.target.lanes.get(s).?.history.items.len != at) return error.PositionMismatch;
-        if (s.reuse.hook) |hook| hook.at(hook.ptr, s, at);
+        if (interrupted) s.keepInterruptedPrefill(at) else if (s.reuse.hook) |hook| hook.at(hook.ptr, s, at);
     }
     pub fn finishPrompt(f: *Fake, s: *Stream) !void {
         const o = f.owner(s);

@@ -1,4 +1,4 @@
-//! ExLlamaV3 (EXL3, mul1 codebook) Qwen3.5-MoE checkpoints on the CUDA engine, read under their HF tensor names.
+//! ExLlamaV3 (EXL3, mul1 codebook) Qwen3.5 checkpoints, MoE and dense, on the CUDA engine under their HF tensor names.
 const std = @import("std");
 const cuda = @import("cuda");
 const core = @import("core");
@@ -21,7 +21,7 @@ pub const Kit = struct {
     grouped: cuda.exl3_grouped.Grouped,
     b16: b16.Kernels,
 
-    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, g: geometry.Geometry) !*Kit {
+    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, g: geometry.Geometry, rows: usize) !*Kit {
         const k = try gpa.create(Kit);
         errdefer gpa.destroy(k);
         k.dense = try cuda.exl3.Dense.load(d);
@@ -31,13 +31,17 @@ pub const Kit = struct {
         k.b16 = try b16.Kernels.load(d);
         errdefer k.b16.unload();
         k.grouped = .{ .d = d, .kernels = &k.experts };
+        if (!g.moe()) return k; // a dense checkpoint's MLP is three Dense projections
         // the grouped experts' scratch grows on first use: allocate it before any graph capture, for the widest call
-        const pairs = engine.max_rows * g.slots();
-        const items = cuda.grouped.maxItems(pairs, g.experts + 1, 16);
-        const up = try cuda.exl3_grouped.Grouped.bytes(g.hidden, g.intermediate, items, try ex.plan(g.hidden, g.intermediate, true), 2);
-        const down = try cuda.exl3_grouped.Grouped.bytes(g.intermediate, g.hidden, items, try ex.plan(g.intermediate, g.hidden, false), 1);
-        k.grouped.storage = try cuda.DeviceBuffer.alloc(d, @max(up, down));
+        k.grouped.storage = try cuda.DeviceBuffer.alloc(d, try storageBytes(g, rows));
         return k;
+    }
+
+    pub fn storageBytes(g: geometry.Geometry, rows: usize) !usize {
+        const pairs = rows * g.slots();
+        const up = try cuda.exl3_grouped.Grouped.bytes(g.hidden, g.intermediate, pairs, 64, try ex.plan(g.hidden, g.intermediate, true), 2);
+        const down = try cuda.exl3_grouped.Grouped.bytes(g.intermediate, g.hidden, pairs, 64, try ex.plan(g.intermediate, g.hidden, false), 1);
+        return @max(up, down);
     }
 
     pub fn deinit(k: *Kit, gpa: std.mem.Allocator) void {
@@ -72,10 +76,7 @@ fn name(buf: []u8, comptime fmt: []const u8, args: anytype) ![]const u8 {
     return std.fmt.bufPrint(buf, fmt, args);
 }
 
-fn bf16Of(x: f32) u16 {
-    const u: u32 = @bitCast(x);
-    return @intCast((u +% 0x7fff +% ((u >> 16) & 1)) >> 16);
-}
+const bf16Of = core.bf16_round.bits;
 
 /// f16 values (as stored) to bf16, round to nearest even.
 fn f16Rows(gpa: std.mem.Allocator, bytes: []const u8) ![]u16 {
@@ -137,11 +138,12 @@ fn dense(s: *Sink, kit: ?*Kit, ck: *core.Checkpoint, prefix: []const u8, mod: []
         .k = @intCast(k),
         .n = @intCast(n),
         .halves = gr.halves,
-        .codebook = .mul1,
+        .codebook = gr.codebook,
         .stride_k = st.k,
         .stride_nb = st.nb,
     };
-    if (kit) |x| try x.dense.reserve(w);
+    if (cuda.exl3.variantIndex(w.halves, w.codebook, cuda.exl3.planOf(w).wk) == null) return error.UnsupportedQwenQuantization;
+    if (kit) |x| try x.dense.reserve(s.e.stream, w);
     return .{ .x3 = w };
 }
 
@@ -178,6 +180,7 @@ fn experts(s: *Sink, ck: *core.Checkpoint, p: []const u8) !cuda.experts.Layer {
     var suh: [3]u64 = undefined;
     var svh: [3]u64 = undefined;
     var buf: [200]u8 = undefined;
+    var expert_cb: ?cuda.exl3.Codebook = null;
     for (mods, 0..) |mod, m| {
         const k = if (m == 2) g.intermediate else g.hidden;
         const n = if (m == 2) g.hidden else g.intermediate;
@@ -192,6 +195,11 @@ fn experts(s: *Sink, ck: *core.Checkpoint, p: []const u8) !cuda.experts.Layer {
         for (0..count) |e| {
             const base = if (e < g.experts) try name(&buf, "{s}mlp.experts.{d}.{s}", .{ p, e, mod }) else try name(&buf, "{s}mlp.shared_expert.{s}", .{ p, mod });
             const gr = try group(ck, base, n, k);
+            if (expert_cb) |ecb| {
+                if (ecb != gr.codebook) return error.UnsupportedQwenQuantization;
+            } else {
+                expert_cb = gr.codebook;
+            }
             tp[e] = try s.put(gr.trellis.bytes);
             widths[e] = @intCast(gr.halves);
             @memcpy(su[e * k * 2 ..][0 .. k * 2], gr.suh.bytes);
@@ -218,7 +226,7 @@ fn experts(s: *Sink, ck: *core.Checkpoint, p: []const u8) !cuda.experts.Layer {
         .experts = count,
         .dims = g.hidden,
         .width = g.intermediate,
-        .codebook = .mul1,
+        .codebook = expert_cb orelse return error.UnsupportedQwenQuantization,
         .limit = 0, // Qwen's SwiGLU is unclamped
         .act_mode = 1, // fp32 silu(gate) * up
     };
@@ -231,12 +239,12 @@ fn all(s: *Sink, ck: *core.Checkpoint) !void {
     const g = e.g;
     const kit = e.kit;
     const m = "model.language_model.";
-    // embeddings stay bf16 rows (embedRows); the head is an EXL3 projection
-    const embed = try plain(s, ck, "{s}embed_tokens.weight", .{m}, .bf16, &.{ g.vocab, g.hidden });
+    // embeddings stay bf16 rows (embedRows), mapped from host memory when the card has no room; the head is EXL3
+    const embed: u64 = if (e.host_embed != null) 0 else try plain(s, ck, "{s}embed_tokens.weight", .{m}, .bf16, &.{ g.vocab, g.hidden });
     const head = try dense(s, kit, ck, "", "lm_head", g.vocab, g.hidden);
     const final = try norm1(s, ck, "{s}norm.weight", .{m}, g.hidden);
     if (!s.measure) {
-        e.embed_w = embed;
+        e.embed_w = if (e.host_embed) |h| try mappedEmbed(e, ck, h) else embed;
         e.embed_s = 0;
         e.embed_b = 0;
         e.embed_bits = 16;
@@ -276,8 +284,32 @@ fn all(s: *Sink, ck: *core.Checkpoint) !void {
                 .k_norm = try norm1(s, ck, "{s}self_attn.k_norm.weight", .{p}, geometry.head_dim),
             } };
         }
-        l.mlp = .{ .moe = .{ .router = try router(s, ck, p), .experts = try experts(s, ck, p) } };
+        l.mlp = if (g.moe()) .{ .moe = .{ .router = try router(s, ck, p), .experts = try experts(s, ck, p) } } else .{ .dense = .{
+            .gate = try dense(s, kit, ck, p, "mlp.gate_proj", g.intermediate, g.hidden),
+            .up = try dense(s, kit, ck, p, "mlp.up_proj", g.intermediate, g.hidden),
+            .down = try dense(s, kit, ck, p, "mlp.down_proj", g.hidden, g.intermediate),
+        } };
+        if (kit) |k| try reserveGroups(k, s.e.stream, l.*);
     }
+}
+
+/// Grouped decode launches (q/k/v, qkv/z, gate/up) need their members' scratch together before any graph capture.
+pub fn reserveGroups(k: *Kit, st: cuda.Stream, l: engine.Layer) !void {
+    switch (l.mixer) {
+        .delta => |m| try k.dense.reserveGroup(st, &.{ m.qkv.x3, m.z.x3 }),
+        .attention => |m| try k.dense.reserveGroup(st, &.{ m.q.x3, m.k.x3, m.v.x3 }),
+    }
+    switch (l.mlp) {
+        .dense => |m| try k.dense.reserveGroup(st, &.{ m.gate.x3, m.up.x3 }),
+        .moe => {},
+    }
+}
+
+/// The embedding rows copied into the engine's mapped host memory.
+fn mappedEmbed(e: *Engine, ck: *core.Checkpoint, host: cuda.HostBuffer) !u64 {
+    var buf: [200]u8 = undefined;
+    const t = try ck.expect(try name(&buf, "model.language_model.embed_tokens.weight", .{}), .bf16, &.{ e.g.vocab, e.g.hidden });
+    return @import("cuda_host_embed.zig").rows(host, t.bytes);
 }
 
 /// The arena bytes the weights take (the scratch is added by the caller).
@@ -291,4 +323,32 @@ pub fn load(e: *Engine, ck: *core.Checkpoint) !void {
     var s: Sink = .{ .e = e, .measure = false };
     try all(&s, ck);
     try e.stream.synchronize();
+}
+
+test "Qwen EXL3 norm and widened bf16: today's bits on every zero, subnormal, infinity and tie; a NaN stays NaN" {
+    const old = struct {
+        /// bf16Of as it was spelled before it was core's bits(): the oracle for every non-NaN input.
+        fn wrapped(x: f32) u16 {
+            const u: u32 = @bitCast(x);
+            return @intCast((u +% 0x7fff +% ((u >> 16) & 1)) >> 16);
+        }
+
+        fn kept(u: u32) !void {
+            const v: f32 = @bitCast(u);
+            const h = bf16Of(v);
+            if (!std.math.isNan(v)) return std.testing.expectEqual(wrapped(v), h);
+            try std.testing.expect(std.math.isNan(core.bf16_round.value(h)));
+            try std.testing.expectEqual(u >> 31, h >> 15);
+        }
+    };
+    for (0..1 << 25) |i| { // sign, exponent 0 or 255, every mantissa
+        const top: u32 = if (i & 1 << 23 != 0) 0x7f80_0000 else 0;
+        try old.kept(@as(u32, @intCast(i >> 24)) << 31 | top | @as(u32, @intCast(i & 0x7f_ffff)));
+    }
+    for (0..1 << 16) |hi| for ([_]u32{ 0, 1, 0x7fff, 0x8000, 0x8001, 0xffff }) |lo| try old.kept(@as(u32, @intCast(hi)) << 16 | lo);
+    var prng = std.Random.DefaultPrng.init(1863);
+    for (0..1 << 22) |_| try old.kept(prng.random().int(u32));
+    try std.testing.expectEqual(@as(u16, 0x8000), old.wrapped(@bitCast(@as(u32, 0x7fff8001)))); // the old copy's -0
+    try std.testing.expectEqual(@as(u16, 0x0000), old.wrapped(@bitCast(@as(u32, 0xffff8001)))); // and its +0
+    for ([_]u32{ 0x7fff8001, 0xffff8001, 0x7fc00000, 0xffffffff, 0x7f800001, 0xff800001, 0x7fbfffff, 0xffa00000 }) |u| try old.kept(u);
 }

@@ -41,13 +41,15 @@ def analyze(lines, budgets, ssd_bytes_per_second=None, *, tokens=None, resident_
     header = records[0]
     layers = integer(header.get("layers"), "layers", 1)
     experts = integer(header.get("experts"), "experts", 1)
+    mtp_experts = integer(header.get("mtp_experts", experts), "mtp_experts", 1)
     stride = integer(header.get("slot_bytes"), "slot_bytes", 1)
     parts = header.get("component_bytes")
     if parts is not None:
-        if not isinstance(parts, list) or len(parts) != 9:
-            raise TraceError("component_bytes needs nine stored widths")
+        if not isinstance(parts, list) or len(parts) not in (6, 9):
+            raise TraceError("component_bytes needs six or nine stored widths")
         if sum(integer(n, "component bytes", 1) for n in parts) != stride:
             raise TraceError("component bytes must sum to slot_bytes")
+    uncoalesced = sum(math.ceil(n / (4 * 1024 * 1024)) for n in parts) if parts is not None else 9
     if tokens is not None:
         integer(tokens, "generated or prompt tokens", 1)
     integer(read_latency_ns, "read latency ns")
@@ -66,6 +68,10 @@ def analyze(lines, budgets, ssd_bytes_per_second=None, *, tokens=None, resident_
         for layer in indices:
             if integer(layer, "layer") >= layers:
                 raise TraceError("layer outside model")
+    mtp = modes.get("mtp", [])
+    if "mtp_experts" in header and (not mtp or any(
+            layer in mtp for mode, indices in modes.items() if mode != "mtp" for layer in indices)):
+        raise TraceError("MTP stages must be separate from target layers")
     if records[-1].get("event") != "closed":
         raise TraceError("incomplete trace: no clean close")
     windows, current, seen = [], None, set()
@@ -93,7 +99,7 @@ def analyze(lines, budgets, ssd_bytes_per_second=None, *, tokens=None, resident_
                 raise TraceError("duplicate layer observation")
             union = []
             for eid in ids:
-                if integer(eid, "expert") >= experts:
+                if integer(eid, "expert") >= (mtp_experts if current["mode"] == "mtp" else experts):
                     raise TraceError("expert outside model")
                 if eid not in union:
                     union.append(eid)
@@ -122,7 +128,7 @@ def analyze(lines, budgets, ssd_bytes_per_second=None, *, tokens=None, resident_
     frontier = []
     for budget in budgets:
         budget = integer(budget, "budget bytes", 1)
-        capacity = min(budget // stride, layers * experts)
+        capacity = min(budget // stride, (layers - len(mtp)) * experts + len(mtp) * mtp_experts)
         row = {"budget_bytes": budget, "slots": capacity, "usable_bytes": capacity * stride,
                "observed_union_fits": len(active) <= capacity,
                "supported_window_fits": max_union <= capacity,
@@ -142,26 +148,26 @@ def analyze(lines, budgets, ssd_bytes_per_second=None, *, tokens=None, resident_
                 jobs = []
                 for key in sorted(demand):
                     if key in mapping:
-                        slots[mapping[key]][1] = True
+                        slots[mapping[key]][1] = min(slots[mapping[key]][1] + 1, 3)
                 for key in sorted(demand):
                     if key in mapping:
                         continue
                     if len(slots) < capacity:
                         at = len(slots)
-                        slots.append([None, False])
+                        slots.append([None, 0])
                     else:
                         while True:
                             at = hand
                             hand = (hand + 1) % capacity
-                            old, ref = slots[at]
+                            old, uses = slots[at]
                             if old in protected:
                                 continue
-                            if ref:
-                                slots[at][1] = False
+                            if uses:
+                                slots[at][1] = uses - 1
                                 continue
                             del mapping[old]
                             break
-                    slots[at] = [key, True]
+                    slots[at] = [key, 0]
                     mapping[key] = at
                     jobs.append((key, at))
                     window_misses += 1
@@ -173,9 +179,9 @@ def analyze(lines, budgets, ssd_bytes_per_second=None, *, tokens=None, resident_
             cold.append({"window": window["id"], "misses": window_misses,
                          "cold_bytes": window_misses * stride})
         row.update(verdict="observed union fits" if row["observed_union_fits"] else "capacity pressure",
-                   policy="CLOCK, demand unions protected, no forecast", misses=misses,
+                   policy="CLOCK over use counts, demand unions protected, no forecast", misses=misses,
                    cold_bytes=misses * stride, per_window=cold, demands=demands,
-                   hit_rate=1 - misses / demands, component_reads_without_coalescing=9 * misses)
+                   hit_rate=1 - misses / demands, component_reads_without_coalescing=uncoalesced * misses)
         if parts is not None:
             row.update(coalesced_read_requests=calls, bounded_read_groups=groups,
                        mean_read_bytes=misses * stride / calls if calls else 0,
@@ -189,7 +195,7 @@ def analyze(lines, budgets, ssd_bytes_per_second=None, *, tokens=None, resident_
                 row["storage_tokens_per_second_ceiling"] = tokens / row["storage_seconds_lower_bound"] if misses else None
                 if resident_tps is not None and parts is not None:
                     compute = tokens / resident_tps
-                    baseline_io = row["storage_seconds_lower_bound"] + 9 * misses * read_latency_ns / 1e9
+                    baseline_io = row["storage_seconds_lower_bound"] + uncoalesced * misses * read_latency_ns / 1e9
                     batched_io = row["storage_seconds_lower_bound"] + groups * read_latency_ns / 1e9
                     row.update(serialized_baseline_tps=tokens / (compute + baseline_io),
                                serialized_batched_tps=tokens / (compute + batched_io),

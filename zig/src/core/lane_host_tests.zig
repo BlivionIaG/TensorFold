@@ -26,3 +26,12 @@ test {
     _ = @import("memory_pressure_test.zig");
     _ = @import("lane_host_pressure_test.zig");
 }
+
+test {
+    _ = @import("lane_activity_test.zig");
+}
+
+test {
+    _ = @import("lane_wait_reason_test.zig");
+    _ = @import("wait_reason.zig");
+}

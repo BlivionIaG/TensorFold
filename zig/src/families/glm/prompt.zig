@@ -1,4 +1,4 @@
-//! Prompt chunks: matmuls on the M5 tensor units at the row kernels' arithmetic (core/affine_mm.zig), the rest on the row kernels.
+//! Prompt chunks: matmuls on the M5 tensor units at the row kernels' arithmetic, the rest on the row kernels.
 const std = @import("std");
 const platform = @import("sys");
 const mtl = @import("metal");
@@ -9,16 +9,18 @@ const fwd = @import("forward.zig");
 const pk = @import("../nemotron/prefill_kernels.zig");
 const ep_mod = @import("ep.zig");
 const affine_mm = @import("../../core/affine_mm.zig");
+const mm_groups = @import("mm_groups.zig");
 const hc = @import("../../core/hc.zig");
 const kernels = @import("kernels.zig");
 const wide = @import("wide.zig");
 const Kernels = kernels.Kernels;
 const moe_route = @import("../../core/moe_route.zig");
+const tape = @import("prompt_tape.zig");
 const Ref = wts.Ref;
 const bind = fwd.bind;
 const size = fwd.size;
 
-/// Chunk heights a load picks from (the tallest whose buffers fit this Mac's limit); expert parallel keeps one exchange's.
+/// Chunk heights a load picks from (tallest whose buffers fit this Mac's limit); expert parallel keeps one exchange's.
 pub const heights = [_]u32{ 16384, 8192, 6144, 4096, 2048 };
 pub const max_rows = heights[0];
 /// Sparse rows whose block scores one selection pass holds.
@@ -64,6 +66,7 @@ pub const Prompt = struct {
     m_out: Ref,
     sums: Ref, // fp32 group sums of a matmul's rows (affine_mm's bias operand)
     sparse_nax: bool, // the sparse MLA attention on the tensor units (GLM_SPARSE_NAX=0: the row kernel)
+    tape: ?*tape.Tape, // a profile's routes and key lists, played back in place of computing them
     rows: u32, // a chunk's rows at most (the buffers' height)
     kda_rows: u32, // the rows a KDA block's planes hold (half a chunk)
 
@@ -106,6 +109,7 @@ fn buffers(p: *Prompt, arena: *st.Arena, c: *const cfg.Config, decode: *const st
         }
     }.to;
     p.rows = rows;
+    p.tape = null;
     p.kda_rows = @max(rows / 2, 1);
     p.sparse_nax = sparseNax();
     p.streams = decode.*;
@@ -131,7 +135,7 @@ fn buffers(p: *Prompt, arena: *st.Arena, c: *const cfg.Config, decode: *const st
     p.order = try big.of(arena, n * 4);
     p.sorted = try big.of(arena, n * 4);
     p.sums = try big.of(arena, @max(R * 16384, n * D) / 64 * 4); // the widest dense K (MLA's out-projection), or a gather's
-    // the rest share three regions by layer; proj: KDA's projection, MLA's queries and key lists then values, the experts' planes, the dense gate and up
+    // the rest share 3 regions by layer; proj: KDA's, MLA queries + key lists then values, expert planes, dense gate/up
     const pitch = std.mem.alignForward(usize, c.kdaProj(), 64); // the matmul's padded pitch
     const qp = up(R * c.qrProj() * 2);
     const act = up(n * c.moe_inter * 2);
@@ -153,7 +157,7 @@ fn buffers(p: *Prompt, arena: *st.Arena, c: *const cfg.Config, decode: *const st
     p.xp = p.y;
     p.qr = p.y.at(xp);
     p.iw = p.y.at(xp + qr);
-    // yf: embeddings, KDA planes, MLA latent queries and attention, expert outputs, dense activations, the final rows (read before the MTP head writes here)
+    // yf: embeds, KDA planes, latent queries/attention, expert outputs, dense acts, final rows (read before MTP writes)
     const plane = @as(usize, p.kda_rows) * c.kdaWidth() * 2;
     const lat = R * c.mla_heads * c.kv_lora * 2;
     const part = up(R * c.dense_inter * 2);
@@ -191,7 +195,13 @@ fn run(e: mtl.ComputeEncoder, grid: [3]usize, group: [3]usize) void {
 fn qmm(p: *const Prompt, e: mtl.ComputeEncoder, x: Ref, q: wts.Affine, y: Ref, M: u32) void {
     if (!wide.native(q)) return qmmAt(p, e, x, q.k, q, y, M);
     affine_mm.rowSums(e, p.mm.mm_bf16, 64, x, p.sums, M, q.k);
-    affine_mm.dense(e, p.mm.mm_bf16, x, p.sums, q, y, M);
+    denseOf(p, e, x, q, y, M, .{ .x_row = @intCast(q.k), .y_row = @intCast(std.mem.alignForward(u32, q.n, 64)) });
+}
+
+/// affine_mm's dense product at one batch: deep ones in column groups (mm_groups.zig, the same bits).
+fn denseOf(p: *const Prompt, e: mtl.ComputeEncoder, x: Ref, q: wts.Affine, y: Ref, M: u32, s: affine_mm.Strides) void {
+    if (q.k >= mm_groups.dense_from) return mm_groups.dense(e, p.mm.mm_groups, x, p.sums, q, y, M, s);
+    affine_mm.denseBatch(e, p.mm.mm_bf16, x, p.sums, q, y, M, 1, s);
 }
 
 /// `qmm` over x's rows `ld` elements apart (a slice of a wider row).
@@ -204,9 +214,8 @@ fn qmmAt(p: *const Prompt, e: mtl.ComputeEncoder, x: Ref, ld: u32, q: wts.Affine
         .{ .in = x, .ldx = ld, .out = y, .ldo = pitch, .rows = M },
         p.sums,
     );
-    const mm = p.mm.mm_bf16;
-    affine_mm.rowSumsAt(e, mm, 64, x, p.sums, M, q.k, ld);
-    affine_mm.denseBatch(e, mm, x, p.sums, q, y, M, 1, .{ .x_row = @intCast(ld), .y_row = @intCast(pitch) });
+    affine_mm.rowSumsAt(e, p.mm.mm_bf16, 64, x, p.sums, M, q.k, ld);
+    denseOf(p, e, x, q, y, M, .{ .x_row = @intCast(ld), .y_row = @intCast(pitch) });
 }
 
 /// `qmm` with fp32 out (TP2: one Mac's partial of a row-split projection).
@@ -215,10 +224,12 @@ fn qmmF32(p: *const Prompt, e: mtl.ComputeEncoder, x: Ref, q: wts.Affine, y: Ref
     affine_mm.dense(e, p.mm.mm_f32, x, p.sums, q, y, M);
 }
 
-/// The routed experts' gate, up and SwiGLU on the M rows of `x_in` its pairs read (in expert order) into `act` ([n, gate.n]).
-fn gateUp(p: *const Prompt, mm: affine_mm.Pipes, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *const wts.Moe, x_in: Ref, M: u32, n: u32) void {
+/// Routed experts' gate, up and SwiGLU into `act` ([n, gate.n]); `groups`: 4/64 in column groups (the same bits).
+fn gateUp(p: *const Prompt, mm: affine_mm.Pipes, groups: bool, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *const wts.Moe, x_in: Ref, M: u32, n: u32) void {
     affine_mm.rowSums(e, mm, 64, x_in, p.sums, M, w.gate.k);
-    affine_mm.gatherGlu(e, mm, x_in, p.sums, w.gate, w.up, p.offsets, p.order, p.act, n, x.c.experts, x.c.topk, x.c.swiglu_limit);
+    if (groups) {
+        mm_groups.gatherGlu(e, p.mm.mm_groups, x_in, p.sums, w.gate, w.up, p.offsets, p.order, p.act, n, x.c.experts, x.c.topk, x.c.swiglu_limit);
+    } else affine_mm.gatherGlu(e, mm, x_in, p.sums, w.gate, w.up, p.offsets, p.order, p.act, n, x.c.experts, x.c.topk, x.c.swiglu_limit);
     affine_mm.rowSums(e, mm, 64, p.act, p.sums, n, w.down.k);
 }
 
@@ -238,12 +249,14 @@ fn add(x: *const fwd.Ctx, e: mtl.ComputeEncoder, a: Ref, b: Ref, out: Ref, n: u3
 
 /// The shared expert on M rows into `ys`.
 fn shared(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *const wts.Moe, x_in: Ref, M: u32) void {
-    qmm(p, e, x_in, w.sh_gate_up, p.sgu, M);
-    swiglu(x, e, p.sgu, p.sact, M, x.c.moe_inter);
-    qmm(p, e, p.sact, w.sh_down, p.ys, M);
+    if (fwd.on(x, "s_gateup")) {
+        qmm(p, e, x_in, w.sh_gate_up, p.sgu, M);
+        swiglu(x, e, p.sgu, p.sact, M, x.c.moe_inter);
+    }
+    if (fwd.on(x, "s_down")) qmm(p, e, p.sact, w.sh_down, p.ys, M);
 }
 
-/// The MoE block on M rows: shared expert, route, experts gathered by expert; by rows, this Mac's halves summed in slot order and swapped.
+/// Shared expert, route, experts gathered by expert; by rows, this Mac's halves summed in slot order and swapped.
 fn moe(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *const wts.Moe, x_in: Ref, M: u32, ep: ?*ep_mod.Ep) void {
     const c = x.c;
     const k = x.k;
@@ -256,10 +269,13 @@ fn moe(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *const wts
     if (ep) |t| {
         if (s & Class.exchange == 0) t.begin();
     } else if (s & Class.shared == 0) shared(p, x, e, w, x_in, M);
-    if (s & Class.route == 0) route(p, x, e, w, x_in, M);
+    if (!tape.playRoute(p.tape, x, e, p.wts, p.order, p.offsets, M)) {
+        if (s & Class.route == 0) route(p, x, e, w, x_in, M);
+        tape.keepRoute(p.tape, x, e, p.wts, p.order, p.offsets, M);
+    }
     if (ep) |t| {
         if (s & Class.routed == 0) { // down's fp32 partials put back in (row, slot) order for the decode's combine
-            gateUp(p, p.mm.mm_bf16, x, e, w, x_in, M, n);
+            gateUp(p, p.mm.mm_bf16, false, x, e, w, x_in, M, n);
             affine_mm.gatherTo(e, p.mm.mm_f32, p.act, p.sums, w.down, p.offsets, p.yf, p.order, n, E);
         }
         if (s & Class.exchange == 0) t.sendRows(e, p.yf, p.wts, M);
@@ -297,10 +313,13 @@ fn moe(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *const wts
         g.encode(e, p.mm.wide.?.gather[1], w.down, null, .{ .x = p.act, .offsets = p.offsets, .order = p.order, .out = p.yp }, n, E, 1, D, 0);
     } else if (s & Class.routed == 0) { // down's rows put back in (row, slot) order for the combine
         const mm = if (path == .mm4) p.mm.mm_bf16 else p.mm.wide.?.mm2;
-        gateUp(p, mm, x, e, w, x_in, M, n);
-        affine_mm.gatherTo(e, mm, p.act, p.sums, w.down, p.offsets, p.yp, p.order, n, E);
+        const groups = path == .mm4 and mm_groups.fits(w.gate, w.down);
+        if (fwd.on(x, "e_gateup")) gateUp(p, mm, groups, x, e, w, x_in, M, n);
+        if (fwd.on(x, "e_down") and groups) {
+            mm_groups.gatherTo(e, p.mm.mm_groups, p.act, p.sums, w.down, p.offsets, p.yp, p.order, n, E);
+        } else if (fwd.on(x, "e_down")) affine_mm.gatherTo(e, mm, p.act, p.sums, w.down, p.offsets, p.yp, p.order, n, E);
     }
-    if (s & Class.combine != 0) return;
+    if (s & Class.combine != 0 or !fwd.on(x, "combine")) return;
     e.setPipeline(k.moe_combine);
     bind(e, 0, .{ p.ys, p.yp, p.wts });
     fwd.shape(e, 3, .{ M, c.topk });
@@ -314,7 +333,8 @@ fn route(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *const w
     const k = x.k;
     const E = c.experts;
     const n = M * c.topk;
-    moe_route.logits(e, k.route_logits, kernels.route_shape, x_in, w.router, p.logits_r, M); // the decode's bits, any rows
+    if (fwd.on(x, "r_router")) moe_route.logits(e, k.route_logits, kernels.route_shape, x_in, w.router, p.logits_r, M); // the decode's bits, any rows
+    if (!fwd.on(x, "r_topk")) return;
     e.setPipeline(k.route_rows);
     bind(e, 0, .{ p.logits_r, w.bias });
     e.setValue(c.routed_scale, 2);
@@ -339,7 +359,7 @@ fn route(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *const w
     run(e, .{ blocks * 256, 1, 1 }, .{ 256, 1, 1 });
 }
 
-/// KDA layer `ki` over a chunk (glm_kda_prompt.metal) by blocks of `kda_rows`: f_b and g_b on the tensor units, prep, the recurrence (from the second block on, the state carried in place), the norm.
+/// By blocks of `kda_rows`: f_b and g_b on tensor units, prep, recurrence (state carried in place after block 1), norm.
 fn kdaChunk(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, ki: usize, w: *const wts.Kda, M: u32) void {
     const c = x.c;
     const k = x.k;
@@ -390,7 +410,7 @@ fn kdaChunk(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, ki: usiz
     }
 }
 
-/// Every row's 64 heads' latent outputs to values on the tensor units: each head's value half of kv_b, one dense product of a batch.
+/// Each row's 64 heads' latent outputs to values on tensor units: kv_b's value half per head, a batched dense product.
 fn unabsorb(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *const wts.Mla, M: u32) void {
     const c = x.c;
     const H = c.mla_heads;
@@ -414,7 +434,12 @@ fn unabsorb(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, w: *cons
     affine_mm.denseBatch(e, p.mm.mm_bf16, p.att, p.sums, q, p.vals, M, H, .{ .x_row = @intCast(H * K), .y_row = @intCast(H * c.v_dim), .sums_row = @intCast(H), .x_batch = @intCast(K), .y_batch = @intCast(c.v_dim), .sums_batch = 1, .w_batch = @intCast(per) });
 }
 
-/// `n` rows' key lists from their index scores over every pooled block they read (positions p0..), the scores on the tensor units.
+/// The index scores' tile rows: 128 (a row's queries read once for 64 blocks), 64 where that leaves the GPU half idle.
+pub fn scoreRows(most: u32, n: u32) u32 {
+    return if (((most + 63) / 64) * ((n + 127) / 128) >= 128) 128 else 64;
+}
+
+/// `n` rows' key lists from index scores over every pooled block they read (positions p0..), scores on tensor units.
 fn selectKeys(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, mi: usize, iq: Ref, iw: Ref, indices: Ref, n: u32, p0: u32) void {
     const c = x.c;
     const s_stride = x.s.cap / c.kpool + 1;
@@ -422,14 +447,15 @@ fn selectKeys(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, mi: us
     e.setPipeline(x.k.index_scores_nax);
     bind(e, 0, .{ iq, iw, x.s.mla[mi].pool, p.sscore });
     e.setValue([5]u32{ p0, c.qrProj(), c.i_heads, s_stride, n }, 4);
-    e.dispatchGroups(size((most + 63) / 64, (n + 63) / 64, 1), size(128, 1, 1));
+    const rows = scoreRows(most, n);
+    e.dispatchGroups(size((most + 63) / 64, (n + rows - 1) / rows, 1), size(2 * rows, 1, 1));
     e.setPipeline(x.k.index_select);
     bind(e, 0, .{ p.sscore, indices });
     e.setValue([5]u32{ p0, c.i_topk / c.kpool, c.keyWidth(), s_stride, c.keyWidth() }, 2);
     e.dispatchGroups(size(n, 1, 1), size(1024, 1, 1));
 }
 
-/// MLA layer `mi` on M rows at pos..: tensor-unit projections, the decode cache writes, each row's key list in the sparse kernel.
+/// MLA layer `mi` at pos..: tensor-unit projections, decode cache writes, each row's key list in the sparse kernel.
 fn mla(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, mi: usize, w: *const wts.Mla, x_in: Ref, M: u32, pos: u32) void {
     const c = x.c;
     const XP: u32 = @intCast(std.mem.alignForward(usize, c.xProj(), 64));
@@ -439,7 +465,7 @@ fn mla(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, mi: usize, w:
         fwd.rms(x, e, p.xp, w.q_norm, p.qr, M, c.q_lora, XP, c.q_lora, c.eps);
         qmm(p, e, p.qr, w.qr_proj, p.qp, M);
     }
-    if (fwd.on(x, "mla_cache")) fwd.mlaCache(x, e, mi, w, x_in, p.xp, XP, p.iw, M, pos);
+    if (fwd.on(x, "mla_cache")) fwd.mlaCache(x, e, mi, w, x_in, p.xp, XP, p.iw, null, M, pos);
     if (fwd.on(x, "mla_absorb") and w.absorbed != null) {
         wide.headsBatch(
             &p.mm.wide.?,
@@ -458,7 +484,8 @@ fn mla(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, mi: usize, w:
     }
     var dense: u32 = 0;
     while (dense < M and pos + dense + 1 <= c.i_topk) dense += 1;
-    if (fwd.on(x, "mla_select")) {
+    const taped = tape.playKeys(p.tape, x, e, p.indices, M);
+    if (!taped and fwd.on(x, "mla_select")) {
         if (dense > 0) {
             e.setPipeline(x.k.dense_indices);
             bind(e, 0, .{p.indices});
@@ -471,6 +498,7 @@ fn mla(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, mi: usize, w:
             selectKeys(p, x, e, mi, p.qp.at((@as(usize, r0) * c.qrProj() + c.mla_heads * c.nope) * 2), p.iw.at(@as(usize, r0) * c.i_heads * 2), p.indices.at(@as(usize, r0) * width * 4), sb, pos + r0);
         }
     }
+    if (!taped) tape.keepKeys(p.tape, x, e, p.indices, M);
     if (fwd.on(x, "mla_attn")) {
         if (p.sparse_nax) {
             e.setPipeline(if (c.tp > 1) x.k.sparse_nax_tp else x.k.sparse_nax);
@@ -495,6 +523,7 @@ pub fn backbone(p: *const Prompt, x: *fwd.Ctx, e: mtl.ComputeEncoder, ids: Ref, 
     std.debug.assert(x.sc == ss and M <= p.rows);
     const s = x.skip; // classes a profile leaves out
     const Class = fwd.Class;
+    if (p.tape) |t| t.rewind();
     if (s & Class.ends == 0) fwd.embed(x, e, ids, M, pos);
     const plane = @as(usize, M) * c.hidden * 2; // a trace's capture points: the decode backbone's
     fwd.snap(x, e, ss.h, plane);
@@ -505,6 +534,7 @@ pub fn backbone(p: *const Prompt, x: *fwd.Ctx, e: mtl.ComputeEncoder, ids: Ref, 
         const L = &x.w.layers[li];
         const hcs = L.hc.?;
         if (s & Class.hc == 0) fwd.boundary(x, e, M, pending, hcs[0], L.in_norm);
+        if (x.taps) |t| if (li > 0) t.after(x, e, li - 1, M, pos);
         fwd.snap(x, e, ss.normed, plane);
         switch (L.attn) {
             .kda => |*a| {
@@ -550,7 +580,7 @@ pub fn backbone(p: *const Prompt, x: *fwd.Ctx, e: mtl.ComputeEncoder, ids: Ref, 
     fwd.snap(x, e, ss.hidden, plane);
 }
 
-/// The MTP head over M prompt rows (`h`, next tokens) at head positions pos..: their cache entries only (no one reads the block's output).
+/// MTP head over M prompt rows (`h`, next tokens) at head positions pos..: cache entries only (the output is unread).
 pub fn mtp(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, h: Ref, next: Ref, M: u32, pos: u32) void {
     const c = x.c;
     const D = c.hidden;
@@ -560,12 +590,11 @@ pub fn mtp(p: *const Prompt, x: *const fwd.Ctx, e: mtl.ComputeEncoder, h: Ref, n
     fwd.inject(x, e, p.m_emb, M, pos + 1); // the head reads each row's next token: an image's rows one place on
     fwd.rms(x, e, p.m_emb, m.enorm, p.m_eh, M, D, D, 2 * D, c.eps);
     fwd.rms(x, e, h, m.hnorm, p.m_eh.at(@as(usize, D) * 2), M, D, D, 2 * D, c.eps);
-    // eh_proj defaults to the tile kernel (glm_rows_bf16_nax, fp64 receipt eh_check); GLM_EHPROJ_NAX=0 selects scalar.
-    const eh_nax = if (std.c.getenv("GLM_EHPROJ_NAX")) |v| v[0] != '0' else true;
+    // eh_proj on the tile kernel (glm_rows_bf16_nax, receipt eh_check); scalar where the load built none (wide.zig)
     if (m.eh_bf16) |eh| {
-        if (eh_nax) wide.bf16Nax(&p.mm.wide.?, e, eh, D, 2 * D, .{ .in = p.m_eh, .ldx = 2 * D, .out = p.m_x, .ldo = D, .rows = M }) else wide.bf16(&p.mm.wide.?, e, eh, D, 2 * D, .{ .in = p.m_eh, .ldx = 2 * D, .out = p.m_x, .ldo = D, .rows = M });
+        wide.bf16Nax(&p.mm.wide.?, e, eh, D, 2 * D, .{ .in = p.m_eh, .ldx = 2 * D, .out = p.m_x, .ldo = D, .rows = M });
     } else qmm(p, e, p.m_eh, m.eh_proj, p.m_x, M);
     fwd.rms(x, e, p.m_x, L.in_norm, p.m_xn, M, D, D, D, c.eps);
     qmm(p, e, p.m_xn, L.attn.mla.x_proj, p.xp, M);
-    fwd.mlaCache(x, e, c.countKind(.mla), &L.attn.mla, p.m_xn, p.xp, @intCast(std.mem.alignForward(usize, c.xProj(), 64)), p.iw, M, pos);
+    fwd.mlaCache(x, e, c.countKind(.mla), &L.attn.mla, p.m_xn, p.xp, @intCast(std.mem.alignForward(usize, c.xProj(), 64)), p.iw, null, M, pos);
 }

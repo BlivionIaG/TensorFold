@@ -1,10 +1,10 @@
-# Gemma 4 31B, native Metal
+# Gemma 4 31B, native Metal and CUDA
 
 This recipe covers text generation with
 [`mlx-community/gemma-4-31B-it-4bit`](https://huggingface.co/mlx-community/gemma-4-31B-it-4bit/tree/696d436c404745a59f30e4939a658162b0a9e57f),
 revision `696d436c404745a59f30e4939a658162b0a9e57f`, the dense 31B in MLX affine 4-bit, groups of 64.
 Build from `main` with Zig **0.17.0** and Xcode's Metal toolchain, as described in
-[the native preview](../../ZIG-PREVIEW.md#build).
+[the native preview](../zig-preview.md#build).
 
 ```bash
 hf download mlx-community/gemma-4-31B-it-4bit --revision 696d436c404745a59f30e4939a658162b0a9e57f \
@@ -81,8 +81,8 @@ Structured output (`response_format`, `guided_json`, `guided_regex`, `guided_cho
 through `libtfgrammar`, as [structured output](../api.md#structured-output) describes, with drafts on: before each
 verify the `Drafted` wrapper hands the drafter's held drafts to the host, where the grammar cuts the ones it rejects.
 The recipe harness's structured check obeys 18 of 18 (each field greedy, sampled and with thinking), and a bad regex
-gets HTTP 400. Tools are called with `tool_choice: "auto"`; `"required"` and a named function get HTTP 400, as the
-grammar for them reads `<tool_call>` markup and Gemma's template writes `<|tool_call>call:NAME{...}<tool_call|>`. The
+gets HTTP 400. Tools are called with `tool_choice: "auto"`; `"required"` and a named function are enforced through
+the token grammar, which writes Gemma's `<|tool_call>call:NAME{...}<tool_call|>` markup. The
 weights, both scratches and the drafter's and tower's buffers stay in one residency set, which the idle keepalive's
 tick keeps wired: a 1-token request after 2 to 120 idle seconds took 0.10-0.12 s to its first token, where a busy
 server took 0.07 s (ten idle gaps, none slower).
@@ -91,10 +91,25 @@ server took 0.07 s (ten idle gaps, none slower).
 | --- | --- |
 | The pinned 31B 4-bit, M5 Ultra, macOS 27 | Greedy decode, prompts, shared rounds, copy and DFlash drafts and the server, below. |
 | `z-lab/gemma-4-31B-it-DFlash` `eabd6483` | The one drafter admitted: DFlash v1, block 16, six taps, head dim 128. |
-| M1 to M4 | Refused: the lane projection needs M5 tensor units. |
+| M1 to M4 | Served through the row path (the fused lane projection needs M5 tensor units); the drafters refuse. |
 | Images (`--vision`) | PNG and JPEG data URLs, and public HTTPS URLs with `--vision-urls`, below. |
 | Structured output | `response_format` and the `guided_*` fields, drafts on and off, below. |
 | Other widths | MLX affine 2-6 or 8 bits in groups of 64, uniform or per module: [other widths](#other-widths). |
+
+## CUDA
+
+On Linux with an NVIDIA GPU, the release archive serves the same checkpoint and drafter without a build. Pull both
+into the Hugging Face cache and name the drafter by its repository:
+
+```bash
+tensorfold pull mlx-community/gemma-4-31B-it-4bit@696d436c404745a59f30e4939a658162b0a9e57f
+tensorfold pull z-lab/gemma-4-31B-it-DFlash@eabd648301ce28583cc14757912e5e0f84e152e1
+tensorfold serve mlx-community/gemma-4-31B-it-4bit --drafter z-lab/gemma-4-31B-it-DFlash
+```
+
+On one GB10 with 1.2.10, the startup line reports 47.5 GiB for the model at the default 32,768-token window, well above
+the 17.2 GiB download; leave room for it. The GB10 prefill and drafted-decode rates are in the
+[1.1.4 changes](../../CHANGELOG.md#114).
 
 ## Images
 
@@ -214,3 +229,6 @@ variant is in `zig/kernels/metal/gemma4/lane_projection.metal`, with host encodi
 Ordinary Gemma lane packing and projections still use the shared lane module. The measurements above are the original
 PR's receipts. They do not qualify the isolated landing tree. Re-run numerical, resource, teacher-forced, draft/plain,
 resumed/fresh, concurrent/solo, vision and performance gates on that tree.
+
+The host attention adjoint and native learner implementation plan are in
+[Gemma Living Weights](gemma4-living-weights.md).

@@ -1,0 +1,82 @@
+//! An EXL3 checkpoint's bf16 embedding rows in mapped host memory, only when the card has no room for them.
+const std = @import("std");
+const cuda = @import("cuda");
+
+/// What a load has to leave room for: the server's room before it, one stream's window, and the drafter's directory.
+pub const Fit = struct { room: u64, context: usize, drafter: ?[]const u8, prompt_int8: bool = false };
+
+/// The load's other bytes (kernels, kit, startup costs): ~112 MiB on a 3090 Ti; less refuses as main does, more maps.
+const others: u64 = 96 << 20;
+
+/// Whether the rows go to host memory: a discrete card whose room holds the device bytes and one stream only so.
+pub fn mapped(unified: bool, room: u64, device: u64, stream: u64, beside: u64) bool {
+    return !unified and room < device +| stream +| beside;
+}
+
+/// The engine's arena of weights and scratch rows, with any host memory for the embedding rows made first.
+pub fn arena(e: anytype, io: std.Io, ctx: *const cuda.Context, ck: anytype, fit: ?Fit) !cuda.DeviceBuffer {
+    e.host_embed = null;
+    errdefer if (e.host_embed) |*h| h.free();
+    const bytes = try measure(e, io, ctx, ck, fit);
+    return cuda.DeviceBuffer.alloc(e.d, bytes);
+}
+
+/// The arena and the host memory `arena` made.
+pub fn release(e: anytype) void {
+    e.arena.free();
+    if (e.host_embed) |*h| h.free();
+}
+
+/// The weights' bytes on the card (EXL3: a dry run of its loader, as trellis widths come from the tensors).
+fn measure(e: anytype, io: std.Io, ctx: *const cuda.Context, ck: anytype, fit: ?Fit) !usize {
+    if (!e.g.exl3) return @import("cuda_weights.zig").total(e.g);
+    const x3w = @import("cuda_exl3_weights.zig");
+    const bytes = try x3w.measure(e, ck);
+    const f = fit orelse return bytes;
+    const unified = (try ctx.attribute(.integrated)) != 0;
+    const stream = e.streamBytes(f.context);
+    const beside = if (f.drafter) |dir| try drafter(e, io, dir) else 0;
+    // EXL3's host-embedding decision must count the scratch that startup will commit before admission.
+    const scratch = @import("cuda_scratch.zig");
+    const prompt_rows = e.scratch_rows; // the context's rows, TF_QWEN35_CHUNK_SOLO's at most (cuda_solo.scratchRows)
+    const main_rows = @max(prompt_rows, e.verify_rows);
+    var measured = e.*;
+    const main_pending = try scratch.scratch(&measured, main_rows, .measure);
+    const int8_pending = if (f.prompt_int8) blk: {
+        const k = @max(e.g.intermediate, e.g.valueWidth(), e.g.attnWidth(), e.g.hidden);
+        break :blk cuda.w4a8.Kernels.scratch(prompt_rows, k);
+    } else 0;
+    const pending = main_pending + int8_pending;
+    if (!mapped(unified, f.room, bytes + pending + others, stream, beside)) return bytes;
+    e.host_embed = try cuda.HostBuffer.allocMapped(e.d, e.g.vocab * e.g.hidden * 2);
+    std.log.info("qwen3_5: embedding rows read from host memory: no room beside a {d}-token stream", .{f.context});
+    return x3w.measure(e, ck);
+}
+
+/// A DFlash2 drafter's device bytes: its weights (bf16 linears made 4-bit, 5/16) and one stream's ring, taps and frame.
+fn drafter(e: anytype, io: std.Io, dir: []const u8) !u64 {
+    const draft = @import("cuda_draft.zig");
+    const c = draft.Config.read(e.gpa, io, dir, e.g) catch return 0; // not a DFlash2 drafter: its open says why
+    var d = try std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true });
+    defer d.close(io);
+    var total: u64 = 0;
+    var it = d.iterate();
+    while (try it.next(io)) |f| {
+        if (std.mem.endsWith(u8, f.name, ".safetensors")) total += (try d.statFile(io, f.name, .{})).size;
+    }
+    return total / 16 * 5 + try draft.Draft.streamBytesFor(c, e.g.hidden, e.tapRows());
+}
+
+/// The rows copied to the pinned host memory the device reads in place.
+pub fn rows(host: cuda.HostBuffer, bytes: []const u8) !u64 {
+    if (bytes.len != host.bytes.len) return error.EmbeddingShape;
+    @memcpy(host.bytes, bytes);
+    return host.device();
+}
+
+test "the rows stay on the card unless a discrete card's room is short of the device bytes and one stream" {
+    try std.testing.expect(!mapped(false, 20, 10, 5, 5));
+    try std.testing.expect(mapped(false, 19, 10, 5, 5));
+    try std.testing.expect(!mapped(true, 19, 10, 5, 5)); // unified memory: host memory is the same memory
+    try std.testing.expect(mapped(false, 0, std.math.maxInt(u64), 1, 1));
+}

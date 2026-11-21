@@ -5,7 +5,7 @@ const abi = cuda.abi;
 const pk = @import("cuda_pocket.zig");
 const dims = 64;
 const t = std.testing;
-const size = 4096 * 4;
+const size = @import("cuda_round.zig").max_rows * 4; // the pocket's row scales: a forward's rows at most
 var memory: [16][size]u8 align(16) = undefined;
 var live: [16]bool = @splat(false);
 var copies: usize = 0;
@@ -55,8 +55,18 @@ fn read(dst: ?*anyopaque, src: u64, n: usize) callconv(.c) abi.Result {
 fn sync(_: abi.Stream) callconv(.c) abi.Result {
     return if (fail_sync) abi.error_not_ready else 0;
 }
+fn contextDevice(out: *abi.Device) callconv(.c) abi.Result {
+    out.* = 0;
+    return 0;
+}
+fn deviceAttribute(out: *c_int, _: abi.DeviceAttribute, _: abi.Device) callconv(.c) abi.Result {
+    out.* = 0;
+    return 0;
+}
 fn driver() cuda.Driver {
     var d: cuda.Driver = .{ .lib = undefined, .api = undefined };
+    d.api.cuCtxGetDevice = contextDevice;
+    d.api.cuDeviceGetAttribute = deviceAttribute;
     d.api.cuMemAlloc_v2 = alloc;
     d.api.cuMemFree_v2 = free;
     d.api.cuMemHostAlloc = hostAlloc;

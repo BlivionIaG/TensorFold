@@ -9,7 +9,8 @@ const spv_basic = @import("xpu").kernels.basic;
 const spv_mamba = @import("xpu").kernels.mamba;
 const spv_moe = @import("xpu").kernels.moe;
 const spv_attn = @import("xpu").kernels.attn;
-const spv_attn_dec = @import("xpu").kernels.nem_attn_dec;
+const kernels_mod = @import("xpu").kernels;
+const spv_attn_dec = kernels_mod.nem_attn_dec;
 const spv_glue = @import("xpu").kernels.glue;
 
 const Buf = rt.Buffer;
@@ -144,6 +145,7 @@ pub const Model = struct {
         var em = try r.module(spv_moe);
         var am = try r.module(spv_attn);
         var gm = try r.module(spv_glue);
+        const dec_shape = cfg.head_dim == 128 and cfg.num_attention_heads == 32 and cfg.num_key_value_heads == 2; // nem_attn_dec
         const k: Kernels = .{
             .embed = try bm.kernel("embed4", .{ 64, 1, 1 }),
             .embed_tok = try bm.kernel("embed4_tok", .{ 64, 1, 1 }),
@@ -167,11 +169,12 @@ pub const Model = struct {
             .a_qkv = try am.kernel("qkv4_bf", .{ 64, 1, 1 }),
             .a_part = try am.kernel("attn_partial", .{ 256, 1, 1 }),
             .a_merge = try am.kernel("attn_merge", .{ 16, 1, 1 }),
-            .a_dec = if (cfg.head_dim == 128 and cfg.num_attention_heads == 32 and cfg.num_key_value_heads == 2) blk: {
+            // without DPAS attn_partial beats nem_attn_dec's fallback (12.0 against 57.3 ms at 131k keys, Iris Xe)
+            .a_dec = if (dec_shape and kernels_mod.dpas) blk: {
                 var dm = try r.moduleWith(spv_attn_dec, "-cl-intel-256-GRF-per-thread");
                 break :blk try dm.kernel("nem_attn_dec_partial", .{ 128, 1, 1 });
             } else null,
-            .a_dmerge = if (cfg.head_dim == 128 and cfg.num_attention_heads == 32 and cfg.num_key_value_heads == 2) blk: {
+            .a_dmerge = if (dec_shape and kernels_mod.dpas) blk: {
                 var dm = try r.moduleWith(spv_attn_dec, "-cl-intel-256-GRF-per-thread");
                 break :blk try dm.kernel("nem_attn_dec_merge", .{ 256, 1, 1 });
             } else null,
@@ -218,6 +221,8 @@ pub const Model = struct {
             .cap = cap,
             .max_chunks = max_chunks,
         };
+        const v: usize = cfg.vocab_size; // embed4 reads row id unchecked: [v, h / 8] words, [v, h / 64] bf16 scales and biases
+        if (m.emb.w.len != v * (h / 8) * 4 or m.emb.s.len != v * (h / 64) * 2 or m.emb.b.len != m.emb.s.len) return error.UnexpectedShape;
         var buf: [160]u8 = undefined;
         for (m.layers, 0..) |*ly, i| {
             ly.norm = try l.load(try std.fmt.bufPrint(&buf, "backbone.layers.{d}.norm.weight", .{i}));
@@ -381,6 +386,7 @@ pub const Model = struct {
     pub fn forward(m: *Model, token: u32, logits: bool) !void {
         if (m.pos >= m.cap) return error.ContextFull;
         const c = m.cfg;
+        if (token >= c.vocab_size) return error.TokenOutsideVocabulary; // embed4_tok reads the table at id unchecked
         try run(&m.k.embed_tok, .{ 1, 1, 1 }, .{ m.emb.w, m.emb.s, m.emb.b, token, m.s.x, c.hidden_size }); // the id is a launch argument: no host slot to overwrite
         const Pend = enum { none, add, comb }; // the last layer's residual add (and for a MoE block its combine) is still to do: fused into the next norm
         var pending: Pend = .none;

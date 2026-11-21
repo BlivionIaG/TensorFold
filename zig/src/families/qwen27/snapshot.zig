@@ -139,14 +139,10 @@ fn parts(r: *const Runner, slot: u32, ring: ?Ring, at: u32, list: *std.ArrayList
         };
         try list.append(a, .{ .buffer = span.buffer, .offset = span.offset, .len = span.bytes });
     };
-    const row_bytes = r.model.config.head_dim * @sizeOf(u16);
-    for (0..r.caches.len / r.slots) |layer| {
-        const cache = r.caches[layer * r.slots + slot];
-        for ([_]@import("projection.zig").Ref{ cache.keys, cache.values }, [_]u32{ cache.key_stride, cache.value_stride }) |ref, stride| {
-            const head_stride = @as(usize, if (stride == 0) cache.capacity * r.model.config.head_dim else stride) * 2;
-            for (0..r.model.config.kv_heads) |head| try list.append(a, .{ .buffer = ref.buffer, .offset = ref.offset + head * head_stride, .len = @as(usize, at) * row_bytes });
-        }
-    }
+    var spans: std.ArrayList(@import("decode_round.zig").KvSpan) = .empty;
+    defer spans.deinit(a);
+    try r.kvSpans(a, slot, at, &spans);
+    for (spans.items) |x| try list.append(a, .{ .buffer = x.buffer, .offset = x.offset, .len = x.len });
     if (ring) |g| try list.append(a, .{ .buffer = g.buf, .offset = 0, .len = g.bytes(at) });
 }
 
@@ -243,6 +239,7 @@ pub fn restoreSlot(a: std.mem.Allocator, r: *Runner, slot: u32, ring: ?Ring, st:
     if (st.bytes != slotBytes(r, ring, st.at) or st.at > r.capacity) return error.SnapshotLayout;
     try st.landed();
     try r.reset(slot);
+    try r.cover(slot, st.at); // a paged slot's pages for the state's rows before the copy writes them
     try copy(a, r, slot, ring, st, false);
     r.offsets[slot] = st.at;
     if (ring) |g| g.end.* = st.draft_end;
@@ -255,6 +252,7 @@ pub fn moveSlot(a: std.mem.Allocator, r: *Runner, from: u32, from_ring: ?Ring, t
     if (from == to or r.failed or r.active != null or from >= r.slots or to >= r.slots or (from_ring == null) != (to_ring == null)) return error.BadSlotMove;
     if (from_ring) |g| if (g.end.* != at) return error.NotAtMark;
     try r.reset(to);
+    try r.cover(to, at);
     var src: std.ArrayList(Part) = .empty;
     defer src.deinit(a);
     var dst: std.ArrayList(Part) = .empty;
@@ -279,6 +277,57 @@ pub fn moveSlot(a: std.mem.Allocator, r: *Runner, from: u32, from_ring: ?Ring, t
     if (cb.failure() != null) return error.SnapshotGpuFailure;
     r.offsets[to] = at;
     if (to_ring) |g| g.end.* = at;
+}
+
+/// Bytes of a slot's rewind point: its DeltaNet states and a whole taps ring, not its K/V rows (they stay in the slot).
+pub fn rewindBytes(r: *const Runner, ring: ?Ring) usize {
+    return slotBytes(r, null, 0) + if (ring) |g| g.bytes(g.window) else 0;
+}
+
+/// Slot `slot`'s rewind point at `at`, once its prompt pass stands there with its GPU work done.
+pub fn saveRewind(a: std.mem.Allocator, r: *const Runner, slot: u32, ring: ?Ring, at: u32, buf: mtl.Buffer) !void {
+    if (at == 0 or r.failed or r.active != null or r.offsets[slot] != at) return error.NotAtMark;
+    if (ring) |g| if (g.end.* != at) return error.NotAtMark;
+    try rewindCopy(a, r, slot, ring, at, buf, true);
+}
+
+/// Slot `slot` (reset first) goes back to its rewind point at `at`: no later round wrote its K/V rows before `at`.
+pub fn rewindSlot(a: std.mem.Allocator, r: *Runner, slot: u32, ring: ?Ring, at: u32, buf: mtl.Buffer) !void {
+    try r.clearState(slot); // its pages stay: rows before `at` are the rewind's
+    try rewindCopy(a, r, slot, ring, at, buf, false);
+    r.offsets[slot] = at;
+    if (ring) |g| g.end.* = at;
+}
+
+/// A slot's DeltaNet states and taps ring at `at`, into `buf` (`to_buf`) or back out of it, in one waited blit pass.
+fn rewindCopy(a: std.mem.Allocator, r: *const Runner, slot: u32, ring: ?Ring, at: u32, buf: mtl.Buffer, to_buf: bool) !void {
+    if (slot >= r.ready) return error.SlotNotReady;
+    var list: std.ArrayList(Part) = .empty;
+    defer list.deinit(a);
+    for (0..r.gdn.budget.layers) |layer| for ([_]bool{ true, false }) |recurrent| {
+        const live = try r.gdn.committedSpan(layer, slot, recurrent);
+        try list.append(a, .{ .buffer = live.buffer, .offset = live.offset, .len = live.bytes });
+    };
+    if (ring) |g| try list.append(a, .{ .buffer = g.buf, .offset = 0, .len = g.bytes(at) });
+    var total: usize = 0;
+    for (list.items) |p| {
+        if (p.offset % 4 != 0 or p.len % 4 != 0) return error.SnapshotAlignment; // blits copy 4-byte words
+        total += p.len;
+    }
+    if (total > buf.length()) return error.SnapshotSize;
+    const pool = mtl.objc.Pool.push();
+    defer pool.pop();
+    const cb = r.model.queue.commandBuffer();
+    const e = cb.blit();
+    var off: usize = 0;
+    for (list.items) |p| {
+        if (p.len > 0) if (to_buf) e.copy(p.buffer, p.offset, buf, off, p.len) else e.copy(buf, off, p.buffer, p.offset, p.len);
+        off += p.len;
+    }
+    e.end();
+    cb.commit();
+    cb.wait();
+    if (cb.failure() != null) return error.SnapshotGpuFailure;
 }
 
 pub fn drop(a: std.mem.Allocator, st: *State) void {

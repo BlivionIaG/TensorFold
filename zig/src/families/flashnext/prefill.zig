@@ -4,6 +4,22 @@ const Stream = @import("lanes").Stream;
 const segments = @import("../../core/stagger.zig");
 
 pub const decode_rows: u32 = 32;
+/// A step's rows beside decoders once its prompt has taken `waited_steps` of them: small passes cost far more a row.
+pub const waited_rows: u32 = 512;
+pub const waited_steps: u32 = 8;
+/// A reply's share beside a long prompt when nothing asks, where steps grow: replies finish first, prompts keep pace.
+pub const decode_share: f64 = 0.8;
+
+/// The shared host's share: the flag's; null when the env sets its own; else `decode_share`.
+pub fn shareOf(flag: ?f64, env_set: bool) ?f64 {
+    return flag orelse if (env_set) null else decode_share;
+}
+
+/// Rows a prompt's `beside`th step beside decoders may take.
+pub fn besideRows(beside: u32, grows: bool) u32 {
+    return if (grows and beside > waited_steps) waited_rows else decode_rows;
+}
+
 pub const State = struct {
     stream: *Stream,
     slot: usize,
@@ -11,6 +27,7 @@ pub const State = struct {
     next: usize = 0,
     reuse_next: usize = 0,
     owner: ?*anyopaque = null,
+    beside: u32 = 0, // steps this prompt took beside decoders
 };
 
 // Reserve first: a successful begin transfers ownership without a later map allocation that could fail.
@@ -23,9 +40,13 @@ pub fn start(b: anytype, s: *Stream, slot: ?usize) !void {
     b.filling.putAssumeCapacity(s, begun);
 }
 
-pub fn step(b: anytype, s: *Stream) !bool {
+/// A nonzero `max_rows` caps the call in place of `besideRows`; only a prefill policy sends this family one.
+pub fn step(b: anytype, s: *Stream, max_rows: u32) !bool {
     errdefer b.abortPrompt(s);
-    if (s.isCancelled()) return error.Cancelled;
+    if (s.isCancelled()) {
+        try cancel(b, s);
+        return error.Cancelled;
+    }
     if (!b.filling.contains(s)) try start(b, s, null);
     var p = b.filling.get(s).?;
     const prompt = s.prompt();
@@ -36,7 +57,12 @@ pub fn step(b: anytype, s: *Stream) !bool {
         var end: u32 = @intCast(prompt.len);
         if (p.next < s.chunks.len) end = @min(end, s.chunks[p.next]);
         if (p.reuse_next < s.reuse.marks.len) end = @min(end, s.reuse.marks[p.reuse_next]);
-        if (b.decoding()) end = @min(end, p.at + @min(decode_rows, end - p.at));
+        if (max_rows > 0) {
+            end = @min(end, p.at + @min(max_rows, end - p.at)); // promptRows still bounds it by the prompt step
+        } else if (b.decoding()) {
+            p.beside +|= 1;
+            end = @min(end, p.at + @min(besideRows(p.beside, b.fill_grows), end - p.at));
+        }
         const n = b.promptRows(p.at, end);
         if (n == 0 or n > end - p.at) return error.ChunkOutOfStep;
         try b.settlePrompt(s);
@@ -47,7 +73,7 @@ pub fn step(b: anytype, s: *Stream) !bool {
         const entry = b.filling.getPtr(s) orelse return error.PromptOutOfStep;
         entry.* = p;
         s.fill_at.store(p.at, .monotonic);
-        if (std.mem.indexOfScalar(u32, s.reuse.marks, p.at) != null) try b.markPrompt(s, p.at);
+        if (std.mem.indexOfScalar(u32, s.reuse.marks, p.at) != null) try b.markPrompt(s, p.at, false);
     }
     if (p.at < prompt.len) return false;
     try b.finishPrompt(s);
@@ -55,10 +81,19 @@ pub fn step(b: anytype, s: *Stream) !bool {
     return true;
 }
 
+/// Retain only the completed prompt cursor while its recurrent and head state still belong to this session.
+pub fn cancel(b: anytype, s: *Stream) !void {
+    const p = b.filling.get(s) orelse return;
+    if (p.at <= s.cached or p.at >= s.prompt_len) return;
+    if (std.mem.indexOfScalar(u32, s.chunks, p.at) == null) return; // this planned family resumes only canonical cuts
+    try b.settlePrompt(s);
+    try b.markPrompt(s, p.at, true);
+}
+
 // True means the prompt completed; false hands its unfinished cursor to the shared host after a completed call.
 pub fn lone(b: anytype, s: *Stream, hooks: anytype) !bool {
     try start(b, s, 0);
-    while (!try step(b, s)) {
+    while (!try step(b, s, 0)) {
         if (hooks.prefill_yield) |yield_| if (yield_(hooks.ctx)) return false;
     }
     return true;
@@ -67,17 +102,23 @@ pub fn lone(b: anytype, s: *Stream, hooks: anytype) !bool {
 // Both actual vtable entries use this driver; host controls replace only its engine boundary.
 pub fn Callbacks(comptime B: type) type {
     return struct {
+        pub fn cancelPrompt(ptr: *anyopaque, s: *Stream) anyerror!void {
+            const b = B.self(ptr);
+            const pool = b.promptPool();
+            defer pool.pop();
+            try cancel(b, s);
+        }
         pub fn whole(ptr: *anyopaque, s: *Stream) anyerror!void {
             const b = B.self(ptr);
             const pool = b.promptPool();
             defer pool.pop();
-            while (!try step(b, s)) {}
+            while (!try step(b, s, 0)) {}
         }
-        pub fn one(ptr: *anyopaque, s: *Stream) anyerror!bool {
+        pub fn one(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
             const b = B.self(ptr);
             const pool = b.promptPool();
             defer pool.pop();
-            return step(b, s);
+            return step(b, s, max_rows);
         }
     };
 }
@@ -119,4 +160,36 @@ test "flashnext prefill: prompt head pairs cover P minus one across odd seams an
     }
     try std.testing.expectEqual(@as(usize, 0), (try piece(0, 1, 1, 0, 1)).head_rows);
     try std.testing.expectError(error.ChunkOutOfStep, piece(1, 1, 1, 0, 1));
+}
+
+test "flashnext prefill: cancellation preserves the last canonical mark instead of saving an unusable cut" {
+    const Fake = @import("prefill_test_engine.zig").Fake;
+    const Kept = struct {
+        at: u32 = 0,
+        fn hit(ptr: *anyopaque, _: *Stream, at: u32) void {
+            const k: *@This() = @ptrCast(@alignCast(ptr));
+            k.at = at;
+        }
+    };
+    const Cancel = struct {
+        fn yes(_: *anyopaque) bool {
+            return true;
+        }
+    };
+    const a = std.testing.allocator;
+    const ids: [13]u32 = @splat(7);
+    var f: Fake = .{};
+    defer f.deinit();
+    var kept: Kept = .{};
+    var s = try Stream.init(a, .{ .id = "canonical-cancel", .prompt = &ids, .max_new = 4 });
+    defer s.deinit(a);
+    s.chunks = &.{ 4, 8, 12 };
+    s.reuse.marks = &.{4};
+    s.reuse.hook = .{ .ptr = &kept, .at = Kept.hit, .interrupted = Kept.hit };
+    for (0..5) |_| try std.testing.expect(!try step(&f, &s, 1));
+    try std.testing.expectEqual(@as(u32, 4), kept.at);
+    s.cancel_check = .{ .ptr = &kept, .check = Cancel.yes };
+    try std.testing.expectError(error.Cancelled, step(&f, &s, 1));
+    try std.testing.expectEqual(@as(u32, 4), kept.at);
+    try std.testing.expect(!f.filling.contains(&s));
 }

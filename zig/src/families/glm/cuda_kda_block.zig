@@ -2,10 +2,12 @@
 
 const std = @import("std");
 const cuda = @import("cuda");
+const cuda_pdl = @import("cuda_pdl.zig");
 const glue = @import("cuda_glue.zig");
-const kda = @import("cuda_kda.zig");
+const kda = cuda.kda;
 const b16 = @import("cuda_b16.zig");
 const prof = @import("cuda_prof.zig");
+const l2pf = @import("cuda_l2pf.zig");
 const projection = @import("cuda_proj.zig");
 
 /// The input projection [q | k | v | f_a | g_a | b] [3 heads 128 + 256 + heads][dims]: one bf16 stack, or two parts.
@@ -33,11 +35,39 @@ pub const Layer = struct {
         return 3 * l.heads * kda.dk + 2 * kda.dk + l.heads;
     }
 
-    /// The input stack and its two views need glm_mm's eight-column output and row stride.
+    /// The width the input stack's rows actually carry: eight-aligned, its own or TF_GLM_KDA_PAD's common one.
+    pub fn matWidth(l: Layer) usize {
+        return rowWidth(l.heads);
+    }
+
+    /// glm_mm reads the input stack and its two views: an even stack, or a padded one under TF_GLM_KDA_PAD=1.
     pub fn tiledInput(l: Layer) bool {
-        return l.width() % 8 == 0;
+        return l.width() % 8 == 0 or (tile_pad and l.matWidth() % 8 == 0);
     }
 };
+
+/// This rank's eight-aligned row width, set once at load (Engine.open); 0: each stack's own width.
+pub var pad_to: usize = 0;
+
+/// TF_GLM_KDA_PAD=1: a stack padded to the common width, tiled for glm_mm (its sums); unset, row-major bf16.
+pub var tile_pad: bool = false;
+
+/// The pad width for `kda_heads` split over `world` ranks: the widest rank's row, rounded up to eight columns.
+pub fn padWidth(kda_heads: usize, world: usize) usize {
+    const heads = (kda_heads + world - 1) / world;
+    return std.mem.alignForward(usize, 3 * heads * kda.dk + 2 * kda.dk + heads, 8);
+}
+
+/// A rank's own row width rounded up to eight columns (16-byte rows): what its stack is padded to unless tiled.
+pub fn alignedWidth(own_heads: usize) usize {
+    return std.mem.alignForward(usize, 3 * own_heads * kda.dk + 2 * kda.dk + own_heads, 8);
+}
+
+/// The fused input's row width on a rank of `own_heads` heads: pad_to once the engine has set it.
+pub fn rowWidth(own_heads: usize) usize {
+    if (pad_to != 0) return pad_to;
+    return 3 * own_heads * kda.dk + 2 * kda.dk + own_heads;
+}
 
 /// The block's scratch for `rows` rows: projection, decay and gate rows, chain saves, B16 partials, a split's tmp.
 pub const Scratch = struct { p: u64, ka: u64, kg: u64, saves: kda.Saves, wide: kda.Wide, mm_part: u64, tmp: u64 = 0 };
@@ -56,17 +86,18 @@ pub fn fill(set: glue.Set, stream: cuda.Stream, l: Layer, s: Scratch, lo: usize,
 
 /// The block up to its out_proj: the projections, the chain, and a prompt chunk's conv window commit.
 pub fn body(set: glue.Set, ks: *const kda.Kernels, stream: cuda.Stream, l: Layer, s: Scratch, x: u64, x_stride: usize, rows: usize, conv_state: u64, state_in: u64, wide: bool, prompt: bool) !void {
-    return bodyProfile(set, ks, stream, l, s, x, x_stride, rows, conv_state, state_in, wide, prompt, null);
+    return bodyProfile(set, ks, stream, l, s, x, x_stride, rows, conv_state, state_in, wide, prompt, null, null);
 }
 
-pub fn bodyProfile(set: glue.Set, ks: *const kda.Kernels, stream: cuda.Stream, l: Layer, s: Scratch, x: u64, x_stride: usize, rows: usize, conv_state: u64, state_in: u64, wide: bool, prompt: bool, profile: ?*prof.Prof) !void {
+pub fn bodyProfile(set: glue.Set, ks: *const kda.Kernels, stream: cuda.Stream, l: Layer, s: Scratch, x: u64, x_stride: usize, rows: usize, conv_state: u64, state_in: u64, wide: bool, prompt: bool, profile: ?*prof.Prof, o_site: ?l2pf.At) !void {
     var stamp = prof.span(profile, stream, .projections);
     try project(set, stream, l, s, x, x_stride, rows);
     stamp.end();
+    if (o_site) |at| try at.fork(stream); // TF_GLM_L2PF: o read into L2 while the chain runs
     stamp = prof.span(profile, stream, .kda);
     defer stamp.end();
     try chainRows(ks, stream, l, s, rows, conv_state, state_in, wide);
-    if (prompt) try glue.convShift(set, stream, conv_state, s.p, rows, rows * l.width(), l.width(), 1, 3 * l.heads * kda.dk);
+    if (prompt) try glue.convShift(set, stream, conv_state, s.p, rows, rows * l.matWidth(), l.matWidth(), 1, 3 * l.heads * kda.dk);
 }
 
 /// The projections of `rows` rows into s.p, s.ka (decay) and s.kg (gate), row by row so segments share one call.
@@ -74,7 +105,7 @@ pub fn project(set: glue.Set, stream: cuda.Stream, l: Layer, s: Scratch, x: u64,
     var selected = set;
     if (!l.tiledInput()) selected.mm = null;
     const n = l.heads * kda.dk;
-    const w = l.width();
+    const w = l.matWidth();
     const fa = 3 * n;
     switch (l.proj) {
         .bf16 => |p| try b16.matmul(selected, stream, x, x_stride, p, s.p, s.mm_part, rows, w, l.dims, false),
@@ -102,14 +133,14 @@ fn columns(set: glue.Set, stream: cuda.Stream, src: u64, cols: usize, dst: u64, 
     a.add(@as(c_longlong, @intCast(stride * 2)));
     a.add(@as(c_int, @intCast(rows)));
     a.add(@as(c_int, @intCast(cols * 2)));
-    try cuda.launch.launch(f, .{ .grid = .{ .x = @intCast((rows * cols * 2 + 255) / 256) }, .block = .{ .x = 256 } }, stream, &a);
+    try cuda_pdl.launch(f, .{ .grid = .{ .x = @intCast((rows * cols * 2 + 255) / 256) }, .block = .{ .x = 256 } }, stream, &a);
 }
 
 /// The chain over `rows` projected rows (s.p, s.ka, s.kg) on one sequence's conv window and recurrent state.
 pub fn chainRows(ks: *const kda.Kernels, stream: cuda.Stream, l: Layer, s: Scratch, rows: usize, conv_state: u64, state_in: u64, wide: bool) !void {
     const n = l.heads * kda.dk;
     const fa = 3 * n;
-    const c: kda.Chain = .{ .p = s.p, .p_stride = l.width(), .b_off = fa + 2 * kda.dk, .a = s.ka, .a_stride = n, .g = s.kg, .g_stride = n, .conv_state = conv_state, .conv_w = l.conv_w, .state_in = state_in, .a_log = l.a_log, .dt_bias = l.dt_bias, .norm_w = l.norm_w, .eps = l.eps, .lower = l.lower, .heads = l.heads };
+    const c: kda.Chain = .{ .p = s.p, .p_stride = l.matWidth(), .b_off = fa + 2 * kda.dk, .a = s.ka, .a_stride = n, .g = s.kg, .g_stride = n, .conv_state = conv_state, .conv_w = l.conv_w, .state_in = state_in, .a_log = l.a_log, .dt_bias = l.dt_bias, .norm_w = l.norm_w, .eps = l.eps, .lower = l.lower, .heads = l.heads };
     try kda.chain(ks, stream, c, rows, s.saves, if (wide or rows >= kda.wide_rows) s.wide else null);
 }
 

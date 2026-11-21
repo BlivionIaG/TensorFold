@@ -103,9 +103,10 @@ test "an attached run saves an unranked receipt that publishes with explicit con
     const out = try r.path("run.json");
     try std.testing.expectEqual(@as(u8, 0), try r.command(try runArgs(&r, try f.url(a, ""), out)));
     try std.testing.expect(r.has("unranked") and r.has("Receipt saved") and r.has("code T=0 repeat 1/1: ok"));
-    try std.testing.expectEqual(@as(usize, 5), f.count()); // the manifest it asked for first, then the four replies
+    try std.testing.expectEqual(@as(usize, 6), f.count()); // Manifest, thinking discovery, then four streamed replies.
     try std.testing.expectEqualStrings("/v1/benchmark/manifest", f.request(0).path);
-    for (0..5) |i| try std.testing.expect(std.mem.startsWith(u8, f.request(i).path, "/v1/"));
+    try std.testing.expectEqualStrings("/v1/models", f.request(1).path);
+    for (0..6) |i| try std.testing.expect(std.mem.startsWith(u8, f.request(i).path, "/v1/"));
     var problem: []const u8 = "";
     const v = (try receipt.load(a, std.testing.io, out, std.Io.Clock.real.now(std.testing.io).toMilliseconds(), &problem)).?;
     try std.testing.expect(v.get("samples").?.array.len == 2 and !v.get("settings").?.get("managed").?.bool and v.get("settings").?.get("rank_count").? == .null);
@@ -212,11 +213,15 @@ test "a cancelled local run saves its receipt, exits 130 and never publishes" {
     stop.request(.INT);
     const argv = try runArgs(&r, try f.url(a, ""), out);
     try std.testing.expectEqual(@as(u8, 130), try r.command(argv));
-    try std.testing.expect(f.count() == 0 and !r.has("Public upload preview"));
+    // The manifest and thinking fetches race the stop, so their count is not progress-independent.
+    try std.testing.expectEqual(@as(usize, 0), posts(f, "/submissions"));
+    try std.testing.expect(!r.has("Public upload preview"));
     stop.reset();
     var problem: []const u8 = "";
     const v = (try receipt.load(a, std.testing.io, out, std.Io.Clock.real.now(std.testing.io).toMilliseconds(), &problem)).?;
-    try std.testing.expectEqualStrings("cancelled", v.get("samples").?.array[0].get("error_code").?.string);
+    const samples = v.get("samples").?.array;
+    try std.testing.expectEqual(@as(usize, 1), samples.len);
+    try std.testing.expectEqualStrings("cancelled", samples[0].get("error_code").?.string);
 }
 
 test "attach and managed checks refuse before any request, and parse errors exit 2" {
@@ -291,8 +296,8 @@ pub fn managedWorld(a: std.mem.Allocator, chat_trickles: bool) !*fake.Fake {
     return fake.Fake.start(std.testing.allocator, try a.dupe(fake.Route, &.{
         .{ .method = "GET", .path = "/health", .replies = try a.dupe([]const fake.Write, &.{try fake.jsonReply(a, "200 OK", "{\"status\": \"ok\", \"warming\": false}")}) },
         .{ .method = "GET", .path = "/v1/models", .replies = try a.dupe([]const fake.Write, &.{try fake.jsonReply(a, "200 OK", "{\"data\": [{\"id\": \".tensorfold-benchmark\"}]}")}) },
-        .{ .method = "POST", .path = "/v1/completions", .replies = try a.dupe([]const fake.Write, &.{try fake.reply(a, false, 4, 15)}) },
-        .{ .method = "POST", .path = "/v1/chat/completions", .replies = try a.dupe([]const fake.Write, &.{if (chat_trickles) trickle.items else try fake.reply(a, true, 4, 15)}) },
+        .{ .method = "POST", .path = "/v1/completions", .replies = try a.dupe([]const fake.Write, &.{try fake.apart(a, false, 4, "")}) },
+        .{ .method = "POST", .path = "/v1/chat/completions", .replies = try a.dupe([]const fake.Write, &.{if (chat_trickles) trickle.items else try fake.apart(a, true, 4, "")}) },
     }));
 }
 
@@ -301,8 +306,8 @@ pub fn draftedWorld(a: std.mem.Allocator, speculative: []const u8) !*fake.Fake {
     return fake.Fake.start(std.testing.allocator, try a.dupe(fake.Route, &.{
         .{ .method = "GET", .path = "/health", .replies = try a.dupe([]const fake.Write, &.{try fake.jsonReply(a, "200 OK", "{\"status\": \"ok\", \"warming\": false}")}) },
         .{ .method = "GET", .path = "/v1/models", .replies = try a.dupe([]const fake.Write, &.{try fake.jsonReply(a, "200 OK", "{\"data\": [{\"id\": \".tensorfold-benchmark\"}]}")}) },
-        .{ .method = "POST", .path = "/v1/completions", .replies = try a.dupe([]const fake.Write, &.{try fake.drafted(a, false, 4, 15, speculative)}) },
-        .{ .method = "POST", .path = "/v1/chat/completions", .replies = try a.dupe([]const fake.Write, &.{try fake.drafted(a, true, 4, 15, speculative)}) },
+        .{ .method = "POST", .path = "/v1/completions", .replies = try a.dupe([]const fake.Write, &.{try fake.apart(a, false, 4, speculative)}) },
+        .{ .method = "POST", .path = "/v1/chat/completions", .replies = try a.dupe([]const fake.Write, &.{try fake.apart(a, true, 4, speculative)}) },
     }));
 }
 
@@ -333,7 +338,7 @@ test "a managed run starts its own serve, measures through it, stops it and save
     try std.testing.expectEqualStrings(server.buildBackend(), rt.get("backend").?.string);
     const m = v.get("model").?;
     try std.testing.expect(m.get("local").?.bool and m.get("repo_id").? == .null and std.mem.eql(u8, m.get("quantization").?.string, "mlx-4bit-g64"));
-    try std.testing.expect(v.get("settings").?.get("managed").?.bool and std.mem.eql(u8, v.get("settings").?.get("rank_count").?.int, "1"));
+    try std.testing.expect(v.get("settings").?.get("managed").?.bool and v.get("settings").?.get("rank_count").? == .null);
     try std.testing.expect(std.mem.indexOf(u8, try std.Io.Dir.cwd().readFileAlloc(std.testing.io, out, a, .limited(1 << 20)), "private-checkpoint") == null);
     const again = server.lockRun(std.testing.io, try r.path(".tensorfold/benchmarks"), &problem) orelse return error.TestUnexpectedResult;
     again.close(std.testing.io);
@@ -435,7 +440,7 @@ test "an attached rocm run saves a local receipt that inspect accepts and publis
     try r.env.put("TENSORFOLD_BENCHMARK_TOKEN", token);
     const out = try r.path("run.json");
     try std.testing.expectEqual(@as(u8, 0), try r.command(try backendArgs(&r, "rocm", try f.url(a, ""), out)));
-    try std.testing.expect(r.has("| rocm |") and r.has("Receipt saved") and r.has("rocm receipt is saved locally") and f.count() == 5);
+    try std.testing.expect(r.has("| rocm |") and r.has("Receipt saved") and r.has("rocm receipt is saved locally") and f.count() == 6);
     var problem: []const u8 = "";
     const v = (try receipt.load(a, std.testing.io, out, std.Io.Clock.real.now(std.testing.io).toMilliseconds(), &problem)).?;
     try std.testing.expectEqualStrings("rocm", v.get("runtime").?.get("backend").?.string);

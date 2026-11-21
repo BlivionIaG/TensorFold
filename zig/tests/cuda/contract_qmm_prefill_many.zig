@@ -19,6 +19,8 @@ const served = [_]c.Shape{
     .{ .rows = 129, .n = 10240, .k = 5120 },
     .{ .rows = 257, .n = 17408, .k = 5120 },
     .{ .rows = 33, .n = 65, .k = 512 },
+    .{ .rows = 2048, .n = 48, .k = 5120 },
+    .{ .rows = 4096, .n = 48, .k = 5120 },
 };
 
 const rule = "every output byte equals separate qmm_prefill launches on the same BF16 input and affine-4 weights";
@@ -147,9 +149,11 @@ pub fn bench(gpu: gpu_check.Gpu) !void {
 fn widths(shape: c.Shape) []const usize {
     if (shape.k == 512 and shape.n == 65) return &.{ 65, 129 };
     return switch (shape.n) {
+        48 => &.{ 48, 48 },
         12288 => &.{ 12288, 1024, 1024 },
         10240 => &.{ 10240, 6144, 48, 48 },
         17408 => &.{ 17408, 17408 },
+        8192 => &.{ 8192, 4096, 32, 32 },
         else => &.{},
     };
 }
@@ -166,6 +170,9 @@ pub const Product = struct {
     k: usize = 0,
     bytes: usize = 0,
     x: u64 = 0,
+    xs: u64 = 0,
+    member_widths: ?[]const usize = null,
+    padded_n: usize = 0,
 
     pub fn kernel(self: *Product) g.Kernel {
         return .{ .spec = .{
@@ -195,7 +202,7 @@ pub const Product = struct {
 
     pub fn prepare(self: *Product, shape: c.Shape, fill: g.Fill, seed: u64) !bool {
         self.drop();
-        const ns = widths(shape);
+        const ns = self.member_widths orelse widths(shape);
         if (ns.len < 2 or ns.len > self.fixtures.len or shape.rows == 0 or shape.k % 64 != 0) return false;
         const a = self.rig.gpu.gpa;
         self.rows = shape.rows;
@@ -222,7 +229,7 @@ pub const Product = struct {
         const words = try a.alloc(u32, shape.n * shape.k / 8);
         defer a.free(words);
         f.words(words);
-        const lay = qlinear.Affine4.layout(shape.n, shape.k);
+        const lay = qlinear.Affine4.layout(@max(shape.n, self.padded_n), shape.k);
         const zeros = try a.alloc(u8, lay.words);
         defer a.free(zeros);
         @memset(zeros, 0);

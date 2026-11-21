@@ -190,6 +190,7 @@ test "native Bolt load failure keeps destinations and kernel GPU parents through
     e.k.d = d;
     e.k.modelopt = null;
     e.k.ggml = null;
+    e.k.bf16x = null;
     e.k.triton = null;
     e.k.affine.split = null;
     e.k.latent = null;
@@ -197,6 +198,7 @@ test "native Bolt load failure keeps destinations and kernel GPU parents through
     const module: cuda.Module = .{ .d = d, .handle = @ptrFromInt(6) };
     e.k.emb.mod = module;
     e.k.norms.mod = module;
+    e.k.moe.mod = module;
     e.k.train.module = module;
     for (&e.k.mods) |*m| m.* = module;
     const p = try t.allocator.create(nemotron.weights.PendingLoad);
@@ -298,6 +300,7 @@ fn partialEngine(g: *Gpu) !*nemotron.Engine {
     e.k.d = d;
     e.k.modelopt = null;
     e.k.ggml = null;
+    e.k.bf16x = null;
     e.k.triton = null;
     e.k.affine.split = null;
     e.k.latent = null;
@@ -305,6 +308,7 @@ fn partialEngine(g: *Gpu) !*nemotron.Engine {
     const module: cuda.Module = .{ .d = d, .handle = @ptrFromInt(6) };
     e.k.emb.mod = module;
     e.k.norms.mod = module;
+    e.k.moe.mod = module;
     e.k.train.module = module;
     for (&e.k.mods) |*m| m.* = module;
     const p = try t.allocator.create(nemotron.weights.PendingLoad);

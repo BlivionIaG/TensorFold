@@ -42,12 +42,16 @@ pub const Metrics = struct {
     drafted: u64 = 0,
     accepted: u64 = 0,
     rounds: u64 = 0,
+    kept_unoffered: u64 = 0,
+    kept_malformed: u64 = 0,
     disconnects: u64 = 0,
     latency: Histogram = .{},
     ttft: Histogram = .{},
     decode: Histogram = .{},
     prefill: Histogram = .{},
     tpot: TpotHistogram = .{},
+    queue: Histogram = .{}, // seconds from submission to admission, noted only under `phases`
+    phases: bool = false, // TENSORFOLD_PHASE_METRICS=1: the queue histogram renders
     requests: std.ArrayList(struct { key: []const u8, status: u16, count: u64 }) = .empty,
 
     pub fn deinit(m: *Metrics) void {
@@ -69,6 +73,14 @@ pub const Metrics = struct {
         if (decode) |d| m.decode.observe(d);
         if (prefill) |p| m.prefill.observe(p);
         if (tpot) |t| m.tpot.observe(t);
+    }
+
+    /// One finished request's wait for admission; nothing is kept unless the phase families are on.
+    pub fn noteQueue(m: *Metrics, io: std.Io, queued: f64) void {
+        if (!m.phases) return;
+        m.mutex.lockUncancelable(io);
+        defer m.mutex.unlock(io);
+        m.queue.observe(queued);
     }
 
     pub fn tpotValue(_: *const Metrics, first: ?i96, last: ?i96, generated: usize) ?f64 {
@@ -94,9 +106,19 @@ pub const Metrics = struct {
         m.disconnects += 1;
     }
 
-    /// The scrape body for a parked server: no engine reads, the request and process families only.
-    pub fn renderParked(m: *Metrics, io: std.Io, w: *std.Io.Writer, window: u32) !void {
-        _ = window; // no live streams render while parked: no KV families, so no window
+    /// Tool-call envelopes a finished reply kept as text, by an unoffered name and by malformed markup.
+    pub fn keptToolCalls(m: *Metrics, io: std.Io, unoffered: usize, malformed: usize) void {
+        m.mutex.lockUncancelable(io);
+        defer m.mutex.unlock(io);
+        m.kept_unoffered += unoffered;
+        m.kept_malformed += malformed;
+    }
+
+    /// What the ledger says of an engine that cannot render live: parked (no engine values), or its last counts.
+    pub const Parked = struct { parked: bool = false, running: u32 = 0, waiting: u32 = 0, generation: u64 = 0 };
+
+    /// The scrape body without an engine read: the request and process families, and no engine value while parked.
+    pub fn renderParked(m: *Metrics, io: std.Io, w: *std.Io.Writer, view: Parked) !void {
         var snap: Metrics = undefined;
         const requests = blk: {
             m.mutex.lockUncancelable(io);
@@ -109,26 +131,34 @@ pub const Metrics = struct {
             try family(w, "requests_total", "counter", "HTTP replies by API key label and status.");
             for (requests) |r| try w.print("{s}requests_total{{key=\"{s}\",status=\"{d}\"}} {d}\n", .{ prefix, r.key, r.status, r.count });
         }
-        try gauge(w, "requests_running", "gauge", "Requests in prefill or decode.", 0);
-        try gauge(w, "requests_waiting", "gauge", "Requests queued or held until a lane is free.", 0);
-        try gauge(w, "generation_tokens_running", "gauge", "Generated tokens held by live streams.", 0);
+        if (!view.parked) {
+            try gauge(w, "requests_running", "gauge", "Requests in prefill or decode.", view.running);
+            try gauge(w, "requests_waiting", "gauge", "Requests queued or held until a lane is free.", view.waiting);
+            try gauge(w, "generation_tokens_running", "gauge", "Generated tokens held by live streams.", view.generation);
+        }
         try gauge(w, "prompt_tokens_total", "counter", "Prompt tokens of finished requests.", snap.prompt);
         try gauge(w, "generation_tokens_total", "counter", "Generated tokens of finished requests.", snap.generation);
         try gauge(w, "mtp_drafted_total", "counter", "Draft tokens verified on finished requests.", snap.drafted);
         try gauge(w, "mtp_accepted_total", "counter", "Draft tokens kept on finished requests.", snap.accepted);
+        try gauge(w, "kept_tool_calls_unoffered_total", "counter", "Tool-call envelopes kept as text because they named a tool the request did not offer.", snap.kept_unoffered);
+        try gauge(w, "kept_tool_calls_malformed_total", "counter", "Tool-call envelopes kept as text because their markup did not parse.", snap.kept_malformed);
         try histogram(w, "request_latency_seconds", "Seconds from arrival to the reply leaving.", snap.latency);
         try histogram(w, "time_to_first_token_seconds", "Seconds from arrival to the first generated token.", snap.ttft);
         try histogram(w, "request_decode_seconds", "Seconds a finished request spent decoding. Its sum over generation_tokens_total is the decode rate.", snap.decode);
         try histogram(w, "request_time_per_output_token_seconds", "Seconds from the first generated token to the last, divided by the tokens less one.", snap.tpot);
         try gauge(w, "decode_rounds_total", "counter", "Decode rounds used by finished requests.", snap.rounds);
         try histogram(w, "request_prefill_seconds", "Seconds a finished request's prompt pass took.", snap.prefill);
+        if (snap.phases) try histogram(w, "request_queue_seconds", "Seconds a finished request waited before admission.", snap.queue);
         try processGauges(w, process.read());
         try residentGauges(w, resident.read(io));
-        try gauge(w, "num_requests_running", "gauge", "Requests in prefill or decode. A mirror of tensorfold:requests_running.", 0);
-        try gauge(w, "num_requests_waiting", "gauge", "Requests queued or held until a lane is free. A mirror of tensorfold:requests_waiting.", 0);
+        if (!view.parked) {
+            try gauge(w, "num_requests_running", "gauge", "Requests in prefill or decode. A mirror of tensorfold:requests_running.", view.running);
+            try gauge(w, "num_requests_waiting", "gauge", "Requests queued or held until a lane is free. A mirror of tensorfold:requests_waiting.", view.waiting);
+        }
         try histogram(w, "e2e_request_latency_seconds", "Seconds from arrival to the reply leaving, under vLLM's name.", snap.latency);
         try histogram(w, "request_decode_time_seconds", "Seconds a finished request spent decoding, under vLLM's name.", snap.decode);
         try histogram(w, "request_prefill_time_seconds", "Seconds a finished request's prompt pass took, under vLLM's name.", snap.prefill);
+        if (snap.phases) try histogram(w, "request_queue_time_seconds", "Seconds a finished request waited before admission, under vLLM's name.", snap.queue);
         try gauge(w, "client_disconnections_total", "counter", "Requests a client left before the reply left the server.", snap.disconnects);
     }
 
@@ -164,6 +194,8 @@ pub const Metrics = struct {
         if (status.prompt_cache) |c| {
             try gauge(w, "prompt_cache_states", "gauge", "All retained prompt states, including long-message interior cuts.", c.states);
             try gauge(w, "prompt_cache_bytes", "gauge", "Storage held by retained prompt states and spare buffers, inside their budget.", c.bytes);
+            for (@TypeOf(c).miss_reason_names, c.miss_reasons) |reason, v| if (v > 0)
+                try w.print("{s}prompt_cache_miss_total{{reason=\"{s}\"}} {d}\n", .{ prefix, reason, v });
         }
         const keeps = info.prompt_cache;
         if (keeps) try gauge(w, "prompt_tokens_cached_total", "counter", "Prompt tokens of finished requests restored from kept prompt states.", snap.cached);
@@ -173,12 +205,15 @@ pub const Metrics = struct {
         try pools(w, "kv_cache_usage_ratio", "pool", live, window);
         try gauge(w, "mtp_drafted_total", "counter", "Draft tokens verified on finished requests.", snap.drafted);
         try gauge(w, "mtp_accepted_total", "counter", "Draft tokens kept on finished requests.", snap.accepted);
+        try gauge(w, "kept_tool_calls_unoffered_total", "counter", "Tool-call envelopes kept as text because they named a tool the request did not offer.", snap.kept_unoffered);
+        try gauge(w, "kept_tool_calls_malformed_total", "counter", "Tool-call envelopes kept as text because their markup did not parse.", snap.kept_malformed);
         try histogram(w, "request_latency_seconds", "Seconds from arrival to the reply leaving.", snap.latency);
         try histogram(w, "time_to_first_token_seconds", "Seconds from arrival to the first generated token.", snap.ttft);
         try histogram(w, "request_decode_seconds", "Seconds a finished request spent decoding. Its sum over generation_tokens_total is the decode rate.", snap.decode);
         try histogram(w, "request_time_per_output_token_seconds", "Seconds from the first generated token to the last, divided by the tokens less one.", snap.tpot);
         try gauge(w, "decode_rounds_total", "counter", "Decode rounds used by finished requests.", snap.rounds);
         try histogram(w, "request_prefill_seconds", "Seconds a finished request's prompt pass took.", snap.prefill);
+        if (snap.phases) try histogram(w, "request_queue_seconds", "Seconds a finished request waited before admission.", snap.queue);
         try processGauges(w, process.read());
         try residentGauges(w, resident.read(io));
         if (memory) |mem| {
@@ -199,6 +234,7 @@ pub const Metrics = struct {
         try histogram(w, "e2e_request_latency_seconds", "Seconds from arrival to the reply leaving, under vLLM's name.", snap.latency);
         try histogram(w, "request_decode_time_seconds", "Seconds a finished request spent decoding, under vLLM's name.", snap.decode);
         try histogram(w, "request_prefill_time_seconds", "Seconds a finished request's prompt pass took, under vLLM's name.", snap.prefill);
+        if (snap.phases) try histogram(w, "request_queue_time_seconds", "Seconds a finished request waited before admission, under vLLM's name.", snap.queue);
         try gauge(w, "client_disconnections_total", "counter", "Requests a client left before the reply left the server.", snap.disconnects);
         if (status.preemptions) |p| try gauge(w, "preemptions_total", "counter", "Requests that had to give a lane up to a later one.", p);
     }
@@ -269,7 +305,7 @@ test "only a Linux scrape reports the resident set, parked or not, and never as 
     try m.render(std.testing.io, &live.writer, stub.status_value, &.{}, stub.info_value, stub.memory_value, 4096);
     var parked: std.Io.Writer.Allocating = .init(gpa);
     defer parked.deinit();
-    try m.renderParked(std.testing.io, &parked.writer, 4096);
+    try m.renderParked(std.testing.io, &parked.writer, .{});
     for ([_][]const u8{ live.written(), parked.written() }) |body| {
         if (@import("builtin").os.tag != .linux) {
             try std.testing.expect(std.mem.indexOf(u8, body, "process_resident_") == null);
@@ -410,8 +446,8 @@ test "metrics snapshot allocation failure releases the mutex" {
     try std.testing.expectError(error.OutOfMemory, m.render(io, &out.writer, stub.status_value, &.{}, stub.info_value, stub.memory_value, 4096));
     const available = m.mutex.tryLock();
     // No other thread uses m: either tryLock acquired it, or render retained it.
-    // Release before asserting so the unfixed regression terminates without blocking.
     m.mutex.unlock(io);
+    // Release before asserting so the unfixed regression terminates without blocking.
     try std.testing.expect(available);
     try std.testing.expect(failing.has_induced_failure);
     failing.fail_index = std.math.maxInt(usize);
@@ -500,4 +536,44 @@ test "admission metrics name each fixed reason and the reservations held" {
         "tensorfold:admission_rejected_total{reason=\"key_limit\"} 5\n",  "tensorfold:admission_rejected_total{reason=\"principal_capacity\"} 0\n",
         "tensorfold:admission_rejected_total{reason=\"rate_limit\"} 7\n", "tensorfold:admission_rate_buckets 3\n",
     }) |line| try std.testing.expect(std.mem.indexOf(u8, out.written(), line) != null);
+}
+
+test "the queue phase renders only when phase metrics are on, and adds nothing else" {
+    const gpa = std.testing.allocator;
+    var off: Metrics = .{ .gpa = gpa };
+    var on: Metrics = .{ .gpa = gpa, .phases = true };
+    for ([_]*Metrics{ &off, &on }) |m| {
+        m.note(std.testing.io, 10, 0, 3, 0, 0, 2, 1.0, null, null, 0.25, null);
+        m.noteQueue(std.testing.io, 0.3);
+    }
+    try std.testing.expectEqual(@as(u64, 0), off.queue.n);
+    try std.testing.expectEqual(@as(u64, 1), on.queue.counts[4]); // 0.3 s falls under the 0.5 edge
+    const stub: RenderStub = .{};
+    var a: std.Io.Writer.Allocating = .init(gpa);
+    defer a.deinit();
+    var b: std.Io.Writer.Allocating = .init(gpa);
+    defer b.deinit();
+    try off.render(std.testing.io, &a.writer, stub.status_value, &.{}, stub.info_value, stub.memory_value, 4096);
+    try on.render(std.testing.io, &b.writer, stub.status_value, &.{}, stub.info_value, stub.memory_value, 4096);
+    try std.testing.expect(std.mem.indexOf(u8, a.written(), "request_queue") == null);
+    try std.testing.expect(std.mem.indexOf(u8, b.written(), "tensorfold:request_queue_seconds_sum 0.3\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, b.written(), "tensorfold:request_queue_time_seconds_bucket{le=\"0.5\"} 1\n") != null);
+    for ([_]*Metrics{ &off, &on }) |m| {
+        var parked: std.Io.Writer.Allocating = .init(gpa);
+        defer parked.deinit();
+        try m.renderParked(std.testing.io, &parked.writer, .{ .parked = true });
+        try std.testing.expectEqual(m.phases, std.mem.indexOf(u8, parked.written(), "request_queue_seconds_count 1\n") != null);
+        try std.testing.expectEqual(m.phases, std.mem.indexOf(u8, parked.written(), "request_queue_time_seconds_count 1\n") != null);
+    }
+    // without the queue families and the live process gauges, the on body is the off body, byte for byte
+    var kept: [2]std.ArrayList(u8) = .{ .empty, .empty };
+    defer for (&kept) |*k| k.deinit(gpa);
+    for ([_][]const u8{ a.written(), b.written() }, &kept) |body, *k| {
+        var lines = std.mem.splitScalar(u8, body, '\n');
+        while (lines.next()) |line| if (std.mem.indexOf(u8, line, "request_queue") == null and std.mem.indexOf(u8, line, "process_") == null) {
+            try k.appendSlice(gpa, line);
+            try k.append(gpa, '\n');
+        };
+    }
+    try std.testing.expectEqualStrings(kept[0].items, kept[1].items);
 }

@@ -139,7 +139,7 @@ extern "C" __global__ void __launch_bounds__(256) tf_pocket_rows(const __nv_bflo
 #pragma unroll
         for (int o = 16; o > 0; o >>= 1) s += __shfl_xor_sync(0xffffffffu, s, o);
         if (lane == 0) {
-            const float z = fmaxf(s, 0.f);
+            const float z = s < 0.f ? 0.f : s;  // not fmaxf, which would make a NaN 0
             act[j] = z * z;
         }
     }
@@ -194,7 +194,7 @@ __device__ __forceinline__ void pocket_in(const __nv_bfloat16* __restrict__ y, i
 #pragma unroll
             for (int o = 16; o > 0; o >>= 1) v += __shfl_xor_sync(0xffffffffu, v, o);
             if (lane == 0 && j0 + q < n && t < tile) {
-                const float z = fmaxf(v, 0.f);
+                const float z = v < 0.f ? 0.f : v;  // not fmaxf, which would make a NaN 0
                 act[static_cast<size_t>(r0 + t) * pocket_width + j0 + q] = z * z;
             }
         }
@@ -292,17 +292,6 @@ extern "C" __global__ void tf_add_row(void* __restrict__ y, int y_f32, const flo
     }
 }
 
-// LatentMoE (Bolt): Z [R, L] bf16, the fp32 sum of Y [R * K, L] (slot order) times WT [R * K]; one block a row.
-extern "C" __global__ void tf_latent_sum(const float* __restrict__ Y, const float* __restrict__ WT, __nv_bfloat16* __restrict__ Z,
-                                         int K, int L) {
-    const int64_t r = blockIdx.x;
-    for (int i = threadIdx.x; i < L; i += blockDim.x) {
-        float acc = 0.0f;
-        for (int k = 0; k < K; ++k) acc = __fmaf_rn(Y[(r * K + k) * L + i], WT[r * K + k], acc);
-        Z[r * L + i] = __float2bfloat16(acc);
-    }
-}
-
 // out = a + b in bf16 (b bf16, or fp32 when b_f32): the latent experts' projection plus the shared expert, n values.
 extern "C" __global__ void tf_add_bf16(__nv_bfloat16* __restrict__ out, const __nv_bfloat16* __restrict__ a, const void* __restrict__ b,
                                        int b_f32, int n) {
@@ -318,4 +307,70 @@ extern "C" __global__ void tf_splice_rows(__nv_bfloat16* __restrict__ H, const _
     const int s = SRC[r];
     if (s < 0) return;
     for (int i = threadIdx.x; i < D; i += blockDim.x) H[r * D + i] = F[static_cast<int64_t>(s) * D + i];
+}
+
+// A batched draft's rows: each part's rows of `a` (wa bytes a row) and `b` (wb bytes a row) to dst_a and dst_b.
+struct GatherRows {
+    const void* a[8];
+    const void* b[8];
+    int rows[8];
+    int row0[8];
+    int wa;
+    int wb;
+};
+
+// Row r of dst_a/dst_b from its part's row; a part's rows are contiguous, the parts' starts in row0.
+extern "C" __global__ void tf_nemo_gather_rows(const GatherRows g, void* __restrict__ dst_a, void* __restrict__ dst_b) {
+    const int r = blockIdx.x;
+    int k = 0;
+    while (k < 8 && !(r >= g.row0[k] && r < g.row0[k] + g.rows[k])) ++k;
+    if (k == 8) return;
+    const int at = r - g.row0[k];
+    const char* sa = static_cast<const char*>(g.a[k]) + (size_t)at * g.wa;
+    char* da = static_cast<char*>(dst_a) + (size_t)r * g.wa;
+    for (int i = threadIdx.x * 4; i < g.wa; i += blockDim.x * 4) *reinterpret_cast<uint32_t*>(da + i) = *reinterpret_cast<const uint32_t*>(sa + i);
+    if (g.b[k] == nullptr) return;
+    const char* sb = static_cast<const char*>(g.b[k]) + (size_t)at * g.wb;
+    char* db = static_cast<char*>(dst_b) + (size_t)r * g.wb;
+    for (int i = threadIdx.x * 4; i < g.wb; i += blockDim.x * 4) *reinterpret_cast<uint32_t*>(db + i) = *reinterpret_cast<const uint32_t*>(sb + i);
+}
+
+// A span's last row: each part's source a/b row moved to dst row k, ascending k with a barrier between rows.
+struct LastRows {
+    const void* a[8];
+    const void* b[8];
+};
+
+// One block: row k's sources to dst row k in order, so a row that is another part's destination is read before written.
+extern "C" __global__ void tf_nemo_gather_last(const LastRows g, void* __restrict__ dst_a, void* __restrict__ dst_b, int wa, int wb, int n) {
+    for (int k = 0; k < n; ++k) {
+        char* da = static_cast<char*>(dst_a) + (size_t)k * wa;
+        const char* sa = static_cast<const char*>(g.a[k]);
+        char* db = static_cast<char*>(dst_b) + (size_t)k * wb;
+        const char* sb = static_cast<const char*>(g.b[k]);
+        for (int i = threadIdx.x * 4; i < wa; i += blockDim.x * 4) *reinterpret_cast<uint32_t*>(da + i) = *reinterpret_cast<const uint32_t*>(sa + i);
+        if (sb != nullptr) for (int i = threadIdx.x * 4; i < wb; i += blockDim.x * 4) *reinterpret_cast<uint32_t*>(db + i) = *reinterpret_cast<const uint32_t*>(sb + i);
+        __syncthreads();
+    }
+}
+
+// A level's rows: each part's token and probability to its own buffers at tok_at/prob_at, one row a part.
+struct ScatterRows {
+    unsigned* tok[8];
+    float* prob[8];
+    int rows[8];
+    int row0[8];
+    int tok_at;
+    int prob_at;
+};
+
+// Row r of TOK/PROB to its part's tok/prob at tok_at/prob_at plus its row within the part.
+extern "C" __global__ void tf_nemo_scatter_rows(const unsigned* __restrict__ TOK, const float* __restrict__ PROB, const ScatterRows g) {
+    const int r = blockIdx.x;
+    int k = 0;
+    while (k < 8 && !(r >= g.row0[k] && r < g.row0[k] + g.rows[k])) ++k;
+    if (k == 8 || threadIdx.x != 0) return;
+    const int at = r - g.row0[k];
+    g.tok[k][g.tok_at + at] = TOK[r];
+    if (g.prob[k] != nullptr) g.prob[k][g.prob_at + at] = PROB[r];
 }

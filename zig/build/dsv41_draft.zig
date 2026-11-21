@@ -17,7 +17,10 @@ pub fn addImportsAt(b: *std.Build, m: *std.Build.Module, target: std.Build.Resol
 }
 pub fn steps(b: *std.Build) void {
     const source = @import("dsv41_cuda.zig").module(b, b.graph.host, "serve_engine.zig", false);
+    b.step("test-dsv41-serve-host", "Tokenizer, encoder goldens and serving contracts without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = source.import_table.get("dsv41_serve").? })).step);
     b.step("test-draft-dsv41-host", "DeepSeek draft source metadata without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = source, .filters = &.{"draft sources:"} })).step);
+    const verdicts = @import("dsv41_cuda.zig").module(b, b.graph.host, "sched_verdict_test.zig", false);
+    b.step("test-dsv41-wait-reasons-host", "DeepSeek planner verdicts reach the load ledger as their wait reasons, without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = verdicts })).step);
     inline for (.{ false, true }) |cross| {
         const target = if (cross) b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu }) else b.graph.host;
         const root = @import("dsv41_cuda.zig").module(b, target, "device_host_test.zig", cross);
@@ -53,6 +56,7 @@ fn server(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Step.Compi
 pub fn serverOn(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, engine: *std.Build.Module) *std.Build.Step.Compile {
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "version", @import("../../build.zig.zon").version);
+    build_options.addOption(bool, "is_release", false);
     build_options.addOption(bool, "slide_test_hooks", false);
     const name = "tensorfold-dsv41";
     const api = engine.import_table.get("engine_api").?;
@@ -67,12 +71,14 @@ pub fn serverOn(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
         .link_libc = true,
         .imports = &.{ .{ .name = "core", .module = engine.import_table.get("core").? }, .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engine }, .{ .name = "checkpoint_cli", .module = cli } },
     });
+    m.addImport("lanes", engine.import_table.get("lanes").?);
     m.addImport("living", b.createModule(.{ .root_source_file = b.path("zig/src/living/living.zig"), .target = target, .optimize = optimize, .link_libc = true }));
     m.addOptions("build_options", build_options);
     // the server's json and the family's text side share the engine's serving module (one `dsv41_serve`)
     m.addImport("json", engine.import_table.get("dsv41_serve").?.import_table.get("json").?);
     m.addImport("dsv41_serve", engine.import_table.get("dsv41_serve").?);
     m.addImport("dsv41_chat", engine.import_table.get("dsv41_serve").?);
+    m.addImport("uocr_chat", b.createModule(.{ .root_source_file = b.path("zig/src/families/uocr/chat.zig"), .target = target, .optimize = optimize }));
     // the server's Drama voice catalog reads the prompt builder; this engine set has no drama3 family to share
     m.addImport("drama_prompt", b.createModule(.{ .root_source_file = b.path("zig/src/families/drama3/prompt.zig"), .target = target, .optimize = optimize }));
     const exe = b.addExecutable(.{ .name = name, .root_module = m });

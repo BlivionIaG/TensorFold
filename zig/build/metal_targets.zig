@@ -2,15 +2,16 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const qwen27_build = @import("qwen27.zig");
+const drama3_build = @import("drama3_metal.zig");
 const core_checks = @import("core_checks.zig");
 const glm_checks = @import("glm_checks.zig");
 const flashnext_checks = @import("flashnext_checks.zig");
 const counters_build = @import("metal_counters.zig");
 const exl3_build = @import("exl3.zig");
 const exlr8_build = @import("exlr8.zig");
-const server_build = @import("server.zig");
-const golden_build = @import("golden.zig");
+const metal_server = @import("metal_server.zig");
 const contract_build = @import("kernel_contract.zig");
+const image_programs = @import("metal_image_programs.zig");
 const metal_lists = @import("metal_source_lists.zig");
 const kernels = metal_lists.kernels;
 const generated = metal_lists.generated;
@@ -25,6 +26,14 @@ pub fn mlxMetalStd(b: *std.Build) []const u8 {
     if (major >= 26) return "metal4.0";
     if (major >= 15) return "metal3.2";
     return "metal3.1";
+}
+
+/// Whether this Mac has the offline Metal compiler (Xcode's toolchain, not the Command Line Tools alone).
+fn hasMetalCompiler(b: *std.Build) bool {
+    b.graph.poisonCache(); // installing Xcode changes the answer
+    if (b.runFallible(&.{ "xcrun", "-sdk", "macosx", "-f", "metal" }, .{ .stderr_behavior = .ignore }) == .success) return true;
+    std.log.warn("skipping offline Metal shader checks: xcrun finds no metal compiler (install Xcode)", .{});
+    return false;
 }
 
 pub fn metallib(b: *std.Build, name: []const u8, sources: []const []const u8, flags: []const []const u8) std.Build.LazyPath {
@@ -64,81 +73,12 @@ pub fn embedded(b: *std.Build, lib: std.Build.LazyPath, file: []const u8) *std.B
     return b.createModule(.{ .root_source_file = src });
 }
 
-pub fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, metal: *std.Build.Module, engine: *std.Build.Module, living: *std.Build.Module, api: *std.Build.Module, engines: *std.Build.Module, build_options: *std.Build.Step.Options, test_step: ?*std.Build.Step) *std.Build.Step.Compile {
-    // the HTTP side keeps its safety checks; the engine below it runs at `optimize`
-    const tokenizer = engines.import_table.get("tokenizer") orelse b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
-    const template = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
-    const exe = b.addExecutable(.{ .name = "tensorfold-native", .root_module = b.createModule(.{
-        .root_source_file = b.path("zig/src/server/main.zig"),
-        .target = target,
-        .optimize = .ReleaseSafe,
-        .link_libc = true,
-        .imports = &.{ .{ .name = "core", .module = engine }, .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines }, .{ .name = "living", .module = living }, .{ .name = "checkpoint_cli", .module = b.createModule(.{ .root_source_file = b.path("zig/src/cli/cli.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true, .imports = &.{ .{ .name = "native_engines", .module = engines }, exlr8_build.cliImport(b, target, .ReleaseSafe, engine), .{ .name = "core", .module = engine } } }) } },
-    }) });
-    exe.root_module.addOptions("build_options", build_options);
-    _ = server_build.addTo(b, exe.root_module, target, .ReleaseSafe);
-    if (test_step == null) {
-        exe.root_module.strip = true;
-        return exe;
-    }
-    const install = b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = .{ .custom = "native/bin" } } });
-    b.step("native", "tensorfold-native with the Metal engines into zig-out/native/bin (bundles: -Dcpu=apple_m1)").dependOn(&install.step);
-    // Link libSystem's memcpy to avoid compiler-rt's weak replacement.
-    const libc_mem = b.addSystemCommand(&.{ "sh", "-c", "nm -m \"$0\" | grep -q 'external _memcpy (from libSystem)' || { echo 'tensorfold-native links its own memcpy: find the typed std.json int parse or 128-bit float conversion that pulled in compiler-rt'; exit 1; }" });
-    libc_mem.addArtifactArg(exe);
-    test_step.?.dependOn(&libc_mem.step);
-    const server_tests = b.createModule(.{
-        .root_source_file = b.path("zig/src/server/root.zig"),
-        .target = target,
-        .optimize = .Debug, // the server's unit tests run with safety checks, as zig_test.sh builds them
-        .link_libc = true,
-        .imports = &.{ .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "living", .module = living } },
-    });
-    // the required-tools tests' 27B mask policy and lane fake, on the engine API's own lanes module
-    if (api.import_table.get("lanes")) |lanes_mod| {
-        const q27 = @import("qwen27_required.zig").modules(b, lanes_mod);
-        server_tests.addImport("qwen27_mask_fake", q27.fake);
-        server_tests.addImport("qwen27_masks", q27.masks);
-    }
-    const server_json = server_build.addTo(b, server_tests, target, .Debug);
-    test_step.?.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests })).step);
-    test_step.?.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_json })).step);
-    @import("cortheon_fuzz.zig").add(b, target, api, tokenizer, template);
-    // the parse half's tests, as their own test binary (zig/src/server/tool_parse_test.zig)
-    const tool_parse_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/server/tool_parse_test.zig"), .target = target, .optimize = .Debug, .link_libc = true, .imports = &.{ .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template } } }) });
-    _ = server_build.addTo(b, tool_parse_tests.root_module, target, .Debug);
-    test_step.?.dependOn(&b.addRunArtifact(tool_parse_tests).step);
-    // the chat-template engine's tests (zig/src/core/template/tests.zig), which no other test binary reaches
-    test_step.?.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/tests.zig"), .target = target, .optimize = .Debug, .link_libc = true }) })).step);
-    // the engine seam's own tests (lane_host.zig), as zig/tests/server/zig_test.sh runs them
-    test_step.?.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api })).step);
-    // the frozen server parity goldens, checked by Zig driving fake_serve
-    golden_build.step(b, target, server_tests, api, tokenizer, template, engines);
-    engines.addImport("lanes", api.import_table.get("lanes").?);
-    b.step("test-draft-metal-host", "Metal draft source metadata without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engines, .filters = &.{"draft sources:"} })).step);
-    b.step("test-native", "The Metal engines module's host-side tests").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engines })).step);
-    const reuse = b.addExecutable(.{ .name = "tf-flashnext-reuse", .root_module = b.createModule(.{
-        .root_source_file = b.path("zig/tests/flashnext_reuse.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "tensorfold", .module = engine }, .{ .name = "engine_api", .module = api } },
-    }) });
-    b.installArtifact(reuse);
-    b.step("tf-flashnext-reuse", "Flash Next prompt reuse against fresh prompt passes: replies at every depth and kept states' bytes").dependOn(&b.addInstallArtifact(reuse, .{}).step);
-    const batch = b.addExecutable(.{ .name = "tf-flashnext-batch", .root_module = b.createModule(.{
-        .root_source_file = b.path("zig/tests/flashnext_batch.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "tensorfold", .module = engine }, .{ .name = "kernel_sources", .module = engine.import_table.get("kernel_sources").? } },
-    }) });
-    b.step("tf-flashnext-batch", "Flash Next shared rounds against fresh legacy replies with prompt admission and cancellation").dependOn(&b.addInstallArtifact(batch, .{}).step);
-    return exe;
-}
-
 pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, build_options: *std.Build.Step.Options, test_step: *std.Build.Step) void {
     const metal_std = b.option([]const u8, "metal-std", "Metal language version (default: MLX's for this macOS)") orelse mlxMetalStd(b);
+    // Without the offline compiler the tests embed empty metallibs; the programs that load them stop instead.
+    const shaders = hasMetalCompiler(b);
+    const no_shaders = b.addWriteFiles().add("no-shaders.metallib", "");
+    const no_compiler: ?*std.Build.Step = if (shaders) null else &b.addFail("this program embeds compiled Metal shaders: install Xcode").step;
 
     // MLX's mx.fast.metal_kernel JIT: MTLCompileOptions mathMode safe, fp32 functions fast (the default), its...
     const mlx_flags = [_][]const u8{ b.fmt("-std={s}", .{metal_std}), "-fmetal-math-mode=safe", "-fmetal-math-fp32-functions=fast" };
@@ -154,7 +94,7 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
 
     const mods = metalEngineModules(b, target, optimize, draft_ids);
     const metal = mods.metal;
-    const kernels_mod = embedded(b, lib, "tensorfold.metallib");
+    const kernels_mod = embedded(b, if (shaders) lib else no_shaders, "tensorfold.metallib");
     counters_build.targets(b, target, optimize, metal, mods.sources, test_step);
 
     // The engines registry: the families this platform's binaries serve; the CLI reads it for models/info/pull.
@@ -166,8 +106,12 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         .link_libc = true,
         .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "engine_api", .module = api }, .{ .name = "tensorfold", .module = mods.engine } },
     });
-    @import("drama3_metal.zig").addNative(b, target, optimize, metal, engines, metal_std);
-    @import("drama3_metal.zig").targets(b, target, optimize, metal, metal_std, test_step);
+    engines.addImport("living", mods.living);
+    const drama3_lib = drama3_build.metallib(b, metal_std);
+    b.getInstallStep().dependOn(&b.addInstallFile(drama3_lib, "lib/drama3.metallib").step);
+    const drama3_embed = if (shaders) drama3_lib else no_shaders;
+    drama3_build.addNative(b, target, optimize, metal, engines, drama3_embed);
+    drama3_build.targets(b, target, optimize, metal, drama3_embed, test_step, no_compiler);
 
     const programs = [_]struct { name: []const u8, path: []const u8, about: []const u8 }{
         .{ .name = "tf-metal-tests", .path = "zig/tests/gpu_tests.zig", .about = "GPU runtime tests" },
@@ -184,27 +128,21 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         });
         const exe = b.addExecutable(.{ .name = p.name, .root_module = mod });
         b.installArtifact(exe);
-        b.step(p.name, p.about).dependOn(&b.addInstallArtifact(exe, .{}).step);
+        const step = b.step(p.name, p.about);
+        step.dependOn(&b.addInstallArtifact(exe, .{}).step);
+        if (no_compiler) |fail| step.dependOn(fail);
     }
 
     // Kimi K3: the family module, its metallib, and its GPU check and benchmark programs.
     const kimi_lib = kimiMetallib(b, &mlx_flags);
     b.getInstallStep().dependOn(&b.addInstallFile(kimi_lib, "lib/kimi.metallib").step);
-    const kimi = b.createModule(.{
-        .root_source_file = b.path("zig/src/families/kimi_k3/kimi_k3.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "safetensors", .module = b.createModule(.{
-            .root_source_file = b.path("zig/src/families/kimi_k3/core_safetensors.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{.{ .name = "core", .module = mods.engine }},
-        }) } },
-    });
-    const kimi_bytes = embedded(b, kimi_lib, "kimi.metallib");
+    const kimi = kimiModule(b, target, optimize, metal, mods.engine, mods.lanes);
+    const kimi_bytes = embedded(b, if (shaders) kimi_lib else no_shaders, "kimi.metallib");
+    engines.addImport("kimi_k3", kimi);
+    engines.addImport("kimi_metallib", kimi_bytes);
     const kimi_programs = [_]struct { name: []const u8, path: []const u8, about: []const u8 }{
         .{ .name = "tf-k3-check", .path = "zig/tests/kimi_k3/check.zig", .about = "Kimi K3 kernels and layers on synthetic weights at real shapes" },
+        .{ .name = "tf-k3-serve-check", .path = "zig/tests/kimi_k3/serve.zig", .about = "Kimi native lane adapter on a cut-down synthetic Metal graph" },
         .{ .name = "tf-k3-bench", .path = "zig/tests/kimi_k3/bench.zig", .about = "Kimi K3 kernel bandwidth" },
     };
     for (kimi_programs) |p| {
@@ -213,11 +151,13 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
             .target = target,
             .optimize = optimize,
             .link_libc = true,
-            .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "kimi_k3", .module = kimi }, .{ .name = "kimi_metallib", .module = kimi_bytes } },
+            .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "kimi_k3", .module = kimi }, .{ .name = "kimi_metallib", .module = kimi_bytes }, .{ .name = "lanes", .module = mods.lanes } },
         });
         const exe = b.addExecutable(.{ .name = p.name, .root_module = mod });
         b.installArtifact(exe);
-        b.step(p.name, p.about).dependOn(&b.addInstallArtifact(exe, .{}).step);
+        const step = b.step(p.name, p.about);
+        step.dependOn(&b.addInstallArtifact(exe, .{}).step);
+        if (no_compiler) |fail| step.dependOn(fail);
     }
 
     // Kimi's tiktoken tokenizer and its parity program (tools/zig/k3_tokenizer_parity.py).
@@ -240,14 +180,14 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-        .imports = &.{ .{ .name = "lanes", .module = lanes }, .{ .name = "fabric", .module = fabric }, .{ .name = "core", .module = mods.engine } },
+        .imports = &.{ .{ .name = "lanes", .module = lanes }, .{ .name = "fabric", .module = fabric }, .{ .name = "core", .module = mods.engine }, .{ .name = "canon", .module = @import("cuda_engines.zig").canonModule(b, target, optimize) } },
     });
     // The engine: kernel sources compiled at run time (MLX's options), the families, the lane core.
     const sources = mods.sources;
     // Nemotron's packed kernels, compiled offline and embedded: the runtime fallback when this macOS's compiler...
     const packed_lib = metallib(b, "nemotron_packed", &nemotron_packed, &mlx_flags);
     b.getInstallStep().dependOn(&b.addInstallFile(packed_lib, "lib/nemotron_packed.metallib").step);
-    sources.addImport("nemotron_packed_metallib", embedded(b, packed_lib, "nemotron_packed.metallib"));
+    sources.addImport("nemotron_packed_metallib", embedded(b, if (shaders) packed_lib else no_shaders, "nemotron_packed.metallib"));
     const engine = mods.engine;
     // FlashNext's CPU contracts, with the family module's imports so the replay graph type-checks
     const flash_host = b.addTest(.{ .root_module = b.createModule(.{
@@ -287,10 +227,17 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     const pack_cache_run = b.addRunArtifact(pack_cache_cases);
     b.step("test-flashnext-pack-cache", "CPU-only atomic Flash Next pack cache lifecycle").dependOn(&pack_cache_run.step);
     test_step.dependOn(&pack_cache_run.step);
-    const engine_programs = [_]struct { name: []const u8, path: []const u8, about: []const u8, c_source: ?[]const u8 = null }{
+    const engine_programs = [_]image_programs.Program{
         .{ .name = "tf-qwen35-check", .path = "zig/tests/qwen35_check.zig", .about = "Qwen3.5-2B checkpoint and native operations" },
         .{ .name = "tf-qwen35-forward", .path = "zig/tests/qwen35_forward.zig", .about = "Qwen3.5-2B native teacher-forced logits" },
         .{ .name = "tf-qwen35-exact", .path = "zig/tests/qwen35_exact.zig", .about = "Qwen3.5-2B forward and committed-state exactness" },
+        .{ .name = "tf-lfm3-forward", .path = "zig/tests/lfm3_forward.zig", .about = "LFM3 native teacher-forced BF16 logits" },
+        .{ .name = "tf-lfm3-exact", .path = "zig/tests/lfm3_exact.zig", .about = "LFM3 prompt, window, snapshot and concurrent cache equality" },
+        .{ .name = "tf-lfm3-profile", .path = "zig/tests/lfm3_profile.zig", .about = "LFM3 calibrated GPU class costs with final-logit byte identity" },
+        .{ .name = "tf-lfm3-dual-project", .path = "zig/tests/lfm3_dual_project.zig", .about = "Actual checkpoint paired projection byte comparison" },
+        .{ .name = "tf-lfm3-draw-tune", .path = "zig/tests/lfm3_draw_tune.zig", .about = "Diagnostic exact CPU greedy reduction timing" },
+        .{ .name = "tf-lfm3-row-tune", .path = "zig/tests/lfm3_row_tune.zig", .about = "Diagnostic byte-preserving single-row projection launch sweep" },
+        .{ .name = "tf-lfm3-project", .path = "zig/tests/lfm3_project.zig", .about = "LFM3 production projection outputs on saved BF16 input rows" },
         .{ .name = "tf-lfm2-forward", .path = "zig/tests/lfm2_forward.zig", .about = "LFM2-MoE native teacher-forced logits" },
         .{ .name = "tf-lfm2-bench", .path = "zig/tests/lfm2_bench.zig", .about = "LFM2-MoE prompt-chunk and one-row decode timing" },
         .{ .name = "tf-lfm2-exact", .path = "zig/tests/lfm2_exact.zig", .about = "LFM2-MoE prompt chunks, windows and committed-state exactness" },
@@ -311,15 +258,16 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         .{ .name = "tf-flashnext-pack", .path = "zig/tests/flashnext_pack.zig", .about = "Flash Next's three weight packs built from a checkpoint, byte-compared with a Python dump" },
         .{ .name = "tf-flashnext-think", .path = "zig/tests/flashnext_think.zig", .about = "Flash Next's verdict kernels under thinking budgets on a fake target, against the lane core's close" },
         .{ .name = "tf-grid-sync-bench", .path = "zig/tests/grid_sync_bench.zig", .about = "A GPU-wide barrier in one persistent dispatch against dependent relaunches" },
+        .{ .name = "tf-segments-probe", .path = "zig/tests/segments_probe.zig", .about = "A two-segment chunk behind a held first queue: the GPU watchdog without the probe, a pass with it" },
         .{ .name = "tf-weight-read-check", .path = "zig/tests/weight_read_check.zig", .about = "Check native file reads and failed-read cleanup", .c_source = "zig/tests/pread_fault.c" },
         .{ .name = "tf-glm-run", .path = "zig/tests/glm_run.zig", .about = "GLM-5.3-Flash greedy replies at each draft depth against depth 0 and reference tokens" },
         .{ .name = "tf-glm-vision", .path = "zig/tests/glm_vision.zig", .about = "GLM-5.3-Flash's image tower on an image or a reference dump's patches, compared with the dump" },
         .{ .name = "tf-glm-video", .path = "zig/tests/glm_video.zig", .about = "GLM-5.3-Flash's video preparation on a clip (libtfvideo), written for tools/zig/glm_video_fixtures.py" },
         .{ .name = "tf-qwen-vision", .path = "zig/tests/qwen_vision.zig", .about = "The Qwen-VL tower on picture files: patches, grids and merged rows written for a float32 reference" },
-        .{ .name = "tf-qwen-image", .path = "zig/tests/qwen_image.zig", .about = "Qwen-Image-2.1's transformer on a reference case: each step compared, then the schedule timed" },
-        .{ .name = "tf-moss-image", .path = "zig/tests/moss_image.zig", .about = "MOSS-Image's transformer on a reference case: each step's two branches compared, then the guided schedule timed" },
+    } ++ image_programs.rows ++ [_]image_programs.Program{
         .{ .name = "tf-glm-attn-probe", .path = "zig/tests/glm_attn_probe.zig", .about = "GLM-5.3-Flash's dense latent attention kernels on given inputs (scores, probabilities, outputs)" },
         .{ .name = "tf-moe-bench", .path = "zig/tests/moe_bench.zig", .about = "Routed-expert prompt kernels from .metal files on a skewed routing: chained speed, bits against the first" },
+        .{ .name = "tf-nemotron-forward", .path = "zig/tests/nemotron_forward.zig", .about = "Nemotron (Lightning or Bolt) native teacher-forced logits" },
         .{ .name = "tf-mm-bench", .path = "zig/tests/mm_bench.zig", .about = "Prompt matmul kernels from .metal files: chained speed at one shape, bits against the first, error against fp64" },
         .{ .name = "tf-sq-bench", .path = "zig/tests/sq_bench.zig", .about = "Row-exact 4-bit prompt tiles before the M5: chained speed at one shape, every output's bits against the first" },
         .{ .name = "tf-gemma4-kernels", .path = "zig/tests/gemma4/kernels.zig", .about = "Gemma 4 dense decode kernels against the reference's dumped fixtures, bit for bit by window width" },
@@ -330,15 +278,21 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         .{ .name = "tf-gemma4-bench", .path = "zig/tests/gemma4/bench.zig", .about = "Gemma 4 dense step costs: projections alone by rows against whole forwards" },
         .{ .name = "tf-gemma4-no-tensor", .path = "zig/tests/gemma4/no_tensor.zig", .about = "Gemma 4's Metal kernels on a Mac without tensor units: what builds, and the row path's bits" },
         .{ .name = "tf-spark-run", .path = "zig/tests/spark25/run.zig", .about = "Spark2.5 on Metal: greedy tokens, every position's logits or a prompt's last logits, for the reference's check" },
+        .{ .name = "tf-minimax-run", .path = "zig/tests/minimax_m3/run.zig", .about = "MiniMax-M3.1-Flash greedy tokens, every position's logits or a prompt's last logits, for the reference's check" },
+        .{ .name = "tf-minimax-vision", .path = "zig/tests/minimax_m3/vision.zig", .about = "MiniMax-M3.1-Flash's image tower alone: an image's patches and text rows, for tools/vision_ref.py's check" },
+        .{ .name = "tf-llama-run", .path = "zig/tests/llama/run.zig", .about = "Llama on Metal: greedy tokens, every position's logits or a prompt's last logits, for the reference's check" },
+        .{ .name = "tf-flint-run", .path = "zig/tests/flint/run.zig", .about = "Flint greedy tokens, every position's logits or a prompt's last logits, for the reference's check" },
         .{ .name = "tf-qwen36-row-seam", .path = "zig/tests/qwen36_row_seam.zig", .about = "Model-free fixture: the row projection's bias sums stay fp32 at every width" },
     };
+    // the tokenizer for the programs that tokenize prompts themselves (the engine module has none)
+    const tokenizer = b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .optimize = optimize, .link_libc = true });
     for (engine_programs) |p| {
         const mod = b.createModule(.{
             .root_source_file = b.path(p.path),
             .target = target,
             .optimize = optimize,
             .link_libc = true,
-            .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "tensorfold", .module = engine }, .{ .name = "core", .module = engine }, .{ .name = "cluster", .module = cluster }, .{ .name = "kernel_sources", .module = sources }, .{ .name = "native_engines", .module = engines }, .{ .name = "engine_api", .module = api }, exlr8_build.cliImport(b, target, optimize, engine) },
+            .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "tensorfold", .module = engine }, .{ .name = "core", .module = engine }, .{ .name = "cluster", .module = cluster }, .{ .name = "kernel_sources", .module = sources }, .{ .name = "native_engines", .module = engines }, .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, exlr8_build.cliImport(b, target, optimize, engine) },
         });
         if (p.c_source) |file| {
             mod.addCSourceFile(.{ .file = b.path(file), .flags = &.{"-std=c11"} });
@@ -350,18 +304,7 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
 
     glm_checks.sampler(b, target, optimize, metal, lanes, sources);
 
-    // MiniMax H3 / FastH3's transformer: the packed rows' denoising forwards against a case file (M5 tensor units).
-    const h3_kernels = b.createModule(.{ .root_source_file = b.path("zig/kernels/metal/h3/kernels.zig") });
-    const h3_safetensors = b.createModule(.{ .root_source_file = b.path("zig/src/core/safetensors.zig"), .target = target, .optimize = optimize });
-    const h3_mod = b.createModule(.{ .root_source_file = b.path("zig/src/families/h3/h3.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "safetensors", .module = h3_safetensors }, .{ .name = "h3_kernels", .module = h3_kernels }, .{ .name = "kernel_sources", .module = sources } } });
-    const h3_dit = b.addExecutable(.{ .name = "tf-h3-dit", .root_module = b.createModule(.{
-        .root_source_file = b.path("zig/tests/h3_dit.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "h3", .module = h3_mod } },
-    }) });
-    b.step("tf-h3-dit", "FastH3's Metal transformer against a case file: velocities, every step, timings").dependOn(&b.addInstallArtifact(h3_dit, .{}).step);
+    @import("h3_host.zig").metalTools(b, target, optimize, metal, sources);
     // The core row projection (chips without tensor units) on synthetic matrices; runs on any Mac's GPU
     const row_mod = b.createModule(.{ .root_source_file = b.path("zig/src/core/row_projection.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "kernel_sources", .module = sources } } });
     const row_check = b.addExecutable(.{ .name = "tf-row-check", .root_module = b.createModule(.{
@@ -395,11 +338,11 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     // The core lane, shared-context and Qwen3.8-27B programs and host tests.
     qwen27_build.targets(b, target, optimize, metal, sources, engine, lanes, mods.qwen27, test_step);
     core_checks.targets(b, target, optimize, metal, engine);
-    contract_build.metal(b, target, optimize, metal, engine, sources);
-    glm_checks.targets(b, target, optimize, metal, engine, sources);
+    contract_build.metal(b, target, optimize, metal, engine, sources, kimi_bytes);
+    glm_checks.targets(b, target, optimize, metal, engine, sources, test_step);
     flashnext_checks.targets(b, target, optimize, metal, engine);
 
-    _ = nativeServer(b, target, optimize, metal, engine, mods.living, api, engines, build_options, test_step);
+    _ = metal_server.nativeServer(b, target, optimize, metal, engine, mods.living, api, engines, build_options, test_step, no_compiler);
 
     const cluster_metal = b.createModule(.{
         .root_source_file = b.path("zig/src/cluster/metal_sink.zig"),
@@ -435,7 +378,9 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "kimi_k3", .module = kimi }, .{ .name = "kimi_metallib", .module = kimi_bytes }, .{ .name = "cluster", .module = cluster } },
     }) });
     b.installArtifact(k3_cluster);
-    b.step("tf-k3-cluster", "Kimi K3 tensor- and expert-parallel ranks against one node, through the cluster's canon").dependOn(&b.addInstallArtifact(k3_cluster, .{}).step);
+    const k3_cluster_step = b.step("tf-k3-cluster", "Kimi K3 tensor- and expert-parallel ranks against one node, through the cluster's canon");
+    k3_cluster_step.dependOn(&b.addInstallArtifact(k3_cluster, .{}).step);
+    if (no_compiler) |fail| k3_cluster_step.dependOn(fail);
     const tp2 = b.addExecutable(.{ .name = "tf-tp2-bench", .root_module = b.createModule(.{
         .root_source_file = b.path("zig/tests/tp2_bench.zig"),
         .target = target,
@@ -447,6 +392,8 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     const cluster_tests = b.step("test-cluster", "Cluster tests: fake nodes and fabric, K3 planning (TF_K3_DIR), Metal sink");
     cluster_tests.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = cluster })).step);
     cluster_tests.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = cluster_metal })).step);
+    // canon.zig is its own module, so a cluster-rooted test does not run these.
+    cluster_tests.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = @import("cuda_engines.zig").canonModule(b, target, optimize) })).step);
 
     // These module tests include Metal device checks when the macOS host has a GPU.
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = metal })).step);
@@ -466,10 +413,13 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     const lfm2_dspark = b.addRunArtifact(b.addTest(.{ .root_module = engine, .filters = &.{"lfm2 dspark:"} }));
     b.step("test-lfm2-dspark", "LFM2's DSpark drafter and its taps: config, quantizer and kernels on this Mac's GPU").dependOn(&lfm2_dspark.step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes })).step);
-    // the fake fabric maps its windows with mmap: the Macs' RDMA, not Windows
-    if (target.result.os.tag != .windows) test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = fabric })).step);
-    const dashboard = b.createModule(.{ .root_source_file = b.path("zig/src/server/dashboard_test.zig"), .target = target, .optimize = optimize, .link_libc = true });
-    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = dashboard })).step);
+    // the fake fabric maps windows with mmap (the Macs' RDMA, not Windows); verbs is its own module, with its own root
+    if (target.result.os.tag != .windows) {
+        test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = fabric })).step);
+        const verbs_tests = b.addRunArtifact(b.addTest(.{ .root_module = @import("tp.zig").verbsModule(b, target, optimize) }));
+        b.step("test-verbs", "verbs.zig and verbs_abi.zig, outside the fabric module").dependOn(&verbs_tests.step);
+        test_step.dependOn(&verbs_tests.step);
+    }
     const kimi_test = b.step("test-k3", "Kimi K3's host-side unit tests (no GPU work)");
     for ([_]*std.Build.Module{ kimi, tiktoken }) |m| {
         const run = b.addRunArtifact(b.addTest(.{ .root_module = m }));
@@ -491,6 +441,7 @@ pub fn metalEngineModules(b: *std.Build, target: std.Build.ResolvedTarget, optim
     metal.linkSystemLibrary("objc", .{});
     const lanes = b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = target, .optimize = optimize, .link_libc = true });
     const fabric = b.createModule(.{ .root_source_file = b.path("zig/src/fabric/fabric.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    fabric.addImport("verbs", @import("tp.zig").verbsModule(b, target, optimize));
     const sources = b.createModule(.{ .root_source_file = b.path("zig/kernels/metal/sources.zig") });
     // Living Weights' family-neutral learner, which Nemotron's lessons and the server's view of them share
     const living = b.createModule(.{ .root_source_file = b.path("zig/src/living/living.zig"), .target = target, .optimize = optimize, .link_libc = true });
@@ -501,6 +452,7 @@ pub fn metalEngineModules(b: *std.Build, target: std.Build.ResolvedTarget, optim
         .link_libc = true,
         .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "kernel_sources", .module = sources }, .{ .name = "nemotron_draft_ids", .module = draft_ids }, .{ .name = "lanes", .module = lanes }, .{ .name = "fabric", .module = fabric }, .{ .name = "living", .module = living } },
     });
+    engine.addImport("engram_hash_core", b.createModule(.{ .root_source_file = b.path("zig/src/families/deepseek_v41/engram_hash.zig"), .target = target, .optimize = optimize }));
     return .{ .metal = metal, .lanes = lanes, .fabric = fabric, .sources = sources, .engine = engine, .living = living, .qwen27 = qwen27_build.engineModules(b, target, metal, sources, engine) };
 }
 
@@ -515,6 +467,26 @@ pub fn distMetalServer(b: *std.Build, target: std.Build.ResolvedTarget, draft_id
     m.metal.addSystemIncludePath(b.graph.cwdRelativePath(b.pathJoin(&.{ sdk, "usr/include" })));
     const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = .fast, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = m.lanes }} });
     const engines = b.createModule(.{ .root_source_file = b.path("zig/src/native/metal.zig"), .target = target, .optimize = .fast, .link_libc = true, .imports = &.{ .{ .name = "metal", .module = m.metal }, .{ .name = "engine_api", .module = api }, .{ .name = "tensorfold", .module = m.engine } } });
-    @import("drama3_metal.zig").addNative(b, target, .fast, m.metal, engines, mlxMetalStd(b));
-    return nativeServer(b, target, .fast, m.metal, m.engine, m.living, api, engines, build_options, null);
+    engines.addImport("living", m.living);
+    drama3_build.addNative(b, target, .fast, m.metal, engines, drama3_build.metallib(b, mlxMetalStd(b)));
+    engines.addImport("kimi_k3", kimiModule(b, target, .fast, m.metal, m.engine, m.lanes));
+    engines.addImport("kimi_metallib", embedded(b, kimiMetallib(b, &flags), "kimi.metallib"));
+    return metal_server.nativeServer(b, target, .fast, m.metal, m.engine, m.living, api, engines, build_options, null, null);
+}
+
+pub fn kimiModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, metal: *std.Build.Module, engine: *std.Build.Module, lanes: *std.Build.Module) *std.Build.Module {
+    const kimi = b.createModule(.{
+        .root_source_file = b.path("zig/src/families/kimi_k3/kimi_k3.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "safetensors", .module = b.createModule(.{
+            .root_source_file = b.path("zig/src/families/kimi_k3/core_safetensors.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "core", .module = engine }},
+        }) } },
+    });
+    kimi.addImport("lanes", lanes);
+    return kimi;
 }

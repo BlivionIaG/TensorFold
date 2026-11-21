@@ -9,6 +9,9 @@ const Event = api.Event;
 const Request = api.Request;
 
 test "halt (a stop's drain deadline): the rounds end at a round boundary, every request queued or running fails with the reason" {
+    const log_level = std.testing.log_level;
+    std.testing.log_level = .err;
+    defer std.testing.log_level = log_level;
     try haltCase(null);
 }
 
@@ -42,7 +45,7 @@ fn haltCase(release_at_stop: ?*bool) !void {
         fn beginAdmit(_: *anyopaque) void {}
         fn admit(ctx: *anyopaque, ask: api.Rounds.Ask, _: *[]const u8) api.Rounds.Verdict {
             const p = self(ctx);
-            for (p.seqs.items) |x| if (!x.decoding) return .wait;
+            for (p.seqs.items) |x| if (!x.decoding) return .{ .wait = .engine_busy };
             p.seqs.append(gpa, .{ .key = ask.key, .n = ask.prompt.len }) catch return .refuse;
             return .admit;
         }
@@ -188,6 +191,9 @@ fn haltCase(release_at_stop: ?*bool) !void {
 }
 
 test "halt fails a request still filling its prompt with the reason and frees its lane; a decoding one fails too" {
+    const log_level = std.testing.log_level;
+    std.testing.log_level = .err;
+    defer std.testing.log_level = log_level;
     const gpa = std.testing.allocator;
     var cfg = try lanes.Config.init(gpa, .{ .exact_width = 8, .gpu_tokens = true, .hidden_rows = true }, 8, 7);
     defer cfg.deinit(gpa);

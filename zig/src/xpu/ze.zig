@@ -21,6 +21,11 @@ pub const Api = struct {
     zeCommandListAppendLaunchKernel: *const fn (H, H, *const GroupCount, H, u32, ?[*]H) callconv(.c) u32,
     zeCommandListAppendMemoryCopy: *const fn (H, ?*anyopaque, ?*const anyopaque, usize, H, u32, ?[*]H) callconv(.c) u32,
     zeCommandListAppendBarrier: *const fn (H, H, u32, ?[*]H) callconv(.c) u32,
+    zeCommandListAppendSignalEvent: *const fn (H, H) callconv(.c) u32,
+    zeCommandListAppendWaitOnEvents: *const fn (H, u32, [*]H) callconv(.c) u32,
+    zeCommandListAppendEventReset: *const fn (H, H) callconv(.c) u32,
+    zeDeviceCanAccessPeer: *const fn (H, H, *u8) callconv(.c) u32,
+    zeContextMakeMemoryResident: *const fn (H, H, ?*anyopaque, usize) callconv(.c) u32,
     zeMemAllocDevice: *const fn (H, *const DeviceAllocDesc, usize, usize, H, *?*anyopaque) callconv(.c) u32,
     zeMemAllocHost: *const fn (H, *const HostAllocDesc, usize, usize, *?*anyopaque) callconv(.c) u32,
     zeMemFree: *const fn (H, ?*anyopaque) callconv(.c) u32,
@@ -42,6 +47,26 @@ pub const Api = struct {
     zeCommandListDestroy: *const fn (H) callconv(.c) u32,
     zeContextDestroy: *const fn (H) callconv(.c) u32,
 };
+
+/// The core memory table, Gpu.memory's fallback where Sysman cannot run.
+pub const MemApi = struct {
+    zeDeviceGetMemoryProperties: *const fn (H, *u32, ?[*]DeviceMemoryProperties) callconv(.c) u32,
+};
+/// ze_device_memory_properties_t.
+pub const DeviceMemoryProperties = extern struct {
+    stype: u32 = 0x5, // ZE_STRUCTURE_TYPE_DEVICE_MEMORY_PROPERTIES
+    pNext: ?*anyopaque = null,
+    flags: u32 = 0,
+    max_clock_rate: u32 = 0,
+    max_bus_width: u32 = 0,
+    total_size: u64 = 0,
+    name: [256]u8 = @splat(0),
+};
+
+/// Sysman needs DRM: under WSL2 (/dev/dxg, no /dev/dri) NEO 23.43's zesInit faults in libze_intel_gpu (C2 receipt).
+fn sysmanUsable() bool {
+    return std.c.access("/dev/dri", 0) == 0 or std.c.access("/dev/dxg", 0) != 0;
+}
 
 /// Sysman, for the free memory of the device's own memory modules (Gpu.freeMemory).
 pub const SysApi = struct {
@@ -184,6 +209,7 @@ pub const Gpu = struct {
     device: H,
     context: H,
     props: DeviceProperties,
+    shared_ctx: bool = false, // true on non-owning peers opened by openPeers; closePeers releases the group
     owned: Owned = .{}, // what close() gives back
 
     /// Every allocation, kernel, module, list and event made through this Gpu, destroyed by close().
@@ -215,11 +241,34 @@ pub const Gpu = struct {
 
     /// Waits for every list this Gpu made, then destroys what it made and the context (startup errors included).
     pub fn close(g: *Gpu) void {
+        if (g.shared_ctx) {
+            _ = releasePeer(&g.api, g.context, &g.owned, false);
+            return;
+        }
         if (release(&g.api, g.context, &g.owned)) g.lib.close();
+    }
+
+    /// Drains all peer command lists first, then frees resources across the group and closes the shared context.
+    pub fn closePeers(gpus: []Gpu) void {
+        if (gpus.len == 0) return;
+        for (gpus) |*g| for (g.owned.lists.items) |l| if (g.api.zeCommandListHostSynchronize(l, std.math.maxInt(u64)) != 0) {
+            std.log.warn("XPU: a command list did not drain at closePeers; memory and context stay until the process ends", .{});
+            return;
+        };
+        var idx = gpus.len;
+        while (idx > 1) {
+            idx -= 1;
+            _ = releasePeer(&gpus[idx].api, gpus[idx].context, &gpus[idx].owned, false);
+        }
+        if (releasePeer(&gpus[0].api, gpus[0].context, &gpus[0].owned, true)) gpus[0].lib.close();
     }
 
     /// `close` before the loader: false, with nothing destroyed, when a list does not drain (it may still run).
     fn release(api: *const Api, context: H, o: *Owned) bool {
+        return releasePeer(api, context, o, true);
+    }
+
+    fn releasePeer(api: *const Api, context: H, o: *Owned, destroy_ctx: bool) bool {
         for (o.lists.items) |l| if (api.zeCommandListHostSynchronize(l, std.math.maxInt(u64)) != 0) {
             std.log.warn("XPU: a command list did not drain at close; its memory and context stay until the process ends", .{});
             return false;
@@ -233,55 +282,126 @@ pub const Gpu = struct {
         while (it.next()) |p| _ = api.zeMemFree(context, @ptrFromInt(p.*));
         o.mems.deinit(own_alloc);
         inline for (.{ &o.kernels, &o.modules, &o.lists, &o.events, &o.pools }) |l| l.deinit(own_alloc);
-        _ = api.zeContextDestroy(context);
+        if (destroy_ctx) _ = api.zeContextDestroy(context);
         return true;
     }
 
     pub fn open(device_id: u32) Error!Gpu {
+        var out: [1]Gpu = undefined;
+        try openPeers(device_id, &out);
+        return out[0];
+    }
+
+    /// Opens `out.len` peer-accessible devices of `device_id` on one driver and one shared Level Zero context.
+    pub fn openPeers(device_id: u32, out: []Gpu) Error!void {
+        if (out.len == 0 or out.len > 8) return error.NoDevice;
         var lib = std.DynLib.open("libze_loader.so.1") catch return error.LoaderUnavailable;
         errdefer lib.close();
         const api = try resolve(Api, &lib);
         try check(api.zeInit(1)); // ZE_INIT_FLAG_GPU_ONLY
-        var nd: u32 = 8;
+        var nd: u32 = 0;
+        try check(api.zeDriverGet(&nd, null));
         var drivers: [8]H = @splat(null);
+        nd = @min(nd, drivers.len);
         try check(api.zeDriverGet(&nd, &drivers));
         for (drivers[0..nd]) |drv| {
-            var nv: u32 = 8;
-            var devs: [8]H = @splat(null);
+            if (drv == null) continue;
+            var nv: u32 = 0; // the count first, as context.enumerate (a padded list holds nulls)
+            try check(api.zeDeviceGet(drv, &nv, null));
+            var devs: [16]H = @splat(null);
+            nv = @min(nv, devs.len);
             try check(api.zeDeviceGet(drv, &nv, &devs));
+            var picked: [8]H = @splat(null);
+            var props: [8]DeviceProperties = @splat(.{});
+            var found: usize = 0;
             for (devs[0..nv]) |dev| {
+                if (dev == null) continue;
                 var p: DeviceProperties = .{};
                 try check(api.zeDeviceGetProperties(dev, &p));
                 if (p.deviceId != device_id) continue;
-                var ctx: H = null;
-                try check(api.zeContextCreate(drv, &.{}, &ctx));
-                return .{ .lib = lib, .api = api, .driver = drv, .device = dev, .context = ctx, .props = p };
+                picked[found] = dev;
+                props[found] = p;
+                found += 1;
+                if (found == out.len) break;
             }
+            if (found < out.len) continue;
+            if (out.len > 1) {
+                for (0..out.len) |i| for (0..out.len) |j| if (i != j) {
+                    var can: u8 = 0;
+                    try check(api.zeDeviceCanAccessPeer(picked[i], picked[j], &can));
+                    if (can == 0) return error.ZeFailed;
+                };
+            }
+            var ctx: H = null;
+            try check(api.zeContextCreate(drv, &.{}, &ctx));
+            for (out, 0..) |*g, i| {
+                g.* = .{
+                    .lib = if (i == 0) lib else undefined,
+                    .api = api,
+                    .driver = drv,
+                    .device = picked[i],
+                    .context = ctx,
+                    .props = props[i],
+                    .shared_ctx = i > 0,
+                };
+            }
+            return;
         }
         return error.NoDevice;
     }
 
-    /// On-board bytes free and in all by Sysman (device matched by UUID); an allocation leaves `free` once written.
+    pub fn makeResident(g: *Gpu, ptr: *anyopaque, size: usize) Error!void {
+        try check(g.api.zeContextMakeMemoryResident(g.context, g.device, ptr, size));
+    }
+
+    /// Allocates a pool of `count` device-scoped events visible across `gpus` (owned by `gpus[0]`).
+    pub fn sharedEvents(gpus: []Gpu, out_events: []H) Error!void {
+        var devs: [8]H = @splat(null);
+        for (gpus, 0..) |*g, i| devs[i] = g.device;
+        var pool: H = null;
+        try check(gpus[0].api.zeEventPoolCreate(gpus[0].context, &.{ .flags = pool_host_visible, .count = @intCast(out_events.len) }, @intCast(gpus.len), &devs, &pool));
+        _ = try keep(&gpus[0].owned.pools, pool, gpus[0].api.zeEventPoolDestroy);
+        for (out_events, 0..) |*e, i| {
+            // signal=2, wait=2 (ZE_EVENT_SCOPE_FLAG_DEVICE): peer cards wait on these, without host round-trips
+            try check(gpus[0].api.zeEventCreate(pool, &.{ .index = @intCast(i), .signal = 2, .wait = 2 }, e));
+            _ = try keep(&gpus[0].owned.events, e.*, gpus[0].api.zeEventDestroy);
+        }
+    }
+
+    /// On-board bytes free and in all by Sysman (by UUID); without Sysman (WSL2) both are the core total, less nothing.
     pub fn memory(g: *Gpu) Error!struct { free: u64, size: u64 } {
+        if (!sysmanUsable()) {
+            const total = try g.coreMemory();
+            return .{ .free = total, .size = total };
+        }
         const sys = try resolve(SysApi, &g.lib);
         try check(sys.zesInit(0));
-        var nd: u32 = 8;
+        var nd: u32 = 0; // counts first: loader 1.16 + NEO 23.43 keep a larger count as asked, padded with nulls
+        try check(sys.zesDriverGet(&nd, null));
         var drivers: [8]H = @splat(null);
+        nd = @min(nd, drivers.len);
         try check(sys.zesDriverGet(&nd, &drivers));
         for (drivers[0..nd]) |drv| {
-            var nv: u32 = 8;
+            if (drv == null) continue;
+            var nv: u32 = 0;
+            try check(sys.zesDeviceGet(drv, &nv, null));
             var devs: [8]H = @splat(null);
+            nv = @min(nv, devs.len);
             try check(sys.zesDeviceGet(drv, &nv, &devs));
             for (devs[0..nv]) |dev| {
+                if (dev == null) continue;
                 var p: SysDeviceProperties = .{};
                 try check(sys.zesDeviceGetProperties(dev, &p));
                 if (!std.mem.eql(u8, &p.core.uuid, &g.props.uuid)) continue;
-                var nm: u32 = 16;
+                var nm: u32 = 0;
+                try check(sys.zesDeviceEnumMemoryModules(dev, &nm, null));
                 var mods: [16]H = @splat(null);
+                nm = @min(nm, mods.len);
                 try check(sys.zesDeviceEnumMemoryModules(dev, &nm, &mods));
                 var left: u64 = 0;
                 var all: u64 = 0;
                 for (mods[0..nm]) |m| {
+                    if (m == null) continue;
                     var mp: MemProperties = .{};
                     try check(sys.zesMemoryGetProperties(m, &mp));
                     if (mp.location != 1) continue;
@@ -294,6 +414,17 @@ pub const Gpu = struct {
             }
         }
         return error.NoDevice;
+    }
+
+    /// The memory modules' total by the core API, asked with room for 8 (NEO answers a count query with 0).
+    pub fn coreMemory(g: *Gpu) Error!u64 {
+        const mem = try resolve(MemApi, &g.lib);
+        var props: [8]DeviceMemoryProperties = @splat(.{});
+        var n: u32 = props.len;
+        try check(mem.zeDeviceGetMemoryProperties(g.device, &n, &props));
+        var total: u64 = 0;
+        for (props[0..@min(n, props.len)]) |m| total += m.total_size;
+        return total;
     }
 
     pub fn deviceAlloc(g: *Gpu, size: usize) Error!*anyopaque {
@@ -375,6 +506,9 @@ pub const Gpu = struct {
 };
 
 test "close drains every list before it destroys anything, and destroys nothing while one will not drain" {
+    const log_level = std.testing.log_level;
+    std.testing.log_level = .err;
+    defer std.testing.log_level = log_level;
     const Fake = struct {
         var calls: [16]u8 = undefined;
         var n: usize = 0;

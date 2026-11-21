@@ -297,6 +297,7 @@ const Gpu = struct {
         const e = cb.compute(.serial);
         var start: usize = 0;
         while (start + m <= wide) : (start += m) try g.kern.quant(e, lin, .{ .buffer = x, .offset = start * lin.k * 2 }, null, .{ .buffer = x }, .{ .buffer = y, .offset = start * n * 2 }, @intCast(m));
+        e.barrier();
         try commit(cb, e);
     }
 
@@ -306,7 +307,7 @@ const Gpu = struct {
         const cb = g.queue.commandBuffer();
         const e = cb.compute(.serial);
         if (!std.mem.eql(u8, path(raw).name, "row")) { // simd_qmm_bits at every width, 4-bit too
-            const tiles = try row.simd_bits.call(g.bits, raw.bits, raw.n, raw.k, wide, raw.n, false);
+            const tiles = try row.simd_bits.call(g.bits, raw.bits, raw.n, raw.k, wide, raw.n, false, 0);
             row.simd_bits.encode(e, tiles, .{ .w = raw.w, .w_off = raw.w_off, .scales = raw.scales, .s_off = raw.s_off, .biases = raw.biases, .b_off = raw.b_off }, x, 0, y, 0);
             return commit(cb, e);
         }

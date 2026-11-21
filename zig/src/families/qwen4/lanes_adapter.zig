@@ -85,9 +85,10 @@ pub fn Adapter(comptime E: type, comptime D: type, comptime L: type) type {
             slot.has_logits = true;
         }
         fn prefill(p: *anyopaque, s: *L.Stream) !void {
-            while (!try step(p, s)) {}
+            while (!try step(p, s, 0)) {}
         }
-        fn step(p: *anyopaque, s: *L.Stream) !bool {
+        /// One prompt-pass chunk of the engine's own window. `_: u32` keeps that window's grid.
+        fn step(p: *anyopaque, s: *L.Stream, _: u32) !bool {
             const l = self(p);
             const lane = l.find(s) catch try l.acquire(s);
             if (s.isCancelled()) {
@@ -111,6 +112,7 @@ pub fn Adapter(comptime E: type, comptime D: type, comptime L: type) type {
                 l.e.fail();
                 return err;
             };
+            if (comptime E.Gpu.kind == .metal) L.prefill_widths.completed(l.a, s, end - lane.filled);
             lane.filled = end;
             s.fill_at.store(@intCast(end), .release);
             for (s.reuse.marks) |cut| if (cut == end) {

@@ -36,6 +36,16 @@ pub const Served = struct {
     }
 };
 
+/// A family that times its windows once its pool attaches: prices into `s.facts`; false with `problem` set.
+pub fn price(comptime F: type, a: Allocator, io: std.Io, ctx: anytype, dir: []const u8, family: *anyopaque, s: *Served, problem: *[]const u8) !bool {
+    if (comptime !@hasDecl(F, "priceWindows")) return true;
+    s.facts = F.priceWindows(family, io, ctx, dir, s.facts) catch |e| {
+        problem.* = try std.fmt.allocPrint(a, "the native CUDA engine cannot time its windows ({s})", .{@errorName(e)});
+        return false;
+    };
+    return true;
+}
+
 const Held = struct { drafted: lanes.drafted.Drafted, ctx: *anyopaque, close: *const fn (*anyopaque) void, reserve: *const fn (*anyopaque, u32) anyerror!void };
 
 /// `loaded`'s backend, wrapped with the drafter `o.drafter` names when it does; null with `problem` set on refusal.
@@ -70,7 +80,12 @@ pub fn wrap(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, loaded: 
     s.facts = h.drafted.facts(loaded.facts);
     s.stream_bytes = h.drafted.streamBytes(loaded.stream_bytes);
     s.held = h;
-    if (@hasField(@TypeOf(opened), "prepare")) s.prepare = .{ .ctx = opened.prepare.ctx, .run = opened.prepare.run, .bytes = if (@hasField(@TypeOf(opened.prepare), "bytes")) opened.prepare.bytes else 0 };
+    if (@hasField(@TypeOf(opened), "prepare")) {
+        // a family's prepare, or an optional one when only some drafters time windows after the pool (not Qwen's MTP)
+        const P = @TypeOf(opened.prepare);
+        const maybe: ?(if (@typeInfo(P) == .optional) @typeInfo(P).optional.child else P) = opened.prepare;
+        if (maybe) |p| s.prepare = .{ .ctx = p.ctx, .run = p.run, .bytes = if (@hasField(@TypeOf(p), "bytes")) p.bytes else 0 };
+    }
     return s;
 }
 

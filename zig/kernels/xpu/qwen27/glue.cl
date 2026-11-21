@@ -9,6 +9,7 @@
 #pragma OPENCL FP_CONTRACT OFF
 
 #define GS 64
+#include "shape.h"
 #define KERNEL(N) __attribute__((intel_reqd_sub_group_size(16))) __attribute__((reqd_work_group_size(N, 1, 1))) kernel
 
 static inline float bf2f(ushort h) { return as_float((uint)h << 16); }
@@ -36,17 +37,24 @@ static void quant_row(local const half *hl, int K, global char *A8, global float
 static void out_rows(local const half *hl, int K, global half *H, int t, int rot, int gs, global char *A8,
                      global float *SA, int MS, global half *AHI, global half *ALO);
 
-// Row sums of an fp16 row in local memory, written to [row, K / gs]: one subgroup per group of gs, fixed order.
+// Row sums of an fp16 row in local memory to [row, Q27_GSTRIDE(K / gs)]: one subgroup per group of gs, fixed order.
 static void rowsums(local const half *hl, int K, global half *AHI, global half *ALO, long row, int gs) {
   const int lane = get_sub_group_local_id(), nsg = get_num_sub_groups(), per = gs / 16;
-  for (int g = get_sub_group_id(); g < K / gs; g += nsg) {
+  const int ng = K / gs, gp = Q27_GSTRIDE(ng);
+  for (int g = get_sub_group_id(); g < ng; g += nsg) {
     float s = 0.0f;
     for (int k = 0; k < per; k++) s += (float)hl[g * gs + lane * per + k];
     s = sub_group_reduce_add(s) * (1.0f / gs);
     if (lane == 0) {
       const half hi = convert_half_rte(s * ASC);
-      AHI[row * (K / gs) + g] = hi;
-      ALO[row * (K / gs) + g] = convert_half_rte(s * ASC - (float)hi);
+      AHI[row * gp + g] = hi;
+      ALO[row * gp + g] = convert_half_rte(s * ASC - (float)hi);
+    }
+  }
+  if (lane == 0) {
+    for (int g = ng + get_sub_group_id(); g < gp; g += nsg) {
+      AHI[row * gp + g] = 0.0h;
+      ALO[row * gp + g] = 0.0h;
     }
   }
 }
@@ -97,15 +105,16 @@ KERNEL(256) void embed_dense(global const int *IDS, global const half *E, global
 #pragma OPENCL EXTENSION cl_intel_subgroup_matrix_multiply_accumulate : enable
 KERNEL(256) void dense_rows(global const half *H, global const half *W, global half *P, int T, int ldp, int c0) {
   local float red[16 * 16 * 16];
-  const int K = 5120, KS = K / 16;
+  const int K = Q27_D, KS = K / 16;
   const int m0 = get_group_id(0) * 16, n0 = get_group_id(1) * 16, sg = get_sub_group_id(), lane = get_sub_group_local_id();
+  const bool col_ok = (n0 + lane) < (2 * Q27_GV);
   float8 acc0 = 0.0f, acc1 = 0.0f;
-  global const uint *wr = (global const uint *)(W + (long)(n0 + lane) * K);
+  global const uint *wr = (global const uint *)(W + (long)(col_ok ? (n0 + lane) : 0) * K);
   for (int k = sg * KS; k < (sg + 1) * KS; k += 16) {
     short8 a0, a1;
     intel_sub_group_2d_block_read_16b_8r16x1c((global void *)H, K * 2, T, K * 2, (int2)(k, m0), (private ushort *)&a0);
     intel_sub_group_2d_block_read_16b_8r16x1c((global void *)H, K * 2, T, K * 2, (int2)(k, m0 + 8), (private ushort *)&a1);
-    const int8 bb = as_int8(vload8(0, wr + k / 2));
+    const int8 bb = col_ok ? as_int8(vload8(0, wr + k / 2)) : (int8)(0);
     acc0 = intel_sub_group_f16_f16_matrix_mad_k16(a0, bb, acc0);
     acc1 = intel_sub_group_f16_f16_matrix_mad_k16(a1, bb, acc1);
   }
@@ -116,7 +125,7 @@ KERNEL(256) void dense_rows(global const half *H, global const half *W, global h
   barrier(CLK_LOCAL_MEM_FENCE);
   float v = 0.0f;
   for (int s = 0; s < 16; s++) v += red[(s * 16 + sg) * 16 + lane];
-  if (m0 + sg < T) P[(long)(m0 + sg) * ldp + c0 + n0 + lane] = convert_half_rte(v);
+  if (m0 + sg < T && col_ok) P[(long)(m0 + sg) * ldp + c0 + n0 + lane] = convert_half_rte(v);
 }
 
 // x ← bf16(x + r) (if R), h = fp16(bf16(rms(x)·w)) and its row sums; one group of 512 per row, fixed order.
@@ -125,9 +134,9 @@ KERNEL(128) void add_rmsnorm(global float *X, global const half *R, global const
                               global char *A8, global float *SA, int MS, int rot) {
   // 128 work-items per row, 4 consecutive elements per read; D a multiple of 512, at most 5 120.
   local float red[8];
-  local half hl[5120];
+  local half hl[Q27_D];
   const int t = get_group_id(0), lid = get_local_id(0);
-  float4 xv[10];
+  float4 xv[Q27_D512];
   float ss = 0.0f;
   for (int i = 0; i < D / 512; i++) {
     const int e = (i * 128 + lid) * 4;
@@ -163,10 +172,10 @@ KERNEL(512) void add_rmsnorm_dec(global float *X, global const half *R, global c
                                   global half *AHI, global half *ALO, int D, float eps, int has_r, int gs,
                                   global char *A8, global float *SA, int MS, int rot) {
   local float red[32];
-  local half hl[5120];
+  local half hl[Q27_D];
   const int t = get_group_id(0), lid = get_local_id(0);
-  float xv[10], ss = 0.0f;
-  for (int i = 0; i < 10; i++) {
+  float xv[Q27_D512], ss = 0.0f;
+  for (int i = 0; i < Q27_D512; i++) {
     const int e = lid + i * 512;
     float x = e < D ? X[(long)t * D + e] : 0.0f;
     if (has_r && e < D) {
@@ -182,7 +191,7 @@ KERNEL(512) void add_rmsnorm_dec(global float *X, global const half *R, global c
   float tot = 0.0f;
   for (int i = 0; i < 32; i++) tot += red[i];
   const float inv = rsqrt(tot / D + eps);
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < Q27_D512; i++) {
     const int e = lid + i * 512;
     if (e >= D) continue;
     const half v = convert_half_rte(rbf(xv[i] * inv * bf2f(WN[e])));
@@ -196,8 +205,8 @@ KERNEL(512) void add_rmsnorm_dec(global float *X, global const half *R, global c
 // GDN, before the recurrence. P: output of the gdn.in GEMM, fp16 [T, 16 640] = qkv | z | a | b | padding.
 
 // Causal convolution of kernel 4 over qkv with the state, SiLU, bf16 rounding; q, k normalized per head.
-#define NQK 2048                                        // 16 heads × 128
-#define NCONV 10240
+#define NQK Q27_NQK                                     // 16 heads × 128
+#define NCONV Q27_NCONV
 // Grid (T, 40): one group of 256 per block of 256 channels (two heads of 128); block 0 also computes g and β.
 KERNEL(256) void gdn_pre(global const half *P, global const half *CIN, global half *COUT, global const ushort *CW,
                          global const ushort *ALOG, global const ushort *DT, global ushort *Q, global ushort *K,
@@ -217,17 +226,17 @@ KERNEL(256) void gdn_pre(global const half *P, global const half *CIN, global ha
   for (int j = 0; j < 4; j++) {
     const int dd = dep - 3 + j;                       // depth of the input (negative: the input state)
     const int row = dd < 0 ? 0 : TREE ? TREE[t * 17 + 1 + dd] : MT ? wf + dd : dd;
-    const float x = dd < 0 ? (float)CIN[(3 + dd) * NCONV + c] : (float)P[(long)row * 16640 + c];
+    const float x = dd < 0 ? (float)CIN[(3 + dd) * NCONV + c] : (float)P[(long)row * Q27_GDN_IN + c];
     s += x * bf2f(CW[c * 4 + j]);
   }
   cv[lid] = rbf(silu(s));
   if (MT && TREE) {
   } else if (MT) {                                     // the window as a block of ww rows
-    if (dep >= ww - 3) COUT[(dep - (ww - 3)) * NCONV + c] = P[(long)t * 16640 + c];
+    if (dep >= ww - 3) COUT[(dep - (ww - 3)) * NCONV + c] = P[(long)t * Q27_GDN_IN + c];
     if (ww < 3 && dep == 0)
       for (int r = 0; r < 3 - ww; r++) COUT[r * NCONV + c] = CIN[(r + ww) * NCONV + c];
   } else {
-    if (t >= T - 3) COUT[(t - (T - 3)) * NCONV + c] = P[(long)t * 16640 + c];
+    if (t >= T - 3) COUT[(t - (T - 3)) * NCONV + c] = P[(long)t * Q27_GDN_IN + c];
     if (T < 3 && t == 0)                                // the state keeps part of the old one
       for (int r = 0; r < 3 - T; r++) COUT[r * NCONV + c] = CIN[(r + T) * NCONV + c];
   }
@@ -241,18 +250,18 @@ KERNEL(256) void gdn_pre(global const half *P, global const half *CIN, global ha
         ss += v[i] * v[i];
       }
       const float inv = rsqrt(sub_group_reduce_add(ss) / 128.0f + 1e-6f);
-      const float scale = hh < 16 ? 1.0f / 128.0f : rsqrt(128.0f);
-      global ushort *dst = hh < 16 ? Q + ((long)t * 16 + hh) * 128 : K + ((long)t * 16 + hh - 16) * 128;
+      const float scale = hh < Q27_GK ? 1.0f / 128.0f : rsqrt(128.0f);
+      global ushort *dst = hh < Q27_GK ? Q + ((long)t * Q27_GK + hh) * 128 : K + ((long)t * Q27_GK + hh - Q27_GK) * 128;
       for (int i = 0; i < 8; i++) dst[i * 16 + lane] = f2bf(v[i] * inv * scale);
     }
   } else
-    V[(long)t * 6144 + c - NQK * 2] = f2bf(cv[lid]);
-  if (blk == 0 && lid < 48) {
-    const float a = (float)P[(long)t * 16640 + 16384 + lid], b = (float)P[(long)t * 16640 + 16432 + lid];
+    V[(long)t * Q27_VD + c - NQK * 2] = f2bf(cv[lid]);
+  if (blk == 0 && lid < Q27_GV) {
+    const float a = (float)P[(long)t * Q27_GDN_IN + Q27_GA + lid], b = (float)P[(long)t * Q27_GDN_IN + Q27_GB + lid];
     const float sp = a + bf2f(DT[lid]);
     const float soft = sp > 20.0f ? sp : log1p(exp(sp));
-    BETA[(long)t * 48 + lid] = sigmoid_f(b);
-    G[(long)t * 48 + lid] = exp(-exp(bf2f(ALOG[lid])) * soft);
+    BETA[(long)t * Q27_GV + lid] = sigmoid_f(b);
+    G[(long)t * Q27_GV + lid] = exp(-exp(bf2f(ALOG[lid])) * soft);
   }
 }
 
@@ -263,9 +272,10 @@ KERNEL(256) void gdn_pre_rows(global const half *P, global const half *CIN, glob
   // Grid (⌈T/8⌉, 5): 8 rows and 16 heads per group; the window slides through registers, same bits as row by row.
   const int t0 = get_group_id(0) * 8, sg = get_sub_group_id(), lane = get_sub_group_local_id(), lid = get_local_id(0);
   const int head = get_group_id(1) * 16 + sg;
+  if (head >= NCONV / 128) return;
   // subgroup block reads and writes: element i of the lane is channel 128 head + 16 i + lane
 #define ROW8(r) as_half8((r) < 3 ? intel_sub_group_block_read_us8((global const ushort *)(CIN + (r) * NCONV + head * 128)) \
-                                 : intel_sub_group_block_read_us8((global const ushort *)(P + (long)((r) - 3) * 16640 + head * 128)))
+                                 : intel_sub_group_block_read_us8((global const ushort *)(P + (long)((r) - 3) * Q27_GDN_IN + head * 128)))
   float w[8][4], x[8][3];
   for (int i = 0; i < 8; i++) {
     const int c = head * 128 + i * 16 + lane;
@@ -291,27 +301,27 @@ KERNEL(256) void gdn_pre_rows(global const half *P, global const half *CIN, glob
       x[i][2] = x3;
       v[i] = rbf(silu(s));
       ss += v[i] * v[i];
-      if (t >= T - 3) COUT[(t - (T - 3)) * NCONV + c] = P[(long)t * 16640 + c];
+      if (t >= T - 3) COUT[(t - (T - 3)) * NCONV + c] = P[(long)t * Q27_GDN_IN + c];
       if (T < 3 && t == 0)
         for (int q = 0; q < 3 - T; q++) COUT[q * NCONV + c] = CIN[(q + T) * NCONV + c];
     }
     ushort8 o;
-    if (head < 32) {
+    if (head < 2 * Q27_GK) {
       const float inv = rsqrt(sub_group_reduce_add(ss) / 128.0f + 1e-6f);
-      const float scale = head < 16 ? 1.0f / 128.0f : rsqrt(128.0f);
-      global ushort *dst = head < 16 ? Q + ((long)t * 16 + head) * 128 : K + ((long)t * 16 + head - 16) * 128;
+      const float scale = head < Q27_GK ? 1.0f / 128.0f : rsqrt(128.0f);
+      global ushort *dst = head < Q27_GK ? Q + ((long)t * Q27_GK + head) * 128 : K + ((long)t * Q27_GK + head - Q27_GK) * 128;
       for (int i = 0; i < 8; i++) o[i] = f2bf(v[i] * inv * scale);
       intel_sub_group_block_write_us8(dst, o);
     } else {
       for (int i = 0; i < 8; i++) o[i] = f2bf(v[i]);
-      intel_sub_group_block_write_us8(V + (long)t * 6144 + (head - 32) * 128, o);
+      intel_sub_group_block_write_us8(V + (long)t * Q27_VD + (head - 2 * Q27_GK) * 128, o);
     }
-    if (get_group_id(1) == 0 && lid < 48) {
-      const float a = (float)P[(long)t * 16640 + 16384 + lid], b = (float)P[(long)t * 16640 + 16432 + lid];
+    if (get_group_id(1) == 0 && lid < Q27_GV) {
+      const float a = (float)P[(long)t * Q27_GDN_IN + Q27_GA + lid], b = (float)P[(long)t * Q27_GDN_IN + Q27_GB + lid];
       const float sp = a + bf2f(DT[lid]);
       const float soft = sp > 20.0f ? sp : log1p(exp(sp));
-      BETA[(long)t * 48 + lid] = sigmoid_f(b);
-      G[(long)t * 48 + lid] = exp(-exp(bf2f(ALOG[lid])) * soft);
+      BETA[(long)t * Q27_GV + lid] = sigmoid_f(b);
+      G[(long)t * Q27_GV + lid] = exp(-exp(bf2f(ALOG[lid])) * soft);
     }
   }
 }
@@ -321,12 +331,12 @@ KERNEL(256) void gdn_pre_rows(global const half *P, global const half *CIN, glob
 KERNEL(256) void gated_norm(global const ushort *Y, global const half *P, global const ushort *WN, global half *H,
                             global half *AHI, global half *ALO, float eps, int gs, int rot, global char *A8,
                             global float *SA, int MS) {
-  local half hl[6144];
+  local half hl[Q27_VD];
   const int t = get_group_id(0), sg = get_sub_group_id(), lane = get_sub_group_local_id();
   const ushort8 wn = intel_sub_group_block_read_us8(WN);   // element i of the lane: 16 i + lane (block reads)
-  for (int hh = sg; hh < 48; hh += 16) {
-    const ushort8 yv = intel_sub_group_block_read_us8(Y + ((long)t * 48 + hh) * 128);
-    const half8 zv = as_half8(intel_sub_group_block_read_us8((global const ushort *)(P + (long)t * 16640 + 10240 + hh * 128)));
+  for (int hh = sg; hh < Q27_GV; hh += 16) {
+    const ushort8 yv = intel_sub_group_block_read_us8(Y + ((long)t * Q27_GV + hh) * 128);
+    const half8 zv = as_half8(intel_sub_group_block_read_us8((global const ushort *)(P + (long)t * Q27_GDN_IN + Q27_NCONV + hh * 128)));
     float v[8], ss = 0.0f;
     for (int i = 0; i < 8; i++) {
       v[i] = bf2f(yv[i]);
@@ -339,10 +349,10 @@ KERNEL(256) void gated_norm(global const ushort *Y, global const half *P, global
       o[i] = convert_half_rte(rbf(silu((float)zv[i]) * yn));
       hl[hh * 128 + i * 16 + lane] = o[i];
     }
-    if (!rot) intel_sub_group_block_write_us8((global ushort *)(H + (long)t * 6144 + hh * 128), as_ushort8(o));
+    if (!rot) intel_sub_group_block_write_us8((global ushort *)(H + (long)t * Q27_VD + hh * 128), as_ushort8(o));
   }
   barrier(CLK_LOCAL_MEM_FENCE);
-  out_rows(hl, 6144, H, t, rot, gs, A8, SA, MS, AHI, ALO);
+  out_rows(hl, Q27_VD, H, t, rot, gs, A8, SA, MS, AHI, ALO);
 }
 
 #include "glue_attn.cl"

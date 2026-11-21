@@ -1,6 +1,8 @@
 // GLM's element-wise glue by hand: each output value alone, in the Triton kernel's order of fp32 ops.
 #pragma once
 
+#include "glm_pdl.cuh"
+
 #include "glm_triton.cuh"
 
 namespace glm_glue {
@@ -46,6 +48,7 @@ using namespace glm_triton;
 // glue._residual_add: xout = bf16(x + bf16(the partials summed rank 0 first)), 8 columns a thread.
 extern "C" __global__ void tf_glm_residual_add(const __nv_bfloat16* x, __nv_bfloat16* xout, const float* g, int64_t rs,
                                                int64_t d, int world) {
+  glm_pdl::enter();
   const int64_t c = glm_glue::col8();
   if (c >= d) return;
   const int64_t i = blockIdx.x * d + c;
@@ -58,6 +61,7 @@ extern "C" __global__ void tf_glm_residual_add(const __nv_bfloat16* x, __nv_bflo
 
 // glue._stream_mean: bf16 of the s streams' sum over s (div.full, as Triton divides), 8 columns a thread.
 extern "C" __global__ void tf_glm_stream_mean(const __nv_bfloat16* x, __nv_bfloat16* out, int64_t d, int s) {
+  glm_pdl::enter();
   const int64_t c = glm_glue::col8();
   if (c >= d) return;
   const __nv_bfloat16* row = x + blockIdx.x * s * d + c;
@@ -75,6 +79,7 @@ extern "C" __global__ void tf_glm_stream_mean(const __nv_bfloat16* x, __nv_bfloa
 // glue._rank_sum: bf16 of the partials summed rank 0 first, `me` from `own`, others from `peers`, 8 columns a thread.
 extern "C" __global__ void tf_glm_rank_sum(const float* own, const float* peers, __nv_bfloat16* out, int64_t rs,
                                            int64_t d, int world, int me) {
+  glm_pdl::enter();
   const int64_t c = glm_glue::col8();
   if (c >= d) return;
   const int64_t i = blockIdx.x * d + c;
@@ -91,6 +96,7 @@ extern "C" __global__ void tf_glm_rank_sum(const float* own, const float* peers,
 // glue._hc_post: stream s = bf16(post[s] branch + sum_t comb[t][s] x[t]) in LLVM's fma order; x may be xout.
 extern "C" __global__ void tf_glm_hc_post(const __nv_bfloat16* x, __nv_bfloat16* xout, const float* g,
                                           const float* post, const float* comb, int64_t rs, int64_t d, int world) {
+  glm_pdl::enter();
   const int64_t c = glm_glue::col8();
   if (c >= d) return;
   const int64_t r = blockIdx.x;
@@ -116,6 +122,7 @@ extern "C" __global__ void tf_glm_hc_post(const __nv_bfloat16* x, __nv_bfloat16*
 // glue._combine: fp32 sum over slots in order of y[r][k] wts[r][k] (fma from 0), y fp32 or bf16, 8 columns a thread.
 extern "C" __global__ void tf_glm_combine(
         const void* y, int y_f32, const float* wts, float* out, int64_t d, int slots) {
+  glm_pdl::enter();
   const int64_t c = glm_glue::col8();
   if (c >= d) return;
   const int64_t r = blockIdx.x;
@@ -137,6 +144,7 @@ extern "C" __global__ void tf_glm_combine(
 
 // glue._router_sum and qmm._reduce: ks slices of `total` fp32 added in order (fp32 or bf16 out), 8 values a thread.
 extern "C" __global__ void tf_glm_slice_sum(const float* part, void* out, int64_t total, int ks, int f32) {
+  glm_pdl::enter();
   const int64_t i0 = ((int64_t)blockIdx.x * blockDim.x + threadIdx.x) * 8;
   if (i0 >= total) return;
   const bool aligned = ((reinterpret_cast<uintptr_t>(out) | reinterpret_cast<uintptr_t>(part)) & 15) == 0;
@@ -170,6 +178,7 @@ extern "C" __global__ void tf_glm_slice_sum(const float* part, void* out, int64_
 // glue._embed_b16: token ids[r]'s bf16 row into `copies` streams of d.
 extern "C" __global__ void tf_glm_embed_b16(const int* ids, const __nv_bfloat16* w, __nv_bfloat16* out, int64_t d,
                                             int copies) {
+  glm_pdl::enter();
   const int64_t c = glm_glue::col();
   if (c >= d) return;
   const int64_t r = blockIdx.x;
@@ -180,6 +189,7 @@ extern "C" __global__ void tf_glm_embed_b16(const int* ids, const __nv_bfloat16*
 // forward._conv_shift: layer blockIdx.x's 3-row window takes rows keep .. keep + 2 of [window; projection rows].
 extern "C" __global__ void tf_glm_conv_shift(__nv_bfloat16* conv, const __nv_bfloat16* proj, int64_t keep,
                                              int64_t conv_layer, int64_t proj_layer, int64_t proj_row, int64_t c) {
+  glm_pdl::enter();
   const int64_t k = glm_glue::col();
   if (k >= c) return;
   const int64_t l = blockIdx.x;
@@ -192,8 +202,8 @@ extern "C" __global__ void tf_glm_conv_shift(__nv_bfloat16* conv, const __nv_bfl
 }
 
 // decode.sample_rows' greedy pick, as the host scan: first max of n bf16 logits, NaN never wins; out fp32 bits, lo+id.
-extern "C" __global__ void __launch_bounds__(1024) tf_glm_top1(const unsigned short* logits, int64_t n, unsigned lo,
-                                                                unsigned* out) {
+template <bool sums>
+__device__ __forceinline__ void glm_top1(const unsigned short* logits, int64_t n, unsigned lo, unsigned* out) {
   __shared__ float sv[1024];
   __shared__ unsigned si[1024];
   const int t = threadIdx.x;
@@ -217,6 +227,32 @@ extern "C" __global__ void __launch_bounds__(1024) tf_glm_top1(const unsigned sh
     out[0] = __float_as_uint(sv[0]);
     out[1] = lo + (si[0] == 0xffffffffu ? 0u : si[0]);
   }
+  if constexpr (sums) {
+    // out[2]: the slice's sum of exp(logit - its max), fp32 bits, from which rank 0 reads the pick's chance
+    const float m = sv[0];
+    float s = 0.0f;
+    for (int64_t i = t; i < n; i += 1024)
+      s += __expf(__int_as_float(static_cast<int>(static_cast<unsigned>(logits[i]) << 16)) - m);
+    __syncthreads();
+    sv[t] = s;
+    __syncthreads();
+    for (int h = 512; h > 0; h >>= 1) {
+      if (t < h) sv[t] += sv[t + h];
+      __syncthreads();
+    }
+    if (t == 0) out[2] = __float_as_uint(sv[0]);
+  }
+}
+extern "C" __global__ void __launch_bounds__(1024) tf_glm_top1(const unsigned short* logits, int64_t n, unsigned lo,
+                                                                unsigned* out) {
+  glm_pdl::enter();
+  glm_top1<false>(logits, n, lo, out);
+}
+// The pick with its slice's softmax sum in out[2]: an MTP draft's chance (--mtp-confidence) across the ranks.
+extern "C" __global__ void __launch_bounds__(1024) tf_glm_top1_sums(const unsigned short* logits, int64_t n,
+                                                                     unsigned lo, unsigned* out) {
+  glm_pdl::enter();
+  glm_top1<true>(logits, n, lo, out);
 }
 
 // The leader's step for the other ranks, written to the link's buffer from launch arguments (cuda_follow's Link.send).
@@ -224,5 +260,6 @@ struct tf_glm_words {
   unsigned w[96];
 };
 extern "C" __global__ void tf_glm_put_words(unsigned* dst, unsigned n, tf_glm_words v) {
+  glm_pdl::enter();
   for (unsigned i = threadIdx.x; i < n; i += blockDim.x) dst[i] = v.w[i];
 }

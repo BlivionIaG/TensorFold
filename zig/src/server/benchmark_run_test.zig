@@ -149,6 +149,11 @@ fn passedValue(r: *Run, flag: []const u8) !?[]const u8 {
     return null;
 }
 
+/// The stand-in got ``--drafter none``, so its serve pairs no drafter by itself.
+fn noDrafter(r: *Run) !bool {
+    return std.mem.eql(u8, (try passedValue(r, "--drafter")) orelse return false, "none");
+}
+
 /// The saved receipt's text holds ``field`` exactly.
 fn receiptHas(r: *Run, out: []const u8, field: []const u8) !bool {
     const text = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, out, r.a, .limited(1 << 20));
@@ -180,7 +185,7 @@ test "--drafter auto passes the family's drafter only when it is cached and says
     const repo_null = "\"drafter_repo_id\":null";
     try std.testing.expectEqual(@as(u8, 0), try r.command(try argv(&r, &.{ big, "--output", out })));
     try std.testing.expect(std.mem.count(u8, r.out.written(), uncached) == 1 and !r.has(named));
-    try std.testing.expect(!try passed(&r, "--drafter") and !try passed(&r, "--no-drafts"));
+    try std.testing.expect(try noDrafter(&r) and !try passed(&r, "--no-drafts"));
     try std.testing.expect(try receiptHas(&r, out, repo_null) and try receiptHas(&r, out, "\"serial\":false"));
     try cache(a, hub, drafter);
     const snapshot = try std.fs.path.join(a, &.{ hub, "models--z-lab--Qwen3.8-27B-DFlash2", "snapshots", sha });
@@ -193,19 +198,19 @@ test "--drafter auto passes the family's drafter only when it is cached and says
     try std.testing.expect(try receiptHas(&r, out, "\"drafter_repo_id\":\"" ++ drafter ++ "\""));
     try std.testing.expect(try receiptHas(&r, out, "\"serial\":false"));
     try std.testing.expectEqual(@as(u8, 0), try r.command(try argv(&r, &.{ big, "--serial", "--output", out })));
-    try std.testing.expect(try passed(&r, "--no-drafts") and !try passed(&r, "--drafter") and !r.has("drafter"));
+    try std.testing.expect(try passed(&r, "--no-drafts") and try noDrafter(&r) and !r.has("drafter"));
     try std.testing.expect(try receiptHas(&r, out, repo_null) and try receiptHas(&r, out, "\"serial\":true"));
     try std.testing.expectEqual(@as(u8, 0), try r.command(try argv(&r, &.{ big, "--drafter", "none" })));
-    try std.testing.expect(!try passed(&r, "--drafter") and !try passed(&r, "--no-drafts") and !r.has("drafter"));
+    try std.testing.expect(try noDrafter(&r) and !try passed(&r, "--no-drafts") and !r.has("drafter"));
     try std.testing.expectEqual(@as(u8, 0), try r.command(try argv(&r, &.{ big, "--drafter", drafter })));
     try std.testing.expectEqualStrings(snapshot, (try passedValue(&r, "--drafter")).?);
     try std.testing.expect(!try passed(&r, "--no-drafts") and !r.has("drafter"));
     try std.testing.expectEqual(@as(u8, 0), try r.command(try argv(&r, &.{try r.path("private-checkpoint")})));
-    try std.testing.expect(!try passed(&r, "--drafter") and !try passed(&r, "--no-drafts") and !r.has("drafter"));
+    try std.testing.expect(try noDrafter(&r) and !try passed(&r, "--no-drafts") and !r.has("drafter"));
     try std.testing.expectEqual(@as(u8, 0), try r.command(try argv(&r, &.{ big, "--serial", "--drafter", drafter })));
     const unused = "--serial passes no drafter, so --drafter " ++ drafter ++ " is not used.";
     try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, r.out.written(), unused));
-    try std.testing.expect(!r.has(named) and !try passed(&r, "--drafter") and try passed(&r, "--no-drafts"));
+    try std.testing.expect(!r.has(named) and try noDrafter(&r) and try passed(&r, "--no-drafts"));
 }
 
 test "a rocm run refuses a named --drafter before any serve child, and auto names no drafter on rocm" {
@@ -262,7 +267,7 @@ test "a greedy-only engine's refusal is printed once with its reason and what to
     try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, text, answered));
     try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, text, greedy));
     try std.testing.expect(std.mem.indexOf(u8, text, "code T=1 warm-up: error\n" ++ answered ++ greedy ++ "code T=1 repeat 1/1: error\n") != null);
-    try std.testing.expect(f.count() == 9 and r.has("Receipt saved")); // the manifest, then eight replies
+    try std.testing.expect(f.count() == 10 and r.has("Receipt saved")); // Manifest, thinking discovery, then eight replies.
     const saved = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, out, a, .limited(1 << 20));
     try std.testing.expectEqual(@as(usize, 4), std.mem.count(u8, saved, "\"error_code\":\"http_error\""));
     try std.testing.expect(std.mem.indexOf(u8, saved, "greedily") == null and std.mem.indexOf(u8, saved, "Bad Request") == null);
@@ -330,7 +335,7 @@ const two_ranks =
     \\"cores":null}],"gpu_count":1,"source":"partial"}}
 ;
 
-test "an attached run copies an accepted server manifest into its receipt and is not called unranked" {
+test "an attached run keeps legacy manifest metadata but saves an unranked receipt" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -346,11 +351,11 @@ test "an attached run copies an accepted server manifest into its receipt and is
     defer f.stop();
     const out = try r.path("run.json");
     try std.testing.expectEqual(@as(u8, 0), try r.command(try cli.runArgs(&r, try f.url(a, ""), out)));
-    try std.testing.expect(r.has("Receipt saved") and !r.has("unranked") and f.count() == 5);
+    try std.testing.expect(r.has("Receipt saved") and r.has("unranked") and f.count() == 6);
     var problem: []const u8 = "";
     const v = (try receipt.load(a, std.testing.io, out, std.Io.Clock.real.now(std.testing.io).toMilliseconds(), &problem)).?;
     const settings = v.get("settings").?;
-    try std.testing.expect(!settings.get("managed").?.bool and settings.get("rank_count").?.int64() == 2);
+    try std.testing.expect(!settings.get("managed").?.bool and settings.get("rank_count").? == .null);
     try std.testing.expectEqualStrings("9.8.7", v.get("runtime").?.get("tensorfold_version").?.string);
     try std.testing.expectEqualStrings("partial", v.get("hardware").?.get("source").?.string);
     try std.testing.expectEqualStrings("0123456789abcdef0123456789abcdef01234567", v.get("model").?.get("revision").?.string);

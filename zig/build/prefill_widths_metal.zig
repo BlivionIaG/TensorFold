@@ -1,0 +1,54 @@
+//! Metal prompt observations tested at their real completion boundaries; no shaders or model execution.
+const std = @import("std");
+
+pub fn tests(b: *std.Build, parent: *std.Build.Step) void {
+    const lanes = b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = b.graph.host, .link_libc = true });
+    const root = b.createModule(.{ .root_source_file = b.path("zig/src/families/nemotron/prompt_flight_test.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const run = b.addRunArtifact(b.addTest(.{ .root_module = root, .filters = &.{"Nemotron prefill widths:"} }));
+    run.has_side_effects = true;
+    b.step("test-nemotron-prefill-widths-host", "Actual Nemotron cut and flight completion with recording buffers").dependOn(&run.step);
+    parent.dependOn(&run.step);
+    // the same cuts a chunk a call (#3021): one chunk a step, a decode between chunks, the head's rows, a cancel
+    const steps_root = b.createModule(.{ .root_source_file = b.path("zig/src/families/nemotron/prefill_steps.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const steps_run = b.addRunArtifact(b.addTest(.{ .root_module = steps_root, .filters = &.{"Nemotron Metal steps:"} }));
+    steps_run.has_side_effects = true;
+    b.step("test-nemotron-metal-steps-host", "Nemotron Metal's stepped prompt pass on recording fakes, no GPU").dependOn(&steps_run.step);
+    parent.dependOn(&steps_run.step);
+}
+
+pub fn compileHost(b: *std.Build, engine: *std.Build.Module, lanes: *std.Build.Module) void {
+    const root = b.createModule(.{ .root_source_file = b.path("zig/src/metal_prefill_widths_compile.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{ .{ .name = "tensorfold", .module = engine }, .{ .name = "lanes", .module = lanes } } });
+    const object = b.addObject(.{ .name = "metal-prefill-widths-compile", .root_module = root });
+    _ = object.getEmittedBin();
+    b.step("check-nemotron-prefill-widths-host", "Compile actual Metal prefill, read, land and release without shaders").dependOn(&object.step);
+}
+
+pub fn rest(b: *std.Build, engine: *std.Build.Module, lanes: *std.Build.Module) void {
+    const metal = engine.import_table.get("metal").?;
+    const bodies = b.createModule(.{ .root_source_file = b.path("zig/src/metal_prefill_rest_compile.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{ .{ .name = "tensorfold", .module = engine }, .{ .name = "lanes", .module = lanes }, .{ .name = "kimi", .module = @import("metal_targets.zig").kimiModule(b, b.graph.host, .debug, metal, engine, lanes) } } });
+    const object = b.addObject(.{ .name = "metal-prefill-rest-compile", .root_module = bodies });
+    _ = object.getEmittedBin();
+    const check = b.step("check-metal-prefill-rest-host", "Actual remaining Metal prompt callback bodies without shaders or execution");
+    check.dependOn(&object.step);
+    // MiniMax-M3's prompt pass a chunk a call (#3021): its cuts, a decode between chunks, the drafter's rows, a cancel
+    const mm_root = b.createModule(.{ .root_source_file = b.path("zig/src/families/minimax_m3/prefill_steps_test.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const mm_run = b.addRunArtifact(b.addTest(.{ .root_module = mm_root, .filters = &.{"MiniMax-M3 Metal steps:"} }));
+    mm_run.has_side_effects = true;
+    b.step("test-minimax-m3-metal-steps-host", "MiniMax-M3 Metal's stepped prompt pass on recording fakes, no GPU").dependOn(&mm_run.step);
+    // LFM3's prompt pass a chunk a call (#3021): its cuts, a decode between chunks, a cancel, the whole pass's yield
+    const lfm3_root = b.createModule(.{ .root_source_file = b.path("zig/src/families/lfm3/prefill_steps_test.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const lfm3_run = b.addRunArtifact(b.addTest(.{ .root_module = lfm3_root, .filters = &.{"LFM3 Metal steps:"} }));
+    lfm3_run.has_side_effects = true;
+    b.step("test-lfm3-metal-steps-host", "LFM3 Metal's stepped prompt pass on recording fakes, no GPU").dependOn(&lfm3_run.step);
+    // LFM2-MoE's prompt pass a chunk a call (#3021): its cuts, a decode between chunks, the drafter's rows, a cancel
+    const lfm_root = b.createModule(.{ .root_source_file = b.path("zig/src/families/lfm2_moe/prefill_steps.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const lfm_run = b.addRunArtifact(b.addTest(.{ .root_module = lfm_root, .filters = &.{"LFM2-MoE Metal steps:"} }));
+    lfm_run.has_side_effects = true;
+    b.step("test-lfm2-moe-metal-steps-host", "LFM2-MoE Metal's stepped prompt pass on recording fakes, no GPU").dependOn(&lfm_run.step);
+    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = b.graph.host, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const host = b.createModule(.{ .root_source_file = b.path("zig/src/native/qwen4_metal.zig"), .target = b.graph.host, .link_libc = true, .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "tensorfold", .module = engine }, .{ .name = "engine_api", .module = api }, .{ .name = "contract", .module = @import("kernel_contract.zig").module(b, b.graph.host, .debug) } } });
+    @import("qwen4.zig").metalNative(b, b.graph.host, host);
+    const qwen = b.addObject(.{ .name = "qwen4-prefill-widths-compile", .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/qwen4_prefill_widths_compile.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "host", .module = host }} }) });
+    _ = qwen.getEmittedBin();
+    check.dependOn(&qwen.step);
+}

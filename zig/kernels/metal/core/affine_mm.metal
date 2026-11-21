@@ -1,4 +1,4 @@
-// x W^T for MLX affine W on the tensor units: exact codes (4-bit ones plus 128) in the MMAs, fp32 group sums scaled, bias times fp32 row sums.
+// x W^T, MLX affine W, tensor units: exact codes (4-bit + 128) in MMAs, fp32 group sums scaled, bias x fp32 row sums.
 #include <metal_stdlib>
 using namespace metal;
 #include "../nax.h"
@@ -365,7 +365,7 @@ inline bool am_tile(const device int32_t* offsets, int experts, int total, int t
   return false;
 }
 
-// A simdgroup's row starts: rows [row, row + rows) of x and its row sums, or with `order` sorted rows' token rows (order / topk).
+// A simdgroup's row starts: x rows [row, row + rows) and their sums, or with `order` sorted token rows (order / topk).
 template <int TM>
 inline AmRows<TM> am_rows(const device bfloat* x, int ldx, const device float* xs, int ldxs, int row, int rows, int tm,
                           short2 home, const device int32_t* order, int topk) {
@@ -442,12 +442,20 @@ TF_GATHER(32)
 TF_GATHER(64)
 
 // The gathers with each sorted row's output put back at row DST[row] (e.g. the (row, slot) pairs' own order).
+#ifdef TF_AM_MAPPED_EXPERTS
+#define TF_AM_MAP_ARG const device int32_t* EA [[buffer(13)]],
+#define TF_AM_EXPERT(e) EA[e]
+#else
+#define TF_AM_MAP_ARG
+#define TF_AM_EXPERT(e) (e)
+#endif
+
 #define TF_GATHER_SCATTER(BM)                                                                                           \
   [[kernel]] void tf_affine_gather_scatter_##BM(                                                                        \
       const device bfloat* X [[buffer(0)]], const device uint32_t* W [[buffer(1)]],                                    \
       const device bfloat* S [[buffer(2)]], const device bfloat* B [[buffer(3)]],                                      \
       const device float* XS [[buffer(4)]], constant MmArgs& a [[buffer(5)]], device TF_OUT_T* Y [[buffer(6)]],       \
-      const device int32_t* OFFS [[buffer(7)]], const device int32_t* DST [[buffer(8)]],                              \
+      const device int32_t* OFFS [[buffer(7)]], const device int32_t* DST [[buffer(8)]], TF_AM_MAP_ARG                \
       uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],                            \
       uint3 tg [[threadgroup_position_in_grid]]) {                                                                     \
     threadgroup bfloat tile[64 * PAD];                                                                                 \
@@ -455,7 +463,7 @@ TF_GATHER(64)
     int expert, row, rows;                                                                                             \
     if (!am_tile<BM>(OFFS, a.experts, a.rows, int(tg.y), lane, expert, row, rows)) return;                            \
     const int col = int(tg.x) * 64;                                                                                    \
-    am_block<BM>(X, a.k, XS, a.k / TF_GROUP, row, rows, a.k, a.n, col, long(expert) * a.n + col, W, S, B, Y,   \
+    am_block<BM>(X, a.k, XS, a.k / TF_GROUP, row, rows, a.k, a.n, col, long(TF_AM_EXPERT(expert)) * a.n + col, W, S, B, Y, \
                  tile, sb, sg, lane, DST);                                                                             \
   }
 TF_GATHER_SCATTER(32)
@@ -470,7 +478,7 @@ inline bfloat am_swiglu(float g, float u, float limit) {
   return static_cast<bfloat>(float(silu) * float(bfloat(u)));
 }
 #else
-// The glue's SwiGLU in bf16 (glm_act2): MLX's bf16 exp and abs, nn.silu's x * sigmoid(x), gate and up clipped at `limit`.
+// The glue's SwiGLU in bf16 (glm_act2): MLX's bf16 exp and abs, nn.silu's x*sigmoid(x), gate and up clipped at `limit`.
 inline bfloat am_sigmoid(bfloat x) {
   const bfloat e = bfloat(__metal_exp(float(bfloat(__metal_fabs(float(x), __METAL_MAYBE_FAST_MATH__))), __METAL_MAYBE_FAST_MATH__));
   const bfloat y = bfloat(1) / (bfloat(1) + e);
@@ -481,7 +489,11 @@ inline bfloat am_swiglu(float g, float u, float limit) {
   const float lim = float(bfloat(limit));
   const bfloat gt = bfloat(metal::min(float(bfloat(g)), lim));
   const bfloat up = bfloat(metal::min(metal::max(float(bfloat(u)), -lim), lim));
+#ifdef TF_GLU_ROUND_SILU
+  const bfloat sl = bfloat(precise::divide(float(gt), 1.0f + precise::exp(-float(gt))));
+#else
   const bfloat sl = gt * am_sigmoid(gt);
+#endif
   return sl * up;
 }
 #endif
@@ -500,7 +512,7 @@ inline void am_store_glu(thread const frag<float> (&acc)[TM][2], device bfloat* 
   }
 }
 
-// The routed experts' gate and up over token rows read through ORDER (pair / topk), SwiGLU'd into act [rows, n]: 32 columns a tile.
+// The routed experts' gate and up over ORDER's token rows (pair / topk), SwiGLU'd to act [rows, n]: 32 columns a tile.
 #define TF_GATHER_GLU(BM)                                                                                               \
   [[kernel]] void tf_affine_gather_glu_##BM(                                                                            \
       const device bfloat* X [[buffer(0)]], const device uint32_t* WG [[buffer(1)]],                                   \
@@ -508,7 +520,7 @@ inline void am_store_glu(thread const frag<float> (&acc)[TM][2], device bfloat* 
       const device float* XS [[buffer(4)]], constant MmArgs& a [[buffer(5)]], device bfloat* Y [[buffer(6)]],          \
       const device int32_t* OFFS [[buffer(7)]], const device int32_t* ORDER [[buffer(8)]],                            \
       const device uint32_t* WU [[buffer(9)]], const device bfloat* SU [[buffer(10)]],                                 \
-      const device bfloat* BU [[buffer(11)]], constant float2& glu [[buffer(12)]],                                     \
+      const device bfloat* BU [[buffer(11)]], constant float2& glu [[buffer(12)]], TF_AM_MAP_ARG                      \
       uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],                            \
       uint3 tg [[threadgroup_position_in_grid]]) {                                                                     \
     constexpr int SM = BM / 2;                                                                                         \
@@ -518,8 +530,8 @@ inline void am_store_glu(thread const frag<float> (&acc)[TM][2], device bfloat* 
     int expert, row, rows;                                                                                             \
     if (!am_tile<BM>(OFFS, a.experts, a.rows, int(tg.y), lane, expert, row, rows)) return;                            \
     const int c0 = int(tg.x) * 32, t = int(sg) * 32 + int(lane), tr = t / 2;                                         \
-    const bool up = ((tr >> 4) & 1) != 0; /* tile rows by 16: gate, up, gate, up for columns c0.., c0 + 16.. */        \
-    const long wrow = long(expert) * a.n + c0 + (tr >> 5) * 16 + (tr & 15);                                           \
+    const bool up = ((tr >> 4) & 1) != 0;                                                                             \
+    const long wrow = long(TF_AM_EXPERT(expert)) * a.n + c0 + (tr >> 5) * 16 + (tr & 15);                             \
     const int tm = SM * int(sg / 2), tn = 32 * int(sg % 2), live = clamp(rows - tm, 0, SM);                           \
     const short2 home = frag_home(ushort(lane));                                                                       \
     const AmRows<TM> starts = am_rows<TM>(X, a.k, XS, a.k / TF_GROUP, row, rows, tm, home, ORDER, int(glu.x));       \
@@ -530,5 +542,6 @@ inline void am_store_glu(thread const frag<float> (&acc)[TM][2], device bfloat* 
                   uint(t), home);                                                                                      \
     am_store_glu<TM>(acc, Y + long(row + tm) * a.n + c0 + tn / 2, a.n, live, home, glu.y);                            \
   }
+// Tile rows by 16: gate, up, gate, up for columns c0.., c0 + 16..
 TF_GATHER_GLU(32)
 TF_GATHER_GLU(64)

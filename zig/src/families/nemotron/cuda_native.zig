@@ -27,7 +27,7 @@ pub const slide = @import("cuda_slide.zig");
 pub const model_type = "nemotron_h";
 pub const explains_open = true; // explain() words open refusals too (--vision on a checkpoint without a tower)
 /// Nemotron 3.5 Bolt's config: the language model under llm_config, beside its vision tower's.
-pub const also_model_types: []const []const u8 = &.{"nemotron_h_omni"};
+pub const also_model_types: []const []const u8 = &.{ "nemotron_h_omni", "nemo_speechlm" };
 pub const formats: []const []const u8 = &.{ "mlx-q4g64", "modelopt-nvfp4", "modelopt-ggml" };
 pub const default_context: i64 = engine.default_context;
 pub const max_segments: u32 = @import("cuda_segments.zig").MAX;
@@ -71,6 +71,11 @@ pub const Loaded = struct {
     snap_bytes: usize,
 };
 
+pub fn benchmark(p: *anyopaque) struct { ranks: ?u32, group: ?[]const u8 } {
+    const own: *Owned = @ptrCast(@alignCast(p));
+    return .{ .ranks = if (own.e.tp) |g| @intCast(g.world) else 1, .group = own.e.benchmark_group };
+}
+
 /// The pool behind the engine's own sequence: `streams` paged sequences and `pages` KV pages, made now.
 pub fn attach(p: *anyopaque, streams: u32, pages: usize) !void {
     const own: *Owned = @ptrCast(@alignCast(p));
@@ -83,6 +88,12 @@ pub fn attach(p: *anyopaque, streams: u32, pages: usize) !void {
 pub fn fits(p: *anyopaque, prompt: u32, max_tokens: u32) bool {
     const own: *Owned = @ptrCast(@alignCast(p));
     return own.lanes.fits(prompt, max_tokens);
+}
+
+/// The pool the lane host's ledger admits this family's promises by (#1943).
+pub fn ledgerPool(p: *anyopaque) ?*kv.Pool {
+    const own: *Owned = @ptrCast(@alignCast(p));
+    return if (own.pages) |pg| &pg.pool else null;
 }
 
 /// The first shard, index or config.json in `dir` that a write in place would reach through a link, or null.
@@ -99,14 +110,16 @@ const Owned = struct { gpa: std.mem.Allocator, e: *engine.Engine, head: ?*Head, 
 
 /// Own-sequence graphs support both draw modes; drafting also captures the head.
 pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: []const u8, kernels: ?[]const u8, o: Options) !Loaded {
-    if (std.c.getenv("TF_NEMOTRON_RANK")) |r| if (!std.mem.eql(u8, std.mem.span(r), "0")) { // expert ranks never serve
+    try @import("sys").environment.checkScope(.nemotron, @import("sys").environment.Process{});
+    const rank = try @import("sys").environment.read(?u64, "TF_NEMOTRON_RANK", null);
+    if (rank != null and rank.? != 0) {
         @import("cuda_worker.zig").serve(gpa, io, ctx, dir, o.precision) catch |err| {
             cuda.tp_watch.fail(@errorName(err)); // rank 0 stops with this rank's error
             std.log.err("expert rank stopped: {s}", .{@errorName(err)});
             std.c._exit(1); // a stream may still wait on rank 0: a normal exit would join it
         };
         std.process.exit(0);
-    };
+    }
     const carve = try openCarveout(gpa, ctx);
     errdefer if (carve) |c| closeCarveout(gpa, c);
     const e = try engine.Engine.init(gpa, io, ctx, dir, kernels, .{ .context = o.context, .mtp = o.drafts, .graphs = true, .sampling = null, .segments = o.segments, .carveout = carve, .slide = o.slide, .vision = o.vision, .precision = o.precision });
@@ -195,7 +208,9 @@ fn release(p: *anyopaque) void {
 /// TF_CUDA_CARVEOUT=1: the display carveout KV planes go to first (cuda/carveout.zig); null when it is off.
 fn openCarveout(gpa: std.mem.Allocator, ctx: *const cuda.Context) !?*cuda.Carveout {
     const bytes = (try cuda.carveout.requested(false, env("TF_CUDA_CARVEOUT"), env("TF_CUDA_CARVEOUT_MIB"))) orelse return null;
-    const card: [*:0]const u8 = platform.c.getenv("TF_DRM_CARD") orelse cuda.carveout.default_card;
+    const raw_card = (@import("sys").environment.Process{}).get("TF_DRM_CARD") orelse cuda.carveout.default_card;
+    const card = try gpa.dupeSentinel(u8, raw_card, 0);
+    defer gpa.free(card);
     const c = try gpa.create(cuda.Carveout);
     errdefer gpa.destroy(c);
     c.* = cuda.Carveout.open(ctx.d, card, bytes) catch |err| {
@@ -211,14 +226,40 @@ fn closeCarveout(gpa: std.mem.Allocator, c: *cuda.Carveout) void {
     gpa.destroy(c);
 }
 
+const Paging = enum { off, on, all };
+
 /// TF_KV_PAGES: 0 gives every stream a window at its prefill, as before the pool; all puts every stream on pages.
-fn paging() enum { off, on, all } {
-    const v = env("TF_KV_PAGES") orelse return .on;
+fn paging() Paging {
+    return pagingOf(core.profile.get(.TF_KV_PAGES));
+}
+
+fn pagingOf(raw: ?[]const u8) Paging {
+    const v = raw orelse return .on;
     return if (std.mem.eql(u8, v, "0")) .off else if (std.mem.eql(u8, v, "all")) .all else .on;
 }
 
+test "Nemotron paging: raw values preserve the original default-on expression" {
+    const values = [_]?[]const u8{ null, "", "0", "all", "on", "off", "auto", "1", "00", "+0", "false", "ALL", " all ", "0\n", "-1", "256" };
+    for (values) |raw| {
+        const expected: Paging = if (raw) |v|
+            (if (std.mem.eql(u8, v, "0")) .off else if (std.mem.eql(u8, v, "all")) .all else .on)
+        else
+            .on;
+        try std.testing.expectEqual(expected, pagingOf(raw));
+    }
+}
+
+test "Nemotron paging: registered lookup preserves the native reader's live environment policy" {
+    const raw = env("TF_KV_PAGES");
+    const expected: @TypeOf(paging()) = if (raw) |v|
+        (if (std.mem.eql(u8, v, "0")) .off else if (std.mem.eql(u8, v, "all")) .all else .on)
+    else
+        .on;
+    try std.testing.expectEqual(expected, paging());
+}
+
 fn env(name: [:0]const u8) ?[]const u8 {
-    return std.mem.span(platform.c.getenv(name) orelse return null);
+    return (@import("sys").environment.Process{}).get(name);
 }
 
 /// The tensors this family loads; the early check uses the same vision switch as open().

@@ -7,24 +7,26 @@ const rig_ = @import("contract_rig.zig");
 const numerical = @import("contract_qwen_pages_numerical.zig");
 
 pub const hd = 256;
-const max_chunks = 64;
-const attentions = 2; // the fixture's attention layers: the kernels run layer 1, so a page's layer offset counts
+pub const max_chunks = 64;
+pub const attentions = 2; // the fixture's attention layers: the kernels run layer 1, so a page's layer offset counts
 pub const q_heads = 24; // the 27B's heads
 pub const kv_heads = 4;
 const group = q_heads / kv_heads;
-const attn_tiles = 4 * 32 * hd * 2; // cuda_forward.zig's dynamic shared bytes for the bf16 tensor-core tiles
+pub const attn_tiles = 4 * 32 * hd * 2; // cuda_forward.zig's dynamic shared bytes for the bf16 tensor-core tiles
 const prompt_shared = 98304; // cuda_prompt.zig's smem
 /// cuda_prompt.zig's symbols: hpattn_kernel<256, 8, 2, 2> and hpattn8_kernel<256, 8, 2, 2>
 const prompt_symbols = .{
     .bf16 = "_ZN20tf_prefill_attention13hpattn_kernelILi256ELi8ELi2ELi2EEEvPK13__nv_bfloat16S3_S3_PS1_iiiiifiPKixi",
     .fp8 = "_ZN20tf_prefill_attention14hpattn8_kernelILi256ELi8ELi2ELi2EEEvPK13__nv_bfloat16PKhS5_PKfS7_PS1_iiiiifiPKixi",
+    .bf16_p256 = "_ZN20tf_prefill_attention18hpattn_p256_kernelILi256ELi8ELi2ELi2EEEvPK13__nv_bfloat16S3_S3_PS1_iiiiifiPKixi", // pages of 256
+    .bf16_p256_ids = "_ZN20tf_prefill_attention22hpattn_p256_ids_kernelILi256ELi8ELi2ELi2EEEvPK13__nv_bfloat16S3_S3_PS1_iiiiifiPKixi", // their ids in shared memory
 };
 const e4m3 = core.quant.fp8.e4m3;
 
 // qwen35.cuh's Geo, Seg, Ancestor and Path (src/families/qwen3_5/cuda_cache.zig mirrors them for the engine)
-const Geo = extern struct { hid: c_int, nk: c_int, nv: c_int, qh: c_int, kvh: c_int, nl: c_int };
-const Seg = extern struct { rec: u64 = 0, conv: u64 = 0, kv: u64, tap: u64 = 0, log: u64 = 0, before: u64 = 0, cap: c_int, len: c_int, row0: c_int, rows: c_int, tap_rows: c_int = 0, taps: c_int = 0, delta: c_int = 0, pt: u64 = 0, ps: u64 = 0, ptok: c_int = 0 };
-const Ancestor = extern struct { bits: u64, depth: u32, chain: u32 };
+pub const Geo = extern struct { hid: c_int, nk: c_int, nv: c_int, qh: c_int, kvh: c_int, nl: c_int };
+pub const Seg = extern struct { rec: u64 = 0, conv: u64 = 0, kv: u64, tap: u64 = 0, log: u64 = 0, before: u64 = 0, cap: c_int, len: c_int, row0: c_int, rows: c_int, tap_rows: c_int = 0, taps: c_int = 0, delta: c_int = 0, pt: u64 = 0, ps: u64 = 0, ptok: c_int = 0, pn: c_int = 0, plog: u64 = 0 };
+pub const Ancestor = extern struct { bits: u64, depth: u32, chain: u32 };
 const Path = extern struct { n: c_int, rows: [64]c_int };
 
 /// bf16 rows (qwen35.cu), or e4m3 rows with an fp32 scale each (qwen35_kv8.cu, --kv-cache fp8).
@@ -50,12 +52,12 @@ const cases = [_]Case{
 const Span = struct { off: usize, len: usize };
 
 /// Bytes of a layer's (or a whole block's, `layers`) rows, `n` positions a head.
-fn blockBytes(f: Format, n: usize, layers: usize) usize {
+pub fn blockBytes(f: Format, n: usize, layers: usize) usize {
     return layers * 2 * kv_heads * n * @as(usize, if (f == .fp8) hd + 4 else hd * 2);
 }
 
 /// Layer a's key (s 0) or value (s 1) at pos, head h, in a block of n positions a head: its row, and fp8's scale.
-fn spans(f: Format, n: usize, a: usize, s: usize, h: usize, pos: usize) [2]Span {
+pub fn spans(f: Format, n: usize, a: usize, s: usize, h: usize, pos: usize) [2]Span {
     const blk = s * kv_heads + h;
     const layer = blockBytes(f, n, a);
     return switch (f) {
@@ -103,7 +105,7 @@ pub const Fixture = struct {
         var f: Fixture = .{ .c = c, .format = format, .cap = cap, .kv = undefined, .q = undefined, .k = undefined, .v = undefined, .ids = undefined, .pages = 2 * (cap / c.ptok) + 2 };
         for (&f.kv) |*x| {
             x.* = try a.alloc(u8, f.streamBytes());
-            for (0..attentions) |at| for (0..2) |s| for (0..kv_heads) |h| for (0..cap) |pos| fill(f, rng, x.*, f.logical(at, s, h, pos));
+            for (0..attentions) |at| for (0..2) |s| for (0..kv_heads) |h| for (0..cap) |pos| fill(f.format, rng, x.*, f.logical(at, s, h, pos));
         }
         f.q = try randoms(a, rng, c.rows * 2 * q_heads * hd);
         f.k = try randoms(a, rng, c.rows * 2 * kv_heads * hd);
@@ -117,8 +119,8 @@ pub const Fixture = struct {
     }
 
     /// A row's bytes: bf16 in [-1, 1); e4m3 codes but NaN's, a scale in [1/1792, 1/448) (values within 1).
-    fn fill(f: Fixture, rng: std.Random, out: []u8, sp: [2]Span) void {
-        switch (f.format) {
+    pub fn fill(format: Format, rng: std.Random, out: []u8, sp: [2]Span) void {
+        switch (format) {
             .bf16 => for (std.mem.bytesAsSlice(u16, out[sp[0].off..][0..sp[0].len])) |*x| {
                 x.* = @truncate(@as(u32, @bitCast(rng.float(f32) * 2 - 1)) >> 16);
             },
@@ -167,7 +169,7 @@ pub const Fixture = struct {
 };
 
 /// bf16 in [-1, 1): finite, so a sum's bytes are its order's alone.
-fn randoms(a: std.mem.Allocator, rng: std.Random, n: usize) ![]u16 {
+pub fn randoms(a: std.mem.Allocator, rng: std.Random, n: usize) ![]u16 {
     const out = try a.alloc(u16, n);
     for (out) |*x| x.* = @truncate(@as(u32, @bitCast(rng.float(f32) * 2 - 1)) >> 16);
     return out;
@@ -178,11 +180,27 @@ fn bf(x: u16) f64 {
 }
 
 /// One layout's results: the rotated queries, the attention rows (the prompt tiles' too, with `Tc`), the caches.
-pub const Result = struct { q: []u8, out: []u8, prompt: []u8, after_rope: [2][]u8, after_keep: [2][]u8 };
+pub const Result = struct {
+    q: []u8,
+    out: []u8,
+    prompt: []u8,
+    /// the prompt rows from each stream's tail start alone (cuda_prompt.runFrom)
+    from: []u8,
+    /// the same with the start's keys planted uncounted (len kept): the control
+    shifted: []u8,
+    after_rope: [2][]u8,
+    after_keep: [2][]u8,
+};
+
+/// A stream's tail start in the fixture's window rows: a row no block width divides, the chunk's last third.
+pub fn tailFrom(rows: usize) usize {
+    return rows - (rows + 2) / 3;
+}
 
 const Fns = struct { rope: cuda.Function, partial: cuda.Function, merge: cuda.Function, compact: cuda.Function };
-/// The engine's attention kernels: short streams' rows in `partial`, long streams' in `rows`, a chunk's in `prompt`.
-const Tc = struct { partial: cuda.Function, rows: cuda.Function, prompt: cuda.Function, shared: u32, whole: bool = false };
+/// Attention kernels: short streams in `partial`, long ones in `rows`, a chunk in `prompt` (`ids`: by page-id count).
+const Tc = struct { partial: cuda.Function, rows: cuda.Function, prompt: cuda.Function, shared: u32, whole: bool = false, ids: bool = false };
+const page_ids = 768; // cuda_prompt.zig's ceiling on hpattn_p256_ids_kernel's ids
 
 /// rope, attention (`fns.partial`, or `tc`'s kernels), keep on layer 1 of both streams: contiguous, or `tables`' pages.
 fn launch(gpu: check.Gpu, s: cuda.Stream, fns: Fns, f: Fixture, tables: ?[2][]const u32, given: ?[2][]const u32, a: std.mem.Allocator, seed: u64, tc: ?Tc) !Result {
@@ -232,7 +250,7 @@ fn launch(gpu: check.Gpu, s: cuda.Stream, fns: Fns, f: Fixture, tables: ?[2][]co
     const layer: c_int = 1;
     const none: u64 = 0;
     var args: cuda.Args = .{};
-    inline for (.{ geo, qn, kn, vr, segs_d, rowseg_d, rowanc_d, layer, none, none }) |x| args.add(x);
+    inline for (.{ geo, qn, kn, vr, segs_d, rowseg_d, rowanc_d, layer, none, none, none }) |x| args.add(x);
     try cuda.launch.launch(fns.rope, .{ .grid = .{ .x = @intCast(m), .y = q_heads + kv_heads }, .block = .{ .x = hd } }, s, &args);
     args = .{};
     inline for (.{ geo, qn, segs_d, rowseg_d, rowanc_d, layer, none, @as(f32, 1.0 / 16.0), pm, pl, po }) |x| args.add(x);
@@ -249,31 +267,42 @@ fn launch(gpu: check.Gpu, s: cuda.Stream, fns: Fns, f: Fixture, tables: ?[2][]co
     try cuda.launch.launch(fns.merge, .{ .grid = .{ .x = q_heads, .y = @intCast(m) }, .block = .{ .x = 32 } }, s, &args);
     // each stream's rows as one prompt chunk over its own cache (cuda_prompt.zig's launch): a slab's or a page's block
     const pout = try rig.output(m * q_heads * hd * 2);
-    if (tc) |t| for (0..2) |st| {
+    const fout = try rig.output(m * q_heads * hd * 2);
+    const sout = try rig.output(m * q_heads * hd * 2);
+    if (tc) |t| for (0..2) |st| for ([_][2]usize{ .{ 0, 0 }, .{ 1, 1 }, .{ 1, 0 } }) |mode| {
+        // mode: whole chunk, from the tail start (runFrom), from the tail start with its keys not counted (control)
+        const from: usize = if (mode[0] == 1) tailFrom(f.c.rows) else 0;
+        const at = (st * f.c.rows + from) * q_heads * hd * 2;
+        const dst: u64 = if (mode[0] == 0) pout else if (mode[1] == 1) fout else sout;
         const n: u64 = if (tables != null) f.c.ptok else f.cap;
         const keys = kv[st] + blockBytes(f.format, @intCast(n), 1);
         var pa: cuda.Args = .{};
-        pa.add(qn + st * f.c.rows * q_heads * hd * 2);
+        pa.add(qn + at);
         if (f.format == .fp8) {
             const values = keys + kv_heads * n * hd;
             const kscale = values + kv_heads * n * hd;
             inline for (.{ keys, values, kscale, kscale + kv_heads * n * 4 }) |x| pa.add(x);
         } else inline for (.{ keys, keys + kv_heads * n * hd * 2 }) |x| pa.add(x);
-        pa.add(pout + st * f.c.rows * q_heads * hd * 2);
-        inline for (.{ f.c.lens[st], f.c.rows, q_heads, kv_heads, group }) |v| pa.add(@as(c_int, @intCast(v)));
+        pa.add(dst + at);
+        const len = f.c.lens[st] + from * mode[1];
+        inline for (.{ len, f.c.rows - from, q_heads, kv_heads, group }) |v| pa.add(@as(c_int, @intCast(v)));
         pa.add(@as(f32, 1.0 / 16.0));
         pa.add(@as(c_int, @intCast(f.cap)));
+        const ids: u32 = if (t.ids) @intCast((f.c.lens[st] + f.c.rows + 255) / 256) else 0;
         if (!t.whole) {
             pa.add(segs[st].pt);
             pa.add(@as(i64, @intCast(segs[st].ps)));
-            pa.add(@as(c_int, if (segs[st].pt != 0) @intCast(f.c.ptok) else 1));
+            pa.add(@as(c_int, if (t.ids) @intCast(ids) else if (segs[st].pt != 0) @intCast(f.c.ptok) else 1));
         }
-        try cuda.launch.launch(t.prompt, .{ .grid = .{ .x = @intCast((f.c.rows + 63) / 64), .y = kv_heads * (group / 2) }, .block = .{ .x = 256 }, .shared = prompt_shared }, s, &pa);
+        const grid: cuda.launch.Dim3 = .{ .x = @intCast((f.c.rows - from + 63) / 64), .y = kv_heads * (group / 2) };
+        try cuda.launch.launch(t.prompt, .{ .grid = grid, .block = .{ .x = 256 }, .shared = prompt_shared + 4 * ids }, s, &pa);
     };
     var r: Result = undefined;
     r.q = try a.dupe(u8, try rig.bytes(qn, f.q.len * 2));
     r.out = try a.dupe(u8, try rig.bytes(out, m * q_heads * hd * 2));
     r.prompt = if (tc != null) try a.dupe(u8, try rig.bytes(pout, m * q_heads * hd * 2)) else &.{};
+    r.from = if (tc != null) try a.dupe(u8, try rig.bytes(fout, m * q_heads * hd * 2)) else &.{};
+    r.shifted = if (tc != null) try a.dupe(u8, try rig.bytes(sout, m * q_heads * hd * 2)) else &.{};
     try readCaches(&rig, a, f, tables, kv, &r.after_rope);
     // keep: stream 0's window rows 0, 2 and the last (a tree's path), moved down after its cache
     if (f.c.rows >= 3) {
@@ -388,7 +417,17 @@ pub fn run(gpu: check.Gpu) !void {
             try whole.rows.allowDynamicShared(attn_tiles);
         }
         try whole.prompt.allowDynamicShared(prompt_shared);
+        var p256 = tc; // cuda_prompt.zig's kernels for pages of 256 positions (bf16): page ids from the table
+        p256.prompt = try prompt.function(prompt_symbols.bf16_p256);
+        try p256.prompt.allowDynamicShared(prompt_shared);
+        var p256_ids = p256; // and every page id in shared memory
+        p256_ids.prompt = try prompt.function(prompt_symbols.bf16_p256_ids);
+        p256_ids.ids = true;
+        try p256_ids.prompt.allowDynamicShared(prompt_shared + 4 * page_ids);
+        var red_p256 = format != .bf16;
+        var red_ids = format != .bf16;
         var red_tc = false;
+        var red_tail = false;
         var red_table = false;
         var red_bound = false;
         for (cases, 0..) |c, i| {
@@ -425,6 +464,22 @@ pub fn run(gpu: check.Gpu) !void {
             const flat_tc = try launch(gpu, s, flat_fns, f, null, null, a, 1, whole);
             try check.sameBytes("qwen35 whole: decode replaces page-aware entry", flat_tc.out, replaced.out);
             try check.sameBytes("qwen35 whole: prompt replaces page-aware entry", flat_tc.prompt, replaced.prompt);
+            for ([_]Result{ flat_tc, replaced }) |r| {
+                const from = tailFrom(c.rows);
+                const row = q_heads * hd * 2;
+                var moved = false;
+                for (0..2) |st| {
+                    const lo = (st * c.rows + from) * row;
+                    const span = r.prompt[lo .. (st + 1) * c.rows * row];
+                    try check.sameBytes("qwen35 prompt tail: rows from its start", r.from[lo..][0..span.len], span);
+                    moved = moved or !std.mem.eql(u8, r.shifted[lo..][0..span.len], span);
+                }
+                // a stress or non-finite fill can leave the rows alike either way; the control needs random keys
+                const planted = from > 0 and c.mode == .random;
+                red_tail = red_tail or planted;
+                const missed = "qwen35 prompt tail {t}: uncounted keys still gave the rows (control missed) at {any}";
+                if (planted) try check.expect(moved, missed, .{ format, c.lens });
+            }
             for (0..5) |rep| {
                 var repeat = std.heap.ArenaAllocator.init(gpu.gpa);
                 defer repeat.deinit();
@@ -448,6 +503,22 @@ pub fn run(gpu: check.Gpu) !void {
                 red_tc = red_tc or moved;
                 try check.expect(moved, "qwen35 pages {t}: a swapped page table still gave the tensor-core or prompt tiles contiguous bytes (control missed) at lens {any}", .{ format, c.lens });
             }
+            if (format == .bf16 and c.ptok == 256) {
+                for (0..2) |rep| {
+                    var repeated = std.heap.ArenaAllocator.init(gpu.gpa);
+                    defer repeated.deinit();
+                    const pg = try launch(gpu, s, fns, f, .{ f.ids[0], f.ids[1] }, null, repeated.allocator(), 20 + rep, p256);
+                    try check.sameBytes("qwen35 pages: the 256-position prompt rows, paged against contiguous", pg.prompt, flat_tc.prompt);
+                    const shared = try launch(gpu, s, fns, f, .{ f.ids[0], f.ids[1] }, null, repeated.allocator(), 24 + rep, p256_ids);
+                    try check.sameBytes("qwen35 pages: the 256-position prompt rows, page ids in shared memory", shared.prompt, flat_tc.prompt);
+                }
+                const swapped = try a.dupe(u32, f.ids[1]);
+                std.mem.swap(u32, &swapped[0], &swapped[n1 - 1]);
+                const bad = try launch(gpu, s, fns, f, .{ f.ids[0], f.ids[1] }, .{ f.ids[0], swapped }, a, 9, p256);
+                red_p256 = red_p256 or !std.mem.eql(u8, bad.prompt, flat_tc.prompt);
+                const bad_ids = try launch(gpu, s, fns, f, .{ f.ids[0], f.ids[1] }, .{ f.ids[0], swapped }, a, 9, p256_ids);
+                red_ids = red_ids or !std.mem.eql(u8, bad_ids.prompt, flat_tc.prompt);
+            }
             const o = try a.dupe(u8, flat.out);
             std.mem.writeInt(u16, o[2 * (q_heads * hd + 5) ..][0..2], 0x4040, .little); // 3.0 where |o| <= 1
             var bad_r = flat;
@@ -457,7 +528,8 @@ pub fn run(gpu: check.Gpu) !void {
             try check.expect(caught, "qwen35 pages {t}: a planted attention row passed float64 (control missed)", .{format});
             std.debug.print("PASS qwen35 pages {t}: lens {any}, {d} rows a stream, {d}-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards\n", .{ format, c.lens, c.rows, c.ptok });
         }
-        try check.expect(red_table and red_bound and red_tc, "qwen35 pages {t}: a control never fired", .{format});
-        std.debug.print("PASS qwen35 pages {t}: controls RED as planted (swapped table, planted row)\n", .{format});
+        const red = red_table and red_bound and red_tc and red_tail and red_p256 and red_ids;
+        try check.expect(red, "qwen35 pages {t}: a control never fired", .{format});
+        std.debug.print("PASS qwen35 pages {t}: controls RED as planted (swapped table, planted row, uncounted tail keys, swapped table on 256-position pages, swapped table with page ids in shared memory)\n", .{format});
     }
 }

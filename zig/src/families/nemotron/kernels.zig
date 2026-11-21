@@ -8,7 +8,7 @@ const row = @import("../../core/row_projection.zig");
 pub const glue_names = [_][:0]const u8{ "tf_embed_q4", "tf_embed_bits", "tf_rms_mlx", "tf_argmax_bf16", "tf_kv_write", "tf_attn_q", "tf_attn_out", "tf_copy_rows", "tf_copy_u32", "tf_coop_combine" };
 
 /// Tree windows (nemotron_tree.metal): Mamba by parent for every forward, tree attention, compaction, gathers, top-k.
-pub const tree_names = [_][:0]const u8{ "tf_tree_conv", "tf_tree_scan", "tf_tree_tail", "tf_tree_merge", "tf_kv_compact", "tf_gather_rows", "tf_topk_probs", "tf_lane_tokens" };
+pub const tree_names = [_][:0]const u8{ "tf_tree_conv", "tf_tree_scan", "tf_tree_tail", "tf_tree_merge", "tf_kv_compact", "tf_gather_rows", "tf_topk_probs", "tf_lane_tokens", "tf_tree_conv_bolt", "tf_tree_scan_bolt" };
 
 /// A lone stream's GPU-side round (nemotron_round.metal): the verify's arguments, the accept, the stop, a row gather.
 pub const round_names = [_][:0]const u8{ "tf_round_args", "tf_round_accept", "tf_round_gather", "tf_round_root", "tf_round_top1", "tf_round_copy", "tf_round_tail", "tf_round_sib", "tf_round_attsel" };
@@ -23,8 +23,8 @@ pub const sample_names = [_][:0]const u8{ "tf_sample_full", "tf_sample_full_ids"
 pub const train_names = [_][:0]const u8{ "tf_train_head_t", "tf_train_softmax", "tf_train_dequant_t", "tf_train_narrow", "tf_train_add", "tf_train_experts_tiles", "tf_train_experts_mm", "tf_train_rms_back", "tf_train_lora_in", "tf_train_gate", "tf_lesson_latch", "tf_train_project", "tf_train_lora_out", "tf_train_lora_db", "tf_train_lora_dxa", "tf_train_lora_dx", "tf_train_sketch", "tf_train_relu2_back", "tf_train_pairs_in", "tf_train_pairs_out", "tf_train_adam", "tf_train_zero", "tf_train_widen", "tf_residual", "tf_train_route_back", "tf_train_rest_back", "tf_train_nudge", "tf_pocket_relu2", "tf_pocket_relu2_rows", "tf_train_copy_cols", "tf_pocket_in" };
 pub const mixer_names = [_][:0]const u8{ "tf_train_dt", "tf_train_ssm_fwd", "tf_train_ssm_back", "tf_train_ssm_bc", "tf_train_gate_back", "tf_train_conv_back", "tf_train_dt_back", "tf_train_attn_q", "tf_train_attn_kv" };
 
-/// Routed experts taking an expert's member rows two or four at a time (nemotron_experts.metal).
-pub const rows_names = [_][:0]const u8{ "tf_xup_rows2", "tf_xdown_rows2", "tf_xup_rows4", "tf_xdown_rows4", "tf_xup_w3", "tf_xdown_w3" };
+/// Routed experts taking member rows 2 or 4 at a time (nemotron_experts.metal); rows2r8: 8 rows a simdgroup.
+pub const rows_names = [_][:0]const u8{ "tf_xup_rows2", "tf_xdown_rows2", "tf_xup_rows4", "tf_xdown_rows4", "tf_xup_w3", "tf_xdown_w3", "tf_xup_rows2r8", "tf_xdown_rows2r8" };
 
 /// Routed-expert kernels at other (rows a simdgroup, simdgroups a threadgroup): each row's arithmetic is unchanged.
 pub const geometries = [_][2]usize{ .{ 2, 2 }, .{ 8, 2 }, .{ 4, 4 }, .{ 8, 4 }, .{ 4, 1 }, .{ 2, 4 } };
@@ -49,11 +49,12 @@ fn generated(comptime key: []const u8) sources.nemotron.Kernel {
 
 /// The generated expert source with explicit instantiations at each geometry (template args after RPS, SG).
 fn geoSource(comptime key: []const u8, comptime which: []const u8, comptime head: []const u8, comptime tail: []const u8) []const u8 {
-    const k = generated(key);
-    var text: []const u8 = k.source;
+    const k = comptime generated(key);
+    var text: []const u8 = k.source ++ @import("geo_source.zig").body(k.source, k.function);
     for (geometries) |g| {
         const args = std.fmt.comptimePrint("<{s}, {d}, {d}{s}>", .{ head, g[0], g[1], tail });
-        text = text ++ "\ntemplate [[host_name(\"" ++ geoName(which, g) ++ "\")]] [[kernel]] decltype(" ++ k.function ++ args ++ ") " ++ k.function ++ args ++ ";";
+        const function = if (g[0] == 2) "tf_geo_experts" else k.function;
+        text = text ++ "\ntemplate [[host_name(\"" ++ geoName(which, g) ++ "\")]] [[kernel]] decltype(" ++ function ++ args ++ ") " ++ function ++ args ++ ";";
     }
     return text ++ "\n";
 }
@@ -87,7 +88,7 @@ pub fn keyOf(i: usize) []const u8 {
 pub fn sourceHash() u64 {
     var h = std.hash.Wyhash.init(0x6e);
     inline for (sources.nemotron.all) |k| h.update(k.source);
-    for ([_][]const u8{ sources.nemotron_glue, sources.nemotron_experts, sources.nemotron_tree, sources.nemotron_round, sources.nemotron_head, sources.nemotron_sample, sources.nax, sources.core_row_projection, sources.packed_metallib }) |s| h.update(s);
+    for ([_][]const u8{ sources.nemotron_glue, sources.nemotron_experts, sources.nemotron_tree, sources.nemotron_round, sources.nemotron_head, sources.nemotron_sample, sources.nax, sources.core_row_projection, sources.core_row_projection_legacy, sources.packed_metallib }) |s| h.update(s);
     for (sources.prefill) |f| h.update(f.text);
     return h.final();
 }
@@ -97,6 +98,9 @@ pub const Kernels = struct {
     rows: ?row.Pipelines = null, // the core's row projections: chips without tensor units, and widths but 4/64
     bits: ?*row.simd_bits.Pipelines = null, // prompt chunks' tiles at widths but 4/64 (the model owns them)
     gathers: []const @import("prefill_w.zig").Gathers = &.{}, // prompt chunks' routed experts at widths but 4/64 (model's)
+    paged: ?*const @import("kv_pages.zig").Pipelines = null, // TF_NEMOTRON_METAL_KV_PAGES: the twins (the backend's)
+    /// Windows this wide take tf_x*_rows2r8 (two members a pass, 8 rows a simdgroup): 16 on the M1, else never.
+    wide_rows: usize = std.math.maxInt(usize),
 
     /// The pipeline of a generated kernel (by its generator key) or a glue kernel (by function name).
     pub fn get(self: *const Kernels, comptime key: []const u8) mtl.Pipeline {
@@ -153,7 +157,7 @@ const Job = struct {
 };
 
 /// The packed kernels' tensor-inline construct: macOS 26.3's runtime compiler refuses it, the offline one accepts it.
-const probe_source =
+pub const probe_source =
     \\#include <metal_stdlib>
     \\using namespace metal;
     \\kernel void tf_uint4b_probe(device uchar* out [[buffer(0)]], uint i [[thread_position_in_grid]]) {
@@ -223,10 +227,15 @@ fn loadWith(allocator: std.mem.Allocator, device: mtl.Device, prebuilt: ?mtl.Lib
     defer for (rewritten) |r| if (r) |text| allocator.free(text);
     if (!device.tensorUnits()) inline for (sources.nemotron.all, 0..) |kernel, i| {
         if (comptime std.mem.startsWith(u8, kernel.key, "attn_partial")) {
-            rewritten[i] = try simd_attention.rewrite(allocator, kernel.source);
+            rewritten[i] = try simd_attention.forGeneration(allocator, device.generation(), kernel.source);
             jobs[i].source = rewritten[i].?;
         }
     };
+    if (device.tensorUnits()) {
+        std.log.info("nemotron: attention partials compiled as written, tensor ops (applegpu generation {d})", .{device.generation()});
+    } else {
+        std.log.info("nemotron: attention partials SIMD-rewritten (applegpu generation {d}, no tensor units)", .{device.generation()});
+    }
     const n = sources.nemotron.all.len;
     jobs[n] = .{ .device = device, .source = sources.nemotron_glue, .names = &glue_names, .out = k.pipelines[n .. n + glue_names.len] };
     const gp = n + glue_names.len;
@@ -270,6 +279,7 @@ fn loadWith(allocator: std.mem.Allocator, device: mtl.Device, prebuilt: ?mtl.Lib
     }
     if (absent > 0) std.log.warn("{d} packed kernels did not build; this chip takes the row projections instead", .{absent});
     if (!device.tensorUnits()) k.rows = try row.Pipelines.load(device);
+    if (device.generation() == 13) k.wide_rows = 16;
     return k;
 }
 
@@ -358,13 +368,13 @@ test "the probe accepts this runtime compiler, or the prebuilt metallib is prese
     const device = mtl.Device.init() catch return error.SkipZigTest;
     defer device.deinit();
     if (tensorInlineOk(device)) return; // the sources compile: no fallback needed here
-    try std.testing.expect(sources.packed_metallib.len > 0); // else load fails with PrebuiltMetallibMissing
+    if (sources.packed_metallib.len == 0) return skipNoPrebuilt();
 }
 
 test "the prebuilt metallib carries every packed kernel function" {
     const device = mtl.Device.init() catch return error.SkipZigTest;
     defer device.deinit();
-    if (sources.packed_metallib.len == 0) return error.SkipZigTest;
+    if (sources.packed_metallib.len == 0) return skipNoPrebuilt();
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
     var lib = try mtl.Library.fromBytes(device, sources.packed_metallib);
@@ -376,7 +386,15 @@ test "the prebuilt metallib carries every packed kernel function" {
     }
 }
 
+fn skipNoPrebuilt() error{SkipZigTest} {
+    std.debug.print("no prebuilt nemotron_packed.metallib (built without Xcode's Metal compiler): packed check skipped\n", .{});
+    return error.SkipZigTest;
+}
+
 test "without tensor units the kernels load when the packed ones cannot link, as on macOS 26.3" {
+    const log_level = std.testing.log_level;
+    std.testing.log_level = .err;
+    defer std.testing.log_level = log_level;
     const device = mtl.Device.init() catch return error.SkipZigTest;
     defer device.deinit();
     if (device.tensorUnits()) return error.SkipZigTest; // chips that dispatch the packed kernels still fail the load

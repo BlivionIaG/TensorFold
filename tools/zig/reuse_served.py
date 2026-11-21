@@ -4,19 +4,24 @@ import argparse
 import http.client
 import json
 import os
+from pathlib import Path
 import re
+import select
 import sys
 import threading
 import time
 import urllib.parse
 import urllib.request
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import conformance_lifecycle as lifecycle  # noqa: E402
+
 COLD = (1024, 2048, 8192, 16384, 32768, 65536)  # cold prompt lengths: a warm-up, then the PP rule's
 PROBE = chr(0x2063) + "probe"  # the server's system-prefix probe (prompt.zig systemPrefixLen)
 USAGE = """modes:
   record BASE MODEL ROWS.jsonl     every scenario on a server with the prompt cache on; cached tokens checked per reply
   replay BASE MODEL ROWS.jsonl OUT the same bodies, in order, on a server started with --prompt-cache-gib 0
-  compare ROWS.jsonl OUT           full token digests equal, drafted == "draft": false; timing apart
+  compare ROWS.jsonl OUT           full token digests equal, drafted == "draft": false, the cancel held; timing apart
   evict BASE MODEL ROWS.jsonl GIB  a budget that holds one conversation: alternating ones evict, a big one is refused
   cold BASE MODEL PROMPTS.json OUT cold prompts 2k-64k (built once through /v1/tokenize): time to first token
   pp OUT...                        cold medians by length, each run against the first
@@ -40,6 +45,8 @@ TOOLS = [
 
 
 class Client:
+    SETTLE_S = 60  # seconds a cancel waits for the server to go idle, before the cut and after it
+
     def __init__(self, base: str, model: str) -> None:
         self.base, self.model = base.rstrip("/"), model
 
@@ -66,15 +73,39 @@ class Client:
                 "finish": choice.get("finish_reason"), "content": msg.get("content") or "",
                 "reasoning": msg.get("reasoning_content") or "", "calls": msg.get("tool_calls") or []}
 
+    def get(self, path: str):
+        """A GET's status and raw body (conformance_lifecycle's census, disconnects and health read it)."""
+        try:
+            with urllib.request.urlopen(self.base + path, timeout=30) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read(1 << 16)
+        except OSError:
+            return 0, b""
+
     def cancel(self, body: dict, after: float) -> dict:
         """Sends the request and closes the socket after `after` seconds, before any reply (a cancel in prefill)."""
+        # "error": the reply came before the cut, 1 disconnect not counted, /v1/load not idle again, or /health not ok
+        settle_s = self.SETTLE_S
+        base, before = lifecycle.idle(self, settle_s), lifecycle.disconnects(self)
         u = urllib.parse.urlparse(self.base)
         c = http.client.HTTPConnection(u.hostname, u.port, timeout=7200)
         c.request("POST", "/v1/chat/completions", json.dumps(body), {"Content-Type": "application/json"})
         time.sleep(after)
+        early = bool(select.select([c.sock], [], [], 0)[0])  # the reply already arriving: there was nothing to cancel
         c.sock.shutdown(2)
         c.close()
-        return {"cancelled_after": after}
+        seen, held = lifecycle.settle(self, lambda s: base is not None and s == base, settle_s)
+        now = lifecycle.disconnects(self)
+        counted = now - before if now is not None and before is not None else None
+        problems = [why for bad, why in [
+            (base is None, f"no idle census from GET /v1/load within {settle_s} s before the cut"),
+            (early, f"the reply came before the cut at {after} s: nothing was cancelled (lower --cancel-after)"),
+            (counted != 1, f"the server counted {counted} disconnects for 1 cut"),
+            (base is not None and not held, f"the census {seen} did not return to {base} (a lane or page held)"),
+            (not lifecycle.healthy(self), "GET /health not ok after the cut")] if bad]
+        out = {"cancelled_after": after, "disconnects": counted, "census": seen}
+        return {**out, "error": "; ".join(problems)} if problems else out
 
     def tokens(self, messages: list, tools: list | None, thinking: bool, generation: bool) -> list[int]:
         body = {"model": self.model, "messages": messages, "add_generation_prompt": generation,
@@ -130,7 +161,7 @@ class Conv:
 
 
 def fits(cached, allowed) -> bool:
-    """A cached count against a list of positions, or a {"min", "max"} range (planned families floor marks to chunk starts)."""
+    """A cached count vs positions, or a {"min","max"} range (planned families floor marks to chunk starts)."""
     if allowed is None:
         return True
     if isinstance(allowed, dict):
@@ -182,10 +213,21 @@ class Recorder:
               flush=True)
         self.i += 1
 
+    def resume_len(self, conv: Conv, prompt: list[int]) -> int:
+        """The rendered history the next turn repeats, under the prompt (a state needs a row left to draw from)."""
+        hist = self.c.tokens(conv.messages, conv.tools, conv.thinking, False)
+        if conv.messages[-1]["role"] == "tool":  # a template may close the turn after a tool reply only while no assistant message follows
+            more = self.c.tokens(conv.messages + [{"role": "assistant", "content": PROBE}], conv.tools, conv.thinking, False)
+            n = 0
+            while n < min(len(hist), len(more)) and hist[n] == more[n]:
+                n += 1
+            hist = hist[:n]
+        return min(len(hist), len(prompt) - 1)
+
     def turn(self, conv: Conv, allowed: list[int] | None, tool_text: tuple[str, str], plain: bool = True, plain_allowed: list[int] | None = None) -> dict:
         """One turn: drafted, then "draft": false on the same messages (it resumes this turn's own history)."""
         prompt = self.c.tokens(conv.messages, conv.tools, conv.thinking, True)
-        history = len(self.c.tokens(conv.messages, conv.tools, conv.thinking, False))
+        history = self.resume_len(conv, prompt)
         body = conv.body(self.c.model, self.max_tokens, False)
         got = self.c.chat(body)
         self.row(conv, "drafted", body, got, allowed, history)
@@ -229,7 +271,7 @@ def scenarios(rec: Recorder, texts: Texts, turns: int, cancel_after: float) -> N
     t = Conv("T", "You answer briefly.\n\n" + texts.get(13, 6_000)[1], "Summarize the code above in three sentences.", None, False, False)
     for k in range(2):
         rec.turn(t, [0] if k == 0 else rec.prev(t), tool())
-    # 5: a request cancelled in prefill, sent again (resumes only a mark kept whole before the cancel), then its next turn
+    # 5: a request cancelled in prefill, resent (resumes only a mark kept whole before cancel), then its next turn
     sys_c = "You audit code for security problems.\n\n" + texts.get(14, 40_000)[1]
     c = Conv("C", sys_c, "Audit the file above and list concrete issues with line references.", TOOLS, True, True)
     body = c.body(rec.c.model, rec.max_tokens, False)
@@ -251,7 +293,7 @@ def scenarios(rec: Recorder, texts: Texts, turns: int, cancel_after: float) -> N
 
 
 def split(client: Client, out: str, texts: Texts, max_tokens: int) -> int:
-    """System cuts one row before, at and after a fresh pair call's split (rank 0 holds rows up to ceil(L/2)), each resumed by a second conversation."""
+    # Cuts a row before, at and after a pair's split (rank 0 holds up to ceil(L/2)); each resumed by a second chat.
     rec = Recorder(client, out, max_tokens)
     for k, delta in enumerate((-1, 0, 1)):
         user = f"Case {k}. Read the file below and say what it does.\n\n" + texts.get(50 + k, 14_000)[1]
@@ -287,7 +329,7 @@ def split(client: Client, out: str, texts: Texts, max_tokens: int) -> int:
 
 
 def evict(client: Client, out: str, budget_gib: float, texts: Texts, max_tokens: int) -> int:
-    """At 1 GiB one 15k-31k-token state fits and two do not: conversations take turns evicting, a 40k-token state is refused."""
+    """At 1 GiB one 15k-31k-token state fits, two do not: conversations evict in turns, a 40k-token state refused."""
     rec = Recorder(client, out, max_tokens)
     tool = lambda k: texts.get(20 + k, 11_000)
     body = lambda k, chars: "".join(texts.get(k + j, 40_000)[1] for j in range(chars // 40_000 + 1))[:chars]
@@ -335,10 +377,13 @@ def replay(client: Client, rows_path: str, out_path: str) -> int:
 def compare(rows_path: str, fresh_path: str) -> int:
     rows = {r["i"]: r for r in map(json.loads, open(rows_path))}
     fresh = {r["i"]: r["got"] for r in map(json.loads, open(fresh_path))}
-    bad, faster, slow, total = 0, [], [], 0
+    bad, faster, slow, total, cut = 0, [], [], 0, 0
     by_messages: dict[tuple, set] = {}
     for i, r in sorted(rows.items()):
         if r["arm"] == "cancel":
+            cut += not r["ok"]
+            verdict = "held" if r["ok"] else f"FAIL {r['got'].get('error')}"
+            print(f"{i:3d} {r['conv']:>4} t{r['turn']} cancel  {verdict}")
             continue
         f, g = fresh.get(i), r["got"]
         total += 1
@@ -366,14 +411,15 @@ def compare(rows_path: str, fresh_path: str) -> int:
     print(f"drafted == plain on the same messages: {len(by_messages) - len(split)}/{len(by_messages)}")
     for conv, turn, arm, prompt, cached, t, ft in faster:
         print(f"  {conv:>4} t{turn} {arm:<7} prompt {prompt:6d} cached {cached:6d}: ttft {t:6.2f} s vs fresh {ft:6.2f} s ({ft / max(t, 1e-6):5.1f}x)")
-    print(f"{'PASS' if bad == 0 and not split else 'FAIL'}: {total - bad}/{total} replies equal and as cached as planned")
+    ok = bad == 0 and not split and not cut
+    print(f"{'PASS' if ok else 'FAIL'}: {total - bad}/{total} replies equal and as cached as planned"
+          + (f"; {cut} cancels did not hold" if cut else ""))
     print(f"timing: {len(slow)} resumed replies no sooner than fresh{': ' + str(slow) if slow else ''}")
-    return 1 if bad or split else 0
+    return 0 if ok else 1
 
 
 def ranks(r0_path: str, r1_path: str) -> int:
-    """Rank 0's done and ended lines against rank 1's reply lines, in request order (rank 1 also logs rank 0's engine
-    warm-up first); a reply rank 0 ended early (a client that left) is checked by its prompt only."""
+    """Rank 0 done/ended vs rank 1 replies in order (rank 1 logs rank 0 warm-up first); client-left end: prompt only."""
     line0 = re.compile(r"\] (?:done \S+ prompt=(\d+) .*? tokens=(\d+) sha=([0-9a-f]+)|ended \S+ reason=.*? prompt=(\d+) tokens=(\d+))")
     line1 = re.compile(r"speed-up rank 1: resumed at \d+ of (\d+) .*?reply (\d+) tokens, sha ([0-9a-f]+)")
     a = []
@@ -398,7 +444,7 @@ def ranks(r0_path: str, r1_path: str) -> int:
 
 
 def cold_prompts(client: Client, path: str, root: str) -> list[dict]:
-    """Single-message prompts of fixed token lengths, a unique first line each so nothing resumes (prefill_cold.py's)."""
+    """Single-message prompts of fixed token lengths, unique first lines so nothing resumes (prefill_cold.py's)."""
     if os.path.exists(path):
         return json.load(open(path))
     text = "".join(open(os.path.join(root, n), encoding="utf-8", errors="replace").read() for n in sorted(os.listdir(root)) if n.endswith(".py"))
@@ -420,7 +466,7 @@ def cold_prompts(client: Client, path: str, root: str) -> list[dict]:
 
 
 def ids(client: Client, out_path: str, length: int, root: str) -> int:
-    """A chat prompt of at most `length` tokens as the server renders it, saved as {"prompt": ids} for the engine gates."""
+    """A chat prompt up to `length` tokens as the server renders it, saved as {"prompt": ids} for engine gates."""
     text = "".join(open(os.path.join(root, n), encoding="utf-8", errors="replace").read() for n in sorted(os.listdir(root)) if n.endswith(".py"))
     msgs = lambda chars: [{"role": "user", "content": "Explain what this code does, section by section.\n\n" + text[:chars]}]
     lo, hi = 0, 6 * length
@@ -437,7 +483,7 @@ def ids(client: Client, out_path: str, length: int, root: str) -> int:
 
 
 def warm(client: Client, out_path: str, root: str, turns: int, new_tokens: int, max_tokens: int) -> int:
-    """An agent's short turns as an agent harness sends them (thinking off, ~new_tokens of tool output a turn): each turn's cached tokens and first token."""
+    """Short harness-sent agent turns (thinking off, ~new_tokens tool output/turn): cached tokens, first token."""
     texts = Texts(root)
     system = "You are a careful coding agent working in a Python repository. Read before you edit, keep changes small.\n\n" + texts.get(0, 22_000)[1]
     conv = Conv("W", system, "Task: find why the parser below rejects nested groups.\n\n" + texts.get(1, 4_000)[1], TOOLS, False, True)
@@ -501,7 +547,7 @@ def main() -> int:
     ap.add_argument("--max-tokens", type=int, default=160)
     ap.add_argument("--turns", type=int, default=9)
     ap.add_argument("--text", default=os.path.dirname(os.__file__))
-    ap.add_argument("--cancel-after", type=float, default=4.0)
+    ap.add_argument("--cancel-after", type=float, default=1.0)
     ap.add_argument("--planned", action="store_true", help="the family keeps states only at chunk starts (Nemotron)")
     ap.add_argument("--min-prompt", type=int, default=4096, help="the server keeps nothing for shorter prompts (Rules.min_prompt)")
     ap.add_argument("--new-tokens", type=int, default=200, help="warm: tool output tokens a turn adds")

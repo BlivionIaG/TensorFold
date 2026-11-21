@@ -22,6 +22,13 @@ pub fn typeName(v: Value) []const u8 {
     };
 }
 
+/// Python's ``bool(fields.get(key))`` on the sampling fields.
+pub fn flag(f: Value, key: []const u8) ?bool {
+    const v = f.get(key) orelse return null;
+    if (v == .null) return null;
+    return v.truthy();
+}
+
 /// ``fields.get`` on a body that is not an object fails as Python's AttributeError does.
 pub fn requireObject(cx: *Cx, v: Value) errors.Refused!void {
     if (v != .object) return cx.fail(.other, "'{s}' object has no attribute 'get'", .{typeName(v)});
@@ -207,6 +214,8 @@ pub fn thinkingFields(cx: *Cx, body: Value, levels: []const []const u8) errors.R
     if (kw_object and !has_enable) if (thinkingSwitch(if (kwargs) |k| k.get("thinking") else null)) |sw| {
         enable = .{ .bool = sw };
     };
+    // DeepSeek's own API (and GLM's and Kimi's) switches thinking with a top-level ``thinking``; the kwargs win.
+    const top: ?bool = if (enable == null) thinkingSwitch(body.get("thinking")) else null;
     var effort = body.field("reasoning_effort");
     if (effort == null and kw_object) if (kwargs) |k| {
         effort = k.field("reasoning_effort");
@@ -220,6 +229,10 @@ pub fn thinkingFields(cx: *Cx, body: Value, levels: []const []const u8) errors.R
         out.enable = on.truthy();
         if (out.enable.? and out.effort != null and std.mem.eql(u8, out.effort.?, "none")) out.effort = null;
     };
+    if (top) |on| {
+        out.enable = on;
+        if (on and out.effort != null and std.mem.eql(u8, out.effort.?, "none")) out.effort = null;
+    }
     if (kw_object) if (kwargs) |k| if (k.get("clear_thinking")) |c| if (c != .null) {
         if (c != .bool) return cx.refuse("chat_template_kwargs.clear_thinking must be true or false");
         out.clear = c.bool;
@@ -235,6 +248,12 @@ fn isEffort(s: []const u8) bool {
 fn order(name: []const u8) ?usize {
     for (effort_order, 0..) |e, i| if (std.mem.eql(u8, e, name)) return i;
     return null;
+}
+
+/// The effort a request itself names, on the template's levels; null for none or `none` (never --reasoning-effort).
+pub fn namedEffort(request: ?[]const u8, levels: []const []const u8) ?[]const u8 {
+    const e = request orelse return null;
+    return if (std.mem.eql(u8, e, "none")) null else coerceEffort(e, levels);
 }
 
 /// The nearest level the template names, ties going higher; xhigh and none stay.

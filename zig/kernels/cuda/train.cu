@@ -3,6 +3,8 @@
 #include <cuda_bf16.h>
 #include <stdint.h>
 #include "common/reduce.cuh"
+#include "common/act.cuh"
+#include "common/qmm_frag.cuh"
 
 typedef __nv_bfloat16 bf16;
 
@@ -14,14 +16,11 @@ using tf_common::warp_max;
 using tf_common::block_sum_tree;
 using tf_common::block_max_tree;
 
-__device__ __forceinline__ float silu(float v) { return v / (1.0f + expf(-v)); }
+using tf_common::silu;
 
-__device__ __forceinline__ float silu_grad(float v) {
-    const float s = 1.0f / (1.0f + expf(-v));
-    return s * (1.0f + v * (1.0f - s));
-}
+using tf_common::silu_grad;
 
-__device__ __forceinline__ float softplus(float v) { return v > 20.0f ? v : log1pf(expf(v)); }
+__device__ __forceinline__ float softplus(float v) { return tf_common::softplusf_(v); }
 
 // ---- the loss -------------------------------------------------------------------------------------------------------
 
@@ -291,11 +290,7 @@ extern "C" __global__ void __launch_bounds__(128) tf_train_gemm(const bf16* __re
             for (int i = 0; i < 2; i++)
 #pragma unroll
                 for (int j = 0; j < 4; j++)
-                    asm volatile(
-                        "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 {%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, "
-                        "{%0, %1, %2, %3};\n"
-                        : "+f"(acc[i][j][0]), "+f"(acc[i][j][1]), "+f"(acc[i][j][2]), "+f"(acc[i][j][3])
-                        : "r"(af[i][0]), "r"(af[i][1]), "r"(af[i][2]), "r"(af[i][3]), "r"(bq[j][0]), "r"(bq[j][1]));
+                    qmm_frag::mma_v(acc[i][j], af[i], bq[j]);
         }
         __syncthreads();
     }
