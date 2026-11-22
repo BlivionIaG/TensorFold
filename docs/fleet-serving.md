@@ -70,13 +70,14 @@ Gate: the cost model's predicted TTFT within 20 % of measured. Holds for most cl
 Gate: at least 1.4x the better single engine's goodput where one engine misses its SLO (met: 3.5 vs 1.2 good req/min at 0.12, 3.2 vs 0.9 on mixed, 138 vs 99 tok/s and 100 % vs 73 % finished at 0.25),
 ITL p95 not worse than the engine alone (below S alone, 60-71 against 74-78 ms, above M alone at 47-48 ms: not met against M), zero lost requests on failover (0 of 15; no stream was cut mid-answer, not covered).
 
-**Phase 2, per-engine stall bounds (tier 1, engine work).** M: chunked prefill with a decode share between chunks so a long prompt does not stop its
-decoders (S already does this at 250 ms per 2048 rows); both: tune chunk size against the router's guard. This is token-exact.
-Gate: worst decode gap under a 16k arrival below 0.5 s on M with TTFT of the newcomer not worse than 1.3x.
+**Phase 2, per-engine stall bounds (tier 1, engine work).** The M5 already runs one decode round between prefill chunks, so the stall is one chunk. Probed 2026-11-22 (`router/docs/phase0.md`): `TF_DSV41_PREFILL_STEP`
+4096 / 2048 / 1024 gives 2.0 / 1.0 / 0.65 s per chunk for 8.5 / 9.0 / 12.2 s TTFT at 16k, so 2048 is a free halving and below that TTFT pays one for one. The worst gap stays 1.7-2.4 s at every step because the last gap
+(ending at the newcomer's first token) is not chunk-bound; that is the engine work, plus the router's guard (`prefill.mode`, `chunk_rows`) following the chosen step.
+Gate: worst decode gap under a 16k arrival below 0.5 s on M with TTFT of the newcomer not worse than 1.3x. Not met; the knob alone cannot meet it.
 
-**Phase 3, M draft acceptance (tier 1, engine work).** M accepted 2 of 10 drafts on story text and 1.11 tokens per event on natural prompts (phase 0), S 47-60 % and ~3 tokens per event; cause unexplained. Log per-position acceptance on both, check
-tap freshness and the Metal draft head. Exact because drafts are verified.
-Gate: acceptance above break-even (1.75 tokens per round) on the benchmark prompts, or a documented reason it cannot be.
+**Phase 3, M draft acceptance (tier 1, engine work).** Probed 2026-11-22: the drafts accept (1.7 tokens per round with the governor off, replies byte-identical) but a 3-4 row verify window costs 1.69x a one-row round on
+Metal (31.3 vs 18.5 ms), so drafting nets 52.0 against 53.7 tok/s: it wins on lists / JSON / code (up to 59.6) and loses on prose (43.8). The governor is right to stay off by default. The M5 drafts with MTP + copies and the Sparks with DSpark + copies.
+Gate: acceptance above break-even (1.75 tokens per round) on the benchmark prompts, or a documented reason it cannot be. The reason is documented; what would change it is a cheaper verify window on Metal or a stronger drafter, both engine work.
 
 **Phase 4, cache and capacity (tier 1).** Sticky sessions, prefix-map self-correction from `cached_tokens`, load-aware thresholds from phase-0 curves,
 `/v1/load` as the load signal, a `served_by` field in replies.

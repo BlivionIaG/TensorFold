@@ -21,9 +21,9 @@ Exact, greedy, thinking off, unique prompt per request, `tools/llmbench.py` on e
 Findings that change the plan:
 
 * **The machines are closer than the November tables.** M's prefill at 16k is ~1.8x faster (about 0.9k to 1.67k tok/s; 9.9 s against 17.7 s to first token), its decode is 53 tok/s with a flat
-  curve, and a long prompt now costs a running stream one stall of ~2.9 s per 4096-row chunk instead of the whole prefill. S keeps the lower first-token cost and the lower stall.
-* **M's drafts do not fire.** 10 drafted, 2 accepted per 256 tokens on story text; 1.11 tokens per event on natural prompts, where S gets ~3. With drafts working M would
-  be well past S on single-stream decode; this is the phase-3 lever and it is exact.
+  curve, and a long prompt now costs a running stream one stall of ~2-2.9 s per 4096-row chunk (2.85 s on the 40k-context server with a 4 GiB prompt cache, 2.0 s on the 20k-context probe server) instead of the whole prefill. S keeps the lower first-token cost and the lower stall.
+* **M's drafts do not pay.** The governor drops them after 8 rounds (10 drafted, 2 accepted per 256 tokens on story text; 1.11 tokens per event on natural prompts, where S gets ~3). The probe below shows
+  why: they accept at ~1.7 tokens per round but the verify window costs 1.69x a plain round, so always-on drafting nets 52.0 against 53.7 tok/s.
 * **The `popt3` engine (replay producer, prefill 2.5k tok/s at 32k) failed two simultaneous short decode streams** with `HistoryLost` in the shared round ("a round failed (HistoryLost):
   the round's streams fail"); `sd2` ran 1/2/4 streams cleanly, so the pair served with `sd2`. The `prod` profile's `TF_DSV41_EXPERT_TOPP=0.85` prunes routed experts and is not exact;
   the run uses the parity profile that drops it. Both are engine findings for whoever owns those lines, not router work.
@@ -62,3 +62,33 @@ What the numbers say:
   47-56 % of requests are inside 20 %. The phase-0 gate (within 20 %) holds for most class medians, not yet per request; at 2-3 s TTFTs 0.4 s is already 20 %.
 * Failover: M killed 61 s into a 180 s chat run (15 requests): all 11 requests that arrived afterwards were served by S with no error, the breaker opened for M (4 trips, 80 s cooldown),
   0 of 15 failed. No stream was in flight on M at the kill, so a stream cut mid-answer (which cannot be resumed) is not covered by this run; failover before the first byte is covered by the unit tests.
+
+# Probes for phases 2 and 3 on the M5 (2026-11-22)
+
+Same engine and pack, private server, 1 stream unless noted, greedy. **Engine lines:** `sd2` (Sparks) and `fin2` (M5) are builds of the fork's dev line (`fin2` = `ace515402`, "Merge the streamed
+hand-off into the dev line"), not of `main`: `main` has no `--engram-stream-dir` and no `native/deepseek_v41_lane_host.zig`. The router does not care, but every engine number in this file is for those builds.
+
+**Draft governor (phase 3).** The M5 drafts with MTP + copies (the Sparks with DSpark + copies). Its governor samples the first 8 rounds of a request and drops to plain decode below 1.75 tokens per round.
+Eight natural prompts, 256 tokens, reply hashes identical in both runs (drafting is verified):
+
+| M5 | tok/s | tokens per event | event ms p50 |
+|---|---|---|---|
+| default (governor on) | 53.7 | 1.11 | 18.5 |
+| `TF_DSV41_DRAFT_OFF=0` (drafts always on) | 52.0 | 1.70 | 31.3 |
+
+Per prompt with drafts on: 43.8 to 59.6 tok/s (prime list 59.6, JSON 58.0, C function 54.7, history essay 43.8). The governor's log lines show first-draft acceptance 0.29-0.69 and 1.4-1.75 tokens per round at round 8.
+So the drafts are not failing to accept (1.7 tokens per round) but a 3-4 row verify window costs 1.69x a one-row round (+13 ms on 18.5 ms), which cancels the gain; it pays on lists, JSON and code
+and loses on prose. [INFERENCE] The earlier "accepts 2 of 10" counted only the rounds the governor allowed. What would change this is a cheaper verify window on Metal or the stronger drafter the Sparks use, not the governor.
+Re-arming the governor mid-request would gain on structured output and lose the 8-round probe elsewhere; not tried.
+
+**Prefill step (phase 2).** `TF_DSV41_PREFILL_STEP` on the M5, a running stream while a 16k prompt prefills (the stream gets one decode event per chunk):
+
+| step | stall per chunk | worst gap (16k arrival) | TTFT 4k / 16k alone |
+|---|---|---|---|
+| 4096 (used above) | 2.0 s | 1.99 s | 2.8 / 8.5 s |
+| 2048 | 1.0 s | 1.73 s | 3.1 / 9.0 s |
+| 1024 | 0.65 s | 1.91 s | 4.4 / 12.2 s |
+
+With drafts and taps off at step 2048 the gaps are the same (worst 1.57 / 1.98 s). A step of 2048 halves the stall for +6 % TTFT at 16k, 1024 costs +43 %. [INFERENCE] Per-chunk cost does not shrink with the chunk (a MoE
+chunk reads every expert), so smaller steps trade TTFT for stall about one for one. The worst gap does not follow the step: it is the last gap, which ends at the newcomer's first token and is 1.7-2.4 s at every step.
+[INFERENCE] Something after the last chunk (the first-token pass or the hand-over) stalls the decoders for 1-1.5 s. The phase-2 gate (worst gap below 0.5 s) is out of reach with the knob; finding that last-gap cost is the engine work.
