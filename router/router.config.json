@@ -1,0 +1,352 @@
+{
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 8000
+  },
+  "public_model": "DeepSeek-V4.1-Flash",
+  "accept_any_model": true,
+  "class_suffixes": {
+    ":interactive": "interactive",
+    ":background": "background",
+    ":batch": "background",
+    "-background": "background"
+  },
+  "class_header": "X-Request-Class",
+  "session_header": "X-Session-Id",
+  "route_header": "X-Route-To",
+  "explain_header": "X-Router-Explain",
+  "expected_output_header": "X-Expected-Output-Tokens",
+  "slo_ttft_header": "X-SLO-TTFT",
+  "default_class": "interactive",
+  "client_api_key_file": null,
+  "max_body_mb": 64,
+  "time_scale": 1.0,
+  "log": {
+    "explain": false,
+    "explain_file": null,
+    "access": true,
+    "ring": 200
+  },
+  "mode": {
+    "dry_run": false,
+    "shadow": null
+  },
+  "policy": {
+    "mode": "cost",
+    "w_int": 1.0,
+    "primary_bias_s": 0.3,
+    "primary_bias_frac": 0.15,
+    "estimate_ctx_margin": 0.05,
+    "classes": {
+      "interactive": {
+        "slo": true,
+        "w_int": null,
+        "prefer_role": null,
+        "secondary_bonus_s": 0.0,
+        "secondary_max_backlog_s": null
+      },
+      "background": {
+        "slo": false,
+        "w_int": 2.0,
+        "prefer_role": "secondary",
+        "secondary_bonus_s": 20.0,
+        "secondary_max_backlog_s": 240.0
+      }
+    },
+    "slo_penalty": 3.0,
+    "interf_overlap": true,
+    "slo": {
+      "ttft_base_s": 1.5,
+      "ttft_per_ktok_s": 0.55,
+      "itl_s": 0.1
+    },
+    "reject_ttft_s": null
+  },
+  "tokens": {
+    "mode": "auto",
+    "chars_per_token": 3.5,
+    "msg_overhead_tokens": 4,
+    "base_overhead_tokens": 2,
+    "calibration_alpha": 0.1,
+    "exact_margin": 0.12,
+    "exact_timeout_s": 1.5,
+    "exact_cache": 512,
+    "default_output_tokens": 300,
+    "output_warmup": true,
+    "output_alpha": 0.1,
+    "ctx_output_cap": 4096
+  },
+  "affinity": {
+    "enabled": true,
+    "ttl_s": 21600.0,
+    "max_entries": 200000,
+    "stride_chars": 4096,
+    "linear_until_chars": 65536,
+    "growth": 1.125,
+    "min_prefix_tokens": 256,
+    "record_reply": false
+  },
+  "health": {
+    "interval_s": 5.0,
+    "timeout_s": 2.0,
+    "load_poll_s": 2.0,
+    "load_timeout_s": 1.5,
+    "external_load": true
+  },
+  "breaker": {
+    "failure_threshold": 3,
+    "cooldown_s": 10.0,
+    "max_cooldown_s": 120.0,
+    "half_open_max": 1
+  },
+  "failover": {
+    "max_attempts": 2,
+    "connect_timeout_s": 3.0,
+    "first_byte_timeout_s": 30.0,
+    "first_byte_per_ptok_s": 2.0,
+    "idle_timeout_s": 120.0,
+    "retry_statuses": [
+      429,
+      502,
+      503,
+      504
+    ]
+  },
+  "calibration": {
+    "enabled": true,
+    "alpha": 0.2,
+    "min_scale": 0.4,
+    "max_scale": 3.0,
+    "min_rows": 256,
+    "min_tokens": 16
+  },
+  "pd": {
+    "enabled": false,
+    "prefill_backend": "S",
+    "decode_backend": "M",
+    "mm_never": true,
+    "export_factor": 1.05,
+    "handoff": {
+      "link_extra_s": 0.15,
+      "link_gbit": 29.0,
+      "kv_bytes_per_token": 3700,
+      "landing_base_s": 0.04,
+      "landing_per_token_s": 1.1e-05,
+      "tail_s": 0.045
+    },
+    "min_rows": 4096,
+    "max_export_tokens": 262144,
+    "mu": 1.0,
+    "greedy_only_decode": true,
+    "s_only_fields": [
+      "response_format",
+      "guided_json",
+      "guided_regex",
+      "guided_grammar",
+      "logprobs",
+      "top_logprobs",
+      "prompt_logprobs"
+    ],
+    "exact_header": "X-Exactness",
+    "fallback": {
+      "failures": 3,
+      "cooldown_s": 60.0
+    }
+  },
+  "admission": {
+    "enabled": true,
+    "max_wait_s": 120.0,
+    "poll_s": 0.25,
+    "retry_after_min_s": 1.0,
+    "retry_after_max_s": 30.0
+  },
+  "backends": {
+    "S": {
+      "_comment": "A: the two Sparks' production API. Fill url (e.g. http://HEAD:8888) and api_key_file; everything else is the measured preset below",
+      "url": null,
+      "api_key_file": null,
+      "max_inflight": null,
+      "queue_max": 32,
+      "role": "primary",
+      "slots": 4,
+      "max_context": 1048576,
+      "model": "DeepSeek-V4.1-Flash-1017",
+      "prefill_pts": [
+        [
+          0,
+          0.15
+        ],
+        [
+          39,
+          0.16
+        ],
+        [
+          1035,
+          0.84
+        ],
+        [
+          4055,
+          2.22
+        ],
+        [
+          8275,
+          4.47
+        ],
+        [
+          16652,
+          8.49
+        ],
+        [
+          32912,
+          16.36
+        ],
+        [
+          67915,
+          33.6
+        ],
+        [
+          134093,
+          69.8
+        ]
+      ],
+      "decode": {
+        "round_ms_pts": [
+          [
+            1,
+            30.8
+          ],
+          [
+            2,
+            41.3
+          ],
+          [
+            4,
+            56.5
+          ],
+          [
+            8,
+            79.0
+          ],
+          [
+            16,
+            122.6
+          ],
+          [
+            32,
+            193.1
+          ]
+        ],
+        "tokens_per_round_pts": [
+          [
+            1,
+            1.79
+          ],
+          [
+            2,
+            1.69
+          ],
+          [
+            4,
+            1.55
+          ],
+          [
+            32,
+            1.55
+          ]
+        ]
+      },
+      "prefill": {
+        "mode": "interleave",
+        "chunk_rows": 2048,
+        "window_s": 0.25,
+        "stall_factor": 1.0
+      },
+      "guard_rows": null,
+      "prefix_cache_tokens": 800000,
+      "resume_grid": 2048,
+      "tokenizer": true
+    },
+    "M": {
+      "_comment": "B: the M5 Ultra TensorFold server. Fill url (e.g. http://M5:8899) and api_key_file",
+      "url": null,
+      "api_key_file": null,
+      "max_inflight": null,
+      "queue_max": 32,
+      "role": "secondary",
+      "slots": 4,
+      "max_context": 40960,
+      "model": "DeepSeek-V4.1-Flash",
+      "prefill_pts": [
+        [
+          0,
+          0.7
+        ],
+        [
+          39,
+          0.75
+        ],
+        [
+          1008,
+          1.62
+        ],
+        [
+          4184,
+          4.58
+        ],
+        [
+          8280,
+          8.74
+        ],
+        [
+          16433,
+          17.05
+        ],
+        [
+          33157,
+          34.1
+        ],
+        [
+          65022,
+          67.2
+        ],
+        [
+          131870,
+          144.5
+        ]
+      ],
+      "decode": {
+        "round_ms_pts": [
+          [
+            1,
+            25.380711
+          ],
+          [
+            4,
+            66.006601
+          ]
+        ],
+        "tokens_per_round_pts": [
+          [
+            1,
+            1.0
+          ],
+          [
+            32,
+            1.0
+          ]
+        ]
+      },
+      "prefill": {
+        "mode": "block",
+        "chunk_rows": 4096,
+        "window_s": 0.0,
+        "stall_factor": 1.0
+      },
+      "guard_rows": 4096,
+      "prefix_cache_tokens": 2000000,
+      "resume_grid": 1,
+      "tokenizer": true
+    }
+  },
+  "_comment": "tfrouter policy parameters, measured defaults; see router/README.md. [MEAS]/[SIM]/[ASSUMED] tags are in tfrouter/config.py"
+}
