@@ -118,8 +118,8 @@ class Result:
 
 
 class Client:
-    def __init__(self, port, speed, model, class_of):
-        self.port, self.speed, self.model, self.class_of = port, speed, model, class_of
+    def __init__(self, port, speed, model, class_of, host="127.0.0.1", key=None, temperature=None, extra=None):
+        self.port, self.speed, self.model, self.class_of, self.host, self.key, self.temperature, self.extra = port, speed, model, class_of, host, key, temperature, extra
         self.t0 = time.monotonic()
 
     def vt(self):
@@ -128,15 +128,19 @@ class Client:
     async def request(self, msgs, res, extra_headers=()):
         """one streaming chat completion; fills res; returns the reply text (or None)"""
         res.t_arr = self.vt()
-        hdrs = [("Content-Type", "application/json")] + list(extra_headers)
+        hdrs = [("Content-Type", "application/json")] + list(extra_headers) + ([("Authorization", "Bearer " + self.key)] if self.key else [])
         if self.class_of(res.cls) != "interactive":
             hdrs.append(("X-Request-Class", self.class_of(res.cls)))
         body = {"model": self.model, "messages": msgs, "stream": True, "max_tokens": res.n_out}
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
+        if self.extra:
+            body.update(self.extra)
         reply = []
         u = None
         try:
-            u = await Upstream.open("http", "127.0.0.1", self.port, 5)
-            await u.send("POST", "/v1/chat/completions", "x", hdrs, json.dumps(body).encode())
+            u = await Upstream.open("http", self.host, self.port, 5)
+            await u.send("POST", "/v1/chat/completions", "%s:%d" % (self.host, self.port), hdrs, json.dumps(body).encode())
             res.status = await u.read_head()
             res.backend = u.headers.get("x-router-backend")
             sc, last = SseScanner(), None

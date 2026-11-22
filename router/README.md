@@ -34,7 +34,13 @@ client ──► tfrouter (:8000) ──► S  http://HEAD:8888   (DeepSeek-V4.1
 | `tools/replay.py` | real-time harness: fakes + the real router process + `sim.WORKLOADS` traces, same summary as `sim.py`, optional `--sim` DES on the same trace |
 | `tools/simcompare.py` | runs the router's own policy code inside `sim.py`'s DES (what-if tables, variants, decisions by prompt size; `compare` = the E2 chat points, old vs fixed policy) |
 | `tools/fakepd.py` | the M server for offline hand-off tests (a forced prefill is exported by the S fake) |
-| `tests/` | `python3 -m unittest discover -s tests -t .` (146 tests; no network beyond loopback) |
+| `tools/llmbench.py` | streaming latency/throughput bench of one server (TTFT ladder, decode, concurrency, head-of-line); run it on the serving host |
+| `tools/livebench.py` | the simulator's workloads replayed in real time against a real server or the router, same summary as `sim.py` |
+| `tools/presets_from_bench.py` | turns `llmbench.py` output into the `prefill_pts` / `decode` override for a backend |
+| `tools/predcheck.py` | compares the router's predicted TTFT per request with the measured one (the phase-0 gate) |
+| `presets/current-engines.json` | measured presets of the current engines (2026-11-22); pass it before the site file: `--config presets/current-engines.json --config site.json` |
+| `docs/phase0.md` | the phase-0 and phase-1 measurements |
+| `tests/` | `python3 -m unittest discover -s tests -t .` (147 tests; no network beyond loopback) |
 
 ## Run it
 
@@ -288,6 +294,6 @@ policy within the noise of a single seed (the fixed router is not better than th
 ### 3. Decision agreement and unit tests
 
 * `tests/test_core.py::test_predict_equals_sim` asserts `model.predict` equals `sim.predict` on live simulator states.
-* 146 tests pass (`python3 -m unittest discover -s tests -t .`, ~10 s): admission control (cap, queue order, 503s, failover, DES regressions for the 0.09 split), config, model, prefix, tokens, breaker, key files, policy rules, proxy end-to-end (stream passthrough, usage injection,
+* 147 tests pass (`python3 -m unittest discover -s tests -t .`, ~10 s): admission control (cap, queue order, 503s, failover, DES regressions for the 0.09 split), config, model, prefix, tokens, breaker, key files, policy rules, proxy end-to-end (stream passthrough, usage injection,
   context routing, affinity, classes, dry-run/explain/shadow, cancellation mid-stream and during prefill, failover/breaker cycle, 503/429, mid-stream error, hang timeout), fake-machine validation.
 

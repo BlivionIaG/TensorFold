@@ -67,6 +67,18 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(c["policy"]["classes"]["background"]["prefer_role"], "secondary")   # merged, not replaced
         self.assertEqual(c["backends"]["M"]["slots"], 8)
 
+    def test_config_files_merge_in_order_and_the_shipped_presets_are_valid_overrides(self):
+        presets = os.path.join(helpers.ROOT, "presets", "current-engines.json")
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({"backends": {"S": {"url": "http://s:1"}, "M": {"url": "http://m:2", "slots": 3}}}, f)
+        try:
+            c = cfgmod.load([presets, f.name])
+        finally:
+            os.unlink(f.name)
+        self.assertEqual(c["backends"]["M"]["slots"], 3)                                  # the later file wins
+        self.assertEqual(c["backends"]["S"]["decode"]["round_ms_pts"][0][0], 1)           # the shipped presets came through
+        self.assertLess(c["backends"]["S"]["prefill_pts"][0][1], c["backends"]["M"]["prefill_pts"][0][1])
+
 
 class ModelTests(unittest.TestCase):
     def setUp(self):

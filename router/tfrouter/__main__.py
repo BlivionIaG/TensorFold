@@ -11,7 +11,7 @@ from .server import Router
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python3 -m tfrouter", description="cost-based, cache-aware OpenAI-compatible router for S (Sparks) + M (M5)")
-    ap.add_argument("--config", help="JSON config (defaults: tfrouter/config.py; see router.config.json)")
+    ap.add_argument("--config", action="append", help="JSON config, repeatable (later files override earlier ones; defaults: tfrouter/config.py; see router.config.json)")
     ap.add_argument("--listen", help="HOST:PORT (overrides listen.*)")
     ap.add_argument("--explain", action="store_true", help="log every routing decision with the predicted costs (JSON line per request)")
     ap.add_argument("--explain-file", help="write the decision log here instead of stderr")

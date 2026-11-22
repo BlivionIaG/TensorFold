@@ -210,11 +210,11 @@ def backend_cfg(name, user):
 
 
 def load(path=None, overrides=None):
-    """DEFAULTS <- JSON file <- overrides (dict); returns the merged config with resolved per-backend configs"""
+    """DEFAULTS <- JSON file(s), later files over earlier ones <- overrides (dict); returns the merged config with resolved per-backend configs"""
     user = {}
-    if path:
-        with open(path) as f:
-            user = json.load(f)
+    for p in ([path] if isinstance(path, str) else path or []):
+        with open(p) as f:
+            _merge(user, json.load(f))
     if overrides:
         user = _merge(copy.deepcopy(user), overrides)
     _walk_check(DEFAULTS, user, [])

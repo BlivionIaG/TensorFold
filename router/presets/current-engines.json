@@ -1,0 +1,122 @@
+{
+ "_comment": "measured on the current engines, 2026-11-22: S = Sparks pair, CUDA engine sd2 (4 slots, exact, drafts on); M = M5 Ultra, Metal engine fin2 (--parallel 4, context 40960, greedy only). Add url/api_key_file/model per site. router/docs/phase0.md has the runs.",
+ "backends": {
+  "S": {
+   "prefill_pts": [
+    [
+     39,
+     0.234
+    ],
+    [
+     1019,
+     0.819
+    ],
+    [
+     4245,
+     2.379
+    ],
+    [
+     8562,
+     4.325
+    ],
+    [
+     16690,
+     8.171
+    ],
+    [
+     32317,
+     16.178
+    ]
+   ],
+   "decode": {
+    "round_ms_pts": [
+     [
+      1,
+      33.13
+     ],
+     [
+      2,
+      41.35
+     ],
+     [
+      4,
+      60.69
+     ]
+    ],
+    "tokens_per_round_pts": [
+     [
+      1,
+      1.472
+     ],
+     [
+      2,
+      1.422
+     ],
+     [
+      4,
+      1.395
+     ]
+    ]
+   },
+   "model": "DeepSeek-V4.1-Flash-TF"
+  },
+  "M": {
+   "prefill_pts": [
+    [
+     39,
+     0.732
+    ],
+    [
+     1087,
+     1.406
+    ],
+    [
+     3945,
+     2.77
+    ],
+    [
+     7935,
+     5.822
+    ],
+    [
+     16440,
+     9.873
+    ],
+    [
+     33010,
+     17.326
+    ]
+   ],
+   "decode": {
+    "round_ms_pts": [
+     [
+      1,
+      18.5
+     ],
+     [
+      2,
+      27.42
+     ],
+     [
+      4,
+      42.43
+     ]
+    ],
+    "tokens_per_round_pts": [
+     [
+      1,
+      1.014
+     ],
+     [
+      2,
+      1.0
+     ],
+     [
+      4,
+      1.0
+     ]
+    ]
+   }
+  }
+ }
+}
