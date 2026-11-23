@@ -21,7 +21,7 @@ pub const Mean = struct {
     }
 };
 
-/// The middle of the last nine samples: a row's ms moves with the routed experts it drew, so a mean chases every outlier.
+/// The last nine samples' middle: a row's ms moves with the routed experts, so a mean chases every outlier.
 pub const median_window = 9;
 pub const Median = struct {
     values: [median_window]f64 = @splat(0),
@@ -132,14 +132,13 @@ pub const Policy = struct {
         return expectedTokens(&q, k) / p.rows.roundMs(k, src);
     }
 
-    /// The next depth: 0 until a plain round is priced, then each depth whose chain could pay for its rows, then the best.
+    /// The next depth: 0 until a plain round is priced, then a chain that could pay for its rows, then the best.
     pub fn pick(p: *Policy, src: Source) usize {
         const s = @backingInt(src);
         const cap = @min(p.cap, max_depth);
         if (cap == 0 or p.rows.window[1].count == 0) return 0;
         if (p.rows.window[2].count == 0) return 1;
-        // A depth's first round costs its rows: take it only when the chain so far commits more than those rows
-        // would buy back at the plain round's pace (a chain that lands nothing would only add rows).
+        // A depth's first round costs its rows: take it only when the chain's tokens buy them back at the plain pace.
         if (p.rounds < explore_rounds) {
             var q: [max_depth]f64 = undefined;
             p.chances(src, &q);
@@ -291,8 +290,7 @@ test "a depth whose first draft is marginal is still measured when its chain cou
     p.noteRound(1, 19.0);
     p.noteRound(2, 32.0);
     p.noteDraft(4.0);
-    // The first draft lands 0.66 of the time: 1.66 tokens in 32 ms is under the plain round's 1 in 19 ms,
-    // but the chain's second draft could still pay for the third row.
+    // The first draft lands 0.66 of the time: 1.66 tokens in 32 ms is under the plain 1 in 19, but a second could pay.
     for (&p.q[@backingInt(Source.trained)]) |*m| m.* = .{ .v = 0.6, .n = 4 };
     try std.testing.expectEqual(@as(usize, 2), p.pick(.trained));
 }
