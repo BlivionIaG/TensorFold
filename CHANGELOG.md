@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- Metal: DeepSeek-V4.1's mHC boundary takes the mix projection's 24 rows on six threadgroups a slice at a decode window's rows instead of one, so the 20 threadgroups a one-row boundary used to fill a fifth of the GPU become 120; the per-slice reduction order and every later term are unchanged, tokens unchanged.
+
 - Metal: the row projection picks its narrow or wide kernel per chip (generation plus Pro/Max/Ultra), so an M5 Max no longer runs 8-row and wider windows on the kernel that is slower there; M5 Ultra and unlisted chips are unchanged, tokens unchanged (refs #3396). Thanks to @Spectre056 for the M5 Max measurements.
 - Metal: a stream whose setup fails partway no longer leaves the prompt cache smaller by its bytes in Llama, Ripple, Spark2.5, Flint, Step-5 and MiniMax-M3.
 

@@ -88,6 +88,61 @@ inline void hc_publish_slice(threadgroup float* warp, device float* part, const 
   hc_publish_slice(&warp[0], PART, parts, lane, sg, t, uint(r), uint(j));
 }
 
+// The same partials on four mixes a group (z; group 0 also expands and squares): six threadgroups a slice.
+template <bool EXPAND>
+[[kernel]] void tf_hc_expand_mix_groups(const device bfloat* X [[buffer(0)]], const device bfloat* BR [[buffer(1)]],
+                                        const device float* POST [[buffer(2)]], const device float* COMB [[buffer(3)]],
+                                        const device float* FN [[buffer(4)]], device float* PART [[buffer(5)]],
+                                        device bfloat* XO [[buffer(6)]], uint3 tg [[threadgroup_position_in_grid]],
+                                        uint3 tpos [[thread_position_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],
+                                        uint sg [[simdgroup_index_in_threadgroup]]) {
+  threadgroup float warp[8 * 5];
+  const int j = int(tg.x), r = int(tg.y), og = int(tg.z);
+  const uint t = tpos.x;
+  const int col = 1024 * j + 4 * int(t);
+  const int q0 = og * 4;
+  float v[4];
+  if (EXPAND) {
+    const int k = col / kWidth, d0 = col % kWidth;
+    const device bfloat* x = X + size_t(r) * kStream;
+    const device float* comb = COMB + r * kCopies * kCopies;
+    for (int i = 0; i < 4; i++) {
+      const int d = d0 + i;
+      const float branch = float(BR[size_t(r) * kWidth + d]);
+      float stream[kCopies];
+      for (int jj = 0; jj < kCopies; jj++) stream[jj] = float(x[jj * kWidth + d]);
+      float mixed = 0.0f;
+      for (int jj = 0; jj < kCopies; jj++) mixed += comb[jj * kCopies + k] * stream[jj];
+      const bfloat out = bfloat(POST[r * kCopies + k] * branch + mixed);
+      if (og == 0) XO[size_t(r) * kStream + col + i] = out;
+      v[i] = float(out);
+    }
+  } else {
+    const device bfloat* x = X + size_t(r) * kStream + col;
+    for (int i = 0; i < 4; i++) v[i] = float(x[i]);
+  }
+  float parts[5];
+  for (int q = 0; q < 4; q++) {
+    const device float* f = FN + size_t(q0 + q) * kStream + col;
+    parts[q] = f[0] * v[0] + f[1] * v[1] + f[2] * v[2] + f[3] * v[3];
+  }
+  parts[4] = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+  const int np = og == 0 ? 5 : 4;
+  for (int q = 0; q < np; q++) {
+    const float s = simd_sum(parts[q]);
+    if (lane == 0) warp[sg * 5 + q] = s;
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (int(t) < np) {
+    float s = 0.0f;
+    for (int kk = 0; kk < 8; kk++) s += warp[kk * 5 + int(t)];
+    PART[(size_t(r) * kSlices + j) * kParts + (t < 4 ? q0 + int(t) : kMixes)] = s;
+  }
+}
+
+template [[host_name("tf_hc_expand_mix_groups")]] [[kernel]] decltype(tf_hc_expand_mix_groups<true>) tf_hc_expand_mix_groups<true>;
+template [[host_name("tf_hc_first_mix_groups")]] [[kernel]] decltype(tf_hc_expand_mix_groups<false>) tf_hc_expand_mix_groups<false>;
+
 // The release's split (kernel.py hc_split_sinkhorn_kernel): lanes 0-3 carry pre and post.
 inline void hc_split_row(threadgroup const float* tot, constant const HcArgs& a,
                          const device float* base, const device float* scale, uint lane, uint r,
