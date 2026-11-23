@@ -18,23 +18,24 @@ pub fn lookupTokens(context: []const u32, out: []u32) usize {
     var n: usize = @min(total - 1, 12);
     while (n >= 2) : (n -= 1) {
         const suffix = context[total - n ..];
-        var i: usize = 0;
-        while (i + n < total) : (i += 1) {
+        var i: usize = total - n - 1;
+        while (true) : (i -= 1) {
             if (std.mem.eql(u32, context[i..][0..n], suffix)) {
                 const start = i + n;
                 const avail = @min(out.len, total - start);
                 @memcpy(out[0..avail], context[start..][0..avail]);
                 return avail;
             }
+            if (i == 0) break;
         }
     }
     return 0;
 }
 
-/// The hand-off's cap (the drafts a round); the default is the shipped three.
+/// The hand-off's cap (the drafts a round); the default is the proposer's four ids.
 pub fn mtpDepthMax() u32 {
-    const v = std.c.getenv("TF_DSV41_MTP_DEPTH_MAX") orelse return 3;
-    const n = std.fmt.parseInt(u32, std.mem.span(v), 10) catch 3;
+    const v = std.c.getenv("TF_DSV41_MTP_DEPTH_MAX") orelse return 4;
+    const n = std.fmt.parseInt(u32, std.mem.span(v), 10) catch 4;
     return @min(@max(n, 1), 4);
 }
 
@@ -105,6 +106,14 @@ pub fn mtpDepthFor(b: *Backend, slot: u32, offer: Offer) u32 {
     return @intCast(k);
 }
 
+/// Whether this round's proposers can change the choice: a plain call skips the suffix scan and the drafter.
+pub fn wantsDrafts(b: *Backend, slot: u32) bool {
+    if (!mtpAdaptOn()) return true;
+    if (slot >= b.depth_now.len) return true;
+    if (b.depth_now[slot] != unset) return b.depth_now[slot] != 0;
+    return b.mtp.wants();
+}
+
 /// The policy's own ms a token at depth `k` (0: nothing priced yet).
 fn msPer(b: *const Backend, src: mtp_cost.Source, k: usize) f64 {
     const r = b.mtp.rate(src, k);
@@ -113,3 +122,16 @@ fn msPer(b: *const Backend, src: mtp_cost.Source, k: usize) f64 {
 
 /// The proposer's last proposal, so a round runs the draft forward once.
 pub const MtpCache = struct { pending: u32, drafts: [4]u32, count: u32 = 3 };
+
+test "the depth cap defaults to the proposer's four, so the five-row window competes" {
+    // No setting: the four-draft window is priced like the rest instead of never being asked.
+    try std.testing.expectEqual(@as(u32, 4), mtpDepthMax());
+}
+
+test "the lookup takes the nearest earlier occurrence's continuation" {
+    const ctx = [_]u32{ 1, 2, 3, 9, 9, 1, 2, 3, 7, 7, 8, 8, 1, 2, 3 };
+    var out: [4]u32 = undefined;
+    const n = lookupTokens(&ctx, &out);
+    try std.testing.expectEqual(@as(usize, 4), n);
+    try std.testing.expectEqual(@as(u32, 7), out[0]);
+}

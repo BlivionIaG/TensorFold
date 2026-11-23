@@ -171,7 +171,7 @@ An explicit step keeps the parent's parsing and disables this automatic choice.
 `tf-dsv41-run` also honors an explicit step, using the existing lenient parser and recording `workspace_rows`.
 Its unset diagnostic default remains 15872 rows; the server's automatic admission policy above is unchanged.
 
-The Metal MTP proposal has four draft-token slots. `TF_DSV41_MTP_DEPTH_MAX` defaults to three and is capped at four.
+The Metal MTP proposal has four draft-token slots. `TF_DSV41_MTP_DEPTH_MAX` defaults to four and is capped at four.
 
 ## Pull behind a proxy
 

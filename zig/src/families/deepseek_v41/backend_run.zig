@@ -311,6 +311,7 @@ pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
             r.stream.proposal_depth = r.depth;
             continue;
         }
+        if (!policy.wantsDrafts(b, @intCast(i))) continue;
         const ctx = r.stream.context.items;
         // A matching CPU suffix arm comes before a trained forward: it costs no pass.
         var copied: [policy.max_lookup_drafts]u32 = undefined;
@@ -353,6 +354,7 @@ pub fn tree(ptr: *anyopaque, s: *Stream, gpa: std.mem.Allocator) anyerror!?lanes
     const b = self(ptr);
     // The proposer's forward needs the lane's slot (the trunk's key ring lives there).
     const slot_i = b.by.get(s) orelse return null;
+    if (!policy.wantsDrafts(b, slot_i)) return null;
     var copied: [policy.max_lookup_drafts]u32 = undefined;
     const got = lookupTokens(s.context.items, copied[0..lookupDepth()]);
     const trained = b.model.mtp_enabled and b.model.weights.dspark != null and s.pending != null;
