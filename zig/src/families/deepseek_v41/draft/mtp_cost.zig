@@ -160,9 +160,17 @@ pub const Policy = struct {
         for (1..cap + 1) |k| if (p.rate(src, k) > p.rate(src, best)) {
             best = k;
         };
-        if (best == 0 and p.quiet[s] >= probe_rounds) return cap;
+        // A plain stream's probe is the first draft: one cheap row's cost tells whether the acceptance recovered.
+        if (best == 0 and p.quiet[s] >= probe_rounds) return 1;
         if (p.depth[s] <= cap and p.rate(src, best) < p.rate(src, p.depth[s]) / hysteresis) return p.depth[s];
         return best;
+    }
+
+    /// Whether a round's proposers could change the choice: the exploration's rounds measure, then a plain call skips.
+    pub fn wants(p: *Policy) bool {
+        if (p.rounds < explore_rounds) return true;
+        if (p.pick(.trained) != 0) return true;
+        return p.q[@backingInt(Source.lookup)][0].n > 0 and p.pick(.lookup) != 0;
     }
 
     /// The depth the round that is starting has: the choice prices the next one against it.
@@ -326,4 +334,39 @@ test "a first draft over the break-even measures the deeper window" {
     // The first draft lands 0.95 of the time: 2.6 tokens in 49 ms beats the plain 1 in 19.
     for (&p.q[@backingInt(Source.trained)]) |*m| m.* = .{ .v = 0.95, .n = 4 };
     try std.testing.expectEqual(@as(usize, 2), p.pick(.trained));
+}
+
+test "a 61 ms five-row window leaves depth four behind" {
+    var p: Policy = .{};
+    p.cap = max_depth;
+    p.noteRound(1, 19.0);
+    p.noteRound(2, 20.0);
+    p.noteRound(3, 20.0);
+    p.noteRound(4, 20.0);
+    p.noteRound(5, 61.0);
+    p.noteDraft(4.0);
+    for (&p.q[@backingInt(Source.trained)]) |*m| m.* = .{ .v = 0.8, .n = 8 };
+    p.rounds = explore_rounds;
+    // The fourth draft's tokens over the five-row window's 61 ms sit under the plain round's rate.
+    try std.testing.expect(p.rate(.trained, 4) < p.rate(.trained, 0));
+    try std.testing.expectEqual(@as(usize, 3), p.pick(.trained));
+}
+
+test "a plain call wants no proposer until the probe's first draft" {
+    var p: Policy = .{};
+    p.noteRound(1, 19.0);
+    p.noteRound(2, 32.0);
+    for (&p.q[@backingInt(Source.trained)]) |*m| m.* = .{ .v = 0.6, .n = 4 };
+    p.rounds = explore_rounds;
+    try std.testing.expect(!p.wants());
+    p.quiet[@backingInt(Source.trained)] = probe_rounds;
+    // The probe is the first draft: one cheap row tells whether the acceptance recovered.
+    try std.testing.expect(p.wants());
+    try std.testing.expectEqual(@as(usize, 1), p.pick(.trained));
+}
+
+test "the exploration's rounds want the proposers" {
+    var p: Policy = .{};
+    // Before the exploration, a plain call would leave every depth unmeasured.
+    try std.testing.expect(p.wants());
 }
