@@ -6,6 +6,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Lanes: a drafted window verifies the drafts its head reports holding, so a head that keeps fewer than the round asked for (its own depth policy) serves a plain round instead of failing the stream with `WindowOutOfStep`; tokens are unchanged.
 
+- Metal DeepSeek-V4.1: the drafter's window depth is priced from the rounds themselves, each depth's expected tokens over its measured round ms (a row's median, so the routed experts' spread does not flip the choice), so the depth follows the request instead of a fixed acceptance band; a plain round is one of the priced choices, so prose turns drafting off within a few rounds rather than after a fixed sample, and a deeper chain is measured when its measured tokens per round beat the plain round's rate, so code takes the deepest window whose extra rows pay; a switch needs the new depth 3 % better, so a near-tie keeps the plain round; tokens unchanged.
+
 - Metal: the row projection picks its narrow or wide kernel per chip (generation plus Pro/Max/Ultra), so an M5 Max no longer runs 8-row and wider windows on the kernel that is slower there; M5 Ultra and unlisted chips are unchanged, tokens unchanged (refs #3396). Thanks to @Spectre056 for the M5 Max measurements.
 - Metal: a stream whose setup fails partway no longer leaves the prompt cache smaller by its bytes in Llama, Ripple, Spark2.5, Flint, Step-5 and MiniMax-M3.
 

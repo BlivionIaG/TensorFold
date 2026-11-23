@@ -139,7 +139,7 @@ pub fn checks(
         .{ .lookup = "0", .filters = &.{
             "releases all per-slot host state",
             "drafter ID growth preserves pending Markov picks",
-            "trained-only draft depth",
+            "the window's depth follows",
         } },
         .{ .lookup = "3", .filters = &.{
             "suffix drafts follow committed context",
@@ -150,10 +150,7 @@ pub fn checks(
         const lifetime_run = b.addRunArtifact(lifetime);
         lifetime_run.setEnvironmentVariable("TF_DSV41_LOOKUP_DRAFTS", config.lookup);
         lifetime_run.setEnvironmentVariable("TF_DSV41_MTP_DEPTH_MAX", "3");
-        lifetime_run.setEnvironmentVariable("TF_DSV41_MTP_ADAPT", "0.7");
-        lifetime_run.setEnvironmentVariable("TF_DSV41_MTP_ADAPT_SIGNAL", "first");
-        lifetime_run.setEnvironmentVariable("TF_DSV41_MTP_ADAPT_RATCHET", "0");
-        lifetime_run.setEnvironmentVariable("TF_DSV41_MTP_ADAPT_CONFIRM", "1");
+        lifetime_run.setEnvironmentVariable("TF_DSV41_MTP_ADAPT", "1");
         lifetime_step.dependOn(&lifetime_run.step);
     }
     // The family's Metal sources carry struct-size static_asserts; compile them the way the engine joins them.

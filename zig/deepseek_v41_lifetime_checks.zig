@@ -4,6 +4,15 @@ const mtl = @import("metal");
 const Model = @import("tensorfold").deepseek_v41.Model;
 const Backend = @import("tensorfold").deepseek_v41_backend.Backend;
 
+/// The rounds the depth policy has priced: one plain one-row round and the three drafted windows of a machine.
+fn measured(backend: *Backend) void {
+    backend.mtp.noteRound(1, 19.0);
+    backend.mtp.noteRound(2, 27.0);
+    backend.mtp.noteRound(3, 37.0);
+    backend.mtp.noteRound(4, 41.0);
+    backend.mtp.noteDraft(4.0);
+}
+
 test "V4.1 backend releases all per-slot host state on unload" {
     var model: Model = undefined;
     model.lanes = 4;
@@ -42,29 +51,27 @@ test "drafter ID growth preserves pending Markov picks" {
     }
 }
 
-test "trained-only draft depth stays enabled through acceptance transitions" {
+test "the window's depth follows the rounds' own ms and landed drafts" {
     var model: Model = undefined;
+    model.lanes = 1;
     model.mtp_enabled = true;
     // Only bound-weight presence is read; this host policy performs no GPU operation.
     model.weights.dspark = @as(@TypeOf(model.weights.dspark.?), undefined);
-    model.mtp_accept_slot = @splat(0);
-    model.mtp_round_slot = @splat(0);
-    var previous = [_]u32{0};
-    var shallow = [_]bool{false};
-    var backend: Backend = undefined;
-    backend.model = &model;
-    backend.last_depth = &previous;
-    backend.shallow = &shallow;
-    try std.testing.expectEqual(@as(u32, 1), backend.adaptiveDepth(0));
-    model.mtp_accept_slot[0] = 0.9;
-    try std.testing.expectEqual(@as(u32, 3), backend.adaptiveDepth(0));
-    previous[0] = 3;
-    model.mtp_accept_slot[0] = 0.7;
-    try std.testing.expectEqual(@as(u32, 3), backend.adaptiveDepth(0));
-    model.mtp_accept_slot[0] = 0.69;
-    try std.testing.expectEqual(@as(u32, 1), backend.adaptiveDepth(0));
-    model.mtp_enabled = false;
-    try std.testing.expectEqual(@as(u32, 0), backend.adaptiveDepth(0));
+    model.caches = &.{};
+    var backend = try Backend.init(std.testing.allocator, &model);
+    defer backend.deinit();
+    const offer: Backend.Offer = .{ .src = .trained, .have = 3 };
+    // No round measured yet: the first window is the plain one that prices a plain round.
+    try std.testing.expectEqual(@as(u32, 0), Backend.depthFor(&backend, 0, offer));
+    measured(&backend);
+    backend.depth_now[0] = std.math.maxInt(u32); // the keep that ends the round
+    // Three drafts at 0.75 a draft pay the four-row window, and the round's other hook reads the same choice.
+    try std.testing.expectEqual(@as(u32, 3), Backend.depthFor(&backend, 0, offer));
+    try std.testing.expectEqual(@as(u32, 1), Backend.depthFor(&backend, 0, .{ .src = .lookup, .have = 1 }));
+    // Prose: one draft in ten lands, so the plain round is the cheaper token.
+    backend.depth_now[0] = std.math.maxInt(u32);
+    for (&backend.mtp.q[0]) |*c| c.* = .{ .v = 0.1, .n = 8 };
+    try std.testing.expectEqual(@as(u32, 0), Backend.depthFor(&backend, 0, offer));
 }
 
 test "suffix drafts follow committed context" {
@@ -76,6 +83,7 @@ test "suffix drafts follow committed context" {
     model.caches = &.{};
     var backend = try Backend.init(gpa, &model);
     defer backend.deinit();
+    measured(&backend);
     var stream = try @import("lanes").Stream.init(gpa, .{
         .id = "committed",
         .prompt = &.{ 1, 2, 3, 4, 5, 9 },
@@ -102,11 +110,10 @@ test "lookup proposals take precedence over bound trained drafts" {
     model.lanes = 1;
     model.mtp_enabled = true;
     model.weights.dspark = @as(@TypeOf(model.weights.dspark.?), undefined);
-    model.mtp_accept_slot = @splat(1);
-    model.mtp_round_slot = @splat(1);
     model.caches = &.{};
     var backend = try Backend.init(gpa, &model);
     defer backend.deinit();
+    measured(&backend);
     var stream = try @import("lanes").Stream.init(gpa, .{
         .id = "lookup-preferred",
         .prompt = &.{ 1, 2, 3, 4, 5, 9 },
