@@ -76,7 +76,7 @@ pub fn expectedTokens(q: []const f64, k: usize) f64 {
     return e;
 }
 
-pub const hysteresis = 0.99; // a switch needs the new depth 1 % better: a round's ms is noisy
+pub const hysteresis = 0.97; // a switch needs the new depth 3 % better: a near-tie's rows still cost
 pub const probe_rounds = 64; // a plain stream re-checks the deeper window once this often
 pub const explore_rounds = 12; // rounds that measure an unmeasured depth before the best one is taken
 
@@ -114,13 +114,25 @@ pub const Policy = struct {
         for (0..@min(offered, max_depth)) |j| p.q[@backingInt(src)][j].add(@floatFromInt(@intFromBool(j < landed)));
     }
 
-    /// The per-draft chances, shrunk toward the prior until the samples speak: one draft is not a trend.
+    /// The per-draft chances, shrunk toward the prior so a draft is not a trend.
     fn chances(p: *const Policy, src: Source, out: *[max_depth]f64) void {
         const prior = 0.75;
         const weight = 3.0;
         for (out, p.q[@backingInt(src)]) |*c, m| {
             const n: f64 = @floatFromInt(m.n);
             c.* = (m.v * n + prior * weight) / (n + weight);
+        }
+    }
+
+    /// The per-draft chances at a depth's first measurement: measured stay, unmeasured lean high.
+    fn chancesMeasured(p: *const Policy, src: Source, out: *[max_depth]f64) void {
+        for (out, p.q[@backingInt(src)]) |*c, m| {
+            if (m.n == 0) {
+                c.* = 0.9;
+            } else {
+                const n: f64 = @floatFromInt(m.n);
+                c.* = (m.v * n + 0.5) / (n + 1.0);
+            }
         }
     }
 
@@ -138,11 +150,11 @@ pub const Policy = struct {
         const cap = @min(p.cap, max_depth);
         if (cap == 0 or p.rows.window[1].count == 0) return 0;
         if (p.rows.window[2].count == 0) return 1;
-        // A depth's first round costs its rows: take it only when the chain's tokens buy them back at the plain pace.
+        // A depth's first round costs its rows: take it only when the measured chain's tokens buy them back.
         if (p.rounds < explore_rounds) {
             var q: [max_depth]f64 = undefined;
-            p.chances(src, &q);
-            for (2..cap + 1) |k| if (p.rows.window[k + 1].count == 0 and expectedTokens(&q, k) > 1.0 + 0.5 * @as(f64, @floatFromInt(k))) return k;
+            p.chancesMeasured(src, &q);
+            for (2..cap + 1) |k| if (p.rows.window[k + 1].count == 0 and expectedTokens(&q, k) / p.rows.roundMs(k, src) > p.rate(src, 0)) return k;
         }
         var best: usize = 0;
         for (1..cap + 1) |k| if (p.rate(src, k) > p.rate(src, best)) {
@@ -182,6 +194,17 @@ test "each unmeasured depth runs once before the best one is taken" {
     // 19 / 31 / 41 / 45 ms a round at 0.8 a draft: the four-row window commits the most tokens a ms.
     for (&p.q[@backingInt(Source.trained)]) |*m| m.* = .{ .v = 0.8, .n = 4 };
     try std.testing.expectEqual(@as(usize, 3), p.pick(.trained));
+}
+
+test "a window 2 % better than the plain round does not move it" {
+    var p: Policy = .{};
+    p.noteRound(1, 19.0);
+    p.noteRound(2, 27.43);
+    p.noteRound(3, 50.0);
+    p.noteRound(4, 60.0);
+    // The first draft lands 0.8 of the time (shrunk: 0.78): 1.78 tokens in 27.4 + 5.7 ms is 2 % over the plain 1 in 19.
+    for (&p.q[@backingInt(Source.trained)]) |*m| m.* = .{ .v = 0.8, .n = 4 };
+    try std.testing.expectEqual(@as(usize, 0), p.pick(.trained));
 }
 
 test "a weak first draft keeps the plain round: prose is not slowed" {
@@ -285,12 +308,22 @@ test "one slow row does not move the window's price" {
     try std.testing.expectApproxEqAbs(@as(f64, 27.0), r.window[2].get().?, 1e-9);
 }
 
-test "a depth whose first draft is marginal is still measured when its chain could pay" {
+test "a first draft under the break-even leaves the deeper windows unmeasured" {
     var p: Policy = .{};
     p.noteRound(1, 19.0);
     p.noteRound(2, 32.0);
     p.noteDraft(4.0);
-    // The first draft lands 0.66 of the time: 1.66 tokens in 32 ms is under the plain 1 in 19, but a second could pay.
+    // The first draft lands 0.6 of the time: 1.6 tokens in 32 ms is under the plain 1 in 19, so no row is spent.
     for (&p.q[@backingInt(Source.trained)]) |*m| m.* = .{ .v = 0.6, .n = 4 };
+    try std.testing.expectEqual(@as(usize, 0), p.pick(.trained));
+}
+
+test "a first draft over the break-even measures the deeper window" {
+    var p: Policy = .{};
+    p.noteRound(1, 19.0);
+    p.noteRound(2, 32.0);
+    p.noteDraft(4.0);
+    // The first draft lands 0.95 of the time: 2.6 tokens in 49 ms beats the plain 1 in 19.
+    for (&p.q[@backingInt(Source.trained)]) |*m| m.* = .{ .v = 0.95, .n = 4 };
     try std.testing.expectEqual(@as(usize, 2), p.pick(.trained));
 }
