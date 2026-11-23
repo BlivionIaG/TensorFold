@@ -492,7 +492,14 @@ pub const Run = struct {
                 return r.unsent(&cx, e, field);
             }
             switch (e) {
-                error.Cancelled => return,
+                error.Cancelled => {
+                    // The client's cancellation check fired after the stream opened. End it the way every other
+                    // cancel ends it, so a client that is still reading never loses the tail silently; a client
+                    // that really left costs two failed writes and nothing else.
+                    r.emit(r.chunk(.{ .string = "" }, "cancelled") catch return) catch return;
+                    r.out.vt.event(r.out.ctx, null) catch {};
+                    return;
+                },
                 error.Refused => if (cx.kind != .other and cx.kind != .server) {
                     logRefused(r.id, cx.message);
                     const body = errorBody(a, &cx, field) catch return;

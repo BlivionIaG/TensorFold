@@ -26,6 +26,10 @@ pub fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     const native = b.step("native", "tensorfold-native with the Metal engines into zig-out/native/bin (bundles: -Dcpu=apple_m1)");
     native.dependOn(&install.step);
     if (no_compiler) |fail| native.dependOn(fail);
+    // The shared structs are checked twice: index_mirror.check at comptime and the .metal files' own static_asserts.
+    const mirrors = b.addSystemCommand(&.{ "sh", "tools/zig/check_dsv41_metal_mirrors.sh" });
+    mirrors.setCwd(b.path("."));
+    b.step("metal-mirrors", "The DeepSeek V4.1 Metal sources compile with their shared-struct static_asserts").dependOn(&mirrors.step);
     // Link libSystem's memcpy to avoid compiler-rt's weak replacement.
     const libc_mem = b.addSystemCommand(&.{ "sh", "-c", "nm -m \"$0\" | grep -q 'external _memcpy (from libSystem)' || { echo 'tensorfold-native links its own memcpy: find the typed std.json int parse or 128-bit float conversion that pulled in compiler-rt'; exit 1; }" });
     libc_mem.addArtifactArg(exe);
@@ -67,6 +71,7 @@ pub fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         .imports = &.{ .{ .name = "json", .module = server_json }, .{ .name = "tokenizer", .module = tokenizer } },
     }) });
     b.step("tf-k3-text-golden", "Kimi release prompt token ids against an explicitly supplied local tokenizer").dependOn(&b.addInstallArtifact(kimi_text, .{}).step);
+    b.step("test-stream-cancel-host", "A cancelled stream still ends with its terminal chunk and the end event").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"a cancelled stream ends"} })).step);
     const kimi_host = b.step("test-kimi-serving-host", "Kimi native text, HTTP and resident budget refusals on the host");
     for ([_]*std.Build.Module{ server_tests, engines }) |module|
         kimi_host.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module, .filters = &.{"Kimi"} })).step);

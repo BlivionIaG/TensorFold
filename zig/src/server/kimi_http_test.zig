@@ -37,6 +37,7 @@ const Receipt = struct {
     code: u16 = 0,
     body: V = .null,
     events: std.ArrayList(V) = .empty,
+    ended: bool = false,
     fn out(r: *@This()) openai.Out {
         return .{ .ctx = r, .vt = &.{ .open = begin, .event = event, .reply = whole } };
     }
@@ -46,7 +47,7 @@ const Receipt = struct {
     }
     fn event(ptr: *anyopaque, value: ?V) error{Closed}!void {
         const r: *@This() = @ptrCast(@alignCast(ptr));
-        if (value) |v| r.events.append(r.a, v) catch return error.Closed;
+        if (value) |v| r.events.append(r.a, v) catch return error.Closed else r.ended = true;
     }
     fn whole(ptr: *anyopaque, code: u16, value: V) void {
         const r: *@This() = @ptrCast(@alignCast(ptr));
@@ -54,6 +55,37 @@ const Receipt = struct {
         r.body = value;
     }
 };
+
+/// A cancellation check that fires once the first delta has been written (the fixture's own gone hook).
+const CancelAfterFirst = struct {
+    receipt: *Receipt,
+    fn call(ptr: *anyopaque) bool {
+        const h: *CancelAfterFirst = @ptrCast(@alignCast(ptr));
+        return h.receipt.events.items.len > 0;
+    }
+};
+
+test "a cancelled stream ends with its terminal chunk and the end event" {
+    const t = try helper.synthetic(std.testing.allocator);
+    defer t.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var script: Script = .{ .ids = &.{ 100, 101, 102 } };
+    const srv = try Server.init(a, std.testing.io, script.engine(), t.text(), .{ .served_name = "m", .model_ids = &.{"m"}, .enable_thinking = false, .use_drafts = false }, null);
+    defer srv.deinit();
+    var conn = try http.Conn.init(a, -1, "fixture");
+    defer conn.deinit();
+    const body = (try json.parse(a, "{\"model\":\"m\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":16,\"stream\":true}")).ok;
+    var stream: Receipt = .{ .a = a };
+    var cancel: CancelAfterFirst = .{ .receipt = &stream };
+    conn.gone_hook = .{ .ctx = &cancel, .call = CancelAfterFirst.call };
+    openai.run(srv, a, stream.out(), .{ .conn = &conn }, true, body);
+    try std.testing.expectEqual(@as(u16, 200), stream.code);
+    try std.testing.expect(stream.ended);
+    const last = stream.events.items[stream.events.items.len - 1];
+    try std.testing.expect(fieldIs(last.get("choices").?.array[0], "finish_reason", "cancelled"));
+}
 
 test "Kimi HTTP reasoning and tools agree for whole replies and one-token streaming cuts" {
     const t = try helper.synthetic(std.testing.allocator);
