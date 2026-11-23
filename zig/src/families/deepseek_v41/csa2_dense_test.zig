@@ -2,6 +2,13 @@ const std = @import("std");
 const mtl = @import("metal");
 const csa2 = @import("csa2.zig");
 
+fn submit(cb: mtl.CommandBuffer, enc: mtl.ComputeEncoder) !void {
+    enc.end();
+    cb.commit();
+    cb.wait();
+    try std.testing.expect(cb.failure() == null);
+}
+
 // The one-dispatch dense table must be bit-identical to the three per-section dispatches it replaces.
 test "the one-dispatch dense table matches the per-section decode" {
     const pool = mtl.objc.Pool.push();
