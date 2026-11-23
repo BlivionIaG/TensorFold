@@ -77,7 +77,7 @@ fn loadLimit(device: mtl.Device) !struct { bytes: u64, asked: bool } {
 }
 
 /// Automatic workspace sizes; the narrow round is retried only after memory admission refusal.
-const round_wide: u32 = 8192;
+const round_wide: u32 = 16384;
 const round_narrow: u32 = 4096;
 
 fn openOptions(o: api.Open, map: []const u8, context: u32, limit: u64, chunk: u32) ds.Options {
