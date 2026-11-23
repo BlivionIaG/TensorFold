@@ -112,7 +112,7 @@ fn openedCommitted(e: *Engine, s: *Stream, reach: Reach, hook: ?be.Committed) !v
         var d = requests[0].depth;
         asked = d;
         try e.backend.draftIn(e.arena.allocator(), requests);
-        if (e.backend.proposals()) d = requests[0].heldDepth(e.backend);
+        d = requests[0].heldDepth();
         s.dropHeld(e.gpa);
         s.next = .{ .count = d };
         if (d > 0) if (e.backend.vtable.tree) |tree| if (try tree(e.backend.ptr, s, e.gpa)) |held| {

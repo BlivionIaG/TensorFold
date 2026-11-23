@@ -31,3 +31,36 @@ test "oracle drafts and no drafts both give the serial decode" {
         } else try std.testing.expectEqual(@as(u64, 0), r.drafted);
     }
 }
+
+const lanes = @import("lanes");
+
+/// One greedy stream through lanes over the fake target; `hold` is how many drafts its head keeps whatever the ask.
+fn heldRun(hold: ?usize, drafts: bool) ![]u32 {
+    const Config = lanes.Config;
+    var costs: [16]lanes.config.Cost = undefined;
+    for (&costs, 1..) |*c, w| c.* = .{ .width = @intCast(w), .ms = 5.0 + 0.8 * @as(f64, @floatFromInt(w)) };
+    var cfg = try Config.init(gpa, .{ .exact_width = 16, .gpu_tokens = true, .mtp = true, .speculate = true, .speculate_early = false, .drafts = 4, .window_costs = &costs, .mtp_step_ms = 0.5, .hidden_rows = true, .batch_rows = 32, .max_streams = 8, .draft_streams = true }, 16, 15);
+    defer cfg.deinit(gpa);
+    var target: lanes.fake.Fake = .{ .gpa = gpa, .hold = hold, .head_accepts = 3 };
+    defer target.deinit();
+    var clock: lanes.fake.FixedClock = .{};
+    var e = lanes.Engine.init(gpa, &cfg, target.backend(), clock.clock());
+    defer e.deinit();
+    const prompt = [_]u32{ 3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3 };
+    var s = try lanes.Stream.init(gpa, .{ .id = "held", .prompt = &prompt, .max_new = 60, .eos = &.{96}, .drafts = drafts });
+    defer s.deinit(gpa);
+    try e.addStream(&s);
+    while (e.activeCount() > 0) try e.step();
+    return gpa.dupe(u32, s.emitted());
+}
+
+test "a head holding fewer drafts than the budget asked verifies only the ones it holds" {
+    const want = try heldRun(null, false);
+    defer gpa.free(want);
+    // 0 is a head whose own policy declines the round; 1 and 2 are shallower than the budget's four
+    for ([_]usize{ 0, 1, 2 }) |held| {
+        const got = try heldRun(held, true);
+        defer gpa.free(got);
+        try std.testing.expectEqualSlices(u32, want, got);
+    }
+}

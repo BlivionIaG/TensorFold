@@ -313,6 +313,8 @@ pub fn keep(ptr: *anyopaque, windows: []const be.Window, paths: []const []const 
 pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
     const b = self(ptr);
     for (requests) |r| {
+        // What this call holds until drafts land: the engine plans the next window from this count.
+        r.stream.proposal_depth = 0;
         const i = b.by.get(r.stream) orelse continue;
         if (b.held[i].len > 0) b.gpa.free(b.held[i]);
         b.held[i] = &.{};
@@ -335,6 +337,7 @@ pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
             @memcpy(out[0..got], copied[0..got]);
             for (out[got..]) |*t| t.* = copied[got - 1];
             b.held[i] = out;
+            r.stream.proposal_depth = r.depth;
             continue;
         }
         // The trained proposer (TF_DSV41_MTP_DRAFTS) runs HERE, between rounds.
@@ -356,6 +359,7 @@ pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
             @memcpy(out[0..n], drafts[0..n]);
             for (out[n..]) |*t| t.* = drafts[n - 1];
             b.held[i] = out;
+            r.stream.proposal_depth = r.depth;
             // The round's other hook (tree) asks for the same drafts; keep them here.
             if (i < b.mtp_cache.len) b.mtp_cache[i] = .{ .pending = last_tok.?, .drafts = drafts, .count = count };
             continue;
@@ -367,11 +371,13 @@ pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
             const pend = r.stream.pending orelse 0;
             for (out0) |*t| t.* = pend;
             b.held[i] = out0;
+            r.stream.proposal_depth = @intCast(want);
             continue;
         }
         const out = try b.gpa.alloc(u32, want);
         for (out) |*t| t.* = r.stream.pending orelse 0;
         b.held[i] = out;
+        r.stream.proposal_depth = @intCast(want);
     }
 }
 
@@ -438,6 +444,7 @@ pub fn tree(ptr: *anyopaque, s: *Stream, gpa: std.mem.Allocator) anyerror!?lanes
 
 pub fn release(ptr: *anyopaque, s: *Stream) void {
     const b = self(ptr);
+    s.proposal_depth = null;
     if (b.by.get(s)) |i| {
         if (b.held[i].len > 0) b.gpa.free(b.held[i]);
         b.held[i] = &.{};
