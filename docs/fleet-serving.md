@@ -71,9 +71,10 @@ Gate: at least 1.4x the better single engine's goodput where one engine misses i
 ITL p95 not worse than the engine alone (below S alone, 60-71 against 74-78 ms, above M alone at 47-48 ms: not met against M), zero lost requests on failover (0 of 15; no stream was cut mid-answer, not covered).
 
 **Phase 2, per-engine stall bounds (tier 1, engine work).** The M5 already runs one decode round between prefill chunks, so the stall is one chunk. Probed 2026-11-22 (`router/docs/phase0.md`): `TF_DSV41_PREFILL_STEP`
-4096 / 2048 / 1024 gives 2.0 / 1.0 / 0.65 s per chunk for 8.5 / 9.0 / 12.2 s TTFT at 16k, so 2048 is a free halving and below that TTFT pays one for one. The worst gap stays 1.7-2.4 s at every step because the last gap
-(ending at the newcomer's first token) is not chunk-bound; that is the engine work, plus the router's guard (`prefill.mode`, `chunk_rows`) following the chosen step.
-Gate: worst decode gap under a 16k arrival below 0.5 s on M with TTFT of the newcomer not worse than 1.3x. Not met; the knob alone cannot meet it.
+4096 / 2048 / 1024 gives 2.0 / 1.0 / 0.65 s per chunk for 8.5 / 9.0 / 12.2 s TTFT at 16k, so 2048 is a free halving and below that TTFT pays one for one. The worst gap stayed 1.7-2.4 s at every step because the last gap
+(ending at the newcomer's first token) was not chunk-bound: the cone prefill's decoder replay ran in one call (0.8-1.0 s). `TF_DSV41_CONE_YIELD` (default 1, token-exact) runs it a program per call; the worst gap at step 2048
+falls from 1.7-1.8 s to 1.1-1.2 s with the newcomer's TTFT unchanged, and is now one encoder chunk. The router's guard (`prefill.mode`, `chunk_rows`) follows the chosen step.
+Gate: worst decode gap under a 16k arrival below 0.5 s on M with TTFT of the newcomer not worse than 1.3x. Not met (1.1 s at the 2048 step, 0.7 s at 1024 for +37 % TTFT); the floor is now one chunk, so closing it needs a cheaper chunk, not scheduling.
 
 **Phase 3, M draft acceptance (tier 1, engine work).** Probed 2026-11-22: the drafts accept (1.7 tokens per round with the governor off, replies byte-identical) but a 3-4 row verify window costs 1.69x a one-row round on
 Metal (31.3 vs 18.5 ms), so drafting nets 52.0 against 53.7 tok/s: it wins on lists / JSON / code (up to 59.6) and loses on prose (43.8). The governor is right to stay off by default. The M5 drafts with MTP + copies and the Sparks with DSpark + copies.

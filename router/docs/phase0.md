@@ -90,5 +90,19 @@ Re-arming the governor mid-request would gain on structured output and lose the 
 | 1024 | 0.65 s | 1.91 s | 4.4 / 12.2 s |
 
 With drafts and taps off at step 2048 the gaps are the same (worst 1.57 / 1.98 s). A step of 2048 halves the stall for +6 % TTFT at 16k, 1024 costs +43 %. [INFERENCE] Per-chunk cost does not shrink with the chunk (a MoE
-chunk reads every expert), so smaller steps trade TTFT for stall about one for one. The worst gap does not follow the step: it is the last gap, which ends at the newcomer's first token and is 1.7-2.4 s at every step.
-[INFERENCE] Something after the last chunk (the first-token pass or the hand-over) stalls the decoders for 1-1.5 s. The phase-2 gate (worst gap below 0.5 s) is out of reach with the knob; finding that last-gap cost is the engine work.
+chunk reads every expert), so smaller steps trade TTFT for stall about one for one. The worst gap did not follow the step: it was the last gap, which ends at the newcomer's first token and was 1.7-2.4 s at every step.
+
+**The last gap (phase 2 engine work).** Lane trace at step 2048, 16.9k-token prompt: the 2048-row chunks take about 0.96 s each (the cone prefill runs only the encoder layers on non-final chunks), but the
+last call, with 475 rows, took 1.79 s. Final-call time against rows: 73 rows 0.49 s, 688 rows 1.07 s, 1915 rows 1.99 s. The cone prefill's last chunk also replays the decoder layers over about 2.7k rows
+in layer-group programs, all in one call: roughly 0.8-1.0 s of fixed cost per long prompt that no knob shortens. Fix (fork dev line, branch `perf/dsv41-cone-replay-yield`, `TF_DSV41_CONE_YIELD`, default 1): the last chunk runs its
+encoder half and the replay runs one program per step call, so the other streams' decode rounds run between programs (the five programs take 0.37 / 0.24 / 0.17 / 0.13 / 0.10 s). Same programs in the same order.
+
+| step | worst gap, before | worst gap, yield | tokens emitted during the prefill, before / yield | newcomer TTFT 16k, before / yield |
+|---|---|---|---|---|
+| 4096 | 2.0-2.3 s | 2.0 s | 4-5 / 9-10 | 7.9-9.2 / 8.2-9.3 s |
+| 2048 | 1.69-1.81 s | 1.13-1.17 s | 8-9 / 13-14 | 8.9-9.9 / 9.0-9.8 s |
+| 1024 | not run | 0.71-0.78 s | not run / 21-22 | not run / 11.9-12.5 s |
+
+Three repetitions each, one 16k arrival over one decoding stream. Exactness: four interleaved streams (a decoder, a 16k and an 8k prompt arriving 0.7 s apart so their runs park behind each other, and a short
+one) give byte-identical replies on the previous build and on the new build, each with the governor and with drafts forced on. The gap that remains is one encoder chunk, so the gate
+stays unmet at 1.3x TTFT. Use 2048 with the yield (1.1 s gaps, TTFT unchanged); 1024 gives 0.7 s gaps for about +35 % TTFT. Step 512 was not run.
