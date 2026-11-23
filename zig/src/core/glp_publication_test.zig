@@ -243,3 +243,34 @@ test "a written vector names its base only through the spec's fields, and reads 
         try std.testing.expectEqualSlices(u8, bytes, again);
     }
 }
+
+test "glp.validation and the informational dose keys are written, and never touch the tensor bytes" {
+    const a = std.testing.allocator;
+    const dir = try a.alloc(f32, 4);
+    defer a.free(dir);
+    for (dir, 0..) |*x, i| x.* = if (i == 0) 1 else 0;
+    const layers = [_]glp.Layer{.{ .id = 3, .dir = dir }};
+    const plain = try glp.write(a, .{ .mode = .project, .layers = &layers });
+    defer a.free(plain);
+    const with = try glp.write(a, .{
+        .mode = .project,
+        .layers = &layers,
+        .validation = "tool-calling 12/12 at alpha 1; finish-reason 0/24 vanish",
+        .dose_cos = "3:0.041",
+        .resid_norm_median = "3:12.5",
+    });
+    defer a.free(with);
+    try std.testing.expect(std.mem.indexOf(u8, with, "glp.validation") != null);
+    try std.testing.expect(std.mem.indexOf(u8, with, "tool-calling 12/12 at alpha 1; finish-reason 0/24 vanish") != null);
+    try std.testing.expect(std.mem.indexOf(u8, with, "glp.dose_cos") != null);
+    try std.testing.expect(std.mem.indexOf(u8, with, "glp.resid_norm_median") != null);
+    try std.testing.expect(std.mem.indexOf(u8, plain, "glp.validation") == null);
+    // The digest the spec makes the contract covers tensor bytes only: metadata may grow around it.
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    var why: glp.Why = .{};
+    const pv = try glp.read(arena.allocator(), plain, &why);
+    const wv = try glp.read(arena.allocator(), with, &why);
+    try std.testing.expectEqualSlices(u8, &pv.sha256, &wv.sha256);
+    try std.testing.expectEqualSlices(f32, pv.layers[0].dir, wv.layers[0].dir);
+}

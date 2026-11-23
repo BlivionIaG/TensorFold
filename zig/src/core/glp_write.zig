@@ -18,6 +18,12 @@ pub const WriteSpec = struct {
     base_revision: []const u8 = "",
     method: []const u8 = "",
     contrast: []const u8 = "",
+    /// glp.validation: the named suites and their numbers, as the spec's "Calibrating the dose" asks.
+    validation: ?[]const u8 = null,
+    /// glp.dose_cos: per-layer L:v pairs, mean |h.d|/|h| over the derivation's capture rows.
+    dose_cos: ?[]const u8 = null,
+    /// glp.resid_norm_median: per-layer L:v pairs, median |h| of the same rows.
+    resid_norm_median: ?[]const u8 = null,
     /// What the file says about itself; the keys a consumer reads before it reads the directions.
     publication: t.Publication = .{},
     layers: []const t.Layer,
@@ -139,6 +145,10 @@ pub fn write(a: std.mem.Allocator, spec: WriteSpec) Error![]u8 {
     try appendText(&written, tmp, "controlvector.model_hint", about.model_hint);
     try appendText(&written, tmp, "glp.measured_effect", about.measured_effect);
     try appendText(&written, tmp, "glp.created", about.created);
+    // Diagnostics the spec names: informational, never gated, absent unless the producer measured them.
+    try appendText(&written, tmp, "glp.validation", spec.validation);
+    try appendText(&written, tmp, "glp.dose_cos", spec.dose_cos);
+    try appendText(&written, tmp, "glp.resid_norm_median", spec.resid_norm_median);
     return gguf.write(a, written.items, tensors) catch |err| switch (err) {
         error.BadGguf => error.BadGlpVector,
         error.OutOfMemory => error.OutOfMemory,
