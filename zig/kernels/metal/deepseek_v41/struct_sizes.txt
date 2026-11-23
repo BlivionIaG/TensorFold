@@ -14,6 +14,7 @@ csa2_attn.metal TfAttnMeta 32
 csa2_attn.metal TfKey 32
 csa2_attn.metal TfQ 64
 csa2_nax.metal DenseKv 20
+csa2_nax.metal DenseKvAll 40
 csa2_rows.metal Dsv41AttentionRows 60
 early.metal TfEarlyAcceptArgs 20
 early.metal TfEarlyKeyedArgs 8
