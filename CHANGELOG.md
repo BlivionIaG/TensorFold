@@ -4,6 +4,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- Metal: DeepSeek V4.1's routed EXL3 decode calls take four column tiles a warp where the dense bodies keep two (`TF_DSV41_EXL3_FMA_TILES_ROUTED`), 3.9 % and 3.3 % faster on the routed gate and up and the routed down kernel at one row on an M5 Ultra; replies unchanged.
 - Metal: the row projection picks its narrow or wide kernel per chip (generation plus Pro/Max/Ultra), so an M5 Max no longer runs 8-row and wider windows on the kernel that is slower there; M5 Ultra and unlisted chips are unchanged, tokens unchanged (refs #3396). Thanks to @Spectre056 for the M5 Max measurements.
 - Metal: a stream whose setup fails partway no longer leaves the prompt cache smaller by its bytes in Llama, Ripple, Spark2.5, Flint, Step-5 and MiniMax-M3.
 

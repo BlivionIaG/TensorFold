@@ -336,8 +336,10 @@ test "the exact half-FMA decode bodies keep every bit of the table bodies for an
     const queue = try device.queue();
     defer queue.deinit();
     const saved = ex.knobs.fma_tiles;
+    const saved_routed = ex.knobs.fma_tiles_routed;
     const saved_groups = ex.knobs.fma_tile_groups;
     defer ex.knobs.fma_tiles = saved;
+    defer ex.knobs.fma_tiles_routed = saved_routed;
     defer ex.knobs.fma_tile_groups = saved_groups;
     ex.knobs.fma_tile_groups = 0;
     const x = try input(device, 3);
@@ -366,6 +368,8 @@ test "the exact half-FMA decode bodies keep every bit of the table bodies for an
         // Zero tiles is the table body; every other count writes the same bits, dense and routed.
         for ([_]u32{ 0, 1, 2, 4 }) |tiles| {
             ex.knobs.fma_tiles = tiles;
+            // The routed calls read their own ceiling, so both carry the tile count under test.
+            ex.knobs.fma_tiles_routed = tiles;
             const out = if (tiles == 0) ref else got;
             const cb = queue.commandBuffer();
             const e = cb.compute(.concurrent);
@@ -419,4 +423,62 @@ test "indexed odd and wide codebooks project routed rows against the scalar refe
         for (y.slice(f32, matrices.len * n)[row * n ..][0..n], want) |got, expected|
             try std.testing.expectApproxEqAbs(expected, got, 0.00005 * peak);
     }
+}
+
+test "the routed decode plan takes four column tiles where the dense bodies keep two" {
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    var p = try ex.Pipelines.loadWith(device, std.testing.allocator);
+    defer p.deinit();
+    if (p.decode_fma_t[2] == null or p.decode_nax == null) return error.SkipZigTest;
+    const saved = ex.knobs.fma_tiles_routed;
+    defer ex.knobs.fma_tiles_routed = saved;
+    // The routed gate+up call of a one-token window: twelve rows of experts, 2304 columns.
+    const routed_args: ex.Args = .{
+        .k = 5120,
+        .n = 2304,
+        .rows = 12,
+        .halves = 6,
+        .codebook = 2,
+        .su_signs = 0,
+        .sv_signs = 0,
+        .has_bias = 0,
+        .output_f32 = 1,
+        .input_ids = 0,
+        .output_ids = 0,
+        .routed = 1,
+        .expert_id = 0,
+        .repeat = 1,
+        .indexed = 1,
+        .experts = 384,
+        .x_stride = 0,
+        .y_stride = 0,
+        .tile_k_stride = 0,
+        .tile_n_stride = 0,
+    };
+    try std.testing.expectEqual(@as(usize, 64), ex.planBody(&p, routed_args, .{ .count = 12, .x_stride = 0, .y_stride = 0 }).group_cols);
+    // The down call of the same window, 2304 by 5120: the same four tiles.
+    var down_args = routed_args;
+    down_args.k = 2304;
+    down_args.n = 5120;
+    down_args.rows = 6;
+    try std.testing.expectEqual(@as(usize, 64), ex.planBody(&p, down_args, .{ .count = 6, .x_stride = 0, .y_stride = 0 }).group_cols);
+    // One shape, both paths: the dense body keeps two tiles while the routed one takes four.
+    var wide_args = routed_args;
+    wide_args.n = 20480;
+    wide_args.rows = 4;
+    try std.testing.expectEqual(@as(usize, 64), ex.planBody(&p, wide_args, .{ .count = 4, .x_stride = 0, .y_stride = 0 }).group_cols);
+    wide_args.indexed = 0;
+    try std.testing.expectEqual(@as(usize, 32), ex.planBody(&p, wide_args, .{ .count = 4, .x_stride = 0, .y_stride = 0 }).group_cols);
+    // The routed ceiling is a setting: two halves to the two-tile body, zero keeps the shipped bodies.
+    ex.knobs.fma_tiles_routed = 2;
+    try std.testing.expectEqual(@as(usize, 32), ex.planBody(&p, routed_args, .{ .count = 12, .x_stride = 0, .y_stride = 0 }).group_cols);
+    ex.knobs.fma_tiles_routed = 0;
+    try std.testing.expectEqual(@as(usize, 16), ex.planBody(&p, routed_args, .{ .count = 12, .x_stride = 0, .y_stride = 0 }).group_cols);
+    // A routed call too narrow for four hundred groups still halves down to one.
+    ex.knobs.fma_tiles_routed = 4;
+    var narrow = routed_args;
+    narrow.n = 1024;
+    narrow.rows = 8;
+    try std.testing.expectEqual(@as(usize, 16), ex.planBody(&p, narrow, .{ .count = 8, .x_stride = 0, .y_stride = 0 }).group_cols);
 }

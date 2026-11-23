@@ -39,6 +39,8 @@ pub const Knobs = struct {
     funnel: bool = true,
     row_invariant: bool = true,
     fma_tiles: u32 = 2,
+    /// Column tiles a warp in the routed decode calls: their rows are experts, so the wider body loses nothing.
+    fma_tiles_routed: u32 = 4,
     fma_tile_groups: u32 = 400,
     fma_dense_h8: bool = true,
     fma_dense_multi: u32 = 4,

@@ -60,11 +60,18 @@ pub fn canMergeDenseRows(p: *const Pipelines, m: Matrix, rows: usize, joined_row
     return multi4 or multi2 or fmaDenseOn();
 }
 
+/// The widest column-tile count a call may use: routed calls read their own setting, dense calls the shipped one.
+pub fn tileCeiling(k: core.Knobs, indexed: bool) u32 {
+    if (k.fma_tiles == 0) return 0;
+    return if (indexed) k.fma_tiles_routed else k.fma_tiles;
+}
+
 pub fn planBody(p: *const Pipelines, args: Args, r: Rows) Plan {
     var a = args;
-    // T-tile exact half-FMA bodies (routed, one-row dense): the widest T up to the knob that keeps the group count.
-    const tiles: u32 = if (knobs.fma_tiles == 0) 0 else blk: {
-        var t: u32 = if (knobs.fma_tiles >= 4) 4 else if (knobs.fma_tiles >= 2) 2 else 1;
+    // T-tile exact half-FMA bodies: routed calls take their own ceiling, the dense bodies keep the shipped two.
+    const tile_ceiling = tileCeiling(knobs.*, a.indexed != 0);
+    const tiles: u32 = if (tile_ceiling == 0) 0 else blk: {
+        var t: u32 = if (tile_ceiling >= 4) 4 else if (tile_ceiling >= 2) 2 else 1;
         while (t > 1 and ((@as(usize, a.n) + 16 * t - 1) / (16 * t)) * a.rows < knobs.fma_tile_groups) t /= 2;
         break :blk t;
     };

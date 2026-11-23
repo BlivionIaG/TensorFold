@@ -307,6 +307,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_GLM_KV_HOST_GIB", .scope = .glm, .kind = .real, .forms = "a finite GiB amount of at least 0 (unset or blank uses one full window and 16 rows a page)" },
     .{ .name = "TF_GLM_INDEX_SPLIT", .scope = .glm, .kind = .u32, .forms = "a whole prompt position from 0 to 4294967295 (split from that position; 0 never splits; default 2048)" },
     .{ .name = "TF_DSV41_EXL3_FMA_TILES", .scope = .dsv41, .kind = .u32, .trim = " \t\r\n", .only = &.{ 0, 1, 2, 4 }, .forms = "0, 1, 2 or 4 column tiles" },
+    .{ .name = "TF_DSV41_EXL3_FMA_TILES_ROUTED", .scope = .dsv41, .kind = .u32, .trim = " \t\r\n", .only = &.{ 0, 1, 2, 4 }, .forms = "0, 1, 2 or 4 column tiles in the routed decode calls" },
     .{ .name = "TF_DSV41_BATCH_MAX", .scope = .dsv41, .kind = .u32, .trim = " \t\r\n", .min = 1, .max = 8, .forms = "a whole row count from 1 to 8" },
     .{ .name = "TF_DSV41_BATCH_ATTN", .scope = .dsv41, .kind = .flag, .trim = " \t\r\n", .forms = "0 or 1" },
 };
