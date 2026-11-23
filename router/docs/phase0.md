@@ -106,3 +106,32 @@ encoder half and the replay runs one program per step call, so the other streams
 Three repetitions each, one 16k arrival over one decoding stream. Exactness: four interleaved streams (a decoder, a 16k and an 8k prompt arriving 0.7 s apart so their runs park behind each other, and a short
 one) give byte-identical replies on the previous build and on the new build, each with the governor and with drafts forced on. The gap that remains is one encoder chunk, so the gate
 stays unmet at 1.3x TTFT. Use 2048 with the yield (1.1 s gaps, TTFT unchanged); 1024 gives 0.7 s gaps for about +35 % TTFT. Step 512 was not run.
+
+**Decode share (`TENSORFOLD_PREFILL_SHARE=p`, the lane host's existing knob; a step of t owes the decoders t(1-p)/p of rounds).** Step 2048 with the yield, one 16k arrival, 3 repetitions:
+
+| p | worst gap | tokens the decoder emits during the prefill | newcomer TTFT 16k |
+|---|---|---|---|
+| 1 (default) | 1.13-1.15 s | 13-14 | 9.1-10.0 s |
+| 0.9 | 1.12-1.34 s | 58-65 | 10.1-11.0 s |
+| 0.8 | 1.11-1.21 s | 122-134 | 11.2-12.2 s |
+| 0.7 | 1.15-1.19 s | 212-228 | 12.8-13.8 s |
+| 0.6 | 1.16-1.17 s | 339-350 | 15.6-16.2 s |
+
+The share moves the decoder's rate during a long prefill from about 1.4 to 6 / 11 / 17 / 21 tok/s and costs the newcomer 10 / 22 / 40 / 70 % TTFT; it never shortens the worst gap (one chunk).
+At step 1024 the same knob costs more (0.8: 15.1 s TTFT at 16k) for 0.70-0.74 s gaps, 0.5: 22.9 s.
+
+**Router live, new M engine (2026-11-23, one seed each, 240 s, client on the workstation).** M = the fork dev line with the yield, step 2048, context 40960; S = the pair, parity profile.
+
+| run | TTFT p50 / p95 | ITL p50 / p95 ms | out tok/s | M share | finished |
+|---|---|---|---|---|---|
+| chat 0.25, previous M (step 4096) | 19.1 / n.a. | n.a. / 71 | 138 | n.a. | 100 % |
+| chat 0.25, yield + step 2048 | 22.2 / 40.8 | 48 / 73 | 138 | 43 % | 100 % |
+| chat 0.25, yield + step 2048 + share 0.8 | 21.9 / 41.1 | 47 / 73 | 138 | 45 % | 100 % |
+| chat 0.25, `policy.mode` ll (predicted TTFT only) | 21.2 / 44.0 | 48 / 73 | 138 | 46 % | 100 % |
+| mixed 0.10, previous M | 3.9 / n.a. | n.a. / 60 | n.a. | n.a. | 100 % |
+| mixed 0.10, yield + step 2048 | 3.8 / 30.4 | 40 / 52 | 31 | 33 % | 100 % |
+| mixed 0.10, yield + step 2048 + share 0.8 | 5.4 / 31.1 | 33 / 66 | 31 | 28 % | 100 % |
+
+Read: at these loads the router's behaviour is set by what S and M can sustain together (138 tok/s at 0.25 either way), so the M engine changes are within one-seed noise on TTFT and visible only in
+ITL p95 on the mixed workload (60 to 52 ms). The share does not pay under the router: it lengthens the long prompts the router sends to M (mixed p50 3.8 to 5.4 s) and the router's model does not know it,
+while ITL p95 does not improve. Keep the share at 1. The cost mode is not worse than least-loaded (ll: p95 44.0 against 40.8 s). The previous-M rows are the phase-1 runs (different boot of S, different salt).
