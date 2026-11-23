@@ -438,15 +438,15 @@ pub const Engine = struct {
         try e.backend.draftIn(e.arena.allocator(), asked);
         for (asked) |r| {
             r.stream.dropHeld(e.gpa);
-            r.stream.next = .{ .count = r.heldDepth(e.backend) };
-            if (r.heldDepth(e.backend) == 0 and e.backend.proposals()) {
+            r.stream.next = .{ .count = r.heldDepth() };
+            if (r.heldDepth() == 0) {
                 if (lone) |l| l.deinit(e.gpa);
                 lone = null;
             } else if (lone) |l| {
                 if (r.lanes != null) r.stream.next = .{ .count = @intCast(l.parents.len), .parents = try e.gpa.dupe(i32, l.parents) };
                 r.stream.lanes = l;
                 lone = null;
-            } else if (r.heldDepth(e.backend) > 0) if (e.backend.vtable.tree) |tree| {
+            } else if (r.heldDepth() > 0) if (e.backend.vtable.tree) |tree| {
                 if (try tree(e.backend.ptr, r.stream, e.gpa)) |held| r.stream.next = held;
             };
         }

@@ -92,6 +92,7 @@ pub const Fake = struct {
     image_rows: usize = 0, // image rows fed (`image_words`): the rows a tower had to make
     gpu_charge: ?f64 = null, // each verify and step charges its streams this many GPU seconds, as a timed backend does
     head_accepts: ?usize = null, // head drafts a round right before one wrong (null: one in five wrong)
+    hold: ?usize = null, // a head with its own depth: hold at most this many drafts whatever the ask, and report it
 
     pub fn deinit(x: *Fake) void {
         var it = x.lanes.valueIterator();
@@ -448,6 +449,8 @@ pub const Fake = struct {
             x.last_rows += w.rows();
             x.last_sampled = x.last_sampled or w.stream.sampling != null;
             const l = x.lane(w.stream);
+            // a window cannot verify more held drafts than the head holds for it
+            if (w.held > l.held.items.len) return error.WindowOutOfStep;
             l.base = l.history.items.len;
             l.rows.clearRetainingCapacity();
             try l.rows.append(x.gpa, w.pending);
@@ -510,6 +513,10 @@ pub const Fake = struct {
                 if (wrong) t = (t + 1) % vocab; // a wrong guess now and then, or after exactly `head_accepts`
                 try l.held.append(x.gpa, t);
                 try guess.append(x.gpa, t);
+            }
+            if (x.hold) |h| {
+                l.held.shrinkRetainingCapacity(@min(h, l.held.items.len));
+                r.stream.proposal_depth = @intCast(l.held.items.len);
             }
         }
     }

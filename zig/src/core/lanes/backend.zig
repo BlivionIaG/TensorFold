@@ -73,8 +73,9 @@ pub const DraftRequest = struct {
     lanes: ?*const Shape = null, // a tree of drafts to hold, each lane its parent's rank-r head token (depth unused)
     plan: ?*const @import("proposal_head.zig").Plan = null,
     ranks: bool = false, // also keep each chained level's best tokens (alternatives(), for grafts)
-    pub fn heldDepth(r: DraftRequest, b: Backend) u32 {
-        return if (b.proposals()) r.stream.proposal_depth orelse r.depth else r.depth;
+    /// The drafts held for the next window: the count the backend reported, else the depth this request asked for.
+    pub fn heldDepth(r: DraftRequest) u32 {
+        return r.stream.proposal_depth orelse r.depth;
     }
 };
 
