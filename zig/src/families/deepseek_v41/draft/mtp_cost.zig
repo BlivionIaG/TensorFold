@@ -21,22 +21,46 @@ pub const Mean = struct {
     }
 };
 
+/// The middle of the last nine samples: a row's ms moves with the routed experts it drew, so a mean chases every outlier.
+pub const median_window = 9;
+pub const Median = struct {
+    values: [median_window]f64 = @splat(0),
+    next: usize = 0,
+    count: usize = 0,
+
+    pub fn add(m: *Median, x: f64) void {
+        m.values[m.next] = x;
+        m.next = (m.next + 1) % median_window;
+        if (m.count < median_window) m.count += 1;
+    }
+
+    pub fn get(m: *const Median) ?f64 {
+        const len = m.count;
+        if (len == 0) return null;
+        var buf: [median_window]f64 = undefined;
+        @memcpy(buf[0..len], m.values[0..len]);
+        std.mem.sort(f64, buf[0..len], {}, std.sort.asc(f64));
+        if (len % 2 == 1) return buf[len / 2];
+        return (buf[len / 2 - 1] + buf[len / 2]) / 2;
+    }
+};
+
 /// The round's own ms: each window's rows, and the drafter's pass (the lookup's costs nothing).
 const Rows = struct {
-    window: [max_rows + 1]Mean = @splat(.{}), // by the window's rows (1 .. max_rows)
-    draft: Mean = .{},
+    window: [max_rows + 1]Median = @splat(.{}), // by the window's rows (1 .. max_rows)
+    draft: Median = .{},
 
     /// A guessed window of `rows` rows while the row count is unmeasured: one row's measured ms a row.
     fn windowMs(r: *const Rows, rows: usize) f64 {
-        if (r.window[rows].n != 0) return r.window[rows].v;
-        const one = r.window[1].v;
-        const step = if (r.window[2].n != 0) @max(r.window[2].v - one, 0.2 * one) else 0.5 * one;
+        if (r.window[rows].get()) |v| return v;
+        const one = r.window[1].get() orelse return 0;
+        const step = if (r.window[2].get()) |two| @max(two - one, 0.2 * one) else 0.5 * one;
         return one + step * @as(f64, @floatFromInt(rows - 1));
     }
 
     /// The ms of a round verifying `k` trained drafts: its k + 1 rows and the drafter's pass.
     pub fn roundMs(r: *const Rows, k: usize, src: Source) f64 {
-        const paid = if (k == 0 or src == .lookup) 0.0 else if (r.draft.n != 0) r.draft.v else 0.3 * r.window[1].v;
+        const paid = if (k == 0 or src == .lookup) 0.0 else if (r.draft.get()) |d| d else 0.3 * (r.window[1].get() orelse 0);
         return r.windowMs(k + 1) + paid;
     }
 };
@@ -102,22 +126,25 @@ pub const Policy = struct {
 
     /// The tokens a round of depth `k` buys for its ms; 0 is the plain one-row round.
     pub fn rate(p: *const Policy, src: Source, k: usize) f64 {
-        if (p.rows.window[1].n == 0) return 0;
+        if (p.rows.window[1].count == 0) return 0;
         var q: [max_depth]f64 = undefined;
         p.chances(src, &q);
         return expectedTokens(&q, k) / p.rows.roundMs(k, src);
     }
 
-    /// The next depth: 0 until a plain round is priced, then the shallow one and each deeper one while it pays.
+    /// The next depth: 0 until a plain round is priced, then each depth whose chain could pay for its rows, then the best.
     pub fn pick(p: *Policy, src: Source) usize {
         const s = @backingInt(src);
         const cap = @min(p.cap, max_depth);
-        if (cap == 0 or p.rows.window[1].n == 0) return 0;
-        if (p.rows.window[2].n == 0) return 1;
-        if (p.rate(src, 1) <= p.rate(src, 0)) return 0;
-        if (p.rounds < explore_rounds) for (2..cap + 1) |k| {
-            if (p.rows.window[k + 1].n == 0) return k;
-        };
+        if (cap == 0 or p.rows.window[1].count == 0) return 0;
+        if (p.rows.window[2].count == 0) return 1;
+        // A depth's first round costs its rows: take it only when the chain so far commits more than those rows
+        // would buy back at the plain round's pace (a chain that lands nothing would only add rows).
+        if (p.rounds < explore_rounds) {
+            var q: [max_depth]f64 = undefined;
+            p.chances(src, &q);
+            for (2..cap + 1) |k| if (p.rows.window[k + 1].count == 0 and expectedTokens(&q, k) > 1.0 + 0.5 * @as(f64, @floatFromInt(k))) return k;
+        }
         var best: usize = 0;
         for (1..cap + 1) |k| if (p.rate(src, k) > p.rate(src, best)) {
             best = k;
@@ -250,4 +277,22 @@ test "a landed prefix updates each position it saw" {
     try std.testing.expectApproxEqAbs(@as(f64, 0.5), p.q[0][1].v, 1e-9);
     try std.testing.expectApproxEqAbs(@as(f64, 0.0), p.q[0][2].v, 1e-9);
     try std.testing.expectEqual(@as(usize, 2), p.q[0][0].n);
+}
+
+test "one slow row does not move the window's price" {
+    var r: Rows = .{};
+    for (0..8) |_| r.window[2].add(27.0);
+    r.window[2].add(80.0);
+    try std.testing.expectApproxEqAbs(@as(f64, 27.0), r.window[2].get().?, 1e-9);
+}
+
+test "a depth whose first draft is marginal is still measured when its chain could pay" {
+    var p: Policy = .{};
+    p.noteRound(1, 19.0);
+    p.noteRound(2, 32.0);
+    p.noteDraft(4.0);
+    // The first draft lands 0.66 of the time: 1.66 tokens in 32 ms is under the plain round's 1 in 19 ms,
+    // but the chain's second draft could still pay for the third row.
+    for (&p.q[@backingInt(Source.trained)]) |*m| m.* = .{ .v = 0.6, .n = 4 };
+    try std.testing.expectEqual(@as(usize, 2), p.pick(.trained));
 }

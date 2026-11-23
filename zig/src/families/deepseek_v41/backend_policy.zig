@@ -100,7 +100,7 @@ pub fn mtpDepthFor(b: *Backend, slot: u32, offer: Offer) u32 {
     b.mtp.noteDepth(offer.src, k);
     if (std.c.getenv("TF_DSV41_MTP_ADAPT_DEBUG") != null) std.log.info(
         "mtp depth: slot {d} {s} have {d} depth {d} ms a token {d:.2} {d:.2} {d:.2} {d:.2} pass {d:.2}",
-        .{ slot, @tagName(offer.src), offer.have, k, msPer(b, offer.src, 0), msPer(b, offer.src, 1), msPer(b, offer.src, 2), msPer(b, offer.src, 3), b.mtp.rows.draft.v },
+        .{ slot, @tagName(offer.src), offer.have, k, msPer(b, offer.src, 0), msPer(b, offer.src, 1), msPer(b, offer.src, 2), msPer(b, offer.src, 3), b.mtp.rows.draft.get() orelse 0 },
     );
     return @intCast(k);
 }

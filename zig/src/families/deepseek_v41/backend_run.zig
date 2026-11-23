@@ -227,7 +227,14 @@ pub fn verify(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) a
             ds.price_round += 1;
         }
         // The round's own ms by its rows: the depth policy's cost side.
-        if (t0) |t| b.mtp.noteRound(@intCast(rows), (mtl.clock.seconds() - t) * 1e3);
+        if (t0) |t| {
+            const ms = (mtl.clock.seconds() - t) * 1e3;
+            if (std.c.getenv("TF_DSV41_MTP_ADAPT_DEBUG") != null) std.log.info(
+                "mtp round: slot {d} rows {d} ms {d:.2} src {s} depth {d} shared {any}",
+                .{ i, rows, ms, @tagName(b.src_now[i]), b.depth_now[i], w.stream.shared_round },
+            );
+            b.mtp.noteRound(@intCast(rows), ms);
+        }
         // The window's fed tokens after the pending one landed: the verified drafts, GLM's contract.
         if (o.drafts.len > 0) @memcpy(o.drafts, feeds[1 .. 1 + o.drafts.len]);
         @memcpy(b.last_sampled[0..rows], o.sampled[0..rows]);
@@ -290,6 +297,10 @@ pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
         const i = b.by.get(r.stream) orelse continue;
         if (b.held[i].len > 0) b.gpa.free(b.held[i]);
         b.held[i] = &.{};
+        if (std.c.getenv("TF_DSV41_MTP_ADAPT_DEBUG") != null) std.log.info(
+            "mtp ask: slot {d} engine {d} depth_now {d} rows {d}",
+            .{ i, r.depth, b.depth_now[i], if (r.rows) |x| x.len else 0 },
+        );
         if (r.depth == 0) continue;
         if (std.c.getenv("TF_DSV41_DRAFT_COPY") != null) {
             // Diagnostic: every draft repeats the pending token, so a two-row window is [pending, pending].
