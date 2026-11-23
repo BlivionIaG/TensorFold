@@ -40,6 +40,8 @@ const Parked = struct {
     count: usize = 0,
     first: u32 = 0,
     next: u32 = 0,
+    replaying: bool = false,
+    lo_next: u32 = 0,
 };
 
 pub const Cone = struct {
@@ -64,6 +66,14 @@ pub const Cone = struct {
     next: u32 = 0,
     /// the decoder chunk's first position (loadStash)
     at: u32 = 0,
+    /// TF_DSV41_CONE_YIELD: the last chunk's replay waits, a program a call, for `heldStep` (the lane host runs the other streams' rounds between)
+    yield: ?bool = null,
+    /// the pending run's replay has begun; its next program starts at layer `lo_next`
+    replaying: bool = false,
+    lo_next: u32 = 0,
+    /// `lastChunk` asks `route` to hold the replay, and `route` says it did
+    hold: bool = false,
+    held: bool = false,
     /// other prompts' runs, set aside while the active one's chunks run; `park` places may be used (TF_DSV41_CONE_PARK)
     parked: [parked_max]Parked = @splat(.{}),
     park: u32 = parked_max,
@@ -145,6 +155,7 @@ pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
         // the slot's state was replaced under the pending run: nothing to replay
         if (sg.p0 != c.next) {
             c.pending = false;
+            c.replaying = false;
             return null;
         }
         if (!ok or c.count == max_chunks) _ = try replay(m, .none);
@@ -157,6 +168,7 @@ pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
         c.first = sg.p0;
         c.next = sg.p0;
         c.count = 0;
+        c.replaying = false;
     } else if (c.slot != sg.slot) return null;
     try ensureStash(m);
     c.phase = .encoder;
@@ -167,24 +179,78 @@ pub fn route(m: *Model, segs: []const Seg, logits: Logits) !?[]const f32 {
     c.count += 1;
     c.next = sg.p0 + rows;
     if (!final) return out;
+    if (c.hold) {
+        c.replaying = true;
+        c.lo_next = c.d;
+        c.held = true;
+        return out;
+    }
     return try replay(m, logits);
+}
+
+/// A prompt's last chunk: its encoder half now and, with the yield on, the replay held for `heldStep`; true: the replay ran too (no cone run).
+pub fn lastChunk(m: *Model, slot: u32, ids: []const u32) !bool {
+    const c = &m.cone;
+    c.hold = yieldOn(m);
+    c.held = false;
+    defer {
+        c.hold = false;
+        c.held = false;
+    }
+    _ = try m.forwardOn(slot, ids, .last);
+    return !c.held;
+}
+
+fn yieldOn(m: *Model) bool {
+    if (m.cone.yield) |v| return v;
+    const v = (@import("sys").environment.read(u32, "TF_DSV41_CONE_YIELD", 1) catch 1) != 0;
+    m.cone.yield = v;
+    return v;
+}
+
+/// Whether `slot`'s run has a held replay: its last chunk went through the encoder half and the decoder programs wait for `heldStep`.
+pub fn replaying(m: *const Model, slot: u32) bool {
+    return held(&m.cone, slot);
+}
+
+fn held(c: *const Cone, slot: u32) bool {
+    if (c.pending and c.slot == slot) return c.replaying;
+    for (c.parked) |p| if (p.used and p.slot == slot) return p.replaying;
+    return false;
+}
+
+/// The next held replay program of `slot`'s run, the last one with the first token's logits; true once the run has ended.
+pub fn heldStep(m: *Model, slot: u32) !bool {
+    const c = &m.cone;
+    if (!replaying(m, slot)) return error.NoHeldReplay;
+    _ = activate(c, slot); // its own run is active or parked: no parking place is needed
+    var out: []const f32 = undefined;
+    return replayFrom(m, .last, true, &out);
 }
 
 /// The decoder layers over the stashed rows, in programs of consecutive layers, ending the pending run.
 pub fn replay(m: *Model, logits: Logits) ![]const f32 {
+    var out: []const f32 = m.workspace.logits(0);
+    _ = try replayFrom(m, logits, false, &out);
+    return out;
+}
+
+/// All the programs, or with `one` the next one; true once the run has ended. A held replay continues at `lo_next`.
+fn replayFrom(m: *Model, logits: Logits, one: bool, out: *[]const f32) !bool {
     const c = &m.cone;
     const end = c.next;
     const state = &m.caches[c.slot];
-    c.pending = false;
     c.phase = .decoder;
     defer c.phase = .off;
-    defer c.count = 0;
-    var out: []const f32 = m.workspace.logits(0);
-    var lo = c.d;
+    errdefer {
+        c.pending = false;
+        c.replaying = false;
+        c.count = 0;
+    }
+    var lo = if (c.replaying) c.lo_next else c.d;
     while (lo < m.cfg.layers) {
         c.lo = lo;
         c.hi = programEnd(m, lo, end);
-        defer lo = c.hi;
         const start = replayStart(end, c.first, rowsIn(m, lo));
         const final = c.hi == m.cfg.layers;
         for (c.chunks[0..c.count], 0..) |ch, i| {
@@ -203,12 +269,21 @@ pub fn replay(m: *Model, logits: Logits) ![]const f32 {
             var ids: [cap]u32 = undefined;
             for (0..b - a) |k| ids[k] = c.ids[(a + k) % cap];
             const last = final and i + 1 == c.count;
-            out = try impl.forwardCore(m, &.{.{ .slot = c.slot, .ids = ids[0 .. b - a], .p0 = a }}, if (last) logits else .none);
+            out.* = try impl.forwardCore(m, &.{.{ .slot = c.slot, .ids = ids[0 .. b - a], .p0 = a }}, if (last) logits else .none);
             // the ring's base is the full pass's chunk start, not the replay's
             if (final and model.tapsOn() and model.tapsSharedBaseOn()) m.taps_base = if (model.condAlignOn()) ch.pos % 128 else row0;
         }
+        lo = c.hi;
+        if (one and lo < m.cfg.layers) {
+            c.replaying = true;
+            c.lo_next = lo;
+            return false;
+        }
     }
-    return out;
+    c.pending = false;
+    c.replaying = false;
+    c.count = 0;
+    return true;
 }
 
 /// Where the decoder program that starts at layer `lo` ends: the next index source below the drafter's tap layers.
@@ -243,6 +318,8 @@ fn swapRun(c: *Cone, p: *Parked) void {
     std.mem.swap(u32, &c.slot, &p.slot);
     std.mem.swap(u32, &c.first, &p.first);
     std.mem.swap(u32, &c.next, &p.next);
+    std.mem.swap(bool, &c.replaying, &p.replaying);
+    std.mem.swap(u32, &c.lo_next, &p.lo_next);
 }
 
 /// Makes `slot`'s run the active one (or none: a new run may start); another prompt's run parks; false: no place.
@@ -284,9 +361,13 @@ pub fn drop(m: *Model, slot: u32) void {
 }
 
 fn dropRuns(c: *Cone, slot: u32) void {
-    if (c.pending and c.slot == slot) c.pending = false;
+    if (c.pending and c.slot == slot) {
+        c.pending = false;
+        c.replaying = false;
+    }
     for (&c.parked) |*p| if (p.used and p.slot == slot) {
         p.used = false;
+        p.replaying = false;
     };
 }
 
@@ -421,4 +502,23 @@ test "a prompt's run parks behind another's and comes back with its own chunks" 
         c.slot = other;
     }
     try std.testing.expect(!activate(&c, 99));
+}
+
+test "a held replay keeps its place while another prompt's run takes the stash, and a drop forgets it" {
+    var c: Cone = .{};
+    try std.testing.expect(activate(&c, 1));
+    c.pending = true;
+    c.slot = 1;
+    c.replaying = true;
+    c.lo_next = 28;
+    try std.testing.expect(held(&c, 1) and !held(&c, 2));
+    // prompt 2's chunk parks prompt 1's held replay; it is still held, and comes back at the same layer
+    try std.testing.expect(activate(&c, 2));
+    c.pending = true;
+    c.slot = 2;
+    try std.testing.expect(held(&c, 1) and !held(&c, 2));
+    try std.testing.expect(activate(&c, 1));
+    try std.testing.expect(c.replaying and c.lo_next == 28 and !held(&c, 2));
+    dropRuns(&c, 1);
+    try std.testing.expect(!held(&c, 1) and !c.replaying);
 }

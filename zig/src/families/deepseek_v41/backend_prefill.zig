@@ -37,6 +37,15 @@ pub fn step(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
     if (prompt.len == 0) return error.EmptyPrompt;
     const i = b.by.get(s) orelse try begin(b, s, prompt);
     if (s.isCancelled()) return error.Cancelled;
+    // THE LAST CHUNK'S REPLAY, HELD: one decoder program a call, the other streams' rounds between, then the first token.
+    if (ds.forward_cone.replaying(b.model, i)) {
+        if (!try ds.forward_cone.heldStep(b.model, i)) return false;
+        b.first[i] = try b.draw(i, s, @intCast(prompt.len));
+        const done: u32 = @intCast(prompt.len);
+        if (s.reuse.hook) |hook| if (std.mem.indexOfScalar(u32, s.reuse.marks, done) != null) hook.at(hook.ptr, s, done);
+        s.fill_at.store(done, .monotonic);
+        return true;
+    }
     const at: u32 = b.model.caches[i].position;
     const plan_rows = b.model.workspace.plan.rows;
     const rows = if (max_rows != 0) @min(plan_rows, max_rows) else plan_rows;
@@ -55,7 +64,11 @@ pub fn step(ptr: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
     var merge: u32 = if (snap_at > at and snap_at < end and end - at >= 64) snap_at else 0;
     if (merge != 0 and !b.model.beginSnapTail(i, prompt[@max(0, @as(usize, merge) - 4)..merge], merge, at)) merge = 0;
     if (last) {
-        _ = try b.model.forwardOn(i, prompt[at..end], .last);
+        // the encoder half now; with the cone's replay held, the call ends here and `heldStep` finishes the prompt
+        if (!try ds.forward_cone.lastChunk(b.model, i, prompt[at..end])) {
+            s.fill_at.store(end, .monotonic);
+            return false;
+        }
         b.first[i] = try b.draw(i, s, @intCast(prompt.len));
     } else {
         _ = try b.model.forwardOn(i, prompt[at..end], .none);

@@ -152,6 +152,7 @@ These controls use the shared parser. Empty or whitespace-only values keep the d
 | `TF_DSV41_MTP_DRAFTS` | `0` or `1`; default `0`. Enables the trained Metal drafter without requiring lookup drafts; `0` disables it. |
 | `TF_DSV41_CONE` | `0`, `1` or `2`; default `2`. Zero uses the full forward, one uses one replay program, two uses layer groups. |
 | `TF_DSV41_CONE_PARK` | Whole count `0` through `3`; default `3`. Other prompts' pending encoder runs retained beside the active run. |
+| `TF_DSV41_CONE_YIELD` | `0` or `1`; default `1`. A prompt's last chunk runs its encoder half in one call and its decoder replay a program a call, so other streams' rounds run between the programs; `0` replays at once. |
 
 Unset `TF_DSV41_PREFILL_STEP` tries 8192 workspace rows and falls back to 4096 only on memory admission refusal.
 The admitted wide workspace uses chunks of at most 4096 rows while another stream decodes.
