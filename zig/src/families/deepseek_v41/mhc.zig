@@ -59,7 +59,10 @@ pub const Pipelines = struct {
 /// The fused boundary (kernels/metal/deepseek_v41/hc_boundary.metal): expand+mix+squares in one pass over the streams.
 pub const BoundaryPipelines = struct {
     expand_mix: mtl.Pipeline,
+    /// The same partials and expand on four mixes a threadgroup (a decode row's boundary fills the GPU).
+    expand_mix_groups: mtl.Pipeline,
     mix_part: mtl.Pipeline,
+    mix_groups: mtl.Pipeline,
     boundary: mtl.Pipeline,
     plain: mtl.Pipeline,
     /// The launch-overhead probe (a dependent, work-free dispatch).
@@ -76,8 +79,12 @@ pub const BoundaryPipelines = struct {
         defer lib.deinit();
         const expand_mix = try mtl.Pipeline.init(device, lib, "tf_hc_expand_mix", false);
         errdefer expand_mix.deinit();
+        const expand_mix_groups = try mtl.Pipeline.init(device, lib, "tf_hc_expand_mix_groups", false);
+        errdefer expand_mix_groups.deinit();
         const mix_part = try mtl.Pipeline.init(device, lib, "tf_hc_mix_part", false);
         errdefer mix_part.deinit();
+        const mix_groups = try mtl.Pipeline.init(device, lib, "tf_hc_first_mix_groups", false);
+        errdefer mix_groups.deinit();
         const boundary = try mtl.Pipeline.init(device, lib, "tf_hc_boundary_mix", false);
         errdefer boundary.deinit();
         const plain = try mtl.Pipeline.init(device, lib, "tf_hc_boundary_plain", false);
@@ -90,7 +97,9 @@ pub const BoundaryPipelines = struct {
             sinks[made] = try device.buffer(256, mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked);
         return .{
             .expand_mix = expand_mix,
+            .expand_mix_groups = expand_mix_groups,
             .mix_part = mix_part,
+            .mix_groups = mix_groups,
             .boundary = boundary,
             .plain = plain,
             .probe = probe,
@@ -100,7 +109,9 @@ pub const BoundaryPipelines = struct {
     }
     pub fn deinit(p: *BoundaryPipelines) void {
         p.expand_mix.deinit();
+        p.expand_mix_groups.deinit();
         p.mix_part.deinit();
+        p.mix_groups.deinit();
         p.boundary.deinit();
         p.plain.deinit();
         p.probe.deinit();
@@ -111,19 +122,29 @@ pub const BoundaryPipelines = struct {
 /// The boundary's fixed shape: the streams' width, the split's eps and iteration count, the partial sums a row.
 pub const boundary_width: u32 = 5120;
 pub const boundary_slices: u32 = 20;
-pub const Boundary = struct { rows: u32, expand: bool, mixes: bool = true, eps: f32, hc_eps: f32, iters: u32 };
-/// One boundary: expand the pending branch into `x_new` (or the mixes of `x_old` alone).
+/// The mix projection's threadgroups a slice with the mixes split four to a group (24 mixes, six groups).
+pub const mix_parts_groups: u32 = 6;
+/// The rows a boundary's mixes take six groups a slice: a decode window, where 20 threadgroups leave the GPU idle.
+pub const mix_groups_rows: u32 = 4;
+pub const Boundary = struct { rows: u32, expand: bool, mixes: bool = true, eps: f32, hc_eps: f32, iters: u32, groups: bool = true };
+/// `groups`: take the six-group mixes whenever the rows allow (TF_DSV41_HC_MIX_PARTS=0 keeps one).
 pub fn encodeBoundary(e: mtl.ComputeEncoder, p: *const BoundaryPipelines, d: Boundary, v: anytype) void {
     const expand_passes: u32 = if (std.c.getenv("TF_DSV41_DOUBLE_HC_EXPAND") != null) 2 else 1;
+    const groups = d.groups and d.rows <= mix_groups_rows and mixPartsOn();
     for (0..expand_passes) |_| {
         if (d.expand) {
-            e.setPipeline(p.expand_mix);
+            e.setPipeline(if (groups) p.expand_mix_groups else p.expand_mix);
             inline for (.{ v.x_old, v.branch, v.post, v.comb, v.fn_, v.part, v.x_new }, 0..) |r, i| e.setBuffer(r.buffer, r.offset, i);
-            e.dispatchGroups(.{ .width = 20, .height = d.rows }, .{ .width = 256 });
+            e.dispatchGroups(.{ .width = boundary_slices, .height = d.rows, .depth = if (groups) mix_parts_groups else 1 }, .{ .width = 256 });
+        } else if (groups) {
+            // The grouped call keeps the expand's seven slots; it reads only X, hc_fn and the partials it writes.
+            e.setPipeline(p.mix_groups);
+            inline for (.{ v.x_old, v.branch, v.post, v.comb, v.fn_, v.part, v.x_new }, 0..) |r, i| e.setBuffer(r.buffer, r.offset, i);
+            e.dispatchGroups(.{ .width = boundary_slices, .height = d.rows, .depth = mix_parts_groups }, .{ .width = 256 });
         } else {
             e.setPipeline(p.mix_part);
             inline for (.{ v.x_old, v.fn_, v.part }, 0..) |r, i| e.setBuffer(r.buffer, r.offset, i);
-            e.dispatchGroups(.{ .width = 20, .height = d.rows }, .{ .width = 256 });
+            e.dispatchGroups(.{ .width = boundary_slices, .height = d.rows }, .{ .width = 256 });
         }
     }
     // THE LAUNCH-OVERHEAD PROBE: work-free dependent dispatches, whose slope is the GPU's dispatch latency.
@@ -156,6 +177,14 @@ pub fn encodeBoundary(e: mtl.ComputeEncoder, p: *const BoundaryPipelines, d: Bou
     e.barrier();
 }
 pub const BoundaryArgs = extern struct { eps: f32, hc_eps: f32, iters: i32 };
+
+/// The six-group mixes' setting (TF_DSV41_HC_MIX_PARTS, default on) and the probe's own.
+var mix_parts_flag: ?bool = null;
+pub fn mixPartsOn() bool {
+    if (mix_parts_flag == null)
+        mix_parts_flag = @import("sys").environment.read(bool, "TF_DSV41_HC_MIX_PARTS", true) catch true;
+    return mix_parts_flag.?;
+}
 
 /// The probe's dispatch count (zero = off) and its threadgroup size.
 var probe_count: ?u32 = null;

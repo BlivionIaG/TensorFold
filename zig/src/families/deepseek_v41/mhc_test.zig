@@ -207,3 +207,104 @@ test "V4.1 hyperconnections preserve FP32 products and residual boundaries under
     try done(branch_cb, branch_enc);
     try std.testing.expectEqual(bf(0x1p-21), output.slice(u16, 8)[0]);
 }
+
+test "V4.1 boundary mixes on six groups a slice keep the single group's bits at a decode window's rows" {
+    const device = mtl.Device.init() catch return error.SkipZigTest;
+    defer device.deinit();
+    const pool = mtl.objc.Pool.push();
+    defer pool.pop();
+    const queue = try device.queue();
+    defer queue.deinit();
+    var p = try mhc.BoundaryPipelines.load(device);
+    defer p.deinit();
+    const width = mhc.boundary_width;
+    const stream = 4 * width;
+    const slices = mhc.boundary_slices;
+    const parts = 25;
+    for (1..5) |nrows| {
+        const rows: u32 = @intCast(nrows);
+        var b = Buffers{ .device = device };
+        defer b.deinit();
+        const x_old = try b.get(u16, rows * stream);
+        const branch = try b.get(u16, rows * width);
+        const post = try b.get(f32, rows * 4);
+        const comb = try b.get(f32, rows * 16);
+        const fn_ = try b.get(f32, 25 * stream);
+        const base = try b.get(f32, 24);
+        const scale = try b.get(f32, 3);
+        const pre_in = try b.get(f32, rows * 4);
+        const norm = try b.get(u16, width);
+        for (x_old.slice(u16, rows * stream), 0..) |*v, i| v.* = bf(@as(f32, @floatFromInt(i % 401)) / 200.0 - 1.0);
+        for (branch.slice(u16, rows * width), 0..) |*v, i| v.* = bf(@as(f32, @floatFromInt((i * 7) % 101)) / 50.0 - 1.0);
+        for (post.slice(f32, rows * 4), 0..) |*v, i| v.* = @as(f32, @floatFromInt(i % 5)) * 0.125 - 0.25;
+        for (comb.slice(f32, rows * 16), 0..) |*v, i| v.* = @as(f32, @floatFromInt((i * 3) % 7)) * 0.0625 - 0.1875;
+        for (fn_.slice(f32, 25 * stream), 0..) |*v, i| v.* = @as(f32, @floatFromInt(i % 19)) * 0.00390625 - 0.03125;
+        for (base.slice(f32, 24), 0..) |*v, i| v.* = @as(f32, @floatFromInt(i % 4)) * 0.25 - 0.375;
+        @memcpy(scale.slice(f32, 3), &[_]f32{ 0.5, -0.75, 1.25 });
+        for (pre_in.slice(f32, rows * 4), 0..) |*v, i| v.* = @as(f32, @floatFromInt(i % 3)) * 0.25;
+        for (norm.slice(u16, width), 0..) |*v, i| v.* = bf(0.5 + @as(f32, @floatFromInt(i % 11)) * 0.125);
+        const Arm = struct { part: mtl.Buffer, x_new: mtl.Buffer, pre: mtl.Buffer, post: mtl.Buffer, comb: mtl.Buffer, normed: mtl.Buffer };
+        var outs: [2]Arm = undefined;
+        for (&outs, 0..) |*o, arm| {
+            o.* = .{
+                .part = try b.get(f32, rows * slices * parts),
+                .x_new = try b.get(u16, rows * stream),
+                .pre = try b.get(f32, rows * 4),
+                .post = try b.get(f32, rows * 4),
+                .comb = try b.get(f32, rows * 16),
+                .normed = try b.get(u16, rows * width),
+            };
+            const cb = queue.commandBuffer();
+            const e = cb.compute(.serial);
+            mhc.encodeBoundary(e, &p, .{ .rows = rows, .expand = true, .eps = 1e-6, .hc_eps = 1e-6, .iters = 20, .groups = arm == 1 }, .{
+                .x_old = view(x_old),
+                .x_new = view(o.x_new),
+                .branch = view(branch),
+                .post = view(post),
+                .comb = view(comb),
+                .fn_ = view(fn_),
+                .part = view(o.part),
+                .base = view(base),
+                .scale = view(scale),
+                .pre_in = view(pre_in),
+                .norm = view(norm),
+                .normed = view(o.normed),
+                .pre_out = view(o.pre),
+                .post_out = view(o.post),
+                .comb_out = view(o.comb),
+            });
+            try done(cb, e);
+        }
+        try std.testing.expectEqualSlices(f32, outs[0].part.slice(f32, rows * slices * parts), outs[1].part.slice(f32, rows * slices * parts));
+        try std.testing.expectEqualSlices(u16, outs[0].x_new.slice(u16, rows * stream), outs[1].x_new.slice(u16, rows * stream));
+        try std.testing.expectEqualSlices(f32, outs[0].pre.slice(f32, rows * 4), outs[1].pre.slice(f32, rows * 4));
+        try std.testing.expectEqualSlices(f32, outs[0].post.slice(f32, rows * 4), outs[1].post.slice(f32, rows * 4));
+        try std.testing.expectEqualSlices(f32, outs[0].comb.slice(f32, rows * 16), outs[1].comb.slice(f32, rows * 16));
+        try std.testing.expectEqualSlices(u16, outs[0].normed.slice(u16, rows * width), outs[1].normed.slice(u16, rows * width));
+        // The mixes of a stream with no pending branch take the same six groups.
+        for (&outs, 0..) |*o, arm| {
+            @memset(o.part.slice(f32, rows * slices * parts), 0);
+            const cb = queue.commandBuffer();
+            const e = cb.compute(.serial);
+            mhc.encodeBoundary(e, &p, .{ .rows = rows, .expand = false, .eps = 1e-6, .hc_eps = 1e-6, .iters = 20, .groups = arm == 1 }, .{
+                .x_old = view(x_old),
+                .x_new = view(o.x_new),
+                .branch = view(branch),
+                .post = view(post),
+                .comb = view(comb),
+                .fn_ = view(fn_),
+                .part = view(o.part),
+                .base = view(base),
+                .scale = view(scale),
+                .pre_in = view(pre_in),
+                .norm = view(norm),
+                .normed = view(o.normed),
+                .pre_out = view(o.pre),
+                .post_out = view(o.post),
+                .comb_out = view(o.comb),
+            });
+            try done(cb, e);
+        }
+        try std.testing.expectEqualSlices(f32, outs[0].part.slice(f32, rows * slices * parts), outs[1].part.slice(f32, rows * slices * parts));
+    }
+}
