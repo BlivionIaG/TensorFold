@@ -109,12 +109,6 @@ pub const Model = struct {
     taps_rows_last: u32 = 0,
     /// The rows of the LAST tap capture that are valid (0 = all of them).
     taps_rows_valid: u32 = 0,
-    /// The adaptive depth policy's signal -- the accepted drafts a round, smoothed.
-    mtp_accept_slot: [32]f64 = @splat(0.0),
-    mtp_accept_seen_slot: [32]u32 = @splat(0),
-    /// The round's per-draft acceptance (kept/offered), the hybrid policy's stay-deep signal.
-    mtp_round_slot: [32]f64 = @splat(0.0),
-    mtp_round_seen_slot: [32]u32 = @splat(0),
     /// The ring's write row for the CURRENT forward.
     taps_base: u32 = 0,
     /// The 128-row conditioning scratch (rows x 5120 bf16) and its packed keys (rows x 528), allocated with the taps.
@@ -408,26 +402,6 @@ pub const Model = struct {
         }
     };
 
-    /// The adaptive depth policy's warm-up cache: a running mean over the first `k` samples, then the shipped EMA.
-    pub var mtp_warm_cache: ?u32 = null;
-    pub fn mtpWarmRounds() u32 {
-        return model_drafter.mtpWarmRounds();
-    }
-    pub fn noteAcceptSlot(m: *Model, slot: u32, hit: bool) void {
-        model_drafter.noteAcceptSlot(m, slot, hit);
-    }
-    pub fn noteAcceptRatioSlot(m: *Model, slot: u32, ratio: f64) void {
-        model_drafter.noteAcceptRatioSlot(m, slot, ratio);
-    }
-    pub fn mtpRoundSlot(m: *Model, slot: u32) f64 {
-        return model_drafter.mtpRoundSlot(m, slot);
-    }
-    pub fn mtpAcceptSlot(m: *Model, slot: u32) f64 {
-        return model_drafter.mtpAcceptSlot(m, slot);
-    }
-    pub fn resetAcceptSlot(m: *Model, slot: u32) void {
-        model_drafter.resetAcceptSlot(m, slot);
-    }
     pub fn proposeTokens(m: *Model, slot: u32, pending: u32, count: u32) ![4]u32 {
         return model_propose.proposeTokens(m, slot, pending, count);
     }

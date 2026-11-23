@@ -2,6 +2,7 @@
 
 pub const costs = @import("costs.zig");
 pub const Costs = costs.Costs;
+pub const mtp_cost = @import("mtp_cost.zig");
 pub const calib = @import("calib.zig");
 pub const joint = @import("joint.zig");
 pub const depth = @import("depth.zig");
@@ -24,6 +25,7 @@ pub const spec = @import("spec.zig");
 test {
     _ = @import("ownership_test.zig");
     _ = costs;
+    _ = mtp_cost;
     _ = calib;
     _ = joint;
     _ = depth;

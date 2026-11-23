@@ -11,21 +11,10 @@ const RING = 1024;
 
 /// The verify's greedy sample. TF_DSV41_FAST_ARGMAX=0 is the scalar control; unset is the fast form.
 const policy = @import("backend_policy.zig");
+const mtp_cost = @import("draft/mtp_cost.zig");
 const MtpCache = policy.MtpCache;
 const fastArgmax = policy.fastArgmax;
 const noRefeedOn = policy.noRefeedOn;
-const draftRowsFollowWindow = policy.draftRowsFollowWindow;
-const roundSignalMode = policy.roundSignalMode;
-const roundSignalOn = policy.roundSignalOn;
-const mtpConfirmRounds = policy.mtpConfirmRounds;
-const mtpRatchetDown = policy.mtpRatchetDown;
-const draftOffArmed = policy.draftOffArmed;
-const draftOffBelow = policy.draftOffBelow;
-const draftOffAfter = policy.draftOffAfter;
-const draftOffGateCtx = policy.draftOffGateCtx;
-const draftOffLow = policy.draftOffLow;
-const draftOffAfterFor = policy.draftOffAfterFor;
-const draftGovernorOff = policy.draftGovernorOff;
 
 pub const Backend = struct {
     gpa: std.mem.Allocator,
@@ -43,22 +32,10 @@ pub const Backend = struct {
     mtp_cache: [32]?MtpCache = @splat(null),
     /// What the last verify sampled per row, so a rejected window's re-feed can be compared with it.
     last_sampled: [8]u32 = @splat(0),
-    /// The depth each slot's last round RAN -- the adaptive policy's state.
-    last_depth: []u32,
-    /// Consecutive rounds the up-condition has held, for the confirmed switch-up.
-    up_streak: []u32,
-    /// The last window's kept/offered, for the round-acceptance signal.
-    keep_pending: []bool,
-    keep_ratio: []f64,
-    /// The ratchet's per-slot state -- the request has fallen back to the shallow window.
-    shallow: []bool,
-    low_streak: []u32,
-    /// The drafting governor's per-slot state -- the rounds this request has completed, the tokens they committed.
-    gov_rounds: []u32,
-    gov_committed: []u32,
-    gov_rows: []u32,
-    gov_kept: []u32,
-    gov_off: []bool,
+    /// The depth policy: the rounds' own ms and landed drafts, and this round's choice a slot.
+    mtp: mtp_cost.Policy = .{},
+    depth_now: [32]u32 = @splat(policy.unset),
+    src_now: [32]mtp_cost.Source = @splat(.trained),
     /// The current window's presence/frequency counts (the reply before it plus the row's path).
     pen_counts: std.AutoHashMapUnmanaged(u32, u32) = .empty,
     pen_row: []f32 = &.{},
@@ -69,45 +46,13 @@ pub const Backend = struct {
     pub const draft = run.draft;
     pub const tree = run.tree;
     pub const release = run.release;
-    pub const adaptiveDepth = policy.mtpDepthFor;
+    pub const depthFor = policy.mtpDepthFor;
+    pub const Offer = policy.Offer;
 
     pub fn init(gpa: std.mem.Allocator, model: *ds.Model) !Backend {
         const held = try gpa.alloc([]u32, model.lanes);
         for (held) |*h| h.* = &.{};
-        const last_depth = try gpa.alloc(u32, model.lanes);
-        @memset(last_depth, 0);
-        const up_streak = try gpa.alloc(u32, model.lanes);
-        @memset(up_streak, 0);
-        const keep_pending = try gpa.alloc(bool, model.lanes);
-        @memset(keep_pending, false);
-        const keep_ratio = try gpa.alloc(f64, model.lanes);
-        @memset(keep_ratio, 1.0);
-        const shallow = try gpa.alloc(bool, model.lanes);
-        @memset(shallow, false);
-        const low_streak = try gpa.alloc(u32, model.lanes);
-        @memset(low_streak, 0);
-        const gov_rounds = try gpa.alloc(u32, model.lanes);
-        @memset(gov_rounds, 0);
-        const gov_committed = try gpa.alloc(u32, model.lanes);
-        @memset(gov_committed, 0);
-        const gov_rows = try gpa.alloc(u32, model.lanes);
-        @memset(gov_rows, 0);
-        const gov_kept = try gpa.alloc(u32, model.lanes);
-        @memset(gov_kept, 0);
-        const gov_off = try gpa.alloc(bool, model.lanes);
-        @memset(gov_off, false);
         return .{
-            .last_depth = last_depth,
-            .up_streak = up_streak,
-            .keep_pending = keep_pending,
-            .keep_ratio = keep_ratio,
-            .shallow = shallow,
-            .low_streak = low_streak,
-            .gov_rounds = gov_rounds,
-            .gov_committed = gov_committed,
-            .gov_rows = gov_rows,
-            .gov_kept = gov_kept,
-            .gov_off = gov_off,
             .gpa = gpa,
             .model = model,
             .first = try gpa.alloc(u32, model.lanes),
@@ -122,17 +67,6 @@ pub const Backend = struct {
         b.gpa.free(b.verify_len);
         for (b.held) |h| if (h.len > 0) b.gpa.free(h);
         b.gpa.free(b.held);
-        b.gpa.free(b.last_depth);
-        b.gpa.free(b.up_streak);
-        b.gpa.free(b.keep_pending);
-        b.gpa.free(b.keep_ratio);
-        b.gpa.free(b.shallow);
-        b.gpa.free(b.low_streak);
-        b.gpa.free(b.gov_rounds);
-        b.gpa.free(b.gov_committed);
-        b.gpa.free(b.gov_rows);
-        b.gpa.free(b.gov_kept);
-        b.gpa.free(b.gov_off);
         b.pen_counts.deinit(b.gpa);
         if (b.pen_row.len > 0) b.gpa.free(b.pen_row);
     }

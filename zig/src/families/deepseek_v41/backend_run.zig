@@ -1,5 +1,6 @@
 //! The backend's heavy vtable entries: verify, keep, draft, tree and release.
 const std = @import("std");
+const mtl = @import("metal");
 const ds = @import("model_metal.zig");
 const lanes = @import("lanes");
 const be = lanes.backend;
@@ -20,15 +21,15 @@ const policy = @import("backend_policy.zig");
 const fastArgmax = policy.fastArgmax;
 const lookupTokens = policy.lookupTokens;
 const noRefeedOn = policy.noRefeedOn;
-const draftRowsFollowWindow = policy.draftRowsFollowWindow;
-const roundSignalMode = policy.roundSignalMode;
-const mtpConfirmRounds = policy.mtpConfirmRounds;
-const mtpRatchetDown = policy.mtpRatchetDown;
 const mtpDepthMax = policy.mtpDepthMax;
-const draftGovernorOff = policy.draftGovernorOff;
+const lookupDepth = policy.lookupDepth;
+const mtpDepthFor = policy.mtpDepthFor;
+const Offer = policy.Offer;
 
 pub fn verify(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) anyerror!void {
     const b = self(ptr);
+    // A solo round's ms is what the depth policy prices; a shared round's rows are another machine's question.
+    const t0: ?f64 = if (windows.len == 1) mtl.clock.seconds() else null;
     for (windows) |w| {
         if (w.parents != null or w.early or w.masks.len > 0) return error.TreeWindowsUnsupported;
     }
@@ -225,37 +226,8 @@ pub fn verify(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) a
             std.log.info("treeprice verify round {d} rows {d} held {d} pending {d} sampled {any}", .{ ds.price_round, rows, w.held, w.pending, o.sampled[0..rows] });
             ds.price_round += 1;
         }
-        // THE ADAPTIVE DEPTH POLICY'S SIGNAL, FED FROM THE VERIFY: row 1 is the first draft's acceptance.
-        const first_draft: ?u32 = if (w.held > 0)
-            (if (held.len > 0) held[0] else null)
-        else if (w.tokens.len > 0)
-            w.tokens[0]
-        else
-            null;
-        // THE ACCEPTANCE TEST IS THE ENGINE'S OWN (core/lanes/accept.zig's acceptPath).
-        const hit_dbg: bool = rows > 1 and first_draft != null and o.sampled[0] == first_draft.?;
-        // The signal: the previous window's outcome, one round lagged; a whole window landing reads 1.0.
-        if (i < b.gov_rounds.len) {
-            if (b.gov_rows[i] > 0) {
-                b.gov_rounds[i] += 1;
-                b.gov_committed[i] += if (b.keep_pending[i]) b.gov_kept[i] else b.gov_rows[i];
-            }
-            b.gov_rows[i] = @intCast(rows);
-        }
-        const ratio: f64 = if (b.keep_pending[i]) b.keep_ratio[i] else 1.0;
-        b.keep_pending[i] = false;
-        // The ratchet: only a deep round can ratchet, and two in a row below the crossover go shallow.
-        const ratchet_down = mtpRatchetDown();
-        if (ratchet_down > 0 and i < b.shallow.len and b.last_depth[i] > 1) {
-            if (ratio < ratchet_down) b.low_streak[i] += 1 else b.low_streak[i] = 0;
-            if (b.low_streak[i] >= 2) b.shallow[i] = true;
-        }
-        b.model.noteAcceptRatioSlot(i, ratio);
-        if (roundSignalMode() != 1) b.model.noteAcceptSlot(i, hit_dbg);
-        if (std.c.getenv("TF_DSV41_MTP_ADAPT_DEBUG") != null) std.log.info(
-            "mtp policy: slot {d} held {d} rows {d} sampled0 {d} first {d} hit {} signal {d:.4}",
-            .{ i, w.held, rows, if (rows > 1) o.sampled[0] else 0, if (first_draft) |f| f else 0, hit_dbg, b.model.mtpAcceptSlot(i) },
-        );
+        // The round's own ms by its rows: the depth policy's cost side.
+        if (t0) |t| b.mtp.noteRound(@intCast(rows), (mtl.clock.seconds() - t) * 1e3);
         // The window's fed tokens after the pending one landed: the verified drafts, GLM's contract.
         if (o.drafts.len > 0) @memcpy(o.drafts, feeds[1 .. 1 + o.drafts.len]);
         @memcpy(b.last_sampled[0..rows], o.sampled[0..rows]);
@@ -268,10 +240,10 @@ pub fn keep(ptr: *anyopaque, windows: []const be.Window, paths: []const []const 
         const i = try b.slotOf(w.stream);
         const rows = w.rows();
         const kept = path.len;
-        if (i < b.gov_kept.len) b.gov_kept[i] = @intCast(kept);
-        b.keep_pending[i] = true;
-        b.keep_ratio[i] = if (rows > 1) @as(f64, @floatFromInt(kept)) / @as(f64, @floatFromInt(rows - 1)) else 1.0;
-        // THE POLICY'S SIGNAL IS TAKEN WHERE THE KEPT COUNT IS KNOWN: portKeep missed the whole-window case.
+        // The drafts the window landed: a chain's kept rows past its pending one teach the policy its positions.
+        if (w.parents == null and w.masks.len == 0 and b.depth_now[i] != policy.unset and rows > 1)
+            b.mtp.noteLanded(b.src_now[i], kept -| 1, rows - 1);
+        b.depth_now[i] = policy.unset;
         if (kept >= rows) continue; // the whole window landed
         try b.model.rollbackSlot(i);
         // The ring rows the window's rejected rows published are aliases the next forward can still read.
@@ -309,137 +281,98 @@ pub fn keep(ptr: *anyopaque, windows: []const be.Window, paths: []const []const 
     }
 }
 
-/// Nothing to absorb: the lookup drafter reads the stream's own context each round.
+/// The next window's drafts: the stream's own suffix match when it has one, else the trained head's chain.
 pub fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
     const b = self(ptr);
     for (requests) |r| {
-        // What this call holds until drafts land: the engine plans the next window from this count.
+        // What this call holds, until drafts land: the engine plans its window from this count.
         r.stream.proposal_depth = 0;
         const i = b.by.get(r.stream) orelse continue;
         if (b.held[i].len > 0) b.gpa.free(b.held[i]);
         b.held[i] = &.{};
         if (r.depth == 0) continue;
-        if (draftGovernorOff(b, i)) {
-            // The switch must reach the lane planner, not only the held list.
-            r.stream.drafts = false;
-            continue;
-        }
-        const ctx = r.stream.context.items;
-        // Prefer a matching CPU suffix arm before paying for a trained forward.
-        var copied: [policy.max_lookup_drafts]u32 = undefined;
-        const lookup_cap = @min(r.depth, policy.lookupDepth());
-        const got = if (std.c.getenv("TF_DSV41_DRAFT_COPY") == null)
-            lookupTokens(ctx, copied[0..lookup_cap])
-        else
-            0;
-        if (got > 0) {
-            const out = try b.gpa.alloc(u32, r.depth);
-            @memcpy(out[0..got], copied[0..got]);
-            for (out[got..]) |*t| t.* = copied[got - 1];
-            b.held[i] = out;
-            r.stream.proposal_depth = r.depth;
-            continue;
-        }
-        // The trained proposer (TF_DSV41_MTP_DRAFTS) runs HERE, between rounds.
-        const last_tok: ?u32 = r.stream.pending orelse
-            (if (ctx.len > 0) ctx[ctx.len - 1] else null);
-        if (b.model.mtp_enabled and b.model.weights.dspark != null and
-            last_tok != null and r.depth <= mtpDepthMax())
-        mtp: {
-            // Both hooks reuse this pending token's proposal, bounded by the trained head's capacity.
-            const count = @min(mtpDepthMax(), if (draftRowsFollowWindow()) b.adaptiveDepth(@intCast(i)) else 3);
-            if (count == 0) break :mtp;
-            const drafts = b.model.proposeTokens(@intCast(i), last_tok.?, count) catch |err| {
-                std.log.warn("mtp: drafts unavailable ({s})", .{@errorName(err)});
-                break :mtp;
-            };
-            // The engine plans its window from r.depth, so the hand-off must always carry that many rows.
-            const out = try b.gpa.alloc(u32, r.depth);
-            const n = @min(r.depth, count);
-            @memcpy(out[0..n], drafts[0..n]);
-            for (out[n..]) |*t| t.* = drafts[n - 1];
-            b.held[i] = out;
-            r.stream.proposal_depth = r.depth;
-            // The round's other hook (tree) asks for the same drafts; keep them here.
-            if (i < b.mtp_cache.len) b.mtp_cache[i] = .{ .pending = last_tok.?, .drafts = drafts, .count = count };
-            continue;
-        }
-        // Diagnostic (TF_DSV41_DRAFT_COPY=1): every draft repeats the pending token, so a two-row window is [pending.
-        const want: usize = r.depth;
         if (std.c.getenv("TF_DSV41_DRAFT_COPY") != null) {
-            const out0 = try b.gpa.alloc(u32, want);
+            // Diagnostic: every draft repeats the pending token, so a two-row window is [pending, pending].
+            const out0 = try b.gpa.alloc(u32, r.depth);
             const pend = r.stream.pending orelse 0;
             for (out0) |*t| t.* = pend;
             b.held[i] = out0;
-            r.stream.proposal_depth = @intCast(want);
+            r.stream.proposal_depth = r.depth;
             continue;
         }
-        const out = try b.gpa.alloc(u32, want);
-        for (out) |*t| t.* = r.stream.pending orelse 0;
+        const ctx = r.stream.context.items;
+        // A matching CPU suffix arm comes before a trained forward: it costs no pass.
+        var copied: [policy.max_lookup_drafts]u32 = undefined;
+        const got = lookupTokens(ctx, copied[0..lookupDepth()]);
+        const last_tok: ?u32 = r.stream.pending orelse (if (ctx.len > 0) ctx[ctx.len - 1] else null);
+        const trained = b.model.mtp_enabled and b.model.weights.dspark != null and last_tok != null;
+        if (got == 0 and !trained) continue;
+        const offer: Offer = if (got > 0)
+            .{ .src = .lookup, .have = @intCast(got) }
+        else
+            .{ .src = .trained, .have = mtpDepthMax() };
+        const depth = mtpDepthFor(b, @intCast(i), offer);
+        if (depth == 0) continue;
+        // The pack's own depth decides, whatever the engine asked for; the count it holds rides the stream.
+        const n: usize = @min(depth, if (got > 0) got else mtpDepthMax());
+        const out = try b.gpa.alloc(u32, n);
+        if (got > 0) {
+            @memcpy(out, copied[0..n]);
+            b.held[i] = out;
+            r.stream.proposal_depth = @intCast(n);
+            continue;
+        }
+        const t0 = mtl.clock.seconds();
+        const drafts = b.model.proposeTokens(@intCast(i), last_tok.?, @intCast(n)) catch |err| {
+            std.log.warn("mtp: drafts unavailable ({s})", .{@errorName(err)});
+            b.gpa.free(out);
+            continue;
+        };
+        b.mtp.noteDraft((mtl.clock.seconds() - t0) * 1e3);
+        @memcpy(out, drafts[0..n]);
         b.held[i] = out;
-        r.stream.proposal_depth = @intCast(want);
+        r.stream.proposal_depth = @intCast(n);
+        // The round's other hook (tree) asks for the same drafts; keep them here.
+        if (i < b.mtp_cache.len) b.mtp_cache[i] = .{ .pending = last_tok.?, .drafts = drafts, .count = @intCast(n) };
     }
 }
 
-/// A suffix lookup drafter (TF_DSV41_LOOKUP_DRAFTS=<depth>).
+/// The next window's drafts as the engine's held tokens: the lookup's match, else the trained head's chain.
 pub fn tree(ptr: *anyopaque, s: *Stream, gpa: std.mem.Allocator) anyerror!?lanes.stream.Held {
     const b = self(ptr);
     // The proposer's forward needs the lane's slot (the trunk's key ring lives there).
     const slot_i = b.by.get(s) orelse return null;
-    if (draftGovernorOff(b, slot_i)) {
-        s.drafts = false;
-        return null;
-    }
-    var depth = policy.maxDraftDepth(b);
-    // THE ADAPTIVE DEPTH POLICY: yield from the accepted drafts selects the cheap depth-1 or the deep window.
-    const adapt_raw = std.c.getenv("TF_DSV41_MTP_ADAPT");
-    const adapt_off = adapt_raw != null and std.mem.eql(u8, std.mem.span(adapt_raw.?), "0");
-    if (!adapt_off) {
-        const prev: u32 = if (slot_i < b.last_depth.len) b.last_depth[slot_i] else 0;
-        depth = b.adaptiveDepth(slot_i);
-        // THE CONFIRMED SWITCH-UP: one sample is not a change of text, so the up-transition must hold `confirm` rounds.
-        const confirm = mtpConfirmRounds();
-        if (confirm > 1 and slot_i < b.up_streak.len) {
-            if (depth > 1 and prev < 2) {
-                b.up_streak[slot_i] += 1;
-                if (b.up_streak[slot_i] < confirm) depth = 1;
-            } else if (depth == 1) {
-                b.up_streak[slot_i] = 0;
-            }
-        }
-        if (slot_i < b.last_depth.len) b.last_depth[slot_i] = depth;
-        if (std.c.getenv("TF_DSV41_MTP_ADAPT_DEBUG") != null) std.log.info(
-            "mtp policy: slot {d} rate {d:.4} prev {d} depth {d} streak {d}",
-            .{ slot_i, b.model.mtpAcceptSlot(slot_i), prev, depth, if (slot_i < b.up_streak.len) b.up_streak[slot_i] else 0 },
-        );
-    }
-    if (depth == 0) return null;
     var copied: [policy.max_lookup_drafts]u32 = undefined;
-    const got = lookupTokens(s.context.items, copied[0..@min(depth, policy.lookupDepth())]);
-    if (got > 0) return .{ .count = @intCast(got), .tokens = try gpa.dupe(u32, copied[0..got]) };
-    // The trained proposer (TF_DSV41_MTP_DRAFTS) is the drafter when it is bound and has a pending token.
-    if (depth > 0 and b.model.mtp_enabled and b.model.weights.dspark != null and s.pending != null) {
-        // The round's other hook (draft) already ran the proposer's forward for this pending token.
-        const n: usize = @min(depth, mtpDepthMax());
-        var drafts: [4]u32 = undefined;
-        var cached = false;
-        if (slot_i < b.mtp_cache.len) if (b.mtp_cache[slot_i]) |c| if (c.pending == s.pending.? and c.count >= n) {
-            drafts = c.drafts;
-            cached = true;
-        };
-        if (!cached) {
-            drafts = b.model.proposeTokens(@intCast(slot_i), s.pending.?, @intCast(n)) catch |err| {
-                std.log.warn("mtp: proposer unavailable ({s})", .{@errorName(err)});
-                return null;
-            };
-        }
-        // The depth this round runs at, per slot: the adaptive policy's state.
-        if (slot_i < b.last_depth.len) b.last_depth[slot_i] = @intCast(n);
-        const out = try gpa.alloc(u32, n);
-        @memcpy(out, drafts[0..n]);
-        return .{ .count = @intCast(n), .tokens = out };
+    const got = lookupTokens(s.context.items, copied[0..lookupDepth()]);
+    const trained = b.model.mtp_enabled and b.model.weights.dspark != null and s.pending != null;
+    if (got == 0 and !trained) return null;
+    const offer: Offer = if (got > 0)
+        .{ .src = .lookup, .have = @intCast(got) }
+    else
+        .{ .src = .trained, .have = mtpDepthMax() };
+    const depth = mtpDepthFor(b, slot_i, offer);
+    if (depth == 0) return null;
+    if (got > 0) {
+        const n: usize = @min(depth, got);
+        return .{ .count = @intCast(n), .tokens = try gpa.dupe(u32, copied[0..n]) };
     }
-    return null;
+    // The round's other hook (draft) already ran the proposer's forward for this pending token.
+    const n: usize = @min(depth, mtpDepthMax());
+    var drafts: [4]u32 = undefined;
+    var cached = false;
+    if (slot_i < b.mtp_cache.len) if (b.mtp_cache[slot_i]) |c| if (c.pending == s.pending.? and c.count >= n) {
+        drafts = c.drafts;
+        cached = true;
+    };
+    if (!cached) {
+        drafts = b.model.proposeTokens(@intCast(slot_i), s.pending.?, @intCast(n)) catch |err| {
+            std.log.warn("mtp: proposer unavailable ({s})", .{@errorName(err)});
+            return null;
+        };
+    }
+    const out = try gpa.alloc(u32, n);
+    @memcpy(out, drafts[0..n]);
+    return .{ .count = @intCast(n), .tokens = out };
 }
 
 pub fn release(ptr: *anyopaque, s: *Stream) void {
@@ -450,18 +383,8 @@ pub fn release(ptr: *anyopaque, s: *Stream) void {
         b.held[i] = &.{};
     }
     const entry = b.by.fetchRemove(s) orelse return;
-    b.model.resetAcceptSlot(entry.value);
-    if (entry.value < b.last_depth.len) b.last_depth[entry.value] = 0;
-    if (entry.value < b.shallow.len) {
-        b.shallow[entry.value] = false;
-        b.low_streak[entry.value] = 0;
-    }
-    if (entry.value < b.gov_off.len) {
-        b.gov_off[entry.value] = false;
-        b.gov_rounds[entry.value] = 0;
-        b.gov_committed[entry.value] = 0;
-        b.gov_rows[entry.value] = 0;
-        b.gov_kept[entry.value] = 0;
-    }
+    if (entry.value < b.depth_now.len) b.depth_now[entry.value] = policy.unset;
+    // A request's workload is over: its chances start over, the machine's row costs stay.
+    b.mtp.reset();
     b.model.resetSlot(entry.value) catch {};
 }
