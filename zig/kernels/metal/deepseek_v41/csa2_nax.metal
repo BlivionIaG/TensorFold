@@ -346,23 +346,54 @@ inline bfloat dsv41_dense_at_off(int enc, uint off, device const ushort *dense, 
   }
 }
 
-// The same pass over only the compressed rows a one-row window actually reads: the picks name the positions.
-kernel void dsv41_dense_kv_picked(const device uchar *src [[buffer(0)]], device ushort *dense [[buffer(1)]],
-                                 constant DenseKv &d [[buffer(2)]], const device int *picks [[buffer(3)]],
-                                 uint2 gid [[thread_position_in_grid]]) {
-  if (gid.x >= d.rows || gid.y * 4 >= d.width) return;
-  const int pos = picks[gid.x];
-  if (pos < 0) return;
-  const device uchar *k = src + ulong(pos) * d.stride;
+// A decode layer's whole dense table in one dispatch: ring, this chunk, then the compressed rows (picks at one row).
+struct DenseKvAll { uint ring_rows, chunk_rows, comp_rows, width, ring_stride, chunk_stride, main_stride, window, comp_first, picked; };
+static_assert(sizeof(DenseKvAll) == 40, "DenseKvAll must mirror csa2.zig's DenseKvAll");
+kernel void dsv41_dense_kv_all(const device uchar *ring [[buffer(0)]], const device uchar *chunk [[buffer(1)]],
+                               const device uchar *main [[buffer(2)]], device ushort *dense [[buffer(3)]],
+                               constant DenseKvAll &d [[buffer(4)]], const device int *picks [[buffer(5)]],
+                               uint2 gid [[thread_position_in_grid]]) {
+  if (gid.y * 4 >= d.width) return;
   const uint dd = gid.y * 4;
-  device ushort *o = dense + ulong(d.first_row + uint(pos)) * d.width + dd;
+  uint row = gid.x, first;
+  const device uchar *k;
+  bool comp = false;
+  if (row < d.ring_rows) {
+    k = ring + ulong(row) * d.ring_stride;
+    first = 0;
+  } else {
+    row -= d.ring_rows;
+    if (row < d.chunk_rows) {
+      k = chunk + ulong(row) * d.chunk_stride;
+      first = d.window;
+    } else {
+      row -= d.chunk_rows;
+      if (row >= d.comp_rows) return;
+      comp = true;
+      if (d.picked != 0) {
+        const int p = picks[row];
+        if (p < 0) return;
+        row = uint(p);
+      }
+      k = main + ulong(row) * d.main_stride;
+      first = d.comp_first;
+    }
+  }
+  device ushort *o = dense + ulong(first + row) * d.width + dd;
   bfloat4 v;
-  const float s = dsv41_e4(k[d.width / 2 + (dd >> 4)]);
-  const uchar2 c = *(const device uchar2 *)(k + dd / 2);
-  v[0] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[0] & 15) * s)));
-  v[1] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[0] >> 4) * s)));
-  v[2] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[1] & 15) * s)));
-  v[3] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[1] >> 4) * s)));
+  if (!comp) {
+    const float s = as_type<float>(uint(k[d.width + (dd >> 5)]) << 23);
+    const uchar4 c = *(const device uchar4 *)(k + dd);
+    TF_UNROLL
+    for (short i = 0; i < 4; i++) v[i] = bfloat(dsv41_bf(dsv41_round(dsv41_e4(c[i]) * s)));
+  } else {
+    const float s = dsv41_e4(k[d.width / 2 + (dd >> 4)]);
+    const uchar2 c = *(const device uchar2 *)(k + dd / 2);
+    v[0] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[0] & 15) * s)));
+    v[1] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[0] >> 4) * s)));
+    v[2] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[1] & 15) * s)));
+    v[3] = bfloat(dsv41_bf(dsv41_round(dsv41_e2(c[1] >> 4) * s)));
+  }
   *(device bfloat4 *)o = v;
 }
 
