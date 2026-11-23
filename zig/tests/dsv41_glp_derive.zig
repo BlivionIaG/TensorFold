@@ -43,6 +43,7 @@ const Args = struct {
     mask: f32 = derive.mask_recommended,
     which: derive.rows = .last,
     limit: usize = std.math.maxInt(usize),
+    validation: ?[]const u8 = null,
     lo: u32 = 1,
     hi: u32 = std.math.maxInt(u32),
 };
@@ -55,7 +56,7 @@ fn parse(argv: []const [:0]const u8) !Args {
         if (i + 1 >= argv.len) return error.MissingValue;
         i += 1;
         const v = argv[i];
-        if (std.mem.eql(u8, arg, "--pack")) o.pack = v else if (std.mem.eql(u8, arg, "--out")) o.out = v else if (std.mem.eql(u8, arg, "--stream-dir")) o.stream_dir = v else if (std.mem.eql(u8, arg, "--token-map")) o.token_map = v else if (std.mem.eql(u8, arg, "--tokenizer")) o.tokenizer_path = v else if (std.mem.eql(u8, arg, "--receipt")) o.receipt = v else if (std.mem.eql(u8, arg, "--repo")) o.repo = v else if (std.mem.eql(u8, arg, "--revision")) o.revision = v else if (std.mem.eql(u8, arg, "--name")) o.name = v else if (std.mem.eql(u8, arg, "--description")) o.description = v else if (std.mem.eql(u8, arg, "--alpha")) o.alpha = try std.fmt.parseFloat(f32, v) else if (std.mem.eql(u8, arg, "--mask")) o.mask = try std.fmt.parseFloat(f32, v) else if (std.mem.eql(u8, arg, "--rows")) o.which = std.meta.stringToEnum(derive.rows, v) orelse return error.BadRows else if (std.mem.eql(u8, arg, "--prompts")) o.limit = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, arg, "--layers")) parseRange(&o, v) catch return error.BadLayers else return error.UnknownOption;
+        if (std.mem.eql(u8, arg, "--pack")) o.pack = v else if (std.mem.eql(u8, arg, "--out")) o.out = v else if (std.mem.eql(u8, arg, "--stream-dir")) o.stream_dir = v else if (std.mem.eql(u8, arg, "--token-map")) o.token_map = v else if (std.mem.eql(u8, arg, "--tokenizer")) o.tokenizer_path = v else if (std.mem.eql(u8, arg, "--receipt")) o.receipt = v else if (std.mem.eql(u8, arg, "--repo")) o.repo = v else if (std.mem.eql(u8, arg, "--revision")) o.revision = v else if (std.mem.eql(u8, arg, "--name")) o.name = v else if (std.mem.eql(u8, arg, "--validation")) o.validation = v else if (std.mem.eql(u8, arg, "--description")) o.description = v else if (std.mem.eql(u8, arg, "--alpha")) o.alpha = try std.fmt.parseFloat(f32, v) else if (std.mem.eql(u8, arg, "--mask")) o.mask = try std.fmt.parseFloat(f32, v) else if (std.mem.eql(u8, arg, "--rows")) o.which = std.meta.stringToEnum(derive.rows, v) orelse return error.BadRows else if (std.mem.eql(u8, arg, "--prompts")) o.limit = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, arg, "--layers")) parseRange(&o, v) catch return error.BadLayers else return error.UnknownOption;
     }
     if (o.pack == null or o.out == null) return error.BadOptions;
     if (!std.math.isFinite(o.alpha) or o.alpha < 0) return error.BadOptions;
@@ -136,8 +137,10 @@ pub fn main(init: std.process.Init) !void {
     defer harmless.deinit(init.gpa);
     const requests = try prompts.requests(a);
     const twins = try prompts.harmless(a);
-    try captureSet(&m, cap, &tok, requests, &harmful, o);
-    try captureSet(&m, cap, &tok, twins, &harmless, o);
+    var dose = try Dose.init(init.gpa, layers, hidden, requests.len + twins.len);
+    defer dose.deinit();
+    try captureSet(&m, cap, &tok, requests, &harmful, &dose, o);
+    try captureSet(&m, cap, &tok, twins, &harmless, &dose, o);
     if (harmful.prompts == 0 or harmless.prompts == 0) return error.NoPrompts;
 
     var derived = try derive.derive(init.gpa, harmful, harmless, layers, hidden, o.mask);
@@ -149,6 +152,38 @@ pub fn main(init: std.process.Init) !void {
         try file_layers.append(init.gpa, .{ .id = l.id, .dir = l.dir });
     }
     if (file_layers.items.len == 0) return error.NoDirections;
+
+    // The informational dose: mean |h.d|/|h| and median |h| over the estimator's own rows, per written layer.
+    var dose_cos_txt: ?[]const u8 = null;
+    var dose_norm_txt: ?[]const u8 = null;
+    if (dose.n > 0) {
+        const cos = try a.alloc(f32, file_layers.items.len);
+        const med = try a.alloc(f32, file_layers.items.len);
+        const counts = try a.alloc(usize, file_layers.items.len);
+        for (file_layers.items, 0..) |l, i| {
+            var sum: f64 = 0;
+            var vals = try a.alloc(f32, dose.n);
+            for (0..dose.n) |pi| {
+                const h = dose.h[(pi * dose.layers + l.id) * dose.hidden ..][0..dose.hidden];
+                var dot: f64 = 0;
+                var nn: f64 = 0;
+                for (h, l.dir) |x, d| {
+                    dot += @as(f64, x) * d;
+                    nn += @as(f64, x) * x;
+                }
+                const norm = @sqrt(nn);
+                vals[pi] = @floatCast(norm);
+                sum += if (norm == 0) 0 else @abs(dot) / norm;
+            }
+            counts[i] = dose.n;
+            cos[i] = @floatCast(sum / @as(f64, @floatFromInt(dose.n)));
+            std.mem.sort(f32, vals, {}, std.sort.asc(f32));
+            med[i] = vals[dose.n / 2];
+        }
+        const dp = try Dose.pairs(a, file_layers.items, counts, cos, med);
+        dose_cos_txt = dp.cos;
+        dose_norm_txt = dp.norm;
+    }
 
     var stamp_buf: [32]u8 = undefined;
     const created = stamp(io, &stamp_buf);
@@ -169,6 +204,9 @@ pub fn main(init: std.process.Init) !void {
             .created = created,
         },
         .layers = file_layers.items,
+        .validation = o.validation,
+        .dose_cos = dose_cos_txt,
+        .resid_norm_median = dose_norm_txt,
     });
     defer init.gpa.free(bytes);
 
@@ -242,8 +280,50 @@ fn verify(a: std.mem.Allocator, bytes: []const u8, model: glp.Model) !void {
     if (v.mode != .project or !std.mem.eql(u8, v.hook_point, glp.site_name)) return error.WrongSite;
 }
 
+/// The spec's informational dose, read from the estimator's own rows: one vector per prompt (the mean over
+/// its rows, which is the row the mean-over-rows estimator keeps), per layer.
+const Dose = struct {
+    a: std.mem.Allocator,
+    layers: usize,
+    hidden: usize,
+    cap_rows: usize,
+    h: []f32, // [prompts][layers][hidden]
+    n: usize = 0,
+
+    fn init(a: std.mem.Allocator, layers: usize, hidden: usize, cap_rows: usize) !Dose {
+        return .{ .a = a, .layers = layers, .hidden = hidden, .cap_rows = cap_rows, .h = try a.alloc(f32, cap_rows * layers * hidden) };
+    }
+    fn deinit(d: *Dose) void {
+        d.a.free(d.h);
+    }
+    fn add(d: *Dose, cap: *const Capture, rows: usize) void {
+        if (d.n >= d.cap_rows) return;
+        for (0..d.layers) |l| {
+            const sums = cap.row(@intCast(l));
+            const dst = d.h[(d.n * d.layers + l) * d.hidden ..][0..d.hidden];
+            for (sums, dst) |v, *out| out.* = v / @as(f32, @floatFromInt(@max(1, rows)));
+        }
+        d.n += 1;
+    }
+    /// `L:value` pairs per the spec's informational keys.
+    fn pairs(a: std.mem.Allocator, layers: []const glp.Layer, counts: []const usize, cos: []f32, median: []f32) !struct { cos: []const u8, norm: []const u8 } {
+        var c: std.ArrayList(u8) = .empty;
+        var nm: std.ArrayList(u8) = .empty;
+        for (layers, 0..) |l, i| {
+            if (i > 0) {
+                try c.append(a, ',');
+                try nm.append(a, ',');
+            }
+            try c.print(a, "{d}:{d:.6}", .{ l.id, cos[i] });
+            try nm.print(a, "{d}:{d:.3}", .{ l.id, median[i] });
+        }
+        _ = counts;
+        return .{ .cos = c.items, .norm = nm.items };
+    }
+};
+
 /// One prompt set's running mean: every prompt's own mean, counted once.
-fn captureSet(m: *ds.Model, cap: *Capture, tok: *const tokenizer.Tokenizer, texts: []const []const u8, mean: *derive.Mean, o: Args) !void {
+fn captureSet(m: *ds.Model, cap: *Capture, tok: *const tokenizer.Tokenizer, texts: []const []const u8, mean: *derive.Mean, dose: ?*Dose, o: Args) !void {
     for (texts, 0..) |text, i| {
         if (i >= o.limit) break;
         const ids = tok.encode(m.gpa, text) catch |e| {
@@ -258,6 +338,7 @@ fn captureSet(m: *ds.Model, cap: *Capture, tok: *const tokenizer.Tokenizer, text
         _ = try m.forwardOn(0, ids, .last);
         const divisor: f32 = if (o.which == .last) 1 else @floatFromInt(ids.len);
         try mean.addPrompt(cap.sums(), divisor);
+        if (dose) |d| d.add(cap, ids.len);
     }
 }
 
