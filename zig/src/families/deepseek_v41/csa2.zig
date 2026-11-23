@@ -186,8 +186,7 @@ pub const Pipelines = struct {
         // Prompt chunks go through the tensor-unit kernel: its fragment layout wants width 512 and 16-head groups.
         const use_nax = p.tensor_units and args.width == 512 and args.heads % 16 == 0 and args.rows >= p.nax_min_rows;
         if (use_nax) {
-            // Decode every visible key once, all three sections in one dispatch: the window ring, this chunk, then the
-            // compressed rows (a one-row window reads only its picks, so that section decodes those and no more).
+            // Decode every visible key once, all three sections in one dispatch (one row reads only its picks).
             const picked = args.rows == 1 and args.ratio != 0 and args.topk != 0 and args.compressed_rows > args.topk;
             const comp_rows: u32 = if (picked) @min(args.topk, args.compressed_rows) else args.compressed_rows;
             const repeats: u32 = if (std.c.getenv("TF_DSV41_DOUBLE_DENSEKV") != null) 2 else 1;

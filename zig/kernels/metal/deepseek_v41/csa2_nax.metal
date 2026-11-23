@@ -346,8 +346,7 @@ inline bfloat dsv41_dense_at_off(int enc, uint off, device const ushort *dense, 
   }
 }
 
-// A decode layer's whole dense table in one dispatch: the window ring, this chunk's rows, then the compressed rows
-// (the picks' positions at one row, else every row). The three sections are the same decode, so one grid covers them.
+// A decode layer's whole dense table in one dispatch: ring, this chunk, then the compressed rows (picks at one row).
 struct DenseKvAll { uint ring_rows, chunk_rows, comp_rows, width, ring_stride, chunk_stride, main_stride, window, comp_first, picked; };
 static_assert(sizeof(DenseKvAll) == 40, "DenseKvAll must mirror csa2.zig's DenseKvAll");
 kernel void dsv41_dense_kv_all(const device uchar *ring [[buffer(0)]], const device uchar *chunk [[buffer(1)]],
