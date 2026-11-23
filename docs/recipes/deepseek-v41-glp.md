@@ -221,3 +221,49 @@ the cache has enough budget. Use a longer fixture, such as 8192 tokens, and
 require nonzero `cached_tokens`; matching replies alone do not prove reuse.
 Compare fresh and restored token IDs under the same immutable policy, including
 actual solo drafting and seeded sampling, and keep the cache-off oracle separate.
+
+## Deriving a vector (fork-only producer)
+
+The fork ships a producer for its own vectors: `tf-dsv41-glp-derive`
+(`zig/tests/dsv41_glp_derive.zig`, built by `zig/build/dsv41_glp_derive.zig`,
+statistics in `zig/src/core/glp_derive.zig`, capture in
+`zig/src/families/deepseek_v41/metal/glp_capture.zig`). It is not part of
+upstream and publishes nothing by itself.
+
+The capture reads the same post-fold stream the fold's edit reduces: the
+`tf_dsv41_glp_capture` kernel in `deepseek_v41/glp.metal` calls the fold's own
+`tf_glp_mean` over the four copies, so a direction is fitted to the quantity the
+projection acts on, at the served numerics (FP32 reduction, BF16 storage). A
+capture run loads no plan, so the stream is read and never written, and the
+producer asserts that a plan and a capture are never set together
+(`forward_glp.zig`). The cone is switched off for a capture run: its replay
+enters blocks past the fold, which would leave a block unread.
+
+The estimator is the one the Qwen3.8-27B vector was derived with, per the GLP
+provenance keys: `glp.method = difference_of_means_per_layer`,
+`glp.contrast = form_matched_harmful_vs_harmless_unpaired`. Thirty form-matched
+pairs (`glp_prompts.zig`), each prompt counted once whatever its length; the
+prompt's last row by default (`--rows last`), every row with `--rows mean`; the
+top 0.5 % of each block's dimensions by peak activation left out of the
+direction and the remainder renormalised (`--mask 0.005`); a layer whose two
+means agree is dropped rather than written as zeros.
+
+The file is `glp.spec_version = 3`, `glp.mode = project`,
+`glp.hook_point = hc_fold_pre_engram`, `glp.alpha_default = 1`, blocks 1 to
+`layers - 1` (block 0 cannot be named), plus `general.author`,
+`general.license`, `general.name`, `general.description`,
+`controlvector.model_hint` and `glp.measured_effect` when the operator supplies
+them. Before the tool writes the file it reads the bytes back with the engine's
+own reader and refuses a vector that does not fit the checkpoint's width, block
+count and provenance (`glp.checkModel`); it then prints a JSON receipt with the
+file digest, the directions digest, the pack's identity digests and the
+derivation's cost.
+
+```
+tf-dsv41-glp-derive --pack DIR --stream-dir ENGRAM_SHARDS \
+    --repo OWNER/EXL3-PACK --out FILE.gguf --rows last --mask 0.005 --alpha 1.0
+```
+
+A derived vector is checkpoint- and quantisation-specific. The same command on
+another pack writes another file; nothing transfers, and the file says which
+checkpoint it was fitted to so a reader can refuse it elsewhere.

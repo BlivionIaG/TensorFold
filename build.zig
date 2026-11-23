@@ -133,6 +133,7 @@ pub fn build(b: *std.Build) void {
         @import("zig/build/flashnext_budget.zig").compileHost(b, budget_mods.metal, budget_mods.engine, budget_mods.lanes);
         @import("zig/build/residency_host.zig").compileHost(b, budget_mods.metal, budget_mods.engine, budget_mods.lanes);
         @import("zig/build/dsv41_metal.zig").steps(b, budget_mods.metal, budget_mods.sources, test_step);
+        @import("zig/build/dsv41_glp_derive.zig").steps(b, budget_mods.metal, budget_mods.engine);
         @import("zig/build/slide_host.zig").metal(b, budget_mods);
         @import("zig/build/moss_image_teacher_host.zig").compileMetal(b, budget_mods.metal, budget_mods.engine);
     }

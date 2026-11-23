@@ -75,3 +75,24 @@ template <uint COPIES>
 
 template [[host_name("tf_dsv41_glp_fold")]] [[kernel]] decltype(tf_dsv41_glp_edit<4>) tf_dsv41_glp_edit<4>;
 template [[host_name("tf_dsv41_glp_writer")]] [[kernel]] decltype(tf_dsv41_glp_edit<1>) tf_dsv41_glp_edit<1>;
+
+// The producer's read of the same site: the stream as the fold edit sees it, summed instead of edited.
+struct TfGlpCaptureArgs {
+  uint dim, rows;
+  uint last_only, pad;
+};
+static_assert(sizeof(TfGlpCaptureArgs) == 16, "TfGlpCaptureArgs must mirror metal/glp_capture.zig's Args");
+
+// X [rows][COPIES][dim] bf16 summed into SUMS [dim] fp32: the last row alone, or every row, by tf_glp_mean
+// exactly as the fold edit reduces it. A capture run has no plan loaded, so X is read and never written.
+[[kernel, max_total_threads_per_threadgroup(TF_GLP_TG)]] void tf_dsv41_glp_capture(
+    const device bfloat* X [[buffer(0)]], device float* SUMS [[buffer(1)]], constant TfGlpCaptureArgs& a [[buffer(2)]],
+    uint t [[thread_index_in_threadgroup]]) {
+  if (a.rows == 0) return;
+  const uint first = a.last_only != 0 ? a.rows - 1 : 0;
+  for (uint i = t; i < a.dim; i += TF_GLP_TG) {
+    float s = 0.0f;
+    for (uint r = first; r < a.rows; ++r) s += tf_glp_mean<4>(X + ulong(r) * 4 * a.dim, a.dim, i);
+    SUMS[i] += s;
+  }
+}

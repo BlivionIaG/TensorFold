@@ -10,6 +10,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
   llama.cpp's control-vector convention and TensorFold #1835's native reader.
   No trained vectors or efficacy claims are included; see [scope and attribution](docs/recipes/deepseek-v41-glp.md).
 
+- DeepSeek-V4.1 EXL3: a fork-only producer for GLP vectors at the fold site (`tf-dsv41-glp-derive`): the capture kernel is the fold's own four-copy reduction applied read-only, the estimator is difference of means over form-matched prompt sets with a 0.5% massive-activation mask, and the tool re-reads its file with the engine's reader before it writes it. Published vectors remain the operator's to release.
 - Tests: DeepSeek's host checks no longer require Metal-only model declarations or Darwin-only cache hints; the proposal encoder check also avoids registering fragment sources twice.
 
 - DeepSeek-V4.1 EXL3 on Metal: exact tiled half-FMA decode, fused projection chains, batched decode attention (#3382),

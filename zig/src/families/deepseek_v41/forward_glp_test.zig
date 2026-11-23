@@ -6,6 +6,7 @@ const model = @import("model.zig");
 const workspace = @import("workspace.zig");
 const forward_glp = @import("forward_glp.zig");
 const glp = @import("metal/glp.zig");
+const glp_capture = @import("metal/glp_capture.zig");
 
 const Model = model.Model;
 const hidden = 5120;
@@ -197,4 +198,54 @@ test "GLP hooks: the real writer and fold wrappers edit the right buffers with t
     const queue = try device.queue();
     defer queue.deinit();
     for ([_]glp.Mode{ .add, .project }) |mode| try probe(device, queue, mode);
+}
+
+test "a capture reads the stream the fold would edit, leaves it as it was, and sums the fold's own mean" {
+    const pool = mtl.objc.Pool.push();
+    defer pool.pop();
+    const device = try mtl.Device.init();
+    defer device.deinit();
+    const queue = try device.queue();
+    defer queue.deinit();
+    var fx: Fix = undefined;
+    try fx.open(device, queue, .project);
+    defer fx.close();
+    // A plan and a capture are never set together: the capture run reads the undosed stream.
+    const plan = fx.m.glp.?;
+    fx.m.glp = null;
+    defer fx.m.glp = plan;
+    {
+        // Every row of the chunk: block ids[0]'s row is the mean over the four copies, summed over the rows.
+        const cap = try glp_capture.Capture.init(t.allocator, device, backbone, hidden, false);
+        defer cap.deinit();
+        fx.m.glp_capture = cap;
+        try fx.run(null, ids[0]);
+        for (0..hidden) |i| {
+            var want: f64 = 0;
+            for (0..rows) |r| {
+                var s: f64 = 0;
+                for (0..4) |c| s += real(fx.xs[(r * 4 + c) * hidden + i]) * 0.25;
+                want += s;
+            }
+            try t.expectApproxEqAbs(want, cap.row(ids[0])[i], 1e-2 * @max(1, @abs(want)));
+        }
+        try t.expectEqual(@as(f32, 0), cap.row(ids[1])[0]);
+        try t.expectEqualSlices(u16, &fx.xs, fx.foldOut());
+        fx.m.glp_capture = null;
+    }
+    {
+        // The last row alone, the site where the model decides what to say next.
+        const last = try glp_capture.Capture.init(t.allocator, device, backbone, hidden, true);
+        defer last.deinit();
+        fx.m.glp_capture = last;
+        try fx.run(null, ids[1]);
+        for (0..hidden) |i| {
+            var want: f64 = 0;
+            for (0..4) |c| want += real(fx.xs[((rows - 1) * 4 + c) * hidden + i]) * 0.25;
+            try t.expectApproxEqAbs(want, last.row(ids[1])[i], 1e-3 * @max(1, @abs(want)));
+        }
+        try t.expectEqual(@as(f32, 0), last.row(ids[0])[0]);
+        try t.expectEqualSlices(u16, &fx.xs, fx.foldOut());
+        fx.m.glp_capture = null;
+    }
 }
