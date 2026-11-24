@@ -126,14 +126,9 @@ const Host = struct {
 };
 /// The engine for `o.dir`, or null with `problem` set when no Metal engine reads the checkpoint.
 pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
-    // LoopCD guides a looped model's first pass: the only looped family this build serves is Inkling 2 Mini.
-    if (o.loopcd and !std.mem.eql(u8, o.model_type, "inkling2_loop")) {
-        problem.* = "--loopcd guides a looped model's first recurrent pass; the Metal engine serves it for Inkling 2 Mini (inkling2_loop) only";
-        return null;
-    }
     const report = @import("sys").optional_libraries.atBoundary();
     defer report.deinit();
-    if (fsr_options.refuse(o, problem)) return null;
+    if (fsr_options.refuse(o, problem) or @import("tensorfold").loopcd.refuse(o.loopcd, o.model_type, problem)) return null;
     if (o.prompt_int8 or o.rope_yarn != null) {
         problem.* = if (o.prompt_int8) prompt_int8_refusal else "--rope-yarn: the Metal engine has no YaRN rope; serve without --rope-yarn";
         return null;

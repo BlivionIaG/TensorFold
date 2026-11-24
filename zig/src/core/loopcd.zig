@@ -51,6 +51,13 @@ pub fn fromEnvironment(on: bool, w: ?f32) !?f32 {
     return strength;
 }
 
+/// The Metal engine refuses --loopcd for every model type but Inkling 2 Mini, the one looped family it serves.
+pub fn refuse(on: bool, model_type: []const u8, problem: *[]const u8) bool {
+    if (!on or std.mem.eql(u8, model_type, "inkling2_loop")) return false;
+    problem.* = "--loopcd guides a looped model's first recurrent pass; the Metal engine serves it for Inkling 2 Mini (inkling2_loop) only";
+    return true;
+}
+
 const t = std.testing;
 
 test "loopcd: the f32 rounding order meets the float64 reference at a BF16 output" {
@@ -83,4 +90,11 @@ test "loopcd: a strength's key separates the modes and repeats for the same stre
     try t.expectEqual(key(0.3), key(0.3));
     try t.expect(key(0.3) != key(0.31));
     try t.expect(key(-1) != key(1));
+}
+
+test "loopcd: the flag is refused for every model type but Inkling 2 Mini, and off refuses nothing" {
+    var why: []const u8 = "";
+    try t.expect(!refuse(true, "inkling2_loop", &why) and !refuse(false, "qwen3", &why));
+    try t.expectEqualStrings("", why);
+    try t.expect(refuse(true, "qwen3", &why) and std.mem.indexOf(u8, why, "inkling2_loop") != null);
 }
