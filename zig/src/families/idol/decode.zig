@@ -1,28 +1,13 @@
-//! IdolPipeline.decode on Metal: the octree's 8 levels to anchors, the Gaussian decoder, then the Gaussians.
+//! IdolPipeline.decode on Metal's or CUDA's decoder: the octree's 8 levels to anchors, the Gaussian decoder, then them.
 const std = @import("std");
-const mtl = @import("metal");
 const dc = @import("decoder_config.zig");
 const octree = @import("octree.zig");
+const trace_state = @import("decode_trace.zig");
 const gs = @import("gaussian.zig");
-const Decoder = @import("decoder.zig").Decoder;
 
 pub const Timing = struct { octree: f64 = 0, octree_gpu: f64 = 0, gaussian: f64 = 0, gaussian_gpu: f64 = 0, activation: f64 = 0 };
 
-/// Each level's parents and their counts, kept when a caller asks (for comparing a run's topology).
-pub const Trace = struct {
-    parents: [dc.max_level][]const [3]u32 = @splat(&.{}),
-    counts: [dc.max_level][]const u32 = @splat(&.{}),
-    probs: [dc.max_level][]const f32 = @splat(&.{}),
-
-    pub fn deinit(t: *Trace, gpa: std.mem.Allocator) void {
-        for (t.parents, t.counts, t.probs) |p, c, q| {
-            gpa.free(p);
-            gpa.free(c);
-            gpa.free(q);
-        }
-        t.* = .{};
-    }
-};
+pub const Trace = trace_state.Trace;
 
 pub const Result = struct {
     anchors: []f32,
@@ -37,9 +22,14 @@ pub const Result = struct {
     }
 };
 
-/// The anchors for `points` points: each level's probabilities on Metal, its split on the host.
-pub fn anchors(gpa: std.mem.Allocator, t: *Decoder, points: usize, draws: *octree.Draws, trace: ?*Trace, time: *Timing) ![]f32 {
-    var level: octree.Level = .{ .coords = try gpa.dupe([3]u32, &.{.{ 0, 0, 0 }}), .counts = try gpa.dupe(u32, &.{@intCast(points)}) };
+/// The decoder's clock (its `seconds`).
+fn clock(t: anytype) f64 {
+    return @TypeOf(t.*).seconds();
+}
+
+/// The anchors for `points` points: each level's probabilities on the GPU, its split on the host.
+pub fn anchors(gpa: std.mem.Allocator, t: anytype, points: usize, draws: *octree.Draws, trace: ?*Trace, time: *Timing) ![]f32 {
+    var level = try octree.root(gpa, points);
     defer {
         gpa.free(level.coords);
         gpa.free(level.counts);
@@ -54,29 +44,31 @@ pub fn anchors(gpa: std.mem.Allocator, t: *Decoder, points: usize, draws: *octre
         const tm = try t.octreeLogits(centres, l, probs);
         time.octree += tm.wall;
         time.octree_gpu += tm.gpu;
-        const started = mtl.clock.seconds();
+        const started = clock(t);
         octree.softmax(probs);
         const next = try octree.descend(gpa, level, probs, @intCast(l), draws, null);
-        time.octree += mtl.clock.seconds() - started;
+        errdefer {
+            gpa.free(next.coords);
+            gpa.free(next.counts);
+        }
+        time.octree += clock(t) - started;
         if (trace) |tr| {
-            tr.parents[l - 1] = try gpa.dupe([3]u32, level.coords);
-            tr.counts[l - 1] = try gpa.dupe(u32, level.counts);
-            tr.probs[l - 1] = try gpa.dupe(f32, probs);
+            try trace_state.capture(tr, gpa, l - 1, level, probs);
         }
         gpa.free(level.coords);
         gpa.free(level.counts);
         level = next;
     }
-    const started = mtl.clock.seconds();
+    const started = clock(t);
     const out = try gpa.alloc(f32, points * 3);
     errdefer gpa.free(out);
     try octree.anchors(level, dc.max_level, draws, out);
-    time.octree += mtl.clock.seconds() - started;
+    time.octree += clock(t) - started;
     return out;
 }
 
 /// The Gaussians of `latent` [8192, 16]: `gaussians` (32,768 to 1,048,576, rounded down to whole anchors).
-pub fn decode(gpa: std.mem.Allocator, t: *Decoder, latent: []const f32, gaussians: usize, draws: *octree.Draws, trace: ?*Trace) !Result {
+pub fn decode(gpa: std.mem.Allocator, t: anytype, latent: []const f32, gaussians: usize, draws: *octree.Draws, trace: ?*Trace) !Result {
     const points = try dc.anchors(gaussians);
     if (points > t.cap) return error.AnchorCount;
     try t.setLatent(latent);
@@ -88,10 +80,10 @@ pub fn decode(gpa: std.mem.Allocator, t: *Decoder, latent: []const f32, gaussian
     const tg = try t.gaussianRows(pts, raw);
     time.gaussian = tg.wall;
     time.gaussian_gpu = tg.gpu;
-    const started = mtl.clock.seconds();
+    const started = clock(t);
     const g = try gs.Gaussians.alloc(gpa, points * dc.per_anchor);
     activateParallel(t.params(), raw, pts, g);
-    time.activation = mtl.clock.seconds() - started;
+    time.activation = clock(t) - started;
     return .{ .anchors = pts, .raw = raw, .gaussians = g, .time = time };
 }
 

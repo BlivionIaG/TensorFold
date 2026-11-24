@@ -3,6 +3,7 @@ const std = @import("std");
 
 /// The web launcher uses fake PATH tools and no model, network or device.
 pub fn webHostTests(b: *std.Build, all: *std.Build.Step) void {
+    @import("request_access_host.zig").steps(b, all);
     const tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("zig/src/server/web_cli.zig"),
         .target = b.graph.host,
@@ -102,6 +103,9 @@ pub fn testImports(b: *std.Build, m: *std.Build.Module, target: std.Build.Resolv
 
 /// Tool parsing and actual chat visibility checks share the aggregate's real modules.
 pub fn toolHostTests(b: *std.Build, parser: *std.Build.Module, server: *std.Build.Module, all: *std.Build.Step) void {
+    const pool_after_warmup = b.addRunArtifact(b.addTest(.{ .root_module = server, .filters = &.{ "CUDA pool after warmup:", "profile line:", "stable profile:", "capability audit: environment" } }));
+    pool_after_warmup.has_side_effects = true;
+    b.step("test-cuda-pool-report-host", "CUDA sizing device report and counted profile without devices").dependOn(&pool_after_warmup.step);
     const images = b.addRunArtifact(b.addTest(.{ .root_module = server, .filters = &.{ "image sequence", "image progress:", "images_generations_test." } }));
     b.step("test-images-host", "Image route counts, seeds, step streams, previews and cancellation without devices").dependOn(&images.step);
     testImports(b, parser, b.graph.host, .debug);
@@ -135,6 +139,9 @@ pub fn toolHostTests(b: *std.Build, parser: *std.Build.Module, server: *std.Buil
     const scopes = b.addRunArtifact(b.addTest(.{ .root_module = server, .filters = &.{"auth scopes"} }));
     scopes.has_side_effects = true;
     b.step("test-key-scopes-host", "Key-file scopes: exact route grants, stateless Responses and refusals over sockets").dependOn(&scopes.step);
+    const witnessed = b.addRunArtifact(b.addTest(.{ .root_module = server, .filters = &.{"execution witness"} }));
+    witnessed.has_side_effects = true;
+    b.step("test-execution-witness-host", "The opt-in execution witness: parts, scopes, reload epochs and refusals over sockets").dependOn(&witnessed.step);
     const profile_line = b.addRunArtifact(b.addTest(.{ .root_module = server, .filters = &.{"profile line:"} }));
     profile_line.has_side_effects = true;
     b.step("test-profile-line-host", "Profile start-up line scoping against the tree's real backend names").dependOn(&profile_line.step);

@@ -17,6 +17,14 @@ release fixes it, and the release notes say which one.
   speed and tokens are the same, and prompts with no shared start take the same time.
 - Qwen3.5-2B with a JSON schema: on an integer field it wants to write as a decimal, the 2B can keep adding digits until
   `max_tokens`, because the grammar allows no decimal point there. Nemotron writes the same schema correctly.
+- Inkling 2 Mini on Metal is experimental ([recipe](recipes/inkling-2-mini-metal.md#limits)): audio parts are refused;
+  JPEG images need the pinned libjpeg-turbo release ([image input](vision.md#jpeg-input)); replies carry the model's raw `<|message_model|><|content_thinking|>`
+  delimiters; a kept prompt state made without the draft head (a `"draft": false` request, a warm pass) resumes a
+  drafted request with the same tokens and fewer accepted drafts; cold prefill is 0.75
+  to 0.83 of MLX's rate on an M4 Pro and the text path has no M5 tensor-unit kernel; four greedy drafted streams are
+  within noise of plain, not faster, and at temperature 0.7 a plain token costs about 15 ms more than a greedy one and
+  the draft head is slower than plain on four code streams (#4744 removes the sampler's cost); admission by state bytes
+  has not run on a 36 GB Mac.
 - Qwen3.8-27B: the drafter's landing counts last for the server's life, so the first greedy code reply after prose lands
   about 5% fewer tokens a round on an M3 Ultra. Its shallower rounds cost less, so decode stays within about 1% of a fresh
   server, even after 40 prose replies. The tokens are the same.

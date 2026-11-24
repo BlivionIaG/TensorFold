@@ -32,10 +32,8 @@ pub const Options = struct {
     want: usize = 1,
 };
 
-/// Whether the smaller chunk admits more of `want` streams than the larger's in `room`, after the `slots` bytes.
-pub fn narrows(room: u64, slots: u64, larger: u64, smaller: u64, per: u64, want: u64) bool {
-    return @min(want, (room -| slots -| smaller) / per) > @min(want, (room -| slots -| larger) / per);
-}
+/// The fallback rule every HIP family shares: whether the smaller chunk admits more of the streams asked for.
+pub const narrows = hip.policy.narrows;
 
 /// Bytes of the pinned staging a forward's uploads and n-gram rows go through.
 const staging_bytes = 64 << 20;
@@ -400,12 +398,17 @@ pub const Engine = struct {
 
     /// A prompt's `tokens` from `c.len` into `c`, kept: the final rows of the last of them.
     pub fn prompt(e: *Engine, c: *cache.Caches, tokens: []const u32) !forward.Out {
+        return e.promptMarked(c, tokens, &.{});
+    }
+
+    /// `prompt`, the state before each of `marks`' rows written aside (forward.Mark, rows ascending).
+    pub fn promptMarked(e: *Engine, c: *cache.Caches, tokens: []const u32, marks: []const forward.Mark) !forward.Out {
         if (e.stopped) return error.GroupStopped;
         // the staging is reused: the last forward's uploads must have left it
         try e.stream.synchronize();
         e.host.used = 0;
         e.arena.reset();
-        const segs = [_]forward.Seg{.{ .c = c, .tokens = tokens, .pos = c.len }};
+        const segs = [_]forward.Seg{.{ .c = c, .tokens = tokens, .pos = c.len, .marks = marks }};
         const staged = try forward.stage(&e.weights.model, &e.host, &segs, false);
         const out = try forward.run(e.ops(&e.arena), &e.weights.model, &e.host, &segs, false, staged);
         c.len += tokens.len;
@@ -483,6 +486,11 @@ pub const Engine = struct {
     /// Slot `slot`'s caches, fresh, for a new stream (made at the capacity the first time).
     pub fn lease(e: *Engine, slot: u32) !cache.Caches {
         return e.pool.lease(e.gpa, slot, e.stream, e.eos, e.o.capacity, e);
+    }
+
+    /// The first stream's caches made now (at load) rather than by the first prompt; later slots on their first lease.
+    pub fn makeFirstSlot(e: *Engine) !void {
+        try e.pool.make(e.gpa, 0, e.o.capacity, e);
     }
 
     /// A finished stream's caches back to their slot.

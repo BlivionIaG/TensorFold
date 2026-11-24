@@ -19,8 +19,8 @@ fn keyChain(s: c.Shape) usize {
 /// Heads (rows) over tokens (n, each a query and key): served token counts at one head, the head strides at 16.
 const served = [_]c.Shape{ .{ .rows = 1, .n = r.cond, .k = r.cond }, .{ .rows = 1, .n = r.latent, .k = r.latent }, .{ .rows = 1, .n = r.joint, .k = r.joint }, .{ .rows = r.heads, .n = 300, .k = 300 } };
 
-pub fn spec(name: []const u8) c.Spec {
-    return .{ .name = name, .accum = .f32, .depth = keyChain, .ops = 6, .out = .f16, .tiles = .{ .{}, .{ .size = 16 * idol.attention_warps }, .{} }, .served = &served, .sums = .{ .why = why } };
+pub fn spec(name: []const u8, at: []const c.Shape) c.Spec {
+    return .{ .name = name, .accum = .f32, .depth = keyChain, .ops = 6, .out = .f16, .tiles = .{ .{}, .{ .size = 16 * idol.attention_warps }, .{} }, .served = at, .sums = .{ .why = why } };
 }
 
 fn half(x: f64) u16 {
@@ -35,12 +35,16 @@ pub const Attn = struct {
     rig: rig_.Rig,
     k: *const idol.Kernels,
     name: []const u8,
+    /// The calls it is registered at: the denoiser's, or the Gaussian decoder's self attention over its anchors.
+    served: []const c.Shape = &served,
     ref: ?attn.Ref = null,
     heads: usize = 0,
     tokens: usize = 0,
     qkv: std.ArrayList(u16) = .empty,
     /// The key head whose K and V rows the reference holds now.
     held: ?usize = null,
+    /// Gate 4's inputs: every key alike, so every token's outputs are token 0's.
+    alike: bool = false,
     dev: u64 = 0,
     out: u64 = 0,
 
@@ -51,7 +55,7 @@ pub const Attn = struct {
     }
 
     pub fn kernel(t: *Attn) g.Kernel {
-        return .{ .spec = spec(t.name), .ctx = t, .vt = &vt };
+        return .{ .spec = spec(t.name, t.served), .ctx = t, .vt = &vt };
     }
     const vt = g.hooks(Attn);
 
@@ -73,6 +77,7 @@ pub const Attn = struct {
         t.heads = shape.rows;
         t.tokens = shape.n;
         t.held = null;
+        t.alike = fill == .stress;
         try t.qkv.resize(a, t.tokens * t.stride());
         var prng = std.Random.DefaultPrng.init(seed);
         const rng = prng.random();
@@ -148,18 +153,34 @@ pub const Attn = struct {
     }
 
     pub fn reference(t: *Attn, want: []f64, mag: []f64) !void {
-        return t.ref.?.reference(t, t.outputs(), 1.0 / 8.0, want, mag);
+        try t.ref.?.reference(t, t.computed(), 1.0 / 8.0, want, mag);
+        t.repeat(want);
+        t.repeat(mag);
     }
 
     pub fn simulate(t: *Attn, acc: c.Accum, order: g.Order, out: []f64) !void {
-        return t.ref.?.simulate(t, t.outputs(), 1.0 / 8.0, acc, order, out);
+        try t.ref.?.simulate(t, t.computed(), 1.0 / 8.0, acc, order, out);
+        t.repeat(out);
+    }
+
+    /// The output heads float64 computes: token 0's alone when the keys are alike (gate 4 at 8,192 tokens).
+    fn computed(t: *Attn) usize {
+        return if (t.alike) t.heads else t.outputs();
+    }
+
+    /// Token 0's outputs copied to every token when the keys are alike.
+    fn repeat(t: *const Attn, out: []f64) void {
+        if (!t.alike) return;
+        const w = t.heads * r.D;
+        var i = w;
+        while (i < out.len) : (i += w) @memcpy(out[i..][0..w], out[0..w]);
     }
 };
 
 /// The worst |got - want| / boundExact over the outputs, as gate 4 counts it (a non-finite sum misses infinitely).
 fn worst(got: []const f64, want: []const f64) f64 {
     var most: f64 = 0;
-    for (got, want) |x, w| most = @max(most, if (std.math.isFinite(x)) @abs(x - w) / c.boundExact(spec("host"), w) else std.math.inf(f64));
+    for (got, want) |x, w| most = @max(most, if (std.math.isFinite(x)) @abs(x - w) / c.boundExact(spec("host", &served), w) else std.math.inf(f64));
     return most;
 }
 
@@ -184,4 +205,21 @@ test "gate 4's attention inputs at the joint rows: fp32 sums exact in every orde
         }
     }
     try std.testing.expect(margin[0] >= 100 and margin[1] >= 100);
+}
+
+test "gate 4's alike keys: token 0's outputs copied to every token match float64 over every token" {
+    const a = std.testing.allocator;
+    var t: Attn = .{ .rig = undefined, .k = undefined, .name = "host" };
+    defer if (t.ref) |*x| x.deinit();
+    defer t.qkv.deinit(a);
+    try t.inputs(a, .{ .rows = 3, .n = 37, .k = 37 }, .stress, 0x1d02);
+    const n = t.count();
+    const buf = try a.alloc(f64, 4 * n);
+    defer a.free(buf);
+    try t.reference(buf[0..n], buf[n .. 2 * n]);
+    try t.ref.?.reference(&t, t.outputs(), 1.0 / 8.0, buf[2 * n .. 3 * n], buf[3 * n ..]);
+    try std.testing.expectEqualSlices(f64, buf[2 * n ..], buf[0 .. 2 * n]);
+    try t.simulate(.f16, .strided, buf[0..n]);
+    try t.ref.?.simulate(&t, t.outputs(), 1.0 / 8.0, .f16, .strided, buf[n .. 2 * n]);
+    try std.testing.expectEqualSlices(f64, buf[n .. 2 * n], buf[0..n]);
 }

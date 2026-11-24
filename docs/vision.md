@@ -117,9 +117,17 @@ the images. Remove older image content from the submitted history, start a new c
 the server with a larger count limit. The server does not discard images automatically.
 
 A request's images share 4,096 visual tokens, so a higher count makes each image smaller: eight images get about
-512 tokens each. On CUDA Qwen checkpoints (Qwen3.5/3.8 dense and Flash Next), `--vision-image-tokens N` raises
-that shared budget, up to 65,536, while each image keeps at most 4,096, so one image is sized as before. The tower
-encodes runs of whole images of at most 16,384 patches, the scratch one full-size image already needs; a request
+512 tokens each. `--vision-image-share fixed` trades that for a stable share: every image then takes
+`--vision-image-tokens / --vision-max-images` tokens, 1,024 under the defaults, whatever the request's own image
+count. A lone image therefore gets less than the default gives it, and in return an image keeps its rows from one
+turn to the next, so the prompt cache resumes from the first image instead of re-encoding it. The flag takes
+`request` (the default, the request's own count) or `fixed`; any other value is refused by name, and it matters only
+together with `--vision`. Where a share divides into nothing — a budget below the image limit — the request is
+refused, naming the image and both `--vision-image-tokens` and `--vision-max-images`.
+On CUDA Qwen checkpoints (Qwen3.5/3.8 dense and Flash Next), `--vision-image-tokens N` raises
+that shared budget, up to 65,536, while each image keeps at most 4,096, so one image is sized as before; under
+`--vision-image-share fixed` an image keeps the smaller of that 4,096 and `--vision-image-tokens / --vision-max-images`.
+The tower encodes runs of whole images of at most 16,384 patches, the scratch one full-size image already needs; a request
 that fits one run is encoded in one call, as before. The byte and pixel limits still apply, and the longer prompt
 counts against the context window.
 
@@ -145,10 +153,12 @@ For Qwen, each image request carries its own multimodal rotary positions and con
 
 ## The native server
 
-`tensorfold-native serve` takes `--vision`, `--vision-max-images` (default 4) and `--vision-image-tokens` (default
-4,096; 13,312 for Nemotron 3.5 Super VL) for engines that read images: GLM-5.3-Flash, Qwen3.8-27B, Qwen3.8 Flash Next, Gemma 4
-[31B](recipes/gemma-4-native.md#images) and [12B](recipes/gemma-4-12b-native.md#images) and Step-5-Preview on one
-Mac, GLM-5.3-Flash on [CUDA ranks](recipes/glm-5.3-flash-cuda.md#requests) and Nemotron 3.5 Super VL on CUDA. Other
+`tensorfold-native serve` takes `--vision`, `--vision-max-images` (default 4), `--vision-image-tokens` (default
+4,096; 13,312 for Nemotron 3.5 Super VL) and `--vision-image-share` (`request`, the default, or `fixed`) for engines
+that read images: GLM-5.3-Flash, Qwen3.8-27B, Qwen3.8 Flash Next, Gemma 4
+[31B](recipes/gemma-4-native.md#images) and [12B](recipes/gemma-4-12b-native.md#images), Step-5-Preview and
+[Inkling 2 Mini](recipes/inkling-2-mini-metal.md#limits) on one Mac, GLM-5.3-Flash on
+[CUDA ranks](recipes/glm-5.3-flash-cuda.md#requests) and Nemotron 3.5 Super VL on CUDA. Other
 native engines refuse the flag at startup.
 The CLI accepts explicit image budgets from 16 to 262,144 tokens; each engine still applies its own limits and memory admission.
 
@@ -284,6 +294,15 @@ get the tokens they got without the flag.
   and inside the request's `--vision-video-tokens` share, and resized with torch's antialiased uint8 bicubic. On three
   test clips the served prompt was as long as the processor's (239, 387 and 8,215 tokens); a 30-second 720p clip takes
   3.2 s to its first token.
+
+### Inkling 2 Mini
+
+With `--vision`, the Metal server loads the checkpoint's own tower and reads `image_url` parts in user and tool
+messages (an image part in an assistant message is refused). PNG and JPEG are decoded as above, so JPEG needs the
+pinned libjpeg-turbo release ([JPEG input](#jpeg-input)) and is refused by name without it; PNG and text requests still serve. Audio parts are refused
+with HTTP 400 ("content parts must be text or image_url; audio and video inputs are unsupported"), and a video part is
+refused the same way. The tower's checks and the served M4 Pro receipt are in
+[the recipe](recipes/inkling-2-mini-metal.md#verification).
 
 ### Video on the native server
 
