@@ -133,7 +133,7 @@ pub const Suite = struct {
         if (only) |text| if (std.mem.indexOf(u8, name, text) == null) return;
         const probe = try s.a.create(Probe);
         errdefer s.a.destroy(probe);
-        // The control plants the fault when the shipped kernel is exact, and restores the reference when a mutation is shipped.
+        // The control plants the fault in an exact kernel, and restores the reference when a mutation is shipped.
         const text = if (control) blk: {
             if (std.mem.indexOf(u8, sources.loop, mutation.to) != null) break :blk try std.mem.replaceOwned(u8, s.a, sources.loop, mutation.to, mutation.from);
             break :blk try std.mem.replaceOwned(u8, s.a, sources.loop, mutation.from, mutation.to);

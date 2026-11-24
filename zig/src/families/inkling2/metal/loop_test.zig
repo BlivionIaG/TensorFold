@@ -10,13 +10,21 @@ fn near(want: f64, got: f64) !void {
 }
 
 test "loop entries have unique symbols, launch records and disabled FP contraction" {
-    for (std.enums.values(p.Kind), records) |kind, record| {
+    const kinds = std.enums.values(p.Kind);
+    for (kinds, records[0..kinds.len]) |kind, record| {
         try t.expectEqualStrings(kind.label(), record.name);
         try t.expectEqual(@as(usize, 1), std.mem.count(u8, shader, kind.symbol()));
         try t.expectEqual(@as(u32, 256), record.threads);
         try t.expectEqual(record.threads, record.reserved);
         try t.expectEqual(p.geometry(kind, .{ .rows = 1, .n = 1, .k = 1 }).tg_memory, record.tg_memory);
     }
+    // LoopCD's combine is the last record: one symbol, 256 threads, no threadgroup memory.
+    try t.expectEqual(kinds.len + 1, records.len);
+    const combine = records[kinds.len];
+    try t.expect(std.mem.endsWith(u8, combine.name, " tf_inkling2_loop_loopcd_combine"));
+    try t.expectEqual(@as(usize, 1), std.mem.count(u8, shader, "tf_inkling2_loop_loopcd_combine("));
+    try t.expectEqual(@as(u32, 256), combine.threads);
+    try t.expectEqual(@as(u32, 0), combine.tg_memory);
     try t.expect(std.mem.indexOf(u8, shader, "#pragma METAL fp contract(off)") != null);
     try t.expect(std.mem.indexOf(u8, shader, "INKLING_LOOP_SCALE = 0x1.555556p-6f") != null);
     try t.expect(std.mem.indexOf(u8, shader, "LoopMathSpecMissing") == null);
