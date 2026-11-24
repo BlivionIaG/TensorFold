@@ -232,8 +232,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     if (h.draft != null) h.host.info_.draft_sources = .{ .drafter = .{ .name = "DSpark", .kind = "DSpark" } };
     if (o.vision) |v| h.host.info_.vision = .{ .ctx = h, .prepare = Host.prepare, .image_token = model.config.image_token, .markers = &h.markers, .part_type = "image", .image_tokens = v.image_tokens, .max_images = v.max_images };
     if (budget > 0) {
-        // prompt rows are cut on the chunk grid: a kept state is resumed only where a pass of this width stood
-        // guidance feeds the coda's KV, so a kept state of another mode or strength never resumes this one
+        // prompt rows are cut on the chunk grid; guidance feeds the coda's KV, so another mode's state never resumes
         const rules: api.prompt_cache.Rules = .{ .planned = true, .grid = target.max_rows, .tail = true, .key_salt = if (loopcd) |w| tf.loopcd.key(w) else 0 };
         h.cache = api.prompt_cache.Store.init(gpa, h.target.snapshots(), rules, budget);
         h.host.cache = &h.cache.?;

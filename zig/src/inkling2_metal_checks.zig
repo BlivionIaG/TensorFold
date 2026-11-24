@@ -393,7 +393,7 @@ test "inkling2 loopcd: the first pass decodes through the shared head and guides
     report("final pass", final);
     report("first pass (w=-1)", early);
     report("guided (w=0.3)", guided);
-    // The weak reference must be a decodable state with the same head, not noise: it picks the final top-1 far more often than chance.
+    // The weak reference must decode with the same head: it picks the final top-1 far more often than chance.
     try t.expect(early.agree * 4 > early.n);
 }
 
