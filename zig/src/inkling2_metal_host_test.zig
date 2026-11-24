@@ -5,6 +5,7 @@ const loopcd = if (@import("builtin").os.tag.isDarwin()) @import("native/inkling
 test {
     _ = @import("families/inkling2/metal/host_test.zig");
     _ = @import("inkling2_native.zig");
+    _ = @import("native/inkling2_admit_test.zig");
     _ = @import("core/loopcd.zig");
     _ = serving;
     _ = loopcd;

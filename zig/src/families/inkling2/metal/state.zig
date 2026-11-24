@@ -264,11 +264,11 @@ fn copyGpu(queue: mtl.Queue, from: mtl.Buffer, from_off: usize, to: mtl.Buffer, 
 }
 
 pub const fields = [_][]const u8{
-    "ids",      "pos",        "seg_of",     "segs",      "p",          "prelude",   "blocks",        "bank0",    "bank1",   "messages",
-    "partial",  "ar",         "gated",      "mlp_ar",    "mlp_gated",  "q_norm",    "k_norm",        "v_norm",   "q_raw",   "k_raw",
-    "v_raw",    "rel_raw",    "sink",       "gate",      "k_conv",     "v_conv",    "q_prep",        "rel_prep", "rel_tab", "part_o",
-    "part_ml",  "att",        "attn_dense", "attn_conv", "mlp_normed", "route_ids", "route_weights", "gu",       "down",    "mlp_out",
-    "mlp_conv", "logits_all", "h1",
+    "ids",      "pos",        "seg_of",       "segs",      "p",          "prelude",   "blocks",        "bank0",    "bank1",   "messages",
+    "partial",  "ar",         "gated",        "mlp_ar",    "mlp_gated",  "q_norm",    "k_norm",        "v_norm",   "q_raw",   "k_raw",
+    "v_raw",    "rel_raw",    "sink",         "gate",      "k_conv",     "v_conv",    "q_prep",        "rel_prep", "rel_tab", "part_o",
+    "part_ml",  "att",        "attn_dense",   "attn_conv", "mlp_normed", "route_ids", "route_weights", "gu",       "down",    "mlp_out",
+    "mlp_conv", "logits_all", "route_scores", "gate_norm", "gate_zeta",  "h1",
 };
 
 fn sizes(rows: usize) [fields.len]usize {
@@ -285,7 +285,7 @@ fn sizes(rows: usize) [fields.len]usize {
         r * rel_width * bf,        r * 24 * bf,                                      r * q * bf,                                r * kv * bf,                    r * kv * bf,    r * q * bf,     r * rel_width * bf,
         r * 24 * ap.extent * bf,   r * 24 * max_attention_stride * ap.head_dim * fp, r * 24 * max_attention_stride * 2 * fp,    r * q * bf,                     r * h * bf,     r * h * bf,     r * h * bf,
         r * experts_per_token * 4, r * experts_per_token * fp,                       r * experts_per_token * intermediate * bf, r * experts_per_token * h * bf, r * h * bf,     r * h * bf,     r * vocabulary * fp,
-        2 * r * h * bf,
+        r * 128 * fp,              r * 2 * h * bf,                                   r * 64 * fp,                               2 * r * h * bf,
     };
 }
 
@@ -338,6 +338,11 @@ pub const Scratch = struct {
     mlp_out: mtl.Buffer,
     mlp_conv: mtl.Buffer,
     logits_all: mtl.Buffer,
+    /// The split router's [row][128] scores and the split gates' [row][2H] BF16 norms and [row][64] zeta.
+    route_scores: mtl.Buffer,
+    gate_norm: mtl.Buffer,
+    gate_zeta: mtl.Buffer,
+    /// LoopCD's pass-1 exit, BF16: [row][H] residual, then [row][H] B12 block.
     h1: mtl.Buffer,
     /// Opt-in DSpark features [row][tap][H], allocated by prepare_features.
     taps: ?mtl.Buffer = null,

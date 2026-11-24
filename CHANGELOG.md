@@ -4,6 +4,20 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- Flash Next on CUDA: on one GPU, a prompt chunk before the last skips its last layer's MLP stream and experts, which nothing reads; tokens unchanged, and tensor-parallel passes run as before (#4885).
+
+- Inkling 2 Mini on Metal serves images under `--vision`: PNG, JPEG and WebP decode to 40-pixel patch tokens (resized only past the image budget), the 23-layer vision tower and its projector run on the GPU with the processor's rounding, and the tower's rows replace the image placeholders in a prefill chunk, split across chunks and cache restores like text rows. Without `--vision` images stay refused by name. Each picture the tower runs logs one `inkling2 image tower:` line with the picture's content hash, its rows and the SHA-256 of the BF16 rows it hands to the splice. The tower is checked against an FP64 reference on the original checkpoint, and its kernels carry contract records and planted controls (#4704, refs #4274 and #4387). Thanks to @BlivionIaG.
+
+- Settings: `TF_Q27_KV_GROW` (Metal) and `TF_QWEN_KV_SNAPSHOT_GPU` (CUDA) are checked at startup and refused by name like every registered setting; their accepted values are unchanged, except that `TF_QWEN_KV_SNAPSHOT_GPU` text other than `0` or `1`, which was read as off, is now refused. `docs/environment.md` now covers `TF_CUDA_POOL_AFTER_WARMUP`, `TF_GLM_WIDE_EXPERT_TILE`, `TF_Q27_KV_GROW`, `TF_QWEN35_CHUNK` and `TF_QWEN_KV_SNAPSHOT_GPU`, and `docs/run-guide.md` covers `tensorfold start --startup-timeout` (#4963).
+
+- Qwen 3.8-27B on Metal M5: 5-bit and 6-bit group-64 checkpoints split K for decode and prompt rows as v1.3.4 did again, so their sums run in v1.3.4's order; #4419 had moved them onto the 4-bit M5 split tables, and its register-direct kernels stay, at the restored splits. Gemma 4 and 4-bit are unchanged (#4962).
+
+- Nemotron 3.5 Transcribe on CUDA: chat requests take speech as 16 kHz mono WAV in OpenAI `input_audio` and vLLM `audio_url` parts, up to an hour of audio a request in the model's trained 65,536-token window, with each clip's rows keyed in the prompt cache and MTP drafts running over them; `/v1/models` lists `audio` among its input types (#1632, closes #1549). Thanks to @BobClawblaw.
+
+- Inkling 2 Mini on Metal: the startup line breaks the serve's demand into weights, dense layers and scratch, the state of each stream at the window and what the streams share, beside the room the load limit leaves; which streams and windows start is unchanged (#4705, refs #4274 and #4387).
+
+- Inkling 2 Mini on Metal: the router's and loop gates' dots run a thread per output with main's serial arithmetic (one row keeps main's kernels), so prompts reach the first token about 42% sooner and four streams decode about 64% faster on an M5 Ultra, with identical tokens (#4912).
+
 - Metal: Inkling 2 Mini gains opt-in LoopCD (arXiv:2610.02185), off by default: `--loopcd` with `--loopcd-w W` (`TF_LOOPCD`/`TF_LOOPCD_W`, a finite strength from -1 to 2 other than 0, 0.3 by default) makes the last of the loop's three passes read `bf16(h_R + w (h_R - h_1))` at every position before the coda, where h_1 is the first pass's exit residual and its B12 block, both banked at the pass restart the cross-pass messages already read; one elementwise kernel, one FP32 fma and one BF16 rounding per element, no extra pass. The Metal engine refuses the flags for other model types, and a kept prompt state carries the mode and strength in its cache key because guidance feeds the coda's KV.
 
 - LFM3-VL on Metal: a text-only load leaves the vision tower and projector on disk, so it holds only the text weights; replies are unchanged (#3420).
@@ -11,8 +25,6 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - Kolibri-1 on CUDA: decode rounds of two or more rows replay a CUDA graph captured once a shape, making the eager round's launches, so tokens are unchanged; `TENSORFOLD_KOLIBRI_GRAPHS=0` keeps them eager (#4884).
 
 - Inkling 2 Mini on CUDA: decode experts run a warp over 8 columns with gate and up in one launch, about 3% faster one-stream decode on GB10 on top of #4728, with identical tokens (#4729). Thanks @jschmied.
-
-
 
 - Inkling 2: required and named tool calls use the model's own message format, so a request that needs several calls ends after them instead of repeating until max_tokens; a required single call keeps its parsed tool_calls but its token ids change (#4898).
 
@@ -22,19 +34,13 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Flash Next on CUDA: `TF_FLASHNEXT_WINDOW_CHECK=1` (default off) runs a boot self-check that measures the widest verify window whose every row's scores equal its one-token step on that machine, and a lone stream's copy window then grows past the shipped 32 rows to at most the 48 the pending-row log holds; a check that cannot run, fails or proves nothing past 32 leaves the window at 32, and with the switch off every buffer the window sizes is main's (#4075). Thanks to @BadAd84.
 
-
-
 - Inkling 2 Mini on Metal: the routed experts and the combine run one thread per output with the same serial arithmetic, so one-stream decode is about 16x faster on an M5 Ultra and 17x on an M3 Ultra, with identical tokens (#4894). Thanks @sethforprivacy for the grid idea.
 
 - Qwen 3.8-27B on XPU: Arc Pro B60 cards open through device detection when no B70 is found; explicit overrides and the B70 default are unchanged (#4802).
 
-
-
 - GLM on Metal: `GLM_POOL_TOKENS` sizes the shared latent pool apart from each stream's `--context` window, so one Mac's streams can share a 2M-token pool with zero output-token differences (#3906). Thanks to @gilby.
 
 - DeepSeek-V4.1 on Metal: `TF_DSV41_ROUND_PROF=1` times every decode round (host prepare, encode, wait and choose, each command buffer's GPU span and the gaps between them, and the drafter's ingest, propose and finish) and logs mean, p50 and p95 by slots, rows and drafted or plain every 4096 rounds and at close; it is off by default and changes no token (#2951, refs #2984). Thanks to @gilby.
-
-
 
 - Qwen3.8 on CUDA: `TF_QWEN_PDL` is now on by default on sm_12x GPUs (GB10, RTX 50 series), so the ModelOpt NVFP4 lanes and the qwen35 glue kernels use programmatic dependent launch with tokens unchanged; other GPUs keep plain launches, `TF_QWEN_PDL=1` still turns it on from sm_90 and `TF_QWEN_PDL=0` turns it off (#4881).
 
@@ -87,6 +93,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - OCR: `POST /ocr` now answers LiteParse's OCR server contract, with one text item per line and its box in page pixels (#2573). Thanks @laudney.
 
 - H3 on Metal: transformer products run on the `h3_gemm_32x64` kernel in 64-row bands and the decoder decodes 64 tiles a pass, with sums unchanged (#4641).
+
+- CONTRIBUTING: exactness is bit for bit. A changed reduction order or rounding point must keep every output bit, by default and with any switch on; an FP64 reference no longer makes a different result acceptable (#4888).
 
 - Hy4-flash: host-side weight map, TP=1/2/4 partition and Engram FP8 row codec for the official W8A16 FP8 checkpoint, with refusal tests; serving follows in later PRs (#4827). Thanks @GrgaPalcic.
 

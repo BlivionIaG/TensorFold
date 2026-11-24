@@ -135,7 +135,7 @@ pub const Server = struct {
             log.line("--vision: marker token {d} is not an added token in this tokenizer; image and video input cannot be served safely", .{id});
             return error.InvalidVisionMarkers;
         };
-        srv.video_decoder = @import("input_types.zig").decodes(srv.info.vision); // no decoder: video parts are a 400, never a 500
+        try @import("input_types.zig").start(srv); // the video decoder and the audio locator's token
         try @import("speech_voices.zig").start(srv, gpa, io, config);
         if (!srv.info.capability(.text_generation)) {
             if (config.cortheon) return error.CortheonRequiresTextGeneration;

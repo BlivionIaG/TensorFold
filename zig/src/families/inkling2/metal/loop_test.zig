@@ -18,9 +18,9 @@ test "loop entries have unique symbols, launch records and disabled FP contracti
         try t.expectEqual(record.threads, record.reserved);
         try t.expectEqual(p.geometry(kind, .{ .rows = 1, .n = 1, .k = 1 }).tg_memory, record.tg_memory);
     }
-    // LoopCD's combine is the last record: one symbol, 256 threads, no threadgroup memory.
-    try t.expectEqual(kinds.len + 1, records.len);
-    const combine = records[kinds.len];
+    // LoopCD's combine is the last record, after the split gates' three: one symbol, 256 threads, no threadgroup memory.
+    try t.expectEqual(kinds.len + 4, records.len);
+    const combine = records[records.len - 1];
     try t.expect(std.mem.endsWith(u8, combine.name, " tf_inkling2_loop_loopcd_combine"));
     try t.expectEqual(@as(usize, 1), std.mem.count(u8, shader, "tf_inkling2_loop_loopcd_combine("));
     try t.expectEqual(@as(u32, 256), combine.threads);
@@ -28,6 +28,23 @@ test "loop entries have unique symbols, launch records and disabled FP contracti
     try t.expect(std.mem.indexOf(u8, shader, "#pragma METAL fp contract(off)") != null);
     try t.expect(std.mem.indexOf(u8, shader, "INKLING_LOOP_SCALE = 0x1.555556p-6f") != null);
     try t.expect(std.mem.indexOf(u8, shader, "LoopMathSpecMissing") == null);
+}
+
+test "the split gates' three launches follow the kinds' records, one symbol each" {
+    const split = records[std.enums.values(p.Kind).len..][0..3];
+    const symbols = [_][]const u8{ "tf_inkling2_loop_norm", "tf_inkling2_loop_down", "tf_inkling2_loop_apply" };
+    for (split, symbols, [_]u32{ 256, 32, 256 }) |record, symbol, threads| {
+        try t.expect(std.mem.endsWith(u8, record.name, symbol));
+        try t.expectEqual(@as(usize, 1), std.mem.count(u8, shader, symbol));
+        try t.expectEqual(threads, record.threads);
+        try t.expectEqual(record.threads, record.reserved);
+    }
+}
+
+test "the forward takes the split router and gates from two rows, and main's kernels at one" {
+    try t.expect(!p.splitRows(1));
+    try t.expect(p.splitRows(2));
+    try t.expect(p.splitRows(64));
 }
 
 test "shape admission and dispatch geometry fix H=2304, rank 64 and 48 messages" {
