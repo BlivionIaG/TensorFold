@@ -13,6 +13,7 @@ pub const RowsArgs = plan.RowsArgs;
 pub const Pipelines = struct {
     messages: mtl.Pipeline,
     gates: mtl.Pipeline,
+    combine: mtl.Pipeline,
 
     pub fn load(device: mtl.Device) !Pipelines {
         return loadSource(device, sources.loop);
@@ -23,9 +24,12 @@ pub const Pipelines = struct {
         var messages = try mtl.Pipeline.init(device, lib, plan.Kind.messages.symbol(), false);
         errdefer messages.deinit();
         const gate_pipeline = try mtl.Pipeline.init(device, lib, plan.Kind.gates.symbol(), false);
-        return .{ .messages = messages, .gates = gate_pipeline };
+        errdefer gate_pipeline.deinit();
+        const combine_pipeline = try mtl.Pipeline.init(device, lib, "inkling2_loop_loopcd_combine", false);
+        return .{ .messages = messages, .gates = gate_pipeline, .combine = combine_pipeline };
     }
     pub fn deinit(p: *Pipelines) void {
+        p.combine.deinit();
         p.gates.deinit();
         p.messages.deinit();
         p.* = undefined;
@@ -52,4 +56,16 @@ pub fn gates(p: *const Pipelines, e: mtl.ComputeEncoder, h: Ref, m: Ref, down: R
     bind(e, &.{ h, m, down, forget, gain, out });
     e.setValue(RowsArgs{ .rows = rows }, 6);
     e.dispatchGroups(mtl.Size.of(rows, 1, 1), mtl.Size.of(256, 1, 1));
+}
+
+pub const CombineArgs = struct { rows: u32, hidden: u32, planes: u32, stride: u32, w: f32 };
+const CombineKernelArgs = extern struct { rows: u32, hidden: u32, planes: u32, stride: u32, w: f32, pad: [3]f32 = .{ 0, 0, 0 } };
+
+/// LoopCD: every plane of `hair` becomes bf16(h_R + w (h_R - h_1)), one FP32 fma and one rounding, in place.
+pub fn combine(p: *const Pipelines, e: mtl.ComputeEncoder, hr: Ref, h1: Ref, a: CombineArgs) void {
+    std.debug.assert(a.rows > 0 and a.hidden > 0 and a.planes > 0 and a.stride >= a.hidden);
+    e.setPipeline(p.combine);
+    bind(e, &.{ hr, h1, hr });
+    e.setValue(CombineKernelArgs{ .rows = a.rows, .hidden = a.hidden, .planes = a.planes, .stride = a.stride, .w = a.w }, 3);
+    e.dispatchGroups(mtl.Size.of((a.hidden + 255) / 256, a.planes, a.rows), mtl.Size.of(256, 1, 1));
 }

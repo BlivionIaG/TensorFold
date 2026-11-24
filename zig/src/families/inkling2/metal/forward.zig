@@ -128,9 +128,22 @@ fn bankAndReset(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows:
         copyBf16(m, e, at(s.blocks, (i * state.block_slots + 2) * state.hidden * 2), row(s.bank0, i, state.hidden * 2), state.hidden);
     }
     copyBf16(m, e, at(s.p, 0), at(s.bank1, 0), rows * state.hidden);
+    // LoopCD's weak reference: the first pass's exit residual and its B12 block, both live right here.
+    if (m.loopcd != null) {
+        copyBf16(m, e, at(s.p, 0), at(s.h1, 0), rows * state.hidden);
+        for (0..rows) |i| copyBf16(m, e, at(s.blocks, (i * state.block_slots + 2) * state.hidden * 2), at(s.h1, (rows + i) * state.hidden * 2), state.hidden);
+    }
     loop.crossPassMessageAttention(&m.loop, e, l(at(s.bank0, 0)), l(at(s.bank1, 0)), l(r(m.weights.cross_queries)), l(r(m.weights.cross_kv_queries)), l(at(s.messages, 0)), @intCast(rows));
     // The prelude p is restored, but every visit's KV and convolution state remains live.
     copyBf16(m, e, at(s.prelude, 0), at(s.p, 0), rows * state.hidden);
+}
+
+/// LoopCD: the residual and the first core block the coda reads become h_R + w (h_R - h_1), every position.
+fn loopcd(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows: usize) void {
+    const w = m.loopcd orelse return;
+    const h = state.hidden;
+    loop.combine(&m.loop, e, l(at(s.p, 0)), l(at(s.h1, 0)), .{ .rows = @intCast(rows), .hidden = @intCast(h), .planes = 1, .stride = @intCast(rows * h), .w = w });
+    for (0..rows) |i| loop.combine(&m.loop, e, l(at(s.blocks, (i * state.block_slots + 2) * h * 2)), l(at(s.h1, (rows + i) * h * 2)), .{ .rows = 1, .hidden = @intCast(h), .planes = 1, .stride = @intCast(h), .w = w });
 }
 
 fn prepareAttentionInputs(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const layer_plan.Visit, rows: usize) void {
@@ -246,6 +259,7 @@ fn visit(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const la
         if (channel) |ch| captureTap(m, e, at(s.p, 0), to, rows, ch);
     }
     if (v.pass > 1 and v.layer == 6) bankAndReset(m, e, s, rows);
+    if (m.loopcd != null and m.config.text.loop != null and v.layer == m.config.text.loop.?.core_end) loopcd(m, e, s, rows);
     const w = &m.weights.layers[v.layer];
     // The running BF16 p is the partial AR source before attention replaces it with t.
     widen(m, e, at(s.p, 0), at(s.partial, 0), rows * state.hidden);
