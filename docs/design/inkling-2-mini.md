@@ -100,6 +100,24 @@ DSpark support is part of the plan on both backends, not an extra: H4, C5 and M6
 The engine slices C4 and M5 land first without it, so plain decode exists as the reference the drafter is checked against.
 The drafter taps by zero-based decoder visit: 5, 23 and 41 are the inputs to those visits, and 48 is the output after the final norm, not a cache slot.
 
+## LoopCD (opt-in, Metal)
+
+LoopCD ([arXiv:2610.02185](https://arxiv.org/abs/2610.02185), #4948) contrasts the loop's last pass with its first.
+With `--loopcd` (strength `--loopcd-w W`, 0.3 by default; `TF_LOOPCD` and `TF_LOOPCD_W`), the coda's first visit reads
+`bf16(h_R + w (h_R - h_1))` in place of the last pass's exit, at every position, prompt and decode rows alike.
+
+- **Scope:** both states the coda reads from the core are guided: the running residual (P18) and each row's B12 block.
+  `h_1` is pass 1's copy of both, taken at the second pass's restart, before the prelude returns; the third restart
+  holds pass 2's and is not read. One elementwise kernel, `tf_inkling2_loop_loopcd_combine`, rounds once to BF16.
+- **Off by default:** without the flag no tap, copy or kernel runs, and every logit is main's byte for byte.
+  The Metal engine refuses the flag for any model type but `inkling2_loop`; other backends do not list it.
+- **Tokens change by design.** A guided reply is not main's reply; it equals its own serial reference: a request alone,
+  concurrent, drafted, cut at any prefill chunk and restored from the prompt cache gives the same token ids and logits.
+- **Prompt cache:** a kept state's key carries the mode and strength (`prompt_cache.Rules.key_salt`), because guidance
+  feeds the coda's KV; a state kept at one strength never resumes another, or the unguided mode.
+- **Checks:** `tf-kernel-contract --only inkling2` covers the kernel with a planted sign control; the device cells are
+  `zig/src/native/inkling2_loopcd_test.zig` with `TF_INKLING2_METAL_DIR` (and `TF_INKLING2_DSPARK_DIR` for drafts).
+
 ## Gate
 
 The gate is agreed; the speed bar below is its threshold.
