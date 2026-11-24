@@ -18,7 +18,7 @@ test "loop entries have unique symbols, launch records and disabled FP contracti
         try t.expectEqual(record.threads, record.reserved);
         try t.expectEqual(p.geometry(kind, .{ .rows = 1, .n = 1, .k = 1 }).tg_memory, record.tg_memory);
     }
-    // LoopCD's combine is the last record, after the split gates' three: one symbol, 256 threads, no threadgroup memory.
+    // LoopCD's combine is the last record, after the split gates': one symbol, 256 threads, no threadgroup memory.
     try t.expectEqual(kinds.len + 4, records.len);
     const combine = records[records.len - 1];
     try t.expect(std.mem.endsWith(u8, combine.name, " tf_inkling2_loop_loopcd_combine"));
