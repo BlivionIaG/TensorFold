@@ -220,7 +220,7 @@ pub const Ops = struct {
         e.setPipeline(o.pipe(.loopcd_combine));
         bind(e, &.{ a.final, a.first, a.final });
         e.setValue(LoopcdKernelArgs{ .rows = a.rows, .hidden = a.hidden, .planes = a.planes, .stride = a.stride, .w = a.w }, 3);
-        e.dispatchThreads(mtl.Size.of(divCeil(a.hidden, 256), a.planes, a.rows), mtl.Size.of(256, 1, 1));
+        e.dispatchThreads(mtl.Size.of(divCeil(a.hidden, 256) * 256, a.planes, a.rows), mtl.Size.of(256, 1, 1));
     }
 
     fn gateCheck(rows: u32, hidden: u32, rank: u32, gates: u32) !void {

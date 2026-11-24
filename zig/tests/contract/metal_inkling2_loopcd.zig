@@ -19,6 +19,11 @@ const shapes = [_]c.Shape{
     .{ .rows = 17, .n = 128, .k = 1 },
 };
 
+fn noSums(shape: c.Shape) usize {
+    _ = shape;
+    return 0;
+}
+
 fn depth(shape: c.Shape) usize {
     _ = shape;
     return 2; // the difference and the fused multiply-add, both in fp32
@@ -70,7 +75,7 @@ const Combine = struct {
             .final = u.view(p.out),
             .first = u.view(p.y),
             .planes = @intCast(p.shape.k),
-            .stride = @intCast(p.shape.n),
+            .stride = @intCast(p.shape.rows * p.shape.n),
             .rows = @intCast(p.shape.rows),
             .hidden = @intCast(p.shape.n),
             .w = w,
@@ -117,8 +122,8 @@ const Combine = struct {
     fn kernel(p: *Combine, name: []const u8, ctl: bool) g.Kernel {
         return .{ .ctx = p, .vt = &vt, .control = if (ctl) .shapes else null, .spec = .{
             .name = name,
-            .accum = .f32,
-            .depth = depth,
+            .accum = .none,
+            .depth = noSums,
             .ops = 1,
             .out = .bf16,
             .in_place = true,
