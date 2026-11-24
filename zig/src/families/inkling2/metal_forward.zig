@@ -103,12 +103,14 @@ fn run(m: *Model, r: *layer.Run) !void {
     try r.embed();
     for (0..m.plan.n_visits) |k| {
         const visit: u32 = @intCast(k);
+        try r.loopcd(visit);
         try r.enter(visit);
         try r.capture(visit);
         try r.attend(visit);
         try m.store.encode(r.e, m.plan.visit(visit).layer, view(m.scratch.xm), view(m.scratch.rids), view(m.scratch.rwts), view(m.scratch.moe), r.n);
         try r.finish(visit);
     }
+    try r.loopcd(m.plan.n_visits);
     try r.head();
     try r.flush();
     queue.roundEnd();

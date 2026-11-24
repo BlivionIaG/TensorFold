@@ -170,6 +170,42 @@ pub const Run = struct {
         if (p.bank_blocks != 0) try r.copy(v(s.blocks, (p.pre_blocks + 1) * plane), v(s.bank, 0), p.bank_blocks * r.n);
         try r.copy(v(s.hid(k), 0), v(s.bank_h, 0), r.n);
         try r.copy(v(s.blocks, p.pre_blocks * plane), v(s.hid(k), 0), r.n);
+        // The first restart banks the first core pass's whole state: LoopCD's weak reference.
+        if (m.options.loopcd != null and m.config.text.loop != null and k == m.config.text.loop.?.end) {
+            if (p.bank_blocks != 0) try r.copy(v(s.bank, 0), v(s.h1, 0), p.bank_blocks * r.n);
+            try r.copy(v(s.bank_h, 0), v(s.h1, @as(usize, p.bank_blocks) * plane), r.n);
+        }
+    }
+
+    /// LoopCD: h' = h_R + w (h_R - h_1) on the state the coda's first layer reads, every position.
+    pub fn loopcd(r: *Run, k: u32) !void {
+        const m = r.m;
+        const w = m.options.loopcd orelse return;
+        const l = m.config.text.loop orelse return;
+        const at = l.start + l.passes * (l.end - l.start);
+        if (k != at) return;
+        const s = &m.scratch;
+        const h = r.hidden();
+        const plane = @as(usize, r.n) * h;
+        const first = @as(usize, m.plan.bank_blocks) * plane * 2;
+        if (m.plan.bank_blocks != 0) try m.loop_ops.loopcd(r.e, .{
+            .final = v(s.blocks, @as(usize, m.plan.pre_blocks + 1) * plane * 2),
+            .first = v(s.h1, 0),
+            .planes = m.plan.bank_blocks,
+            .stride = @intCast(plane),
+            .rows = r.n,
+            .hidden = h,
+            .w = w,
+        });
+        try m.loop_ops.loopcd(r.e, .{
+            .final = v(s.hid(k), 0),
+            .first = v(s.h1, first),
+            .planes = 1,
+            .stride = @intCast(plane),
+            .rows = r.n,
+            .hidden = h,
+            .w = w,
+        });
     }
 
     fn copy(r: *Run, src: View, dst: View, rows: u32) !void {

@@ -12,6 +12,7 @@ const ex = @import("metal_experts.zig");
 const fwd = @import("metal_forward.zig");
 const plan_mod = @import("plan.zig");
 const loop_mod = @import("metal_loop.zig");
+const loopcd_mod = @import("../../core/loopcd.zig");
 const Mapped = @import("metal_mapped.zig").Mapped;
 
 pub const Options = struct {
@@ -27,6 +28,8 @@ pub const Options = struct {
     vision: bool = false,
     /// Prompt chunks of `ex.group_min_rows` rows or more run on a Metal 4 queue where this Mac has one.
     metal4: bool = false,
+    /// LoopCD's strength: the first core pass guides the last before the coda (null: off).
+    loopcd: ?f32 = null,
 };
 
 /// Per-forward activations for `rows` rows: row-major, stage by stage in the order the graph writes them.
@@ -63,6 +66,7 @@ pub const Scratch = struct {
     msg: mtl.Buffer, // four FP32 messages per row
     mixf: mtl.Buffer, // up to three FP32 attention-residual mixes per row
     down: mtl.Buffer, // BF16 controller projections
+    h1: mtl.Buffer, // BF16 [(core blocks - 1) + 1][rows][H]: the first pass's state, for LoopCD (empty when off)
 
     const names = std.meta.fieldNames(Scratch);
 
@@ -71,8 +75,8 @@ pub const Scratch = struct {
         return if (layer % 2 == 0) s.hid0 else s.hid1;
     }
 
-    /// Bytes of each field in field order.
-    fn sizes(t: *const config.Text, rows: u32) [names.len]usize {
+    /// Bytes of each field in field order; `loopcd` sizes the first pass's tap.
+    fn sizes(t: *const config.Text, rows: u32, loopcd: bool) [names.len]usize {
         const r: usize = rows;
         const h: usize = t.hidden;
         const nb: usize = (t.layers + t.block - 1) / t.block;
@@ -83,12 +87,12 @@ pub const Scratch = struct {
         const taps = @as(usize, @max(t.local.kv, t.global.kv)) * config.conv_taps;
         const loop = t.loop.?;
         return .{
-            r * 4,         r * h * 2,             r * h * 2,                nb * r * h * 2,                                      3 * r * h * 2, r * h * 2,
-            r * qw * 2,    r * kvw * 2,           r * kvw * 2,              r * kvw * 2,                                         r * kvw * 2,   r * relw * 2,
-            r * qw * 2,    r * qh * 2,            r * taps * 2,             r * taps * 2,                                        r * qw * 2,    r * h * 2,
-            r * h * 2,     r * h * 4,             r * t.topk * 4,           r * t.topk * 4,                                      r * h * 2,     r * h * 2,
-            r * h * 2,     r * h * 2,             r * t.unpadded_vocab * 2, ((loop.end - loop.start) / t.block - 1) * r * h * 2, r * h * 2,     4 * r * h * 4,
-            3 * r * h * 4, 3 * r * loop.rank * 2,
+            r * 4,         r * h * 2,             r * h * 2,                                                          nb * r * h * 2,                                      3 * r * h * 2, r * h * 2,
+            r * qw * 2,    r * kvw * 2,           r * kvw * 2,                                                        r * kvw * 2,                                         r * kvw * 2,   r * relw * 2,
+            r * qw * 2,    r * qh * 2,            r * taps * 2,                                                       r * taps * 2,                                        r * qw * 2,    r * h * 2,
+            r * h * 2,     r * h * 4,             r * t.topk * 4,                                                     r * t.topk * 4,                                      r * h * 2,     r * h * 2,
+            r * h * 2,     r * h * 2,             r * t.unpadded_vocab * 2,                                           ((loop.end - loop.start) / t.block - 1) * r * h * 2, r * h * 2,     4 * r * h * 4,
+            3 * r * h * 4, 3 * r * loop.rank * 2, if (loopcd) ((loop.end - loop.start) / t.block) * r * h * 2 else 0,
         };
     }
 
@@ -97,8 +101,8 @@ pub const Scratch = struct {
         return std.mem.eql(u8, name, "ids");
     }
 
-    fn init(device: mtl.Device, t: *const config.Text, rows: u32) !Scratch {
-        const lengths = sizes(t, rows);
+    fn init(device: mtl.Device, t: *const config.Text, rows: u32, loopcd: bool) !Scratch {
+        const lengths = sizes(t, rows, loopcd);
         var s: Scratch = undefined;
         var made: usize = 0;
         errdefer s.release(made);
@@ -114,9 +118,9 @@ pub const Scratch = struct {
         inline for (names, 0..) |name, i| if (i < upto) @field(s.*, name).deinit();
     }
 
-    pub fn bytes(t: *const config.Text, rows: u32) u64 {
+    pub fn bytes(t: *const config.Text, rows: u32, loopcd: bool) u64 {
         var total: u64 = 0;
-        for (sizes(t, rows)) |n| total += @max(n, 16);
+        for (sizes(t, rows, loopcd)) |n| total += @max(n, 16);
         return total;
     }
 
@@ -158,6 +162,7 @@ pub const Model = struct {
         m.config = try readConfig(gpa, io, dir);
         const t = &m.config.text;
         const loop = t.loop orelse return error.NotLoopConfig;
+        if (options.loopcd) |w| if (!loopcd_mod.accepted(w)) return error.InvalidLoopcd;
         const blocks = (t.layers + t.block - 1) / t.block;
         if (blocks + 1 > loop_mod.max_sources or loop.rank > loop_mod.max_rank or t.hidden > loop_mod.max_hidden)
             return error.UnsupportedLoopGeometry;
@@ -196,7 +201,7 @@ pub const Model = struct {
         errdefer m.loop_ops.deinit();
         m.store = try ex.Store.load(gpa, m.device, &m.checkpoint, &m.config, options.rows);
         errdefer m.store.deinit();
-        m.scratch = try Scratch.init(m.device, t, options.rows);
+        m.scratch = try Scratch.init(m.device, t, options.rows, options.loopcd != null);
         errdefer m.scratch.deinit();
         m.logits = try m.device.buffer(@as(usize, options.rows) * t.unpadded_vocab * 4, mtl.ResourceOptions.shared);
         errdefer m.logits.deinit();
@@ -240,7 +245,7 @@ pub const Model = struct {
 
     /// Shared mapped weights plus graph and expert scratch, excluding per-stream state.
     pub fn fixedBytes(m: *const Model) u64 {
-        var total = m.weightBytes() + Scratch.bytes(&m.config.text, m.options.rows) + m.ops.scratch.length() + m.ops.stage_bytes + m.loop_ops.scratch.length() + m.store.scratchBytes() + m.logits.length();
+        var total = m.weightBytes() + Scratch.bytes(&m.config.text, m.options.rows, m.options.loopcd != null) + m.ops.scratch.length() + m.ops.stage_bytes + m.loop_ops.scratch.length() + m.store.scratchBytes() + m.logits.length();
         if (m.taps) |b| total += b.length();
         return total;
     }

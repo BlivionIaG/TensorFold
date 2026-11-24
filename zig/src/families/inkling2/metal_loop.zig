@@ -30,7 +30,7 @@ comptime {
     std.debug.assert(small_rows * stat_floats * 4 <= stats_bytes);
 }
 
-const Kernel = enum { mix, gate_down, gate_mix, mix_stats, mix_apply, gate_y, gate_norm, gate_prep, gate_dot, gate_y_mma, gate_down_mma };
+const Kernel = enum { mix, gate_down, gate_mix, mix_stats, mix_apply, gate_y, gate_norm, gate_prep, gate_dot, gate_y_mma, gate_down_mma, loopcd_combine };
 const kernel_count = @typeInfo(Kernel).@"enum".field_names.len;
 
 /// Every symbol the library defines, in pipeline order (the registration list the contract's launch records name).
@@ -64,9 +64,17 @@ const GateKernelArgs = extern struct {
     eps_unweighted: f32,
     eps_norm: f32,
 };
+const LoopcdKernelArgs = extern struct {
+    rows: u32,
+    hidden: u32,
+    planes: u32,
+    stride: u32,
+    w: f32,
+    pad: [3]f32 = .{ 0, 0, 0 },
+};
 
 comptime {
-    std.debug.assert(@sizeOf(MixKernelArgs) == 40 and @sizeOf(GateKernelArgs) == 40);
+    std.debug.assert(@sizeOf(MixKernelArgs) == 40 and @sizeOf(GateKernelArgs) == 40 and @sizeOf(LoopcdKernelArgs) == 32);
 }
 
 pub const Error = error{InvalidLoopOp};
@@ -124,6 +132,18 @@ pub const GateMixArgs = struct {
 
 /// The largest call: its pre-norm gate states (fp32, every gate) live in the scratch past the statistics.
 pub const Options = struct { rows: u32 = 64, hidden: u32 = max_hidden };
+
+/// LoopCD's combine: the final pass's planes (guided in place), the first pass's matching planes, a strength.
+pub const LoopcdArgs = struct {
+    final: View,
+    first: View,
+    planes: u32,
+    /// BF16 elements between planes.
+    stride: u32,
+    rows: u32,
+    hidden: u32,
+    w: f32,
+};
 
 pub const Ops = struct {
     pipes: [kernel_count]mtl.Pipeline,
@@ -191,6 +211,16 @@ pub const Ops = struct {
         bind(e, &.{ a.blocks, a.partial, a.queries[0], a.queries[1], a.queries[2], a.queries[3], a.out });
         e.setValue(args, 7);
         e.dispatchGroups(mtl.Size.of(a.rows, 1, 1), mtl.Size.of(256, 1, 1));
+    }
+
+    /// LoopCD: h' = h_R + w (h_R - h_1) over `planes` planes, written in place over the final pass's values.
+    pub fn loopcd(o: *const Ops, e: mtl.ComputeEncoder, a: LoopcdArgs) !void {
+        if (a.rows == 0 or a.planes == 0 or a.hidden == 0 or a.hidden > max_hidden or a.stride < a.hidden or !std.math.isFinite(a.w) or a.w == 0)
+            return error.InvalidLoopOp;
+        e.setPipeline(o.pipe(.loopcd_combine));
+        bind(e, &.{ a.final, a.first, a.final });
+        e.setValue(LoopcdKernelArgs{ .rows = a.rows, .hidden = a.hidden, .planes = a.planes, .stride = a.stride, .w = a.w }, 3);
+        e.dispatchThreads(mtl.Size.of(divCeil(a.hidden, 256), a.planes, a.rows), mtl.Size.of(256, 1, 1));
     }
 
     fn gateCheck(rows: u32, hidden: u32, rank: u32, gates: u32) !void {
