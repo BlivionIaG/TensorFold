@@ -358,9 +358,9 @@ test "inkling2 loopcd: the first pass decodes through the shared head and guides
     const dir = try fixture();
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
-    const plain = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 2, .rows = 32 });
+    const plain = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 2, .rows = 128 });
     defer plain.deinit();
-    const m = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 2, .rows = 32, .loopcd = 0.3 });
+    const m = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 2, .rows = 128, .loopcd = 0.3 });
     defer m.deinit();
     var a = try plain.newState();
     defer a.deinit();
@@ -402,7 +402,7 @@ test "inkling2 loopcd: guided rows equal whole, chunked, shared and restored pas
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
     for ([_]f32{ -1, 0.3, 1 }) |w| {
-        const m = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 2, .rows = 16, .loopcd = w });
+        const m = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 2, .rows = 128, .loopcd = w });
         defer m.deinit();
         var a = try m.newState();
         defer a.deinit();
@@ -422,12 +422,15 @@ test "inkling2 loopcd: guided rows equal whole, chunked, shared and restored pas
                 try t.expectEqualSlices(f32, whole[at * v ..][0 .. n * v], logits(m, n));
             }
         }
-        // Two streams in one pass: each item's rows equal its solo run's.
+        // Two streams in one pass: each item's rows equal its solo run's (a 64-row prefix fits one forward).
+        const half = ids[0..64];
+        const solo = try score(m, &a, half);
+        defer t.allocator.free(solo);
         m.reset(&a);
         m.reset(&b);
-        try m.forward(&.{ .{ .state = &a, .ids = ids, .logit_rows = @intCast(ids.len) }, .{ .state = &b, .ids = ids, .logit_rows = @intCast(ids.len) } });
-        try t.expectEqualSlices(f32, whole, logits(m, 2 * ids.len)[0..whole.len]);
-        try t.expectEqualSlices(f32, whole, logits(m, 2 * ids.len)[whole.len..]);
+        try m.forward(&.{ .{ .state = &a, .ids = half, .logit_rows = @intCast(half.len) }, .{ .state = &b, .ids = half, .logit_rows = @intCast(half.len) } });
+        try t.expectEqualSlices(f32, solo, logits(m, 2 * half.len)[0..solo.len]);
+        try t.expectEqualSlices(f32, solo, logits(m, 2 * half.len)[solo.len..]);
         // A state kept mid-prompt resumes to the same rows.
         var c = try m.newState();
         defer c.deinit();
