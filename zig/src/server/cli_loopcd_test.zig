@@ -12,7 +12,7 @@ test "LoopCD: off by default, the flag and strength reach the engine, and only t
     var out: std.Io.Writer.Allocating = .init(a);
     try cli.capabilities(&out.writer, .{ .version = "0" });
     const listed = std.mem.indexOf(u8, out.written(), "\"--loopcd\"") != null;
-    try std.testing.expectEqual(cli.Test.servedBy(cli.Test.native_serves, "--loopcd"), listed);
+    try std.testing.expectEqual(@import("builtin").os.tag == .macos, listed);
     var u: cli.Usage = .{};
     if (!listed) {
         try std.testing.expectError(error.Usage, cli.parse(a, &.{ "m", "--loopcd" }, &u));
