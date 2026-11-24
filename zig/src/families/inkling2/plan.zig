@@ -28,6 +28,14 @@ pub const Visit = struct {
     pub fn hasMessages(v: Visit) bool {
         return v.previous_core_start != null;
     }
+    /// LoopCD's weak reference, pass 1's exit: live at the second pass's restart, before the prelude returns.
+    pub fn tapsFirstPass(v: Visit, core_start: u32) bool {
+        return v.pass == 2 and v.layer == core_start;
+    }
+    /// LoopCD's apply point: the coda's first visit, once a forward.
+    pub fn entersCoda(v: Visit, core_end: u32) bool {
+        return v.pass == 0 and v.layer == core_end;
+    }
 };
 
 pub const Plan = struct {
