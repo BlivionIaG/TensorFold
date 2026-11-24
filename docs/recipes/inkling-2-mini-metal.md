@@ -367,10 +367,15 @@ is the paper's default hidden-space rule.
 
 Measured on the M4 Pro (`TF_INKLING2_MINI_SMOKE` at the pinned revision, `test-inkling2-metal`):
 
-- Guided passes equal a solo, unchunked pass at 1, 2, 4 and 8 streams, resumed from a kept state, and cut at other
-  prompt-chunk seams, at $w$ = 0.3 and 1.
-- A guided one-token step costs ADD ms against a plain one at 128 rows; prefill rows cost ADD ms a row. <!-- fill -->
-- Quality probe (SHORT): ADD.
+- The first pass, decoded through the shared head and the coda, is not noise: at $w = -1$ it picks the final pass's
+  top-1 token on 149 of 176 positions and its mean log probability of the real next token is -5.5225 against the final
+  pass's -5.5219 (the guided state at $w = 0.3$: 157 of 176, -5.5221; a 201,058-token vocabulary puts chance at 0.1 %).
+- Guided rows equal a whole, unchunked guided pass at 1-, 7-, 15- and 31-row chunks, with two streams in one pass
+  against their solo runs, and after a state kept mid-prompt is restored, at $w = -1$, 0.3 and 1.
+- With the flag off on a model loaded with it, every FP32 logit equals a model loaded without it (byte for byte), so the
+  off path's tokens and kept-state comparisons are the base branch's.
+- The combine is one dispatch a forward over two rows of the state and adds no layer visit; its own cost was not timed
+  separately.
 
 ## Verification
 
