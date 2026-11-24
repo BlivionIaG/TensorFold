@@ -36,7 +36,7 @@ const Combine = struct {
     y: rig.Ref = undefined,
     out: rig.Ref = undefined,
 
-    fn count(p: *const Combine) usize {
+    pub fn count(p: *const Combine) usize {
         return p.shape.rows * p.shape.k * p.shape.n;
     }
 
@@ -105,17 +105,17 @@ const Combine = struct {
                 break :blk @floatCast(@mulAdd(f16, @as(f16, @floatCast(w)), rf - qf, rf));
             },
             .bf16 => blk: {
-                const rf = u.bf(r);
-                const qf = u.bf(q);
-                break :blk u.bf(@mulAdd(f32, w, rf - qf, rf));
+                const rf: f32 = @floatCast(u.bf(r));
+                const qf: f32 = @floatCast(u.bf(q));
+                break :blk u.bf(@mulAdd(f32, @as(f32, @floatCast(w)), rf - qf, rf));
             },
             .none => 0,
         };
     }
 
     const vt = g.hooks(Combine);
-    fn kernel(p: *Combine, name: []const u8, control: bool) g.Kernel {
-        return .{ .ctx = p, .vt = &vt, .control = if (control) .shapes else null, .spec = .{
+    fn kernel(p: *Combine, name: []const u8, ctl: bool) g.Kernel {
+        return .{ .ctx = p, .vt = &vt, .control = if (ctl) .shapes else null, .spec = .{
             .name = name,
             .accum = .f32,
             .depth = depth,
