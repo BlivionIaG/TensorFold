@@ -338,6 +338,40 @@ and accepted as cold ones, and `bench_concurrent.py --alone --serial` had 60 of 
 to 2.6 s against 10 to 12 s cold at 3,000 tokens and 6 to 7 s against 16 to 17 s at 4,400, on a machine under load;
 decode with no kept states is unchanged (A-B-B-A, 33.2 against 32.7 and 30.8 against 31.2 tok/s).
 
+## LoopCD
+
+`--loopcd` turns on LoopCD ([arXiv:2610.02185](https://arxiv.org/abs/2610.02185), *Decoding Looped Transformers
+Better for (Almost) Free*), off by default. `--loopcd-w W` sets its fixed strength (a finite number from -1 to 2, not
+0); `--loopcd` alone uses the paper's generation strength, 0.3. `TF_LOOPCD=1` and `TF_LOOPCD_W=W` do the same from the
+environment. The flags are this family's: the Metal engine refuses them for any other model type and the CUDA build
+refuses them by name, and `capabilities` lists them only where they run.
+
+LoopCD contrasts the last pass of the recurrent block with the first before the layers that follow it. Here the
+recurrent core is layers 6 to 17 (12 logical layers, three passes), and the coda is layers 18 to 23, the final norm and
+the head. At every position of every chunk, before the coda runs, each row of the core's residual stream (the value the
+last core layer's partial block wrote, the state the coda's queries and KV read) becomes
+
+$$h' = h_R + w\,(h_R - h_1)$$
+
+where $h_1$ is that row as pass 1 left the core and $h_R$ its value in the last pass. One elementwise kernel does it over
+the state's columns in FP32 with a single BF16 rounding, so it costs one pass over the activations and no weight
+arithmetic; the head, the coda and the draft head then read the guided state. Guidance applies to prompt and generated
+positions alike, which is what makes a guided request's tokens independent of its chunking, its concurrency and a kept
+prompt state: every guided pass equals a solo, unchunked guided pass. A kept state records that it was made under
+guidance and at which strength, so a guided request never resumes a plain state or another strength's (the guidance
+feeds the coda's keys and values).
+
+DSpark's drafts are allowed with the flag: the target's guided head verifies them, so a drafted guided round has the
+same tokens as a plain guided one. $w = -1$ reproduces the first pass's own state, the paper's weak reference; $w = 1$
+is the paper's default hidden-space rule.
+
+Measured on the M4 Pro (`TF_INKLING2_MINI_SMOKE` at the pinned revision, `test-inkling2-metal`):
+
+- Guided passes equal a solo, unchunked pass at 1, 2, 4 and 8 streams, resumed from a kept state, and cut at other
+  prompt-chunk seams, at $w$ = 0.3 and 1.
+- A guided one-token step costs ADD ms against a plain one at 128 rows; prefill rows cost ADD ms a row. <!-- fill -->
+- Quality probe (SHORT): ADD.
+
 ## Verification
 
 Each line names the head it was taken on. The contract line was taken at `c7aa88235c` (and `test-inkling2-host` built

@@ -2,11 +2,11 @@
 const std = @import("std");
 
 /// The salt's kept entry sharing the longest prefix, its last prompt the fork mark; empty when none shares.
-pub fn longestShared(comptime E: type, entries: []const *const E, prompt: []const u32, salt: ?u64) []const u32 {
+pub fn longestShared(comptime E: type, entries: []const *const E, prompt: []const u32, salt: ?u64, key_salt: u64) []const u32 {
     var best: ?*const E = null;
     var best_n: usize = 0;
     for (entries) |e| {
-        if (e.expired or e.salt != salt or e.last.len == 0) continue;
+        if (e.expired or e.salt != salt or e.key_salt != key_salt or e.last.len == 0) continue;
         const n = std.mem.indexOfDiff(u32, e.last, prompt) orelse @min(e.last.len, prompt.len);
         if (n == 0 or n >= prompt.len or n <= best_n) continue;
         best = e;
@@ -16,7 +16,7 @@ pub fn longestShared(comptime E: type, entries: []const *const E, prompt: []cons
 }
 
 test "the longest shared kept prompt is the fork, and a whole-prompt match is not" {
-    const E = struct { expired: bool = false, salt: ?u64 = null, last: []const u32 };
+    const E = struct { expired: bool = false, salt: ?u64 = null, key_salt: u64 = 0, last: []const u32 };
     const a = [_]u32{ 1, 2, 3, 4, 5 };
     const b = [_]u32{ 1, 2, 9, 4, 5 };
     const one: E = .{ .last = &a };
@@ -32,7 +32,7 @@ test "the longest shared kept prompt is the fork, and a whole-prompt match is no
 }
 
 test "the fork learns from the request salt's entries only" {
-    const E = struct { expired: bool = false, salt: ?u64 = null, last: []const u32 };
+    const E = struct { expired: bool = false, salt: ?u64 = null, key_salt: u64 = 0, last: []const u32 };
     const a = [_]u32{ 1, 2, 3, 4, 5 };
     const b = [_]u32{ 1, 2, 9, 4, 5 };
     const one: E = .{ .salt = 7, .last = &a };

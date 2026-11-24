@@ -311,6 +311,10 @@ pub const Open = struct {
     vision: ?VisionOpen = null,
     /// --loops: passes over a looped model's recurrent block (Dory's; null: the checkpoint's own count).
     loops: ?u32 = null,
+    /// --loopcd: LoopCD guides a looped model's last pass with its first (off by default); looped families only.
+    loopcd: bool = false,
+    /// --loopcd-w: the fixed strength (null: the family's default; only read with `loopcd`).
+    loopcd_w: ?f32 = null,
 };
 
 pub const Decision = @import("engine_decision.zig").Decision;

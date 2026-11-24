@@ -129,6 +129,8 @@ pub const flags = [_]Flag{
     .{ .name = "--prefill-pass" },
     .{ .name = "--pass-cache-gib" },
     .{ .name = "--mlx-cache-gib" },
+    .{ .name = "--loopcd", .kind = .store_true, .native = builtin.os.tag == .macos },
+    .{ .name = "--loopcd-w", .native = builtin.os.tag == .macos },
     .{ .name = "--ssd-experts", .native = builtin.os.tag == .macos },
     .{ .name = "--ple-on-ssd", .kind = .store_true, .native = builtin.os.tag == .macos },
     .{ .name = "--fsr-route-trace", .path = true, .native = builtin.os.tag == .macos },
@@ -169,7 +171,7 @@ pub const flags = [_]Flag{
 /// The variables this binary honours as the Python engine does, then the CUDA build's or the Metal build's.
 pub const env = [_][]const u8{ "TENSORFOLD_API_KEY", "TENSORFOLD_NO_LIVE", "TENSORFOLD_SEED_SALT", "TENSORFOLD_REQUEST_LOG", "TENSORFOLD_REQUEST_JOURNAL", "TENSORFOLD_TOOL_ID_KEY_FILE", "TENSORFOLD_PHASE_METRICS", "TENSORFOLD_LIBPDFIUM", "TENSORFOLD_MAX_PDF_PAGES", "TENSORFOLD_DEVICE_CHECK", "HF_HOME", "HF_HUB_CACHE", "BRAVE_SEARCH_API_KEY", "TENSORFOLD_PARALLEL", "TENSORFOLD_VIDEO_TOKENS", "TENSORFOLD_PREFIX_WAIT_MS", "TENSORFOLD_PRESSURE_CACHE_PERCENT", "TENSORFOLD_RESTORE_PREFETCH", "TENSORFOLD_RESTORE_PREFETCH_GIB", "TENSORFOLD_RESTORE_PREFETCH_MS", "TENSORFOLD_PULL_CONNECT_SECONDS", "TENSORFOLD_PULL_STALL_SECONDS", "TF_CACHE_EVICT", "TF_SHARED_PRICE_LOG", "TF_STARTUP_RECEIPT", "TF_QWEN_PDL", "TENSORFOLD_LOG_TIME", "TENSORFOLD_TOOL_GRAMMAR", "TF_DSV41_TOOL_GRAMMAR", "TF_GLM_WORLD", "TF_GLM_CLEAR_THINKING", "TF_DSV41_SCHEMA_PROMPT", "TF_SLIDE_TAKE_OUT_CHECK" } ++
     (if (cuda_build) [_][]const u8{ "TF_CUDA_DEVICE", "TF_CUDA_SEGMENTS", "TENSORFOLD_CUDA_KERNELS", "TENSORFOLD_MEMORY_RESERVE_GIB", "TENSORFOLD_CUDA_MEMORY_LIMIT_GB", "TENSORFOLD_P2P_DIAGNOSTICS", "TENSORFOLD_P2P_PROBE" } else [_][]const u8{}) ++
-    (if (builtin.os.tag == .macos) [_][]const u8{"TF_Q27_PROFILE"} else [_][]const u8{});
+    (if (builtin.os.tag == .macos) [_][]const u8{ "TF_Q27_PROFILE", "TF_LOOPCD", "TF_LOOPCD_W" } else [_][]const u8{});
 pub const Args = @import("cli_args.zig").Args;
 
 /// A usage error's message (argparse's ``error:`` line); the caller exits 2.
@@ -255,7 +257,11 @@ pub fn one(a: Allocator, out: *Args, repeated: *Repeated, flag: Flag, value: ?[]
     if (value) |v| if (flag.choices.len > 0 and !std.mem.eql(u8, flag.name, "--profile")) for (flag.choices) |c| {
         if (std.mem.eql(u8, c, v)) break;
     } else return fail(u, a, "argument {s}: invalid choice: '{s}'", .{ flag.name, v });
-    if (!flag.native) return fail(u, a, "{s} is not served by the native engine yet; the Python engine 0.6.6 serves it: python -m pip install git+https://github.com/ashhart/TensorFold.git@v0.6.6", .{flag.name});
+    if (!flag.native) {
+        if (std.mem.eql(u8, flag.name, "--loopcd") or std.mem.eql(u8, flag.name, "--loopcd-w"))
+            return fail(u, a, "argument {s}: LoopCD guides a looped model's first recurrent pass; this build serves it for Inkling 2 Mini on Metal only", .{flag.name});
+        return fail(u, a, "{s} is not served by the native engine yet; the Python engine 0.6.6 serves it: python -m pip install git+https://github.com/ashhart/TensorFold.git@v0.6.6", .{flag.name});
+    }
     if (flag.native_values) |allowed| if (value) |v| for (allowed) |x| {
         if (std.mem.eql(u8, x, v)) break;
     } else return fail(u, a, "{s} {s} is not served by the native engine; the Python engine 0.6.6 serves it: python -m pip install git+https://github.com/ashhart/TensorFold.git@v0.6.6", .{ flag.name, v });
@@ -375,7 +381,10 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
     } else if (is(name, "--decode-share")) {
         out.decode_share = try float(u, a, name, v);
         if (!(out.decode_share.? >= 0 and out.decode_share.? < 1)) return fail(u, a, "argument --decode-share: expected a share from 0 to under 1: '{s}'", .{v});
-    } else if (is(name, "--prompt-seed")) out.prompt_seed = true else if (is(name, "--cache-salt-per-key")) out.cache_salt_per_key = true else if (is(name, "--max-tokens")) out.max_tokens = try int(u, a, name, v) else if (is(name, "--temperature")) out.temperature = try float(u, a, name, v) else if (is(name, "--top-p")) out.top_p = try float(u, a, name, v) else if (is(name, "--top-k")) out.top_k = try int(u, a, name, v) else if (is(name, "--min-p")) out.min_p = try float(u, a, name, v) else if (is(name, "--instruct-sampling")) out.instruct_sampling = if (try @import("family_sampling.zig").pairsProblem(a, v)) |why| return fail(u, a, "argument {s}: {s}: '{s}'", .{ name, why, v }) else v else if (is(name, "--thinking")) out.thinking = true else if (is(name, "--no-thinking")) out.thinking = false else if (is(name, "--reasoning-effort")) out.reasoning_effort = v else if (is(name, "--thinking-budget")) out.thinking_budget = try int(u, a, name, v) else if (is(name, "--thinking-reserve")) out.thinking_reserve = try int(u, a, name, v) else if (is(name, "--loop-guard")) out.loop_guard = true else if (is(name, "--loop-guard-stop")) out.loop_guard_stop = true else if (is(name, "--tool-think-close")) out.tool_think_close = true else if (is(name, "--execution-witness")) out.execution_witness = true else if (is(name, "--drafter")) out.drafter = v else if (is(name, "--drafter-bits")) out.drafter_bits = @intCast(try int(u, a, name, v)) else if (is(name, "--record")) out.record = v else if (is(name, "--kv-cache")) out.kv_cache = v else if (is(name, "--prompt-precision")) out.prompt_precision = v else if (is(name, "--no-drafts")) out.no_drafts = true else if (is(name, "--keep-warm")) out.keep_warm = try int(u, a, name, v) else if (is(name, "--idle-unload")) out.idle_unload = try int(u, a, name, v) else if (is(name, "--compact-at")) {
+    } else if (is(name, "--prompt-seed")) out.prompt_seed = true else if (is(name, "--cache-salt-per-key")) out.cache_salt_per_key = true else if (is(name, "--max-tokens")) out.max_tokens = try int(u, a, name, v) else if (is(name, "--temperature")) out.temperature = try float(u, a, name, v) else if (is(name, "--loopcd")) out.loopcd = true else if (is(name, "--loopcd-w")) {
+        out.loopcd = true;
+        out.loopcd_w = try float(u, a, name, v);
+    } else if (is(name, "--top-p")) out.top_p = try float(u, a, name, v) else if (is(name, "--top-k")) out.top_k = try int(u, a, name, v) else if (is(name, "--min-p")) out.min_p = try float(u, a, name, v) else if (is(name, "--instruct-sampling")) out.instruct_sampling = if (try @import("family_sampling.zig").pairsProblem(a, v)) |why| return fail(u, a, "argument {s}: {s}: '{s}'", .{ name, why, v }) else v else if (is(name, "--thinking")) out.thinking = true else if (is(name, "--no-thinking")) out.thinking = false else if (is(name, "--reasoning-effort")) out.reasoning_effort = v else if (is(name, "--thinking-budget")) out.thinking_budget = try int(u, a, name, v) else if (is(name, "--thinking-reserve")) out.thinking_reserve = try int(u, a, name, v) else if (is(name, "--loop-guard")) out.loop_guard = true else if (is(name, "--loop-guard-stop")) out.loop_guard_stop = true else if (is(name, "--tool-think-close")) out.tool_think_close = true else if (is(name, "--execution-witness")) out.execution_witness = true else if (is(name, "--drafter")) out.drafter = v else if (is(name, "--drafter-bits")) out.drafter_bits = @intCast(try int(u, a, name, v)) else if (is(name, "--record")) out.record = v else if (is(name, "--kv-cache")) out.kv_cache = v else if (is(name, "--prompt-precision")) out.prompt_precision = v else if (is(name, "--no-drafts")) out.no_drafts = true else if (is(name, "--keep-warm")) out.keep_warm = try int(u, a, name, v) else if (is(name, "--idle-unload")) out.idle_unload = try int(u, a, name, v) else if (is(name, "--compact-at")) {
         out.compact_auto = std.mem.eql(u8, v, "auto"); // each occurrence replaces both fields, so the last one wins
         out.compact_fraction = null;
         if (!out.compact_auto) {
@@ -459,6 +468,8 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .device = args.device,
         .segments = args.segments,
         .loops = args.loops,
+        .loopcd = args.loopcd,
+        .loopcd_w = args.loopcd_w,
         .precision = args.precision,
         .mtp_drafts = args.mtp_drafts,
         .mtp_confidence = args.mtp_confidence,

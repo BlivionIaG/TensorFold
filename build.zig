@@ -277,6 +277,9 @@ pub fn build(b: *std.Build) void {
     // the chat template's nesting, step, stack and memory limits (zig/src/core/template/limits_test.zig), on every host
     const template_limits = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = b.graph.host, .optimize = .Debug, .link_libc = true });
     b.step("test-template-limits-host", "Chat template nesting, render steps, stack and memory limits without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = template_limits, .filters = &.{"security:"} })).step);
+    const loopcd_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/loopcd_host_test.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true }) });
+    test_step.dependOn(&b.addRunArtifact(loopcd_tests).step);
+    b.step("test-loopcd-host", "LoopCD's strength, environment and fold, without a device").dependOn(&b.addRunArtifact(loopcd_tests).step);
     sys_build.wire(b);
     @import("zig/build/checkpoint_config.zig").tests(b);
     @import("zig/build/checkpoint_config.zig").wire(b);

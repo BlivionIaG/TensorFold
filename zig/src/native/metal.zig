@@ -92,6 +92,15 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     const report = @import("sys").optional_libraries.atBoundary();
     defer report.deinit();
     if (fsr_options.refuse(o, problem)) return null;
+    // LoopCD guides a looped model's first pass: the only looped family this build serves is Inkling 2 Mini.
+    const loopcd = tf.loopcd.fromEnvironment(o.loopcd, o.loopcd_w) catch {
+        problem.* = "--loopcd-w must be a finite strength from -1 to 2, not 0";
+        return null;
+    };
+    if (loopcd != null and !std.mem.eql(u8, o.model_type, "inkling2_loop")) {
+        problem.* = "--loopcd guides a looped model's first recurrent pass; the Metal engine serves it for Inkling 2 Mini (inkling2_loop) only";
+        return null;
+    }
     if (o.prompt_int8 or o.rope_yarn != null) {
         problem.* = if (o.prompt_int8) prompt_int8_refusal else "--rope-yarn: the Metal engine has no YaRN rope; serve without --rope-yarn";
         return null;

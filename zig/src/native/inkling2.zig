@@ -137,10 +137,18 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     }
     const requested: u32 = @intCast(o.context orelse 8192);
     const drafted = o.drafts;
-    const model = fl.Model.load(gpa, io, o.dir, .{ .capacity = requested, .streams = o.lanes, .rows = target.max_rows, .drafts = drafted, .vision = o.vision != null, .metal4 = try @import("sys").environment.read(bool, "TF_METAL4", true) }) catch |err| {
+    const loopcd = tf.loopcd.fromEnvironment(o.loopcd, o.loopcd_w) catch |err| {
+        problem.* = switch (err) {
+            error.InvalidStrength => "--loopcd-w must be a finite strength from -1 to 2, not 0",
+            else => "--loopcd-w is not a strength this engine reads",
+        };
+        return null;
+    };
+    const model = fl.Model.load(gpa, io, o.dir, .{ .capacity = requested, .streams = o.lanes, .rows = target.max_rows, .drafts = drafted, .vision = o.vision != null, .metal4 = try @import("sys").environment.read(bool, "TF_METAL4", true), .loopcd = loopcd }) catch |err| {
         problem.* = switch (err) {
             error.InvalidOptions => try std.fmt.allocPrint(a, "--context {d} is outside this Inkling 2 Mini checkpoint's window", .{requested}),
             error.NoDraftHead => "this Inkling 2 Mini checkpoint has no DSpark head; serve with --no-drafts",
+            error.InvalidLoopcd => "--loopcd-w must be a finite strength from -1 to 2, not 0",
             else => try std.fmt.allocPrint(a, "Inkling 2 cannot load this Mini checkpoint ({s}); it needs the original thinkingmachines/Inkling-2-Mini release", .{@errorName(err)}),
         };
         return null;
@@ -225,7 +233,8 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     if (o.vision) |v| h.host.info_.vision = .{ .ctx = h, .prepare = Host.prepare, .image_token = model.config.image_token, .markers = &h.markers, .part_type = "image", .image_tokens = v.image_tokens, .max_images = v.max_images };
     if (budget > 0) {
         // prompt rows are cut on the chunk grid: a kept state is resumed only where a pass of this width stood
-        const rules: api.prompt_cache.Rules = .{ .planned = true, .grid = target.max_rows, .tail = true };
+        // guidance feeds the coda's KV, so a kept state of another mode or strength never resumes this one
+        const rules: api.prompt_cache.Rules = .{ .planned = true, .grid = target.max_rows, .tail = true, .key_salt = if (loopcd) |w| tf.loopcd.key(w) else 0 };
         h.cache = api.prompt_cache.Store.init(gpa, h.target.snapshots(), rules, budget);
         h.host.cache = &h.cache.?;
         h.host.advertiseCache(&h.cache.?);
@@ -242,7 +251,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         h.warm = r.target();
     } else h.warm = .{ .queue = model.queue };
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
-    std.log.info("inkling2 mini: {d} streams, {d}-token context, {d} logical layers over {d} physical; weights {d:.2} GiB resident, dense+scratch {d:.2} GiB; DSpark {s}, images {s}, prompt cache {d:.2} GiB; demand {d:.2} GiB ({d:.2} GiB fixed, {d} x {d:.2} GiB a stream)", .{ count, window, model.config.text.executionLayers(), model.config.text.layers, @as(f64, @floatFromInt(model.weightBytes())) / (1 << 30), @as(f64, @floatFromInt(model.fixedBytes())) / (1 << 30), if (h.draft != null) "on" else "off", if (h.vision != null) "on" else "off", @as(f64, @floatFromInt(budget)) / (1 << 30), @as(f64, @floatFromInt(demand.of(count))) / (1 << 30), @as(f64, @floatFromInt(fixed_bytes + sampling_bytes)) / (1 << 30), count, @as(f64, @floatFromInt(stream_bytes)) / (1 << 30) });
+    std.log.info("inkling2 mini: {d} streams, {d}-token context, {d} logical layers over {d} physical; weights {d:.2} GiB resident, dense+scratch {d:.2} GiB; DSpark {s}, images {s}, prompt cache {d:.2} GiB, LoopCD {s}; demand {d:.2} GiB ({d:.2} GiB fixed, {d} x {d:.2} GiB a stream)", .{ count, window, model.config.text.executionLayers(), model.config.text.layers, @as(f64, @floatFromInt(model.weightBytes())) / (1 << 30), @as(f64, @floatFromInt(model.fixedBytes())) / (1 << 30), if (h.draft != null) "on" else "off", if (h.vision != null) "on" else "off", @as(f64, @floatFromInt(budget)) / (1 << 30), if (loopcd) |w| try std.fmt.allocPrint(a, "on at {d:.2}", .{w}) else "off", @as(f64, @floatFromInt(demand.of(count))) / (1 << 30), @as(f64, @floatFromInt(fixed_bytes + sampling_bytes)) / (1 << 30), count, @as(f64, @floatFromInt(stream_bytes)) / (1 << 30) });
     try h.host.start();
     started = true;
     transfer = true;

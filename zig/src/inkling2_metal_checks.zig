@@ -303,3 +303,146 @@ test "inkling2 Mini keeps every expert resident: SSD expert pools are refused fo
     o.fsr_trace = "trace";
     try t.expect(o.fsrRefusal("metal") != null);
 }
+
+/// Teacher-forced prompts from the family's chat-template fixtures: code, numbers, markers and a repeated tail.
+const loopcd_prompts = [_][]const u32{
+    &.{ 200002, 200004, 34182, 279, 154554, 150628, 25, 220, 15, 13, 24, 200010, 200000, 200004, 1719, 149983, 7, 87, 8, 25, 198, 149862, 150583, 149924, 145054, 17, 220, 196994, 152397, 68014, 197, 1160, 7, 69, 7, 18, 8, 8, 198, 200010 },
+    &.{ 200002, 200004, 34182, 279, 154554, 150628, 25, 220, 15, 13, 24, 200010, 200000, 200004, 1256, 6, 82, 220, 70904, 81554, 22, 199445, 6, 51, 151292, 26, 220, 149961, 6, 359, 150294, 197017, 68247, 2157, 30, 200010 },
+    &.{ 200002, 200004, 34182, 279, 154554, 150628, 25, 220, 15, 13, 24, 200010, 200000, 200004, 89246, 175691, 25, 220, 200010, 149880, 220, 200000, 153200, 150311, 13, 200010 },
+    &.{ 200002, 200004, 34182, 279, 154554, 150628, 25, 220, 15, 13, 24, 200010, 200000, 200004, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 31496, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 151290, 220, 200010 },
+};
+
+fn topOf(row: []const f32) u32 {
+    var best: u32 = 0;
+    for (row, 1..) |v, i| if (v > row[best]) {
+        best = @intCast(i);
+    };
+    return best;
+}
+
+/// The sampler's own log probability of one token: logits after the softcap, log-softmaxed over the real vocabulary.
+fn logOf(row: []const f32, id: u32) f64 {
+    var most: f32 = row[0];
+    for (row) |v| most = @max(most, v);
+    var sum: f64 = 0;
+    for (row) |v| sum += @exp(@as(f64, v - most));
+    return @as(f64, row[id] - most) - @log(sum);
+}
+
+/// One teacher-forced pass over every row: the logits of the prompt's own next tokens.
+fn score(m: *fl.Model, state: *fl.state.State, ids: []const u32) ![]f32 {
+    m.reset(state);
+    try m.forward(&.{.{ .state = state, .ids = ids, .logit_rows = @intCast(ids.len) }});
+    return t.allocator.dupe(f32, logits(m, ids.len));
+}
+
+/// Next-token top-1 hits, the mean log probability of the real next token, and agreement with the final pass.
+const Tally = struct { hits: u32 = 0, n: u32 = 0, logprob: f64 = 0, agree: u32 = 0 };
+
+fn add(tally: *Tally, got: []const f32, base: []const f32, ids: []const u32, v: usize) void {
+    for (0..ids.len - 1) |r| {
+        const want = ids[r + 1];
+        tally.n += 1;
+        tally.hits += @intFromBool(topOf(got[r * v ..][0..v]) == want);
+        tally.logprob += logOf(got[r * v ..][0..v], want);
+        tally.agree += @intFromBool(topOf(got[r * v ..][0..v]) == topOf(base[r * v ..][0..v]));
+    }
+}
+
+fn report(name: []const u8, tally: Tally) void {
+    const n: f64 = @floatFromInt(@max(tally.n, 1));
+    std.debug.print("loopcd probe {s}: next-token top-1 {d}/{d}, agree with final {d}/{d}, mean logprob {d:.4}\n", .{ name, tally.hits, tally.n, tally.agree, tally.n, tally.logprob / n });
+}
+
+test "inkling2 loopcd: the first pass decodes through the shared head and guides the last" {
+    const dir = try fixture();
+    const pool = mtl.objc.Pool.push();
+    defer pool.pop();
+    const plain = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 2, .rows = 32 });
+    defer plain.deinit();
+    const m = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 2, .rows = 32, .loopcd = 0.3 });
+    defer m.deinit();
+    var a = try plain.newState();
+    defer a.deinit();
+    var b = try m.newState();
+    defer b.deinit();
+    const v = m.config.text.unpadded_vocab;
+    var final = Tally{};
+    var early = Tally{};
+    var guided = Tally{};
+    for (loopcd_prompts) |ids| {
+        const base = try score(plain, &a, ids);
+        defer t.allocator.free(base);
+        // The flag off on a model loaded with it: the unguided bytes, and the tap work skipped.
+        m.options.loopcd = null;
+        const off = try score(m, &b, ids);
+        defer t.allocator.free(off);
+        try t.expectEqualSlices(f32, base, off);
+        // w = -1 reproduces the first core pass's own state through the coda and head.
+        m.options.loopcd = -1;
+        const pass1 = try score(m, &b, ids);
+        defer t.allocator.free(pass1);
+        m.options.loopcd = 0.3;
+        const guide = try score(m, &b, ids);
+        defer t.allocator.free(guide);
+        try t.expect(!std.mem.eql(f32, guide, base) and !std.mem.eql(f32, pass1, base));
+        add(&final, base, base, ids, v);
+        add(&early, pass1, base, ids, v);
+        add(&guided, guide, base, ids, v);
+    }
+    report("final pass", final);
+    report("first pass (w=-1)", early);
+    report("guided (w=0.3)", guided);
+    // The weak reference must be a decodable state with the same head, not noise: it picks the final top-1 far more often than chance.
+    try t.expect(early.agree * 4 > early.n);
+}
+
+test "inkling2 loopcd: guided rows equal whole, chunked, shared and restored passes" {
+    const dir = try fixture();
+    const pool = mtl.objc.Pool.push();
+    defer pool.pop();
+    for ([_]f32{ -1, 0.3, 1 }) |w| {
+        const m = try fl.Model.load(t.allocator, t.io, dir, .{ .capacity = 128, .streams = 2, .rows = 16, .loopcd = w });
+        defer m.deinit();
+        var a = try m.newState();
+        defer a.deinit();
+        var b = try m.newState();
+        defer b.deinit();
+        const ids = loopcd_prompts[3];
+        const whole = try score(m, &a, ids);
+        defer t.allocator.free(whole);
+        const v = m.config.text.unpadded_vocab;
+        // Chunks cut anywhere: each row's guided state depends on its own position, never the pass's width.
+        for ([_]usize{ 1, 7, 15, 31 }) |step| {
+            m.reset(&b);
+            var at: usize = 0;
+            while (at < ids.len) : (at += step) {
+                const n = @min(step, ids.len - at);
+                try m.forward(&.{.{ .state = &b, .ids = ids[at..][0..n], .logit_rows = @intCast(n) }});
+                try t.expectEqualSlices(f32, whole[at * v ..][0 .. n * v], logits(m, n));
+            }
+        }
+        // Two streams in one pass: each item's rows equal its solo run's.
+        m.reset(&a);
+        m.reset(&b);
+        try m.forward(&.{ .{ .state = &a, .ids = ids, .logit_rows = @intCast(ids.len) }, .{ .state = &b, .ids = ids, .logit_rows = @intCast(ids.len) } });
+        try t.expectEqualSlices(f32, whole, logits(m, 2 * ids.len)[0..whole.len]);
+        try t.expectEqualSlices(f32, whole, logits(m, 2 * ids.len)[whole.len..]);
+        // A state kept mid-prompt resumes to the same rows.
+        var c = try m.newState();
+        defer c.deinit();
+        m.reset(&c);
+        const cut = 13;
+        try m.forward(&.{.{ .state = &c, .ids = ids[0..cut], .logit_rows = 0 }});
+        var snap = try m.save(&c);
+        defer snap.deinit();
+        try m.forward(&.{.{ .state = &c, .ids = ids[cut..], .logit_rows = @intCast(ids.len - cut) }});
+        const kept = try t.allocator.dupe(f32, logits(m, ids.len - cut));
+        defer t.allocator.free(kept);
+        try t.expectEqualSlices(f32, whole[cut * v ..], kept);
+        m.reset(&b);
+        try m.restore(&b, &snap);
+        try m.forward(&.{.{ .state = &b, .ids = ids[cut..], .logit_rows = @intCast(ids.len - cut) }});
+        try t.expectEqualSlices(f32, kept, logits(m, ids.len - cut));
+    }
+}

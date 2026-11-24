@@ -4,12 +4,14 @@ const mtl = @import("metal");
 const g = @import("contract").gates;
 const Ops = @import("metal_inkling2_suite.zig").Suite;
 const Loop = @import("metal_inkling2_loop.zig").Suite;
+const Loopcd = @import("metal_inkling2_loopcd.zig").Suite;
 const Experts = @import("metal_inkling2_experts.zig").Suite;
 const Media = @import("metal_inkling2_media_suite.zig").Suite;
 
 pub const Suites = struct {
     ops: Ops,
     loop: Loop,
+    loopcd: Loopcd,
     experts: Experts,
     media: Media,
 
@@ -17,6 +19,7 @@ pub const Suites = struct {
         return .{
             .ops = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
             .loop = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
+            .loopcd = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
             .experts = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
             .media = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
         };
@@ -26,6 +29,7 @@ pub const Suites = struct {
     pub fn collect(s: *Suites, only: ?[]const u8) !void {
         try s.ops.collect(only);
         try s.loop.collect(only);
+        try s.loopcd.collect(only);
         try s.experts.collect(only);
         try s.media.collect(only);
     }
@@ -33,6 +37,7 @@ pub const Suites = struct {
     pub fn deinit(s: *Suites) void {
         s.ops.deinit();
         s.loop.deinit();
+        s.loopcd.deinit();
         s.experts.deinit();
         s.media.deinit();
     }
