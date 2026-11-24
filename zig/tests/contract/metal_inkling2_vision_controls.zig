@@ -2,7 +2,7 @@
 const std = @import("std");
 const contract = @import("contract");
 
-pub const Kind = enum { pack, embed, qkv, heads, bias_gelu, gelu_rows, residual, layer_norm, softmax, gemm_tail, gemm_rows };
+pub const Kind = enum { pack, embed, qkv, heads, bias_gelu, gelu_rows, residual, layer_norm, softmax, gemm_tail, gemm_rows, gemm_score };
 
 pub const Edit = struct { label: []const u8, from: []const u8, to: []const u8, gate: contract.spec.Gate };
 
@@ -59,8 +59,8 @@ pub fn edit(kind: Kind) Edit {
         },
         .softmax => .{
             .label = "control: metal inkling2 vision ik2v_softmax ignores NaN exp",
-            .from = "const float e = metal::precise::exp(s[i] - m);",
-            .to = "const float e = isnan(s[i] - m) ? 0.0f : metal::precise::exp(s[i] - m);",
+            .from = "const float e = metal::precise::exp(float(s[i]) - m);",
+            .to = "const float e = isnan(float(s[i]) - m) ? 0.0f : metal::precise::exp(float(s[i]) - m);",
             .gate = g.nonfinite,
         },
         .gemm_tail => .{
@@ -73,6 +73,12 @@ pub fn edit(kind: Kind) Edit {
             .label = "control: metal inkling2 vision ik2_gemm_bf16_nt_rows feeds block 1 the weights of block 0",
             .from = "simdgroup_multiply_accumulate(acc1, fa, fb1, acc1);",
             .to = "simdgroup_multiply_accumulate(acc1, fa, fb0, acc1);",
+            .gate = g.shapes,
+        },
+        .gemm_score => .{
+            .label = "control: metal inkling2 vision ik2_gemm_score_nt drops the score scale",
+            .from = "tf_vis_bf(tf_vis_bf(acc[i][j]) * scale)",
+            .to = "tf_vis_bf(acc[i][j])",
             .gate = g.shapes,
         },
     };

@@ -98,6 +98,7 @@ pub const Suite = struct {
         };
         try s.gemmControl(only, .gemm_tail, .bf16f_nt);
         // Without tensor units a few-row GEMM runs the 8x8 simdgroup kernel; its fault is only in that text.
+        try s.gemmControl(only, .gemm_score, .score_nt);
         if (!s.device.tensorUnits()) try s.gemmControl(only, .gemm_rows, .bf16_nt);
         try s.plain(rows, only);
         try s.plain(glue, only);
