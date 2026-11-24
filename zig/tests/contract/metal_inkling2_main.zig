@@ -8,6 +8,7 @@ pub const Suites = struct {
     glue: @import("metal_inkling2_glue.zig").Suite,
     experts: @import("metal_inkling2_experts.zig").Suite,
     loop: @import("metal_inkling2_loop.zig").Suite,
+    loopcd: @import("metal_inkling2_loopcd.zig").Suite,
     runtime: @import("metal_inkling2_runtime.zig").Suite,
     dspark: @import("metal_inkling2_dspark.zig").Suite,
 
@@ -17,6 +18,7 @@ pub const Suites = struct {
             .glue = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
             .experts = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
             .loop = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
+            .loopcd = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
             .runtime = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
             .dspark = .{ .a = a, .device = device, .queue = queue, .kernels = kernels },
         };
@@ -25,6 +27,7 @@ pub const Suites = struct {
         try s.glue.collect(only);
         try s.experts.collect(only);
         try s.loop.collect(only);
+        try s.loopcd.collect(only);
         try s.runtime.collect(only);
         try s.dspark.collect(only);
         return s;
@@ -35,6 +38,7 @@ pub const Suites = struct {
         s.glue.deinit();
         s.experts.deinit();
         s.loop.deinit();
+        s.loopcd.deinit();
         s.runtime.deinit();
         s.dspark.deinit();
     }

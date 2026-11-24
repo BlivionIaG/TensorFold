@@ -25,7 +25,7 @@ pub const Pipelines = struct {
         errdefer messages.deinit();
         const gate_pipeline = try mtl.Pipeline.init(device, lib, plan.Kind.gates.symbol(), false);
         errdefer gate_pipeline.deinit();
-        const combine_pipeline = try mtl.Pipeline.init(device, lib, "inkling2_loop_loopcd_combine", false);
+        const combine_pipeline = try mtl.Pipeline.init(device, lib, "tf_inkling2_loop_loopcd_combine", false);
         return .{ .messages = messages, .gates = gate_pipeline, .combine = combine_pipeline };
     }
     pub fn deinit(p: *Pipelines) void {
