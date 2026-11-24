@@ -24,11 +24,11 @@ test "the longest shared kept prompt is the fork, and a whole-prompt match is no
     const gone: E = .{ .expired = true, .last = &a };
     const kept = [_]*const E{ &one, &two, &gone };
     const prompt = [_]u32{ 1, 2, 3, 4, 50 };
-    try std.testing.expectEqualSlices(u32, &a, longestShared(E, &kept, &prompt, null)); // four of five tokens shared
+    try std.testing.expectEqualSlices(u32, &a, longestShared(E, &kept, &prompt, null, 0)); // four of five tokens shared
     const whole = [_]u32{ 1, 2, 3, 4, 5 };
-    try std.testing.expectEqual(@as(usize, 0), longestShared(E, kept[0..1], &whole, null).len);
+    try std.testing.expectEqual(@as(usize, 0), longestShared(E, kept[0..1], &whole, null, 0).len);
     const none = [_]u32{ 9, 9 };
-    try std.testing.expectEqual(@as(usize, 0), longestShared(E, &kept, &none, null).len);
+    try std.testing.expectEqual(@as(usize, 0), longestShared(E, &kept, &none, null, 0).len);
 }
 
 test "the fork learns from the request salt's entries only" {
@@ -41,12 +41,12 @@ test "the fork learns from the request salt's entries only" {
     const kept = [_]*const E{ &one, &two };
     const prompt = [_]u32{ 1, 2, 3, 4, 50 };
     // Two salts sharing a prefix: each salt's fork comes only from its own entries.
-    try std.testing.expectEqualSlices(u32, &a, longestShared(E, &kept, &prompt, 7));
-    try std.testing.expectEqualSlices(u32, &b, longestShared(E, &kept, &prompt, 8));
+    try std.testing.expectEqualSlices(u32, &a, longestShared(E, &kept, &prompt, 7, 0));
+    try std.testing.expectEqualSlices(u32, &b, longestShared(E, &kept, &prompt, 8, 0));
     // One salt alone: the other salt's longer match never shapes its mark.
-    try std.testing.expectEqual(@as(usize, 0), longestShared(E, kept[0..1], &prompt, 8).len);
-    try std.testing.expectEqualSlices(u32, &a, longestShared(E, kept[0..1], &prompt, 7));
+    try std.testing.expectEqual(@as(usize, 0), longestShared(E, kept[0..1], &prompt, 8, 0).len);
+    try std.testing.expectEqualSlices(u32, &a, longestShared(E, kept[0..1], &prompt, 7, 0));
     // No salt on either side behaves as today; a salted entry is not a candidate for an unsalted request.
-    try std.testing.expectEqual(@as(usize, 0), longestShared(E, &kept, &prompt, null).len);
-    try std.testing.expectEqualSlices(u32, &b, longestShared(E, &[_]*const E{ &one, &open }, &prompt, null));
+    try std.testing.expectEqual(@as(usize, 0), longestShared(E, &kept, &prompt, null, 0).len);
+    try std.testing.expectEqualSlices(u32, &b, longestShared(E, &[_]*const E{ &one, &open }, &prompt, null, 0));
 }

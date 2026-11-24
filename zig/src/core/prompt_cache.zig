@@ -568,32 +568,5 @@ test {
     _ = @import("prompt_cache_tail_test.zig");
     _ = @import("prompt_cache_others_test.zig");
     _ = @import("prompt_cache_miss_test.zig");
-}
-
-test "prompt cache: a family's mode key keeps another mode's kept states from resuming" {
-    const gpa = std.testing.allocator;
-    var arena: std.heap.ArenaAllocator = .init(gpa);
-    defer arena.deinit();
-    const a = arena.allocator();
-    var f: @import("prompt_cache_fake.zig").Fake = .{ .gpa = gpa };
-    var s = Store.init(gpa, f.snapshots(), .{ .min_prompt = 0, .chunk = 4, .min_gap = 1 }, 1 << 20);
-    defer s.deinit();
-    const ids = [_]u32{ 1, 2, 3, 4, 5, 6, 7, 8 };
-    var sum: u64 = 0;
-    for (ids) |t| sum = sum *% 31 +% t;
-    var p = try s.begin(a, &ids, ids.len, &.{}, &.{}, null, &.{});
-    try std.testing.expectEqual(@as(u32, 0), p.from);
-    try std.testing.expectEqual(sum, f.pass(&s, &ids, p));
-    // Another mode's guidance feeds the same prompt's coda KV: its states are never this mode's to resume.
-    s.rules.key_salt = 0x5a17;
-    p = try s.begin(a, &ids, ids.len, &.{}, &.{}, null, &.{});
-    try std.testing.expectEqual(@as(u32, 0), p.from);
-    try std.testing.expectEqual(sum, f.pass(&s, &ids, p));
-    try std.testing.expectEqual(@as(usize, 2), s.entries.items.len);
-    s.rules.key_salt = 0;
-    p = try s.begin(a, &ids, ids.len, &.{}, &.{}, null, &.{});
-    try std.testing.expectEqual(@as(u32, 8), p.from);
-    s.rules.key_salt = 0x5a17;
-    p = try s.begin(a, &ids, ids.len, &.{}, &.{}, null, &.{});
-    try std.testing.expectEqual(@as(u32, 8), p.from);
+    _ = @import("prompt_cache_mode_key_test.zig");
 }
