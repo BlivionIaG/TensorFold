@@ -205,6 +205,8 @@ pub const Model = struct {
     dense: [6]mtl.Pipeline,
     norm: mtl.Pipeline,
     runtime: [runtime_names.len]mtl.Pipeline,
+    /// LoopCD's strength (null: off): the first core pass guides the last before the coda.
+    loopcd: ?f32 = null,
 
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !*Model {
         const pool = mtl.objc.Pool.push();

@@ -47,6 +47,10 @@ pub const Metal = struct {
         errdefer scratch.deinit();
         var prompt = try st.Scratch.init(model.device, st.prompt_rows);
         errdefer prompt.deinit();
+        if (model.loopcd != null) {
+            try scratch.guide(model.device);
+            try prompt.guide(model.device);
+        }
         const tokens = try gpa.alloc(u32, ring);
         errdefer gpa.free(tokens);
         const values = try gpa.alloc(f32, model.config.text.unpadded_vocab);

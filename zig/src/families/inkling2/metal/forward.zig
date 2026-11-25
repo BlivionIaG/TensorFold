@@ -147,6 +147,22 @@ fn bankAndReset(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows:
     copyBf16(m, e, at(s.prelude, 0), at(s.p, 0), rows * state.hidden);
 }
 
+/// LoopCD's weak reference: pass 1's exit residual and its B12 block, read before the restart resets them.
+fn tapFirstPass(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows: usize) void {
+    const h1 = s.h1.?;
+    copyBf16(m, e, at(s.p, 0), at(h1, 0), rows * state.hidden);
+    for (0..rows) |i| copyBf16(m, e, at(s.blocks, (i * state.block_slots + 2) * state.hidden * 2), at(h1, (rows + i) * state.hidden * 2), state.hidden);
+}
+
+/// LoopCD: the residual and the first core block the coda reads become h_R + w (h_R - h_1), every position.
+fn loopcd(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows: usize) void {
+    const w = m.loopcd orelse return;
+    const h = state.hidden;
+    const h1 = s.h1.?;
+    loop.combine(&m.loop, e, l(at(s.p, 0)), l(at(h1, 0)), .{ .rows = @intCast(rows), .hidden = @intCast(h), .planes = 1, .stride = @intCast(rows * h), .w = w });
+    for (0..rows) |i| loop.combine(&m.loop, e, l(at(s.blocks, (i * state.block_slots + 2) * h * 2)), l(at(h1, (rows + i) * h * 2)), .{ .rows = 1, .hidden = @intCast(h), .planes = 1, .stride = @intCast(h), .w = w });
+}
+
 fn prepareAttentionInputs(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const layer_plan.Visit, rows: usize) void {
     const lp = m.weight_plan.at(v.layer);
     const w = &m.weights.layers[v.layer];
@@ -259,7 +275,10 @@ fn visit(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const la
         };
         if (channel) |ch| captureTap(m, e, at(s.p, 0), to, rows, ch);
     }
+    const guided = if (m.loopcd != null) m.config.text.loop else null;
+    if (guided) |c| if (v.tapsFirstPass(c.core_start)) tapFirstPass(m, e, s, rows);
     if (v.pass > 1 and v.layer == 6) bankAndReset(m, e, s, rows);
+    if (guided) |c| if (v.entersCoda(c.core_end)) loopcd(m, e, s, rows);
     const w = &m.weights.layers[v.layer];
     // The running BF16 p is the partial AR source before attention replaces it with t.
     widen(m, e, at(s.p, 0), at(s.partial, 0), rows * state.hidden);

@@ -12,16 +12,16 @@ const dspark = @import("../families/inkling2/metal/dspark.zig");
 const gpa = std.testing.allocator;
 const io = std.testing.io;
 /// A history the prompt cache can end a state on: the family's chunk grid.
-const history = st.prompt_rows;
-const context = 4 * history;
-const made = 24;
-const taps = [_]u32{ 5, 23, 41, 48 };
+pub const history = st.prompt_rows;
+pub const context = 4 * history;
+pub const made = 24;
+pub const taps = [_]u32{ 5, 23, 41, 48 };
 
-fn checkpoint() ![]const u8 {
+pub fn checkpoint() ![]const u8 {
     return @import("sys").getenv("TF_INKLING2_METAL_DIR") orelse error.SkipZigTest;
 }
 
-fn prompt(comptime n: usize, salt: u32) [n]u32 {
+pub fn prompt(comptime n: usize, salt: u32) [n]u32 {
     var ids: [n]u32 = undefined;
     for (&ids, 0..) |*id, i| id.* = @intCast(1000 + (i * 37 + @as(usize, salt) * 101) % 20000);
     return ids;
@@ -59,7 +59,7 @@ fn featureRow(b: lanes.backend.Backend, s: *lanes.Stream, start: u64) ![st.featu
     return row;
 }
 
-const Reference = struct {
+pub const Reference = struct {
     tokens: [made]u32,
     first: lanes.LogprobRow,
     tap: [st.feature_row_bytes]u8,
@@ -68,7 +68,7 @@ const Reference = struct {
     continuation_tap: [st.feature_row_bytes]u8 = undefined,
 };
 
-fn serial(b: lanes.backend.Backend, ids: []const u32) !Reference {
+pub fn serial(b: lanes.backend.Backend, ids: []const u32) !Reference {
     var sink: TapSink = .{};
     var s = try lanes.Stream.init(gpa, .{ .id = "host-reference", .prompt = ids, .max_new = made, .drafts = false, .logprobs = 3 });
     defer s.deinit(gpa);
@@ -118,7 +118,7 @@ fn expectFirstRow(want: lanes.LogprobRow, got: lanes.LogprobRow) !void {
     try std.testing.expectEqualSlices(f32, want.logprobs[0..want.count], got.logprobs[0..got.count]);
 }
 
-const Reply = struct {
+pub const Reply = struct {
     mutex: std.Io.Mutex = .init,
     tokens: std.ArrayList(u32) = .empty,
     rows: std.ArrayList(lanes.LogprobRow) = .empty,
@@ -127,7 +127,7 @@ const Reply = struct {
     accepted: u64 = 0,
     done: ?api.Reason = null,
 
-    fn event(ptr: *anyopaque, _: api.Id, item: *const api.Event) void {
+    pub fn event(ptr: *anyopaque, _: api.Id, item: *const api.Event) void {
         const self: *Reply = @ptrCast(@alignCast(ptr));
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -144,7 +144,7 @@ const Reply = struct {
         }
     }
 
-    fn wait(self: *Reply) !api.Reason {
+    pub fn wait(self: *Reply) !api.Reason {
         for (0..600_000) |_| {
             self.mutex.lockUncancelable(io);
             const done = self.done;
@@ -155,13 +155,13 @@ const Reply = struct {
         return error.Timeout;
     }
 
-    fn deinit(self: *Reply) void {
+    pub fn deinit(self: *Reply) void {
         self.tokens.deinit(gpa);
         self.rows.deinit(gpa);
     }
 };
 
-fn serve(native_opened: api.Opened, id: api.Id, request: *const api.Request) !Reply {
+pub fn serve(native_opened: api.Opened, id: api.Id, request: *const api.Request) !Reply {
     var reply: Reply = .{};
     errdefer reply.deinit();
     try native_opened.engine.submit(id, request, .{ .ctx = &reply, .event = Reply.event });
@@ -189,7 +189,7 @@ fn opened(dir: []const u8, drafter: ?[]const u8, cache_gib: ?f64) !api.Opened {
     return result.?;
 }
 
-fn expectTokens(want: *const Reference, got: *const Reply) !void {
+pub fn expectTokens(want: *const Reference, got: *const Reply) !void {
     try std.testing.expectEqualSlices(u32, &want.tokens, got.tokens.items);
     try std.testing.expect(got.rows.items.len >= 1);
     try expectFirstRow(want.first, got.rows.items[0]);

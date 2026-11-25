@@ -149,6 +149,8 @@ pub const flags = [_]Flag{
     .{ .name = "--device", .native = cuda_build },
     .{ .name = "--segments", .native = cuda_build },
     .{ .name = "--loops", .native = cuda_build }, // a looped model's recurrent passes (Dory: 1 to 4)
+    .{ .name = "--loopcd", .kind = .store_true, .native = builtin.os.tag == .macos },
+    .{ .name = "--loopcd-w", .native = builtin.os.tag == .macos },
     // the native server's own: shared prompt states (a harness) kept on disk for later sessions and servers
     .{ .name = "--learn", .kind = .store_true, .native = true },
     .{ .name = "--learn-dir", .path = true, .native = true },
@@ -375,6 +377,9 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
     } else if (is(name, "--decode-share")) {
         out.decode_share = try float(u, a, name, v);
         if (!(out.decode_share.? >= 0 and out.decode_share.? < 1)) return fail(u, a, "argument --decode-share: expected a share from 0 to under 1: '{s}'", .{v});
+    } else if (is(name, "--loopcd")) out.loopcd = true else if (is(name, "--loopcd-w")) {
+        out.loopcd = true;
+        out.loopcd_w = @floatCast(try float(u, a, name, v));
     } else if (is(name, "--prompt-seed")) out.prompt_seed = true else if (is(name, "--cache-salt-per-key")) out.cache_salt_per_key = true else if (is(name, "--max-tokens")) out.max_tokens = try int(u, a, name, v) else if (is(name, "--temperature")) out.temperature = try float(u, a, name, v) else if (is(name, "--top-p")) out.top_p = try float(u, a, name, v) else if (is(name, "--top-k")) out.top_k = try int(u, a, name, v) else if (is(name, "--min-p")) out.min_p = try float(u, a, name, v) else if (is(name, "--instruct-sampling")) out.instruct_sampling = if (try @import("family_sampling.zig").pairsProblem(a, v)) |why| return fail(u, a, "argument {s}: {s}: '{s}'", .{ name, why, v }) else v else if (is(name, "--thinking")) out.thinking = true else if (is(name, "--no-thinking")) out.thinking = false else if (is(name, "--reasoning-effort")) out.reasoning_effort = v else if (is(name, "--thinking-budget")) out.thinking_budget = try int(u, a, name, v) else if (is(name, "--thinking-reserve")) out.thinking_reserve = try int(u, a, name, v) else if (is(name, "--loop-guard")) out.loop_guard = true else if (is(name, "--loop-guard-stop")) out.loop_guard_stop = true else if (is(name, "--tool-think-close")) out.tool_think_close = true else if (is(name, "--execution-witness")) out.execution_witness = true else if (is(name, "--drafter")) out.drafter = v else if (is(name, "--drafter-bits")) out.drafter_bits = @intCast(try int(u, a, name, v)) else if (is(name, "--record")) out.record = v else if (is(name, "--kv-cache")) out.kv_cache = v else if (is(name, "--prompt-precision")) out.prompt_precision = v else if (is(name, "--no-drafts")) out.no_drafts = true else if (is(name, "--keep-warm")) out.keep_warm = try int(u, a, name, v) else if (is(name, "--idle-unload")) out.idle_unload = try int(u, a, name, v) else if (is(name, "--compact-at")) {
         out.compact_auto = std.mem.eql(u8, v, "auto"); // each occurrence replaces both fields, so the last one wins
         out.compact_fraction = null;
@@ -459,6 +464,8 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .device = args.device,
         .segments = args.segments,
         .loops = args.loops,
+        .loopcd = args.loopcd,
+        .loopcd_w = args.loopcd_w,
         .precision = args.precision,
         .mtp_drafts = args.mtp_drafts,
         .mtp_confidence = args.mtp_confidence,

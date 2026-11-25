@@ -70,6 +70,7 @@ pub fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     const kimi_host = b.step("test-kimi-serving-host", "Kimi native text, HTTP and resident budget refusals on the host");
     for ([_]*std.Build.Module{ server_tests, engines }) |module|
         kimi_host.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module, .filters = &.{"Kimi"} })).step);
+    b.step("test-loopcd-cli-host", "LoopCD's flags: off by default and served by the Metal build alone").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"LoopCD"} })).step);
 
     test_step.?.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_json })).step);
     @import("cortheon_fuzz.zig").add(b, target, api, tokenizer, template, core);

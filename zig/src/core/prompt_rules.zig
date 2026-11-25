@@ -36,4 +36,6 @@ pub const Rules = struct {
     intermediate_most: u8 = 0,
     /// Prompts shorter than this, and ladder positions before it, keep none.
     intermediate_min: u32 = 32768,
+    /// A mode's own key beside the request salt (LoopCD's strength): a kept state of another mode never resumes.
+    key_salt: u64 = 0,
 };

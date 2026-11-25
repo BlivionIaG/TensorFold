@@ -153,6 +153,30 @@ test "pass two resets and only completed passes with a successor capture message
     try std.testing.expectEqual(lp.passes - 1, banks);
 }
 
+test "LoopCD taps pass 1's exit once and guides the coda's entry once" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var why: config.Why = .{};
+    const c = try config.parse(arena.allocator(), @import("config_test.zig").mini, &why);
+    var prec: [24]plan_.Precision = @splat(.nvfp4);
+    const p = try plan_.build(&c.text, &prec);
+    const lp = c.text.loop.?;
+    var taps: u32 = 0;
+    var applies: u32 = 0;
+    for (p.visits[1..p.n_visits], p.visits[0 .. p.n_visits - 1]) |visit, before| {
+        if (visit.tapsFirstPass(lp.core_start)) {
+            taps += 1;
+            try std.testing.expect(before.pass == 1 and before.layer + 1 == lp.core_end);
+        }
+        if (visit.entersCoda(lp.core_end)) {
+            applies += 1;
+            try std.testing.expect(before.pass == lp.passes and before.layer + 1 == lp.core_end);
+        }
+    }
+    try std.testing.expectEqual(@as(u32, 1), taps);
+    try std.testing.expectEqual(@as(u32, 1), applies);
+}
+
 test "pass snapshots and rollback layout cover every visit" {
     const config_test = @import("config_test.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

@@ -90,6 +90,13 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
         problem.* = try std.fmt.allocPrint(a, "the native Inkling 2 Mini engine cannot load this checkpoint ({s})", .{@errorName(err)});
         return null;
     };
+    const loopcd = @import("../core/loopcd.zig").fromEnvironment(o.loopcd, o.loopcd_w) catch {
+        problem.* = "--loopcd-w must be a finite strength from -1 to 2, not 0";
+        model.deinit();
+        return null;
+    };
+    model.loopcd = loopcd;
+    const loopcd_key = if (loopcd) |w| @import("../core/loopcd.zig").key(w) else 0;
     const drafter_dir = drafterDirectory(o);
     errdefer model.deinit();
     const drafter = if (drafter_dir) |dir| dspark.Drafter.init(gpa, io, model.device, model, dir) catch |err| {
@@ -169,7 +176,7 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
     h.cache_cap = if (o.prompt_cache_gib) |g| @intFromFloat(g * (1 << 30)) else budget;
     if (h.cache_cap > 0) {
         const M = backend.Metal;
-        const rules: api.prompt_cache.Rules = .{ .lookahead = 0, .planned = true, .grid = st.prompt_rows, .min_prompt = 0 };
+        const rules: api.prompt_cache.Rules = .{ .lookahead = 0, .planned = true, .grid = st.prompt_rows, .min_prompt = 0, .key_salt = loopcd_key };
         h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = h.metal, .vtable = &.{ .bytes = M.snapBytes, .save = M.snapSave, .restore = M.snapRestore, .drop = M.snapDrop } }, rules, @min(h.cache_cap, budget));
         h.host.cache = &h.cache.?;
         h.host.info_.prompt_cache = true;

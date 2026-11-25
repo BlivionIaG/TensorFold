@@ -86,6 +86,7 @@ pub const Entry = struct {
     images: []images.Identity = &.{}, // exact image identities through the keyed prefix, including lookahead
     tokens: []u32, // the state's tokens and `lookahead` more
     salt: ?u64 = null, // exact request salt; masked key words alone are not a tenant identity
+    key_salt: u64 = 0, // the family's mode key beside the request salt (0: every mode shares)
     decode_spans: []modes.Span = &.{}, // canonical row arithmetic through at, excluding lookahead
     at: u32,
     saved: Saved,
@@ -256,7 +257,7 @@ pub const Store = struct {
     fn keptNear(s: *const Store, prompt: []const u32, starts: []const u32, spans: []const modes.Span, at: u32) ?u32 {
         var best: ?u32 = null;
         for (s.entries.items) |e| {
-            if (e.expired or e.salt != s.salt or e.at > at or at - e.at >= s.rules.min_gap or e.tokens.len > prompt.len or !s.usable(e.at, starts)) continue;
+            if (e.expired or e.salt != s.salt or e.key_salt != s.rules.key_salt or e.at > at or at - e.at >= s.rules.min_gap or e.tokens.len > prompt.len or !s.usable(e.at, starts)) continue;
             if (!std.mem.eql(u32, prompt[0..e.tokens.len], e.tokens) or !modes.equal(e.decode_spans, spans, e.at) or !images.matches(s, e)) continue;
             if (best == null or e.at > best.?) best = e.at;
         }
@@ -341,7 +342,7 @@ pub const Store = struct {
             s.active_rewind_at = at; // a state kept under min_gap before it is the rewind state: no new copy
         };
         s.active_rewind_key = if (s.active_rewind_at > 0) sharedKey(prompt[0 .. s.active_rewind_at + s.rules.lookahead]) else 0;
-        for (s.entries.items) |kept| if (s.active_rewind_at > 0 and kept.salt == s.salt and kept.at == s.active_rewind_at and kept.tokens.len <= prompt.len and
+        for (s.entries.items) |kept| if (s.active_rewind_at > 0 and kept.salt == s.salt and kept.key_salt == s.rules.key_salt and kept.at == s.active_rewind_at and kept.tokens.len <= prompt.len and
             std.mem.eql(u32, kept.tokens, prompt[0..kept.tokens.len]) and modes.equal(kept.decode_spans, spans, kept.at) and images.matches(s, kept))
         {
             kept.rewind = true;
@@ -401,7 +402,7 @@ pub const Store = struct {
 
     /// Forget a failed peer state matching the token prefix and canonical spans through at.
     pub fn forget(s: *Store, prompt: []const u32, at: u32, spans: []const modes.Span) void {
-        for (s.entries.items) |e| if (!e.expired and e.salt == s.salt and e.at == at and e.tokens.len <= prompt.len and std.mem.eql(u32, e.tokens, prompt[0..e.tokens.len]) and modes.equal(e.decode_spans, spans, e.at) and images.matches(s, e)) {
+        for (s.entries.items) |e| if (!e.expired and e.salt == s.salt and e.key_salt == s.rules.key_salt and e.at == at and e.tokens.len <= prompt.len and std.mem.eql(u32, e.tokens, prompt[0..e.tokens.len]) and modes.equal(e.decode_spans, spans, e.at) and images.matches(s, e)) {
             s.counts.failed += 1;
             e.expired = true;
             return s.collectExpired();
@@ -448,7 +449,7 @@ pub const Store = struct {
         try want.append(a, if (short) cuts.chunkEnd(s.rules.chunk, from, history, prompt.len, starts, spans) else history);
         if (rewind > 0 and s.active_rewind_at == rewind) try want.append(a, rewind);
         // the prompt this one parts from: the one it resumed, or (fork rule) on a miss the kept one sharing the most
-        const kept = if (previous.len > 0 or !s.rules.fork) previous else forks.longestShared(Entry, s.entries.items, prompt, s.salt);
+        const kept = if (previous.len > 0 or !s.rules.fork) previous else forks.longestShared(Entry, s.entries.items, prompt, s.salt, s.rules.key_salt);
         const part: u32 = if (kept.len == 0 or short) 0 else @intCast(std.mem.indexOfDiff(u32, kept, prompt) orelse @min(kept.len, prompt.len));
         // the fork rule keeps one before the part, however near: a state at `at` is keyed with the token at `at`
         const stable: u32 = if (part == 0 or part >= history_len or part < history_len / 2) 0 else if (s.rules.fork) part -| s.rules.lookahead else part;
@@ -567,4 +568,5 @@ test {
     _ = @import("prompt_cache_tail_test.zig");
     _ = @import("prompt_cache_others_test.zig");
     _ = @import("prompt_cache_miss_test.zig");
+    _ = @import("prompt_cache_mode_key_test.zig");
 }

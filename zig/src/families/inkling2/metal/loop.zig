@@ -16,6 +16,7 @@ pub const Pipelines = struct {
     norm: mtl.Pipeline,
     down: mtl.Pipeline,
     apply: mtl.Pipeline,
+    combine: mtl.Pipeline,
 
     pub fn load(device: mtl.Device) !Pipelines {
         return loadSource(device, sources.loop);
@@ -32,9 +33,12 @@ pub const Pipelines = struct {
         const down = try mtl.Pipeline.init(device, lib, "tf_inkling2_loop_down", false);
         errdefer down.deinit();
         const apply = try mtl.Pipeline.init(device, lib, "tf_inkling2_loop_apply", false);
-        return .{ .messages = messages, .gates = gate_pipeline, .norm = norm, .down = down, .apply = apply };
+        errdefer apply.deinit();
+        const combine_pipeline = try mtl.Pipeline.init(device, lib, "tf_inkling2_loop_loopcd_combine", false);
+        return .{ .messages = messages, .gates = gate_pipeline, .norm = norm, .down = down, .apply = apply, .combine = combine_pipeline };
     }
     pub fn deinit(p: *Pipelines) void {
+        p.combine.deinit();
         p.apply.deinit();
         p.down.deinit();
         p.norm.deinit();
@@ -83,4 +87,16 @@ pub fn gatesSplit(p: *const Pipelines, e: mtl.ComputeEncoder, h: Ref, m: Ref, m_
     bind(e, &.{ h, m, zeta, forget, gain, out });
     e.setValue(args, 6);
     e.dispatchGroups(mtl.Size.of(rows, 1, 1), mtl.Size.of(256, 1, 1));
+}
+
+pub const CombineArgs = struct { rows: u32, hidden: u32, planes: u32, stride: u32, w: f32 };
+const CombineKernelArgs = extern struct { rows: u32, hidden: u32, planes: u32, stride: u32, w: f32, pad: [3]f32 = .{ 0, 0, 0 } };
+
+/// LoopCD: every plane of `hair` becomes bf16(h_R + w (h_R - h_1)), one FP32 fma and one rounding, in place.
+pub fn combine(p: *const Pipelines, e: mtl.ComputeEncoder, hr: Ref, h1: Ref, a: CombineArgs) void {
+    std.debug.assert(a.rows > 0 and a.hidden > 0 and a.planes > 0 and a.stride >= a.hidden);
+    e.setPipeline(p.combine);
+    bind(e, &.{ hr, h1, hr });
+    e.setValue(CombineKernelArgs{ .rows = a.rows, .hidden = a.hidden, .planes = a.planes, .stride = a.stride, .w = a.w }, 3);
+    e.dispatchGroups(mtl.Size.of((a.hidden + 255) / 256, a.planes, a.rows), mtl.Size.of(256, 1, 1));
 }

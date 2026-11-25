@@ -342,6 +342,8 @@ pub const Scratch = struct {
     route_scores: mtl.Buffer,
     gate_norm: mtl.Buffer,
     gate_zeta: mtl.Buffer,
+    /// LoopCD's pass-1 exit, BF16 [row][H] residual then [row][H] B12 block; `guide` allocates it, LoopCD on only.
+    h1: ?mtl.Buffer = null,
     /// Opt-in DSpark features [row][tap][H], allocated by prepare_features.
     taps: ?mtl.Buffer = null,
     rows: usize,
@@ -358,6 +360,7 @@ pub const Scratch = struct {
             made += 1;
         }
         s.taps = null;
+        s.h1 = null;
         s.rows = rows;
         return s;
     }
@@ -365,7 +368,13 @@ pub const Scratch = struct {
     pub fn deinit(s: *Scratch) void {
         inline for (fields) |f| @field(s, f).deinit();
         if (s.taps) |b| b.deinit();
+        if (s.h1) |b| b.deinit();
         s.* = undefined;
+    }
+
+    /// LoopCD's pass-1 buffer for this scratch's rows; the unguided mode never calls it.
+    pub fn guide(s: *Scratch, device: mtl.Device) !void {
+        if (s.h1 == null) s.h1 = try device.buffer(2 * s.rows * hidden * 2, mtl.ResourceOptions.shared);
     }
 };
 
