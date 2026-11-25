@@ -149,16 +149,18 @@ fn bankAndReset(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows:
 
 /// LoopCD's weak reference: pass 1's exit residual and its B12 block, read before the restart resets them.
 fn tapFirstPass(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows: usize) void {
-    copyBf16(m, e, at(s.p, 0), at(s.h1, 0), rows * state.hidden);
-    for (0..rows) |i| copyBf16(m, e, at(s.blocks, (i * state.block_slots + 2) * state.hidden * 2), at(s.h1, (rows + i) * state.hidden * 2), state.hidden);
+    const h1 = s.h1.?;
+    copyBf16(m, e, at(s.p, 0), at(h1, 0), rows * state.hidden);
+    for (0..rows) |i| copyBf16(m, e, at(s.blocks, (i * state.block_slots + 2) * state.hidden * 2), at(h1, (rows + i) * state.hidden * 2), state.hidden);
 }
 
 /// LoopCD: the residual and the first core block the coda reads become h_R + w (h_R - h_1), every position.
 fn loopcd(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows: usize) void {
     const w = m.loopcd orelse return;
     const h = state.hidden;
-    loop.combine(&m.loop, e, l(at(s.p, 0)), l(at(s.h1, 0)), .{ .rows = @intCast(rows), .hidden = @intCast(h), .planes = 1, .stride = @intCast(rows * h), .w = w });
-    for (0..rows) |i| loop.combine(&m.loop, e, l(at(s.blocks, (i * state.block_slots + 2) * h * 2)), l(at(s.h1, (rows + i) * h * 2)), .{ .rows = 1, .hidden = @intCast(h), .planes = 1, .stride = @intCast(h), .w = w });
+    const h1 = s.h1.?;
+    loop.combine(&m.loop, e, l(at(s.p, 0)), l(at(h1, 0)), .{ .rows = @intCast(rows), .hidden = @intCast(h), .planes = 1, .stride = @intCast(rows * h), .w = w });
+    for (0..rows) |i| loop.combine(&m.loop, e, l(at(s.blocks, (i * state.block_slots + 2) * h * 2)), l(at(h1, (rows + i) * h * 2)), .{ .rows = 1, .hidden = @intCast(h), .planes = 1, .stride = @intCast(h), .w = w });
 }
 
 fn prepareAttentionInputs(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const layer_plan.Visit, rows: usize) void {

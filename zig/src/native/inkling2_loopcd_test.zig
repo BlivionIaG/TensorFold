@@ -47,6 +47,7 @@ test "LoopCD guided rows equal across chunk seams, two-stream forwards and resto
     defer m.deinit();
     var s = try st.Scratch.init(m.device, st.max_rows);
     defer s.deinit();
+    try s.guide(m.device);
     const v = m.config.text.unpadded_vocab;
     const ids = serving.prompt(length, 5);
     const other = serving.prompt(length, 6);

@@ -54,6 +54,7 @@ test "LoopCD probe: teacher-forced likelihood of the scored rows at each strengt
     defer m.deinit();
     var s = try st.Scratch.init(m.device, st.max_rows);
     defer s.deinit();
+    try s.guide(m.device);
     const v = m.config.text.unpadded_vocab;
     var tallies: [probe_strengths.len]Tally = @splat(.{});
     for (prompts) |line| {

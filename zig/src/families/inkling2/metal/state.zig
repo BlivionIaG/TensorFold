@@ -268,7 +268,7 @@ pub const fields = [_][]const u8{
     "partial",  "ar",         "gated",        "mlp_ar",    "mlp_gated",  "q_norm",    "k_norm",        "v_norm",   "q_raw",   "k_raw",
     "v_raw",    "rel_raw",    "sink",         "gate",      "k_conv",     "v_conv",    "q_prep",        "rel_prep", "rel_tab", "part_o",
     "part_ml",  "att",        "attn_dense",   "attn_conv", "mlp_normed", "route_ids", "route_weights", "gu",       "down",    "mlp_out",
-    "mlp_conv", "logits_all", "route_scores", "gate_norm", "gate_zeta",  "h1",
+    "mlp_conv", "logits_all", "route_scores", "gate_norm", "gate_zeta",
 };
 
 fn sizes(rows: usize) [fields.len]usize {
@@ -285,7 +285,7 @@ fn sizes(rows: usize) [fields.len]usize {
         r * rel_width * bf,        r * 24 * bf,                                      r * q * bf,                                r * kv * bf,                    r * kv * bf,    r * q * bf,     r * rel_width * bf,
         r * 24 * ap.extent * bf,   r * 24 * max_attention_stride * ap.head_dim * fp, r * 24 * max_attention_stride * 2 * fp,    r * q * bf,                     r * h * bf,     r * h * bf,     r * h * bf,
         r * experts_per_token * 4, r * experts_per_token * fp,                       r * experts_per_token * intermediate * bf, r * experts_per_token * h * bf, r * h * bf,     r * h * bf,     r * vocabulary * fp,
-        r * 128 * fp,              r * 2 * h * bf,                                   r * 64 * fp,                               2 * r * h * bf,
+        r * 128 * fp,              r * 2 * h * bf,                                   r * 64 * fp,
     };
 }
 
@@ -342,8 +342,8 @@ pub const Scratch = struct {
     route_scores: mtl.Buffer,
     gate_norm: mtl.Buffer,
     gate_zeta: mtl.Buffer,
-    /// LoopCD's pass-1 exit, BF16: [row][H] residual, then [row][H] B12 block.
-    h1: mtl.Buffer,
+    /// LoopCD's pass-1 exit, BF16 [row][H] residual then [row][H] B12 block; `guide` allocates it, LoopCD on only.
+    h1: ?mtl.Buffer = null,
     /// Opt-in DSpark features [row][tap][H], allocated by prepare_features.
     taps: ?mtl.Buffer = null,
     rows: usize,
@@ -360,6 +360,7 @@ pub const Scratch = struct {
             made += 1;
         }
         s.taps = null;
+        s.h1 = null;
         s.rows = rows;
         return s;
     }
@@ -367,7 +368,13 @@ pub const Scratch = struct {
     pub fn deinit(s: *Scratch) void {
         inline for (fields) |f| @field(s, f).deinit();
         if (s.taps) |b| b.deinit();
+        if (s.h1) |b| b.deinit();
         s.* = undefined;
+    }
+
+    /// LoopCD's pass-1 buffer for this scratch's rows; the unguided mode never calls it.
+    pub fn guide(s: *Scratch, device: mtl.Device) !void {
+        if (s.h1 == null) s.h1 = try device.buffer(2 * s.rows * hidden * 2, mtl.ResourceOptions.shared);
     }
 };
 
