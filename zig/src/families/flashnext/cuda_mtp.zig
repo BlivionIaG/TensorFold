@@ -8,6 +8,8 @@ const load = @import("cuda_prompt_load.zig");
 const batch = @import("cuda_batch.zig");
 const prompt = @import("cuda_prompt.zig");
 const gdn = @import("cuda_gdn.zig");
+const engine_widths = @import("cuda_widths.zig");
+const mtp_bytes = @import("cuda_mtp_bytes.zig");
 
 const dims = wt.dims;
 const streams = wt.streams;
@@ -267,7 +269,14 @@ pub const Head = struct {
     draw_batch: @import("cuda_draw_batch.zig").Batch,
     topk_fn: cuda.Function, // fn_row_topk: a row's top_k candidates as drawRow ranks them (cuda_mtp_draw.zig)
 
-    pub fn init(gpa: std.mem.Allocator, io: std.Io, driver: *cuda.Driver, stream: *cuda.Stream, dir: []const u8) !*Head {
+    pub fn init(
+        gpa: std.mem.Allocator,
+        io: std.Io,
+        driver: *cuda.Driver,
+        stream: *cuda.Stream,
+        dir: []const u8,
+        main: engine_widths.Widths,
+    ) !*Head {
         const batch_on = try @import("cuda_draw_batch.zig").enabled();
         if (!cuda.kernels.available) return error.BuiltWithoutKernels;
         const h = try gpa.create(Head);
@@ -300,6 +309,11 @@ pub const Head = struct {
         }
         store.dropStaging(); // the head's experts are on the device
         errdefer h.layer.free(gpa);
+        // the MTP layer: the main layers' top-k (config.json gives it none) and the shared width its own tensor has
+        if (h.layer.native_experts) |moe| if (engine_widths.mtp(main, moe.shared_width) == null) {
+            std.log.err("flashnext: mtp.layers.0.mlp.shared_expert.gate_proj has {d} rows; neither the main layers' width nor the routed width", .{moe.shared_width});
+            return error.UnexpectedTensor;
+        };
         const ids = try draftIds(gpa);
         defer gpa.free(ids);
         const head_load = @import("cuda_mtp_load.zig");
@@ -405,33 +419,17 @@ pub const Head = struct {
     }
 };
 
-/// The split best's scratch: each warp's best and id bits, its exponent sum, then a counter a row (round_rows rows).
-pub const split_bytes: usize = round_rows * 32 * 8 + round_rows * 32 * 4 + round_rows * 4;
-
-/// Device bytes the head's weights take beyond the main model's; `fp8`: block-FP8 routed experts (headFp8).
-pub fn headBytes(fp8: bool) usize {
-    const weights = 3 * wt.moe_w * dims;
-    const nvfp4 = weights / 2 * 5 / 4;
-    const routed = if (fp8) weights + 3 * (wt.moe_w / 128) * (dims / 128) * 4 else nvfp4;
-    const experts = wt.experts_n * routed + nvfp4;
-    const attn = (wt.proj_n + dims) * dims / 2 * 5 / 4;
-    const draft = 79_591 * dims / 2 * 5 / 4;
-    return experts + attn + draft + 2 * dims * dims / 2 * 5 / 4 + @import("cuda_draw_batch.zig").bytes + @import("cuda_draft_draw.zig").scoreBytes(79_591) + split_bytes;
-}
+/// The head's device bytes beyond the main model's, and the split best's scratch (cuda_mtp_bytes.zig).
+pub const split_bytes = mtp_bytes.split_bytes;
+pub const Format = mtp_bytes.Format;
+pub const Shared = mtp_bytes.Shared;
+pub const headBytes = mtp_bytes.headBytes;
 
 pub const Pick = @import("cuda_mtp_draft.zig").Pick;
 pub const Chain = @import("cuda_mtp_draft.zig").Chain;
 pub const Draft = @import("cuda_mtp_draft.zig").Draft;
 pub const Ops = @import("cuda_mtp_ops.zig").Ops;
 pub const check = @import("cuda_mtp_check.zig").check;
-
-test "the head's bytes: NVFP4 experts as before, FP8 routed experts a byte a weight and their f32 block scales" {
-    const before = (wt.experts_n + 1) * 3 * wt.moe_w * dims / 2 * 5 / 4 + (wt.proj_n + dims) * dims / 2 * 5 / 4 + 79_591 * dims / 2 * 5 / 4 + 2 * dims * dims / 2 * 5 / 4;
-    try std.testing.expectEqual(@as(usize, 24_832), split_bytes);
-    try std.testing.expectEqual(before + @import("cuda_draw_batch.zig").bytes + @import("cuda_draft_draw.zig").scoreBytes(79_591) + split_bytes, headBytes(false));
-    // an expert's three projections: 640 x 2560 bytes and 5 x 20 scales each, against 5/8 of a byte a weight
-    try std.testing.expectEqual(wt.experts_n * (3 * (640 * 2560 + 5 * 20 * 4) - 3 * 640 * 2560 * 5 / 8), headBytes(true) - headBytes(false));
-}
 
 test "the draft vocabulary is 79,591 sorted ids under the vocabulary" {
     const ids = try draftIds(std.testing.allocator);
@@ -579,6 +577,7 @@ test "the boot check's sweep is served every width a window holds, so its own ve
 }
 
 test {
+    _ = @import("cuda_mtp_bytes.zig");
     _ = @import("cuda_mtp_nonfinite_test.zig");
     _ = @import("cuda_mtp_load.zig");
 }

@@ -10,6 +10,7 @@ pub const alias_retire = "1.4.0";
 pub const Rule = struct {
     name: [:0]const u8,
     scope: Scope,
+    also: ?Scope = null,
     kind: Kind,
     forms: []const u8,
     trim: []const u8 = "",
@@ -35,6 +36,10 @@ pub const Rule = struct {
     flag: ?[]const u8 = null,
     /// The release from which the server refuses this alias, naming `flag`.
     retire: ?[]const u8 = null,
+
+    pub fn matches(r: Rule, scope: Scope) bool {
+        return r.scope == scope or r.also == scope;
+    }
 };
 
 pub fn isReal(kind: Kind) bool {
@@ -68,7 +73,7 @@ pub const rules = [_]Rule{
     .{ .name = "TF_CUDA_SEGMENTS", .scope = .cuda, .kind = .segments, .trim = " ", .forms = "a whole number from 1 to 4, or empty for the default" },
     .{ .name = "TF_CUDA_CARVEOUT", .scope = .cuda, .kind = .flag, .forms = "0 or 1" },
     .{ .name = "TF_CUDA_CARVEOUT_MIB", .scope = .cuda, .kind = .mib, .forms = "a positive whole MiB count fitting a native byte size, or empty for 1792 MiB" },
-    .{ .name = "TF_MTP_DRAFTS", .scope = .cuda, .kind = .u32, .forms = "a whole number from 0 to 4294967295 (clamped to the drafter's window)" },
+    .{ .name = "TF_MTP_DRAFTS", .scope = .cuda, .also = .metal, .kind = .u32, .forms = "a whole number from 0 to 4294967295 (clamped to the drafter's window)" },
     .{ .name = "TF_DSPINE_WINDOW", .scope = .cuda, .kind = .size, .min = 16, .max = 8192, .forms = "a whole row count from 16 to 8192, at most the DSpine drafter's own sliding_window" },
     .{ .name = "TF_DRAFT_NODES", .scope = .cuda, .kind = .size, .forms = "a whole nonnegative native-size node count (capped by the drafter's window)" },
     .{ .name = "TF_QMMF_HALF_BELOW", .scope = .cuda, .kind = .size, .forms = "a whole nonnegative native-size block count (0 disables half tiles)" },
@@ -129,6 +134,8 @@ pub const rules = [_]Rule{
     .{ .name = "TF_Q27_MTP_GPU_PICK", .scope = .metal, .kind = .flag, .forms = "0 or 1 (1 fuses the 27B MTP absorb and picks drafts on the GPU; unset or blank is 0)" },
     .{ .name = "TF_QWEN27_JOIN", .scope = .metal, .kind = .flag, .forms = "0 or 1 (1 runs a window's rows in pairs in the 27B's decode tail before M5; unset or blank is 1)" },
     .{ .name = "TF_QWEN27_TIED_HEAD", .scope = .metal, .kind = .flag, .forms = "0 or 1 (1 lets a dense Qwen with a tied head load, its head read from the embedding; unset or blank is 0)" },
+    .{ .name = "TF_MTP_PLAIN_GUARD", .scope = .metal, .kind = .flag, .forms = "0 or 1 (1 enables plain-round guard alongside MTP; unset or blank is 1)" },
+    .{ .name = "TF_MTP_BITS", .scope = .metal, .kind = .u32, .only = &.{ 4, 16 }, .first_digit = true, .forms = "4 or 16 (MTP weight bits; unset or blank defaults to 4)" },
     .{ .name = "TF_QWEN35_METAL_KV_PAGES", .scope = .metal, .kind = .flag, .forms = "0 or 1 (1 puts the streams' keys and values in core-pool pages; unset or blank is 0)" },
     .{ .name = "TF_QWEN35_CHUNK", .scope = .metal, .kind = .size, .min = 1, .forms = "whole prompt rows a prefill pass, 1 to the served context window (default 128)" },
     .{ .name = "TF_DSV41_SMALL", .scope = .metal, .kind = .flag, .forms = "0 or 1 (1 reads a DeepSeek-V4.1 Metal checkpoint's config at its own small shapes)" },
@@ -509,7 +516,7 @@ pub fn list(name: [:0]const u8) Error!?[:0]const u8 {
 
 /// One scope's rules in table order, without allocating: the first malformed value is logged and refused.
 pub fn checkScope(scope: Scope, environment: anytype) Error!void {
-    for (rules) |r| if (r.scope == scope and !masked(r, environment)) {
+    for (rules) |r| if (r.matches(scope) and !masked(r, environment)) {
         _ = try checked(r.name, environment.get(r.name));
     };
 }
@@ -537,7 +544,7 @@ pub const Flags = @import("environment_flags.zig").Flags;
 /// The environment is injectable so the actual startup validator runs against host fixtures without a GPU.
 pub fn refusal(a: std.mem.Allocator, environment: anytype, flags: Flags) !?[]const u8 {
     for (rules) |r| {
-        if (!flags.includes(r.scope) or masked(r, environment)) continue;
+        if (!flags.includesRule(r) or masked(r, environment)) continue;
         if (std.mem.eql(u8, r.name, "TF_CUDA_DEVICE") and flags.device != null) continue;
         if (std.mem.eql(u8, r.name, "TF_CUDA_SEGMENTS") and flags.segments != null) continue;
         if (std.mem.eql(u8, r.name, "TENSORFOLD_PARALLEL") and flags.parallel_named) continue;
