@@ -40,6 +40,9 @@ pub fn tests(b: *std.Build, target: std.Build.ResolvedTarget, test_step: *std.Bu
     // The metal module reaches Darwin-only std.c, so these tests run on macOS only, like main's Metal steps.
     if (target.result.os.tag == .macos) {
         const metal_run = b.addRunArtifact(b.addTest(.{ .root_module = module(b, target, .Debug, "zig/src/inkling2_metal_host_test.zig") }));
+        const research = b.addRunArtifact(b.addTest(.{ .root_module = module(b, target, .ReleaseFast, "zig/src/inkling2_loopcd_research_test.zig") }));
+        research.has_side_effects = true;
+        b.step("research-loopcd", "Research harness, ReleaseFast").dependOn(&research.step);
         b.step("test-inkling2-metal-host", "Inkling 2 Mini Metal launch plans and arithmetic references").dependOn(&metal_run.step);
         test_step.dependOn(&metal_run.step);
         const media_run = b.addRunArtifact(b.addTest(.{ .root_module = module(b, target, .Debug, "zig/src/inkling2_media_checks.zig") }));

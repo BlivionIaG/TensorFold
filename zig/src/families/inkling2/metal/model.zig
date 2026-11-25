@@ -207,6 +207,9 @@ pub const Model = struct {
     runtime: [runtime_names.len]mtl.Pipeline,
     /// LoopCD's strength (null: off): the first core pass guides the last before the coda.
     loopcd: ?f32 = null,
+    /// Research: the reference pass (1 or 2) and the guided planes (1 residual, 2 B12 block, 3 both).
+    loopcd_ref: u32 = 1,
+    loopcd_planes: u8 = 3,
 
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !*Model {
         const pool = mtl.objc.Pool.push();

@@ -157,8 +157,8 @@ fn tapFirstPass(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows:
 fn loopcd(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows: usize) void {
     const w = m.loopcd orelse return;
     const h = state.hidden;
-    loop.combine(&m.loop, e, l(at(s.p, 0)), l(at(s.h1, 0)), .{ .rows = @intCast(rows), .hidden = @intCast(h), .planes = 1, .stride = @intCast(rows * h), .w = w });
-    for (0..rows) |i| loop.combine(&m.loop, e, l(at(s.blocks, (i * state.block_slots + 2) * h * 2)), l(at(s.h1, (rows + i) * h * 2)), .{ .rows = 1, .hidden = @intCast(h), .planes = 1, .stride = @intCast(h), .w = w });
+    if (m.loopcd_planes & 1 != 0) loop.combine(&m.loop, e, l(at(s.p, 0)), l(at(s.h1, 0)), .{ .rows = @intCast(rows), .hidden = @intCast(h), .planes = 1, .stride = @intCast(rows * h), .w = w });
+    if (m.loopcd_planes & 2 != 0) for (0..rows) |i| loop.combine(&m.loop, e, l(at(s.blocks, (i * state.block_slots + 2) * h * 2)), l(at(s.h1, (rows + i) * h * 2)), .{ .rows = 1, .hidden = @intCast(h), .planes = 1, .stride = @intCast(h), .w = w });
 }
 
 fn prepareAttentionInputs(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const layer_plan.Visit, rows: usize) void {
@@ -274,7 +274,7 @@ fn visit(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const la
         if (channel) |ch| captureTap(m, e, at(s.p, 0), to, rows, ch);
     }
     const guided = if (m.loopcd != null) m.config.text.loop else null;
-    if (guided) |c| if (v.tapsFirstPass(c.core_start)) tapFirstPass(m, e, s, rows);
+    if (guided) |c| if (v.pass == m.loopcd_ref + 1 and v.layer == c.core_start) tapFirstPass(m, e, s, rows);
     if (v.pass > 1 and v.layer == 6) bankAndReset(m, e, s, rows);
     if (guided) |c| if (v.entersCoda(c.core_end)) loopcd(m, e, s, rows);
     const w = &m.weights.layers[v.layer];
