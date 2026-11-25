@@ -152,3 +152,31 @@ struct LoopcdArgs {
   const float p = float(h1[o]);
   out[o] = bfloat(fma(a.w, r - p, r));
 }
+
+// Research: h' = h_R + w (h_R - h_1 |h_R| / |h_1|), one threadgroup a row, the norms reduced in FP32.
+[[kernel, max_total_threads_per_threadgroup(256)]] void tf_inkling2_loop_loopcd_combine_norm(
+    const device bfloat* hr [[buffer(0)]], const device bfloat* h1 [[buffer(1)]],
+    device bfloat* out [[buffer(2)]], constant LoopcdArgs& a [[buffer(3)]],
+    uint3 grid [[threadgroup_position_in_grid]], uint3 tid [[thread_position_in_threadgroup]],
+    uint lane [[thread_index_in_simdgroup]], uint sg [[simdgroup_index_in_threadgroup]]) {
+  const uint t = tid.x;
+  const ulong base = ulong(grid.z) * a.hidden;
+  float rr = 0.0f, pp = 0.0f;
+  for (uint i = t; i < a.hidden; i += 256u) {
+    const float r = float(hr[base + i]), p = float(h1[base + i]);
+    rr += r * r;
+    pp += p * p;
+  }
+  threadgroup float part[2][8];
+  rr = simd_sum(rr);
+  pp = simd_sum(pp);
+  if (lane == 0) { part[0][sg] = rr; part[1][sg] = pp; }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  float sr = 0.0f, sp = 0.0f;
+  for (uint k = 0; k < 8u; ++k) { sr += part[0][k]; sp += part[1][k]; }
+  const float scale = sp > 0.0f ? sqrt(sr / sp) : 1.0f;
+  for (uint i = t; i < a.hidden; i += 256u) {
+    const float r = float(hr[base + i]), p = float(h1[base + i]);
+    out[base + i] = bfloat(fma(a.w, r - scale * p, r));
+  }
+}

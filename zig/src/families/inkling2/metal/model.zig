@@ -207,9 +207,14 @@ pub const Model = struct {
     runtime: [runtime_names.len]mtl.Pipeline,
     /// LoopCD's strength (null: off): the first core pass guides the last before the coda.
     loopcd: ?f32 = null,
-    /// Research: the reference pass (1 or 2) and the guided planes (1 residual, 2 B12 block, 3 both).
-    loopcd_ref: u32 = 1,
+    /// Research: the reference depth in core blocks (0 pre-loop, 1 half pass 1, 2 pass 1, 3, 4 pass 2), the guided
+    /// planes (1 residual, 2 B12 block, 3 both), the B12 plane's own strength (null: loopcd), norm-matched references,
+    /// and an optional [7][rows][H] BF16 snapshot of P6, B12_1, P18_1, B12_2, P18_2, B12_3, P18_3.
+    loopcd_depth: u32 = 2,
     loopcd_planes: u8 = 3,
+    loopcd_wb: ?f32 = null,
+    loopcd_norm: bool = false,
+    research_snap: ?mtl.Buffer = null,
 
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !*Model {
         const pool = mtl.objc.Pool.push();
@@ -217,6 +222,12 @@ pub const Model = struct {
         const m = try gpa.create(Model);
         errdefer gpa.destroy(m);
         m.gpa = gpa;
+        m.loopcd = null;
+        m.loopcd_depth = 2;
+        m.loopcd_planes = 3;
+        m.loopcd_wb = null;
+        m.loopcd_norm = false;
+        m.research_snap = null;
         const config_path = try std.fs.path.join(gpa, &.{ dir, "config.json" });
         defer gpa.free(config_path);
         const text = try std.Io.Dir.cwd().readFileAlloc(io, config_path, gpa, .limited(1 << 24));

@@ -17,6 +17,7 @@ pub const Pipelines = struct {
     down: mtl.Pipeline,
     apply: mtl.Pipeline,
     combine: mtl.Pipeline,
+    combine_norm: mtl.Pipeline,
 
     pub fn load(device: mtl.Device) !Pipelines {
         return loadSource(device, sources.loop);
@@ -35,9 +36,11 @@ pub const Pipelines = struct {
         const apply = try mtl.Pipeline.init(device, lib, "tf_inkling2_loop_apply", false);
         errdefer apply.deinit();
         const combine_pipeline = try mtl.Pipeline.init(device, lib, "tf_inkling2_loop_loopcd_combine", false);
-        return .{ .messages = messages, .gates = gate_pipeline, .norm = norm, .down = down, .apply = apply, .combine = combine_pipeline };
+        const combine_norm = try mtl.Pipeline.init(device, lib, "tf_inkling2_loop_loopcd_combine_norm", false);
+        return .{ .messages = messages, .gates = gate_pipeline, .norm = norm, .down = down, .apply = apply, .combine = combine_pipeline, .combine_norm = combine_norm };
     }
     pub fn deinit(p: *Pipelines) void {
+        p.combine_norm.deinit();
         p.combine.deinit();
         p.apply.deinit();
         p.down.deinit();
@@ -99,4 +102,13 @@ pub fn combine(p: *const Pipelines, e: mtl.ComputeEncoder, hr: Ref, h1: Ref, a: 
     bind(e, &.{ hr, h1, hr });
     e.setValue(CombineKernelArgs{ .rows = a.rows, .hidden = a.hidden, .planes = a.planes, .stride = a.stride, .w = a.w }, 3);
     e.dispatchGroups(mtl.Size.of((a.hidden + 255) / 256, a.planes, a.rows), mtl.Size.of(256, 1, 1));
+}
+
+/// Research: h_R + w (h_R - h_1 |h_R| / |h_1|), the reference rescaled to h_R's norm, one threadgroup a row.
+pub fn combineNorm(p: *const Pipelines, e: mtl.ComputeEncoder, hr: Ref, h1: Ref, a: CombineArgs) void {
+    std.debug.assert(a.rows > 0 and a.hidden > 0 and a.planes == 1 and a.stride >= a.hidden);
+    e.setPipeline(p.combine_norm);
+    bind(e, &.{ hr, h1, hr });
+    e.setValue(CombineKernelArgs{ .rows = a.rows, .hidden = a.hidden, .planes = a.planes, .stride = a.stride, .w = a.w }, 3);
+    e.dispatchGroups(mtl.Size.of(1, 1, a.rows), mtl.Size.of(256, 1, 1));
 }

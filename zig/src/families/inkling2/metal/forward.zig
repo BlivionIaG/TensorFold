@@ -147,18 +147,34 @@ fn bankAndReset(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows:
     copyBf16(m, e, at(s.prelude, 0), at(s.p, 0), rows * state.hidden);
 }
 
-/// LoopCD's weak reference: pass 1's exit residual and its B12 block, read before the restart resets them.
-fn tapFirstPass(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows: usize) void {
+/// Research: the reference's two planes at a depth: the running block sum `p` and the block finished before it.
+fn tapReference(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows: usize, older: usize) void {
     copyBf16(m, e, at(s.p, 0), at(s.h1, 0), rows * state.hidden);
-    for (0..rows) |i| copyBf16(m, e, at(s.blocks, (i * state.block_slots + 2) * state.hidden * 2), at(s.h1, (rows + i) * state.hidden * 2), state.hidden);
+    for (0..rows) |i| copyBf16(m, e, at(s.blocks, (i * state.block_slots + older) * state.hidden * 2), at(s.h1, (rows + i) * state.hidden * 2), state.hidden);
 }
 
-/// LoopCD: the residual and the first core block the coda reads become h_R + w (h_R - h_1), every position.
+/// Research: depth d (core blocks done) taps at pass d/2+1, entering layer 6 (even) or 12 (odd).
+fn tapsReference(m: *const Model, v: *const layer_plan.Visit, c: anytype) ?usize {
+    const d = m.loopcd_depth;
+    if (v.pass != d / 2 + 1) return null;
+    if (v.layer != c.core_start + (d % 2) * 6) return null;
+    return if (d == 0) 0 else if (d % 2 == 1) 1 else 2;
+}
+
+fn snap(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const layer_plan.Visit, rows: usize) void {
+    const buf = m.research_snap orelse return;
+    const k: ?usize = if (v.pass == 0 and v.layer == 18) 6 else if (v.pass == 0) null else if (v.layer == 12) 2 * v.pass - 1 else if (v.layer == 6) 2 * (v.pass - 1) else null;
+    if (k) |i| copyBf16(m, e, at(s.p, 0), at(buf, i * rows * state.hidden * 2), rows * state.hidden);
+}
+
+/// LoopCD: the residual and the first core block the coda reads become h_R + w (h_R - h_ref), every position.
 fn loopcd(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, rows: usize) void {
     const w = m.loopcd orelse return;
+    const wb = m.loopcd_wb orelse w;
     const h = state.hidden;
-    if (m.loopcd_planes & 1 != 0) loop.combine(&m.loop, e, l(at(s.p, 0)), l(at(s.h1, 0)), .{ .rows = @intCast(rows), .hidden = @intCast(h), .planes = 1, .stride = @intCast(rows * h), .w = w });
-    if (m.loopcd_planes & 2 != 0) for (0..rows) |i| loop.combine(&m.loop, e, l(at(s.blocks, (i * state.block_slots + 2) * h * 2)), l(at(s.h1, (rows + i) * h * 2)), .{ .rows = 1, .hidden = @intCast(h), .planes = 1, .stride = @intCast(h), .w = w });
+    const comb = if (m.loopcd_norm) &loop.combineNorm else &loop.combine;
+    if (m.loopcd_planes & 1 != 0) comb(&m.loop, e, l(at(s.p, 0)), l(at(s.h1, 0)), .{ .rows = @intCast(rows), .hidden = @intCast(h), .planes = 1, .stride = @intCast(rows * h), .w = w });
+    if (m.loopcd_planes & 2 != 0) for (0..rows) |i| comb(&m.loop, e, l(at(s.blocks, (i * state.block_slots + 2) * h * 2)), l(at(s.h1, (rows + i) * h * 2)), .{ .rows = 1, .hidden = @intCast(h), .planes = 1, .stride = @intCast(h), .w = wb });
 }
 
 fn prepareAttentionInputs(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const layer_plan.Visit, rows: usize) void {
@@ -274,7 +290,8 @@ fn visit(m: *const Model, e: mtl.ComputeEncoder, s: *state.Scratch, v: *const la
         if (channel) |ch| captureTap(m, e, at(s.p, 0), to, rows, ch);
     }
     const guided = if (m.loopcd != null) m.config.text.loop else null;
-    if (guided) |c| if (v.pass == m.loopcd_ref + 1 and v.layer == c.core_start) tapFirstPass(m, e, s, rows);
+    snap(m, e, s, v, rows);
+    if (guided) |c| if (tapsReference(m, v, c)) |older| tapReference(m, e, s, rows, older);
     if (v.pass > 1 and v.layer == 6) bankAndReset(m, e, s, rows);
     if (guided) |c| if (v.entersCoda(c.core_end)) loopcd(m, e, s, rows);
     const w = &m.weights.layers[v.layer];
