@@ -53,8 +53,11 @@ fn configure(m: *Model, c: Cfg) void {
     m.loopcd_norm = c.norm;
 }
 
-/// A scored variant: a configuration's own logits, or l:W:D:ALPHA:ADAPT (Logits from off and r:D;
+/// A scored variant: a configuration's own logits, or l:W:D:ALPHA:ADAPT[:OPTS] (Logits from off and r:D;
 /// z' = z_R + w (z_R - z_ref) where p_R >= alpha max p_R, adaptive w = w_max (1 - (p1 - p2))).
+/// OPTS, '/'-separated: uT apply only where H(p_R) > T nats, cT only where H(p_R) < T; kM w = W KL(p_R || p_ref)
+/// clamped to |w| <= M; x contrast the logits before the final 30 tanh softcap and cap again; o keep only the part of
+/// z_R - z_ref orthogonal to centred z_R (no temperature component), p only the parallel part (pure temperature).
 const Variant = struct {
     name: []const u8,
     own: ?usize = null,
@@ -63,6 +66,11 @@ const Variant = struct {
     w: f32 = 0,
     alpha: f32 = 0,
     adaptive: bool = false,
+    gate: enum { none, uncertain, confident } = .none,
+    tau: f32 = 0,
+    kl_max: ?f32 = null,
+    precap: bool = false,
+    part: enum { all, orthogonal, parallel } = .all,
 };
 
 fn findCfg(cfgs: []const Cfg, name: []const u8) !usize {
@@ -79,7 +87,22 @@ fn parseVariant(a: std.mem.Allocator, cfgs: []const Cfg, item: []const u8) !Vari
     const alpha = try std.fmt.parseFloat(f32, f.next().?);
     const adaptive = f.next().?[0] == '1';
     const ref_name = try std.fmt.allocPrint(a, "r:{s}", .{d});
-    return .{ .name = item, .base = try findCfg(cfgs, "off"), .ref = try findCfg(cfgs, ref_name), .w = w, .alpha = alpha, .adaptive = adaptive };
+    var out: Variant = .{ .name = item, .base = try findCfg(cfgs, "off"), .ref = try findCfg(cfgs, ref_name), .w = w, .alpha = alpha, .adaptive = adaptive };
+    if (f.next()) |opts| {
+        var it = std.mem.tokenizeScalar(u8, opts, '/');
+        while (it.next()) |o| switch (o[0]) {
+            'u', 'c' => {
+                out.gate = if (o[0] == 'u') .uncertain else .confident;
+                out.tau = try std.fmt.parseFloat(f32, o[1..]);
+            },
+            'k' => out.kl_max = try std.fmt.parseFloat(f32, o[1..]),
+            'x' => out.precap = true,
+            'o' => out.part = .orthogonal,
+            'p' => out.part = .parallel,
+            else => return error.BadVariant,
+        };
+    }
+    return out;
 }
 
 fn list(a: std.mem.Allocator, text: []const u8) ![]const []const u8 {
@@ -214,6 +237,9 @@ fn rowStat(z: []const f32, target: usize) RowStat {
     return out;
 }
 
+/// Inkling 2's final logit softcap: z = 30 tanh(x / 30).
+const softcap: f32 = 30;
+
 fn guide(out: []f32, zr: []const f32, zref: []const f32, v: Variant) void {
     var most: f32 = zr[0];
     var second: f32 = -std.math.inf(f32);
@@ -232,7 +258,114 @@ fn guide(out: []f32, zr: []const f32, zref: []const f32, v: Variant) void {
         w = @floatCast(@as(f64, v.w) * (1 - (p1 - p2)));
     }
     const cut: f32 = if (v.alpha > 0) most + @log(v.alpha) else -std.math.inf(f32);
-    for (out, zr, zref) |*o, r, f| o.* = if (r >= cut) r + w * (r - f) else r;
+    if (v.gate == .none and v.kl_max == null and !v.precap and v.part == .all) {
+        for (out, zr, zref) |*o, r, f| o.* = if (r >= cut) r + w * (r - f) else r;
+        return;
+    }
+    if (v.gate != .none or v.kl_max != null) {
+        // p_R's entropy and KL(p_R || p_ref) at T = 1, accumulated in f64
+        var sr: f64 = 0;
+        var er: f64 = 0;
+        var most_f: f32 = zref[0];
+        for (zref) |x| most_f = @max(most_f, x);
+        var sf: f64 = 0;
+        var cross: f64 = 0;
+        for (zr, zref) |r, f| {
+            const e = @exp(@as(f64, r - most));
+            sr += e;
+            er += e * (r - most);
+            sf += @exp(@as(f64, f - most_f));
+            cross += e * (r - f);
+        }
+        const entropy = @log(sr) - er / sr;
+        const skip = switch (v.gate) {
+            .none => false,
+            .uncertain => entropy <= v.tau,
+            .confident => entropy >= v.tau,
+        };
+        if (skip) {
+            @memcpy(out, zr);
+            return;
+        }
+        if (v.kl_max) |cap| {
+            const kl = cross / sr - @as(f64, most - most_f) - @log(sr) + @log(sf);
+            const c: f64 = cap;
+            w = @floatCast(std.math.clamp(@as(f64, w) * kl, -c, c));
+        }
+    }
+    // the contrast in the capped space or before the 30 tanh softcap; out holds s_R - s_ref first
+    const pre = struct {
+        fn f(z: f32, on: bool) f32 {
+            return if (on) softcap * std.math.atanh(std.math.clamp(z / softcap, -1 + 1e-6, 1 - 1e-6)) else z;
+        }
+    };
+    for (out, zr, zref) |*o, r, f| o.* = pre.f(r, v.precap) - pre.f(f, v.precap);
+    var beta: f64 = 0;
+    var mean_s: f64 = 0;
+    var mean_d: f64 = 0;
+    if (v.part != .all) {
+        // d = beta c + d_orth with c = s_R - mean(s_R): beta c rescales s_R (a temperature), d_orth re-ranks
+        for (zr, out) |r, d| {
+            mean_s += pre.f(r, v.precap);
+            mean_d += d;
+        }
+        mean_s /= @floatFromInt(zr.len);
+        mean_d /= @floatFromInt(zr.len);
+        var dc: f64 = 0;
+        var cc: f64 = 0;
+        for (zr, out) |r, d| {
+            const c = pre.f(r, v.precap) - mean_s;
+            dc += (d - mean_d) * c;
+            cc += c * c;
+        }
+        beta = if (cc > 0) dc / cc else 0;
+    }
+    for (out, zr) |*o, r| {
+        const s = pre.f(r, v.precap);
+        const c = s - mean_s;
+        const d: f64 = switch (v.part) {
+            .all => o.*,
+            .parallel => beta * c,
+            .orthogonal => (o.* - mean_d) - beta * c,
+        };
+        const g: f32 = @floatCast(s + w * d);
+        const z = if (v.precap) softcap * std.math.tanh(g / softcap) else g;
+        o.* = if (r >= cut) z else r;
+    }
+}
+
+test "research: the contrast's parallel and orthogonal parts add up, the parallel part is a temperature" {
+    var rng = std.Random.DefaultPrng.init(7);
+    const r = rng.random();
+    const n = 1000;
+    var zr: [n]f32 = undefined;
+    var zf: [n]f32 = undefined;
+    for (&zr, &zf) |*a, *b| {
+        a.* = 8 * r.floatNorm(f32);
+        b.* = a.* * 0.7 + 3 * r.floatNorm(f32) + 2;
+    }
+    var full: [n]f32 = undefined;
+    var par: [n]f32 = undefined;
+    var orth: [n]f32 = undefined;
+    guide(&full, &zr, &zf, .{ .name = "", .w = 0.5 });
+    guide(&par, &zr, &zf, .{ .name = "", .w = 0.5, .part = .parallel });
+    guide(&orth, &zr, &zf, .{ .name = "", .w = 0.5, .part = .orthogonal });
+    // full = par + orth - z_R up to one constant per row (softmax-invariant)
+    const shift = full[0] - (par[0] + orth[0] - zr[0]);
+    for (full, par, orth, zr) |a, p, o, z| try std.testing.expectApproxEqAbs(a, p + o - z + shift, 1e-3);
+    // the parallel part is z_R scaled about its mean: one temperature, order kept
+    const k = (par[1] - par[0]) / (zr[1] - zr[0]);
+    for (par, zr) |p, z| try std.testing.expectApproxEqAbs(p - par[0], k * (z - zr[0]), 1e-2);
+    // a gate that never fires leaves z_R; the KL scale with identical heads leaves z_R
+    guide(&full, &zr, &zf, .{ .name = "", .w = 0.5, .gate = .uncertain, .tau = 1e9 });
+    try std.testing.expectEqualSlices(f32, &zr, &full);
+    guide(&full, &zr, &zr, .{ .name = "", .w = 0.5, .kl_max = 3 });
+    for (full, zr) |a, z| try std.testing.expectApproxEqAbs(z, a, 1e-4);
+    // the softcap round trip with w = 0 returns z_R
+    var capped: [n]f32 = undefined;
+    for (&capped, zr) |*c, z| c.* = softcap * std.math.tanh(z / softcap);
+    guide(&full, &capped, &zf, .{ .name = "", .w = 0, .precap = true });
+    for (full, capped) |a, c| try std.testing.expectApproxEqAbs(c, a, 1e-4);
 }
 
 const Eval = struct {
@@ -273,7 +406,7 @@ test "research: scored items under LoopCD variants" {
     var cfgs: std.ArrayList(Cfg) = .empty;
     for (try list(a, sys.getenv("TF_LOOPCD_RESEARCH_CFG") orelse "off")) |c| try cfgs.append(a, try parseCfg(c));
     var variants: std.ArrayList(Variant) = .empty;
-    for (cfgs.items, 0..) |c, i| if (!c.ref) try variants.append(a, .{ .name = c.name, .own = i });
+    for (cfgs.items, 0..) |c, i| try variants.append(a, .{ .name = c.name, .own = i });
     if (sys.getenv("TF_LOOPCD_RESEARCH_VAR")) |vs| for (try list(a, vs)) |v| try variants.append(a, try parseVariant(a, cfgs.items, v));
     const all = try groups(a, name);
     const lo = try std.fmt.parseInt(usize, sys.getenv("TF_LOOPCD_RESEARCH_FROM") orelse "0", 10);
