@@ -19,13 +19,34 @@ a container and the tests that need no GPU.
   The archive's binary is `tensorfold-native`; the quick start defines a `tensorfold` shell function that calls it.
 - **Windows with an NVIDIA GPU:** follow [the native Windows build guide](WINDOWS.md).
 
-## Send a request
+## Select, download and prove a model
 
-Leave the server running. In another terminal, on either platform:
+After installation, `tensorfold start` uses the same machine probe and registry as `tensorfold models`, picks the largest
+fully pinned checkpoint that fits and `tensorfold pull` can install, shows its download size, and asks before downloading.
+`--yes` gives that consent explicitly. Without `--yes`, a non-interactive run stops before any download; an interactive
+run accepts only `y` or `yes`. A cached model needs no prompt or download. Rows whose Gemma 4 drafts need M5 tensor units are
+served without the drafter on pre-M5 Metal; M5 and CUDA retain it.
+
+The command starts a loopback server and sends one deterministic request. `--check` stops that server after a nonempty
+reply and exits 0; this ephemeral check replaces any caller API key with a private temporary key. Without `--check`, set
+`TENSORFOLD_API_KEY` in the environment first: persistent `start` requires at least one nonempty, valid entry, passes a
+comma-separated list to the child unchanged, and uses its first nonempty trimmed entry for the managed checks. Every entry
+must be UTF-8, at most 256 bytes, and contain no whitespace or control characters. The server accepts each registered entry.
+Send external requests with `Authorization: Bearer KEY`, replacing `KEY` with one accepted entry. Keys are never printed or
+placed in the child arguments. A failed first reply is fatal and the started server is stopped.
+`--startup-timeout SECONDS` sets how long `start` waits for the server to load, above 0 and at most 3600; unset, it
+waits 600 seconds plus 6 for every GB of weights past 20 GB, at most 3600.
+No existing `serve` default or flag changes.
+
+## Send a request
+Leave the server running. In another terminal, on either platform, send the persistent credential below. For a
+comma-separated `TENSORFOLD_API_KEY`, substitute one accepted entry for the whole value in the Authorization header.
+An unauthenticated manual `serve` does not need a key:
 
 ```sh
 curl -fsS http://127.0.0.1:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${TENSORFOLD_API_KEY}" \
   -d '{"model":"local-model","messages":[{"role":"user","content":"Say hello in one sentence."}],"max_tokens":128,"temperature":0}'
 ```
 
@@ -105,6 +126,8 @@ The binary's `capabilities --json` response lists its supported flags and platfo
 | `--api-key-file FILE` | Read keys from a restricted-permission file; a key can be limited to [some routes](api.md#key-scopes). |
 | `--metrics-open` | Allow `/metrics`, `/v1/metrics` and `/v1/load` without a key when API authentication is enabled. |
 | `--dashboard` | Enable the local `/dashboard` page and `/stats` endpoint. |
+| `--log-json` | Write the access, `ended` and `refused` lines as one JSON object each, with `event` set to `access`, `ended` or `refused`. `access` is written when the response starts, with the HTTP status and the request id once assigned. `ended` is written only when the client left or the reply failed, with `prompt` and `tokens`. `refused` is written for an error reply, before its `access` line. Long fields are cut so each line still parses. Off keeps the text lines. |
+| `--execution-witness` | Serve `GET /v1/execution/witness` to read-scoped keys: a snapshot of the running binary, the checkpoint's text files, the serve defaults and settings, or why it is unknown. Needs an API key or `--unix-socket`; see [execution witness](api.md#execution-witness). |
 | `--max-inflight N`, `--max-inflight-per-key N` | Refuse model requests past N in progress at once, overall or per key, with 429; 0, the default, is off. See [admission](api.md#admission). |
 | `--max-connections N`, `--max-connections-per-address N`, `--trusted-proxy ADDRESS` | Open connections at most (default 128); from three quarters full, one address's share (default a quarter, 0 off); addresses never counted for that share, as loopback is not, such as a reverse proxy or Docker's bridge gateway. See [admission](api.md#admission). |
 | `--requests-per-second N`, `--request-burst N` | Refuse a key's model requests past N a second, after a burst; 0, the default, is off. |
@@ -122,16 +145,17 @@ The binary's `capabilities --json` response lists its supported flags and platfo
 | `--thinking-budget N` | Limit reasoning tokens where the engine supports closing the reasoning block. |
 | `--thinking-reserve N` | With thinking on, let reasoning use up to N tokens beyond a request's `max_tokens`, which then limits the answer (lane engines). |
 | `--loop-guard` | Close reasoning that repeats itself verbatim (a short cycle, or a long passage) where the engine supports it. |
+| `--tool-think-close` | With thinking on, a required or named tool call closes its think block at `max_tokens - max(256, max_tokens / 4)` (or a smaller request `thinking_budget`), so the call fits instead of ending as `length`. Off by default ([API](api.md)). |
 | `--loop-guard-stop` | As `--loop-guard`, but end the reply where the guard fires: the reasoning so far, no answer or tool calls, `finish_reason` `content_filter` and a `reasoning_loop` error ([API](api.md)). |
 | `--no-drafts` | Produce the plain reference through the same engine. |
 | `--drafter DRAFTER` | An external drafter, as a directory or a repo id in the Hugging Face cache, for models that take one (Gemma 4 31B's recipe names its drafter); `none` serves without one. Without the flag, Qwen3.8-27B pairs DFlash2 when the cache holds it (never downloaded, not on HIP): one line names it, and serve runs without it if it does not open. |
 | `--drafter-bits 0\|4` | Drafter weight precision where the model offers a choice: 4 bits (the default), or 0 to keep bf16. Qwen3.8-27B on CUDA takes 4 only. |
 | `--record DIR` | Write each stream's committed tokens, positions and tapped rows under DIR, for drafter training. CUDA Nemotron only; a single stream runs through the lane rounds, and recording stops below 25 GiB free disk. |
 | `--keep-warm SECONDS` | Keep the Metal GPU active while idle for this long after a request, default 900; zero disables it. |
-| `--cfg-gamma GAMMA` | Metal Drama speech: semantic guidance strength, finite 1–5; 0/default disables it. Only reference-conditioned requests are guided. Enabled replies report `X-Cfg-Gamma`; codec heads stay conditional. |
-| `--cfg-allow-request-gamma` | Metal Drama speech: allow a finite 1–5 `X-Cfg-Gamma` request header; invalid values return 400 before engine submission. Without this opt-in, the server's gamma is fixed. |
-| `--cfg-force-guided` | With an enabled Metal Drama guidance policy, exercise the unconditional state even at gamma 1. The semantic mix at 1 remains exact conditional-logit identity. |
-| `--cfg-batched` | With enabled Metal Drama guidance, submit both independent backbone states in one command buffer rather than separate submissions. Weights are shared; extra state is included in admission. Not vectorized batching. |
+| `--cfg-gamma GAMMA` | Drama speech on Metal and CUDA: semantic guidance strength, finite 1–5; 0/default disables it. Only reference-conditioned requests are guided. Enabled replies report `X-Cfg-Gamma`; codec heads stay conditional. |
+| `--cfg-allow-request-gamma` | Drama speech on Metal and CUDA: allow a finite 1–5 `X-Cfg-Gamma` request header; invalid values return 400 before engine submission. Without this opt-in, the server's gamma is fixed. |
+| `--cfg-force-guided` | With an enabled Drama guidance policy, exercise the unconditional state even at gamma 1. The semantic mix at 1 remains exact conditional-logit identity. |
+| `--cfg-batched` | With enabled Drama guidance, run both independent backbone states without a host wait between them: one command buffer on Metal, two streams joined by events on CUDA, rather than separate submissions. Weights are shared; extra state is included in admission. Not vectorized batching. |
 | `--silence-floor-dbfs DBFS` | Drama speech only: explicit frame-power floor for the silence guard, with no default floor. Calibrate below quiet intended speech using public or built-in speech. |
 | `--silence-seconds SECONDS` | Drama speech only: stop after this continuous duration below the explicit floor, retaining audio and reporting `silence`. Unset by default: off; calibrate above intentional pauses. |
 | `--silence-onset-s SECONDS` | Drama speech only: with the silence guard on, stop once this many seconds run below its floor while the synthesis has voiced less than `--silence-onset-voiced-s`, retaining audio and reporting `silence`. Off unless given; must be below `--silence-seconds`. |
@@ -183,6 +207,12 @@ Sampling defaults come from the checkpoint's `generation_config.json`, then serv
 `--context 0` is family-specific; use a positive limit for GLM and inspect the capacity reported at startup.
 The supported environment variables are listed in `capabilities --json`, including API keys, request logging and Hugging Face cache paths.
 `TF_Q27_PROFILE=N` makes a native Metal Qwen3.8-27B server log a per-class GPU-time breakdown every N decode rounds (`1` means 64) and add `gpu_seconds` to its replies; it is diagnostic only, and a profiled round runs slower.
+
+## Reading the request journal
+
+With `TENSORFOLD_REQUEST_JOURNAL=PATH` set on `serve`, `tensorfold log list`, `tensorfold log show ID` and
+`tensorfold log follow` read what each request asked, what it got back, its token counts and its timings, while the
+server runs; see [the API's request journal section](api.md#request-journal-and-replay).
 
 ## Other ways to run
 

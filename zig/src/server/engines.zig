@@ -13,7 +13,7 @@ pub const Opened = api.Opened;
 /// Refuse malformed settings before resolving checkpoints and again before an idle reload.
 pub fn environment(a: Allocator, args: cli.Args) !?[]const u8 {
     const settings = @import("sys").environment;
-    var flags: settings.Flags = .{ .slide = args.slide, .device = args.device, .segments = args.segments, .hooks = @import("build_options").slide_test_hooks };
+    var flags: settings.Flags = .{ .slide = args.slide, .device = args.device, .segments = args.segments, .hooks = @import("build_options").slide_test_hooks, .parallel_named = args.parallel_named };
     for (native.backends) |backend| {
         if (std.mem.eql(u8, backend, "cuda")) flags.cuda = true;
         if (std.mem.eql(u8, backend, "metal")) flags.metal = true;
@@ -24,6 +24,9 @@ pub fn environment(a: Allocator, args: cli.Args) !?[]const u8 {
 
 /// The serve flags past the common ones the backend lists (tensor parallelism, MTP, kept entries, policy).
 pub const serves: []const []const u8 = if (@hasDecl(native, "serves")) native.serves else &.{};
+
+/// Whether this binary's engines use Metal 4 (the DeepSeek server's do): the Metal wrapper compiles it in only then.
+pub const metal4: bool = @hasDecl(native, "metal4") and native.metal4;
 
 /// The backend's std options when it has any (HIP: no alternate signal stack for RCCL's threads); else the defaults.
 pub const std_options: std.Options = @import("std_options.zig").of(native);
@@ -66,7 +69,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, dir: []const u8, model_typ
         problem.* = "--record writes rows from the CUDA engine only so far: serve without --record";
         return null;
     }
-    return native.open(a, gpa, io, try cli.request(a, dir, model_type, args), problem);
+    return native.open(a, gpa, io, try released(a, dir, model_type, args), problem);
 }
 
 /// A tensor-parallel rank above 0 runs rank 0's steps until it stops; false with ``problem`` set when it cannot.
@@ -79,7 +82,14 @@ pub fn follow(a: Allocator, gpa: Allocator, io: std.Io, dir: []const u8, model_t
         problem.* = "this build has no tensor-parallel ranks";
         return false;
     }
-    return native.follow(a, gpa, io, try cli.request(a, dir, model_type, args), problem);
+    return native.follow(a, gpa, io, try released(a, dir, model_type, args), problem);
+}
+
+/// The engine's request with this build's release, by which a CUDA family's rank aliases retire.
+fn released(a: Allocator, dir: []const u8, model_type: []const u8, args: cli.Args) !api.Open {
+    var o = try cli.request(a, dir, model_type, args);
+    o.release = @import("build_options").version;
+    return o;
 }
 
 /// `tensorfold device`'s side of the join: what `capabilities --json` lists, without its chip probe or a driver.

@@ -145,7 +145,7 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, e: anytype, dir: []const u8, ran
     var ents = std.StringHashMap(Ent).init(gpa);
     defer ents.deinit();
     try addEntries(names.allocator(), text, size - 8 - hlen, &ents);
-    const mlp = df.mlpSplit(world, e.settings.roce_wide); // the MLP split across the ranks, or whole
+    const mlp = df.mlpSplit(world, e.settings.draftWide()); // the MLP split across the ranks, or whole
     const split = mlp.split;
     const ff = mlp.ff;
     const small: u64 = 6 * 4096 * 2 + 2 * 128 * 2 + 2 * 2 * 2 * D * 2 + 16 * 256;
@@ -156,7 +156,7 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, e: anytype, dir: []const u8, ran
     errdefer wbuf.free();
     var tmp = try cuda.DeviceBuffer.alloc(d, 2 * FF * D * 2); // the largest linear as stored
     defer tmp.free();
-    var raw = try cuda.DeviceBuffer.alloc(d, df.rawBytes(bits, world, e.settings.roce_wide));
+    var raw = try cuda.DeviceBuffer.alloc(d, df.rawBytes(bits, world, e.settings.draftWide()));
     defer raw.free();
     var module = try cuda.Module.load(d, cuda.kernels.glm_dflash);
     errdefer module.unload();
@@ -201,7 +201,7 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, e: anytype, dir: []const u8, ran
     dr.hnorm = try l.raw("hidden_norm.weight", D * 2);
     dr.norm = try l.raw("norm.weight", D * 2);
     if (l.at > total) return error.DrafterLayout;
-    var tail: Tail = .{ .loader = &l, .head_n = head.n };
+    var tail: Tail = .{ .loader = &l, .head_n = head.outputs() };
     const candidates = @import("dflash_candidates.zig").Layout.init(world, df.MAX_M, df.CW);
     try @import("dflash_load_owner.zig").acquire(gpa, dr, &tail, Tail, .{ .book = df.VOCAB * df.RANK, .ctx = df.MAX_CTX, .cand = candidates.host, .hidden = df.MAX_M * df.RANK });
     dr.log = try @import("sys").environment.read(u64, "TF_GLM_DFLASH2_LOG", dr.log);

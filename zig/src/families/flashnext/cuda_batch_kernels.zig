@@ -37,18 +37,22 @@ pub const Gdn = struct {
 /// The prompt pass's kernel forms, each switch read once at load: the pass and the disk key read these.
 pub const Forms = struct {
     gdn_fused: bool = true, // TF_FLASHNEXT_GDN_FUSED
+    gdn_chain_tpr: bool = false, // TF_FLASHNEXT_GDN_CHAIN_TPR
     hc_fuse: bool = true, // TF_FLASHNEXT_HC_FUSE
     in_pass: bool = true, // TF_FLASHNEXT_KEEP_INPASS
     readout_rows: usize = 64, // TF_FLASHNEXT_READOUT_ROWS (maxInt: never)
     fact_rows: usize = 64, // TF_FLASHNEXT_FACT_ROWS (maxInt: never)
+    readout_fused: bool = true, // TF_FLASHNEXT_READOUT_FUSED
 
     pub fn resolve() Forms {
         return .{
             .gdn_fused = @import("cuda_gdn_fused.zig").on(),
+            .gdn_chain_tpr = @import("cuda_gdn.zig").chainTpr(),
             .hc_fuse = @import("cuda_batch_hc.zig").on(),
             .in_pass = @import("cuda_lanes_snap.zig").keepInPass(),
             .readout_rows = @import("cuda_chunk.zig").readoutTileRows(),
             .fact_rows = @import("cuda_nvfp4_tile.zig").factRows(),
+            .readout_fused = @import("readout_fused.zig").on(),
         };
     }
 };
@@ -70,6 +74,8 @@ pub const Kernels = struct {
     nvfp4: cuda.experts.Nvfp4Experts,
     /// Block-FP8 routed experts (the MTP head of NVIDIA's NVFP4 checkpoint; cuda_moe_native.zig).
     fp8: cuda.experts.Fp8Experts,
+    /// TFQ3 routed experts (3/4/5-bit 2D-FWHT) when serving a TFQ3 checkpoint.
+    tfq3: ?cuda.tfq3.Kernels = null,
     expert_tile: ?cuda.experts_tile.Tile = null,
     /// The DeltaNet kernels for the whole layer's heads and for a rank's half under the head split (gdnSet).
     gdn: Gdn,
@@ -98,6 +104,7 @@ pub const Kernels = struct {
         const tile_mode = try cuda.experts_tile.mode(if (std.c.getenv("TF_FLASHNEXT_PROMPT_EXPERT_TILE")) |v| std.mem.span(v) else null);
         var k: Kernels = undefined;
         k.forms = Forms.resolve();
+        k.tfq3 = null;
         k.expert_tile = null;
         k.qmm = try cuda.Module.load(d, cuda.kernels.qmm);
         errdefer k.qmm.unload();
@@ -164,7 +171,16 @@ pub const Kernels = struct {
         return error.RowShape;
     }
 
+    pub fn loadTfq3(k: *Kernels, d: *const cuda.Driver) !void {
+        if (k.tfq3 != null) return;
+        var tk_mod = try cuda.tfq3.Kernels.load(d);
+        errdefer tk_mod.unload();
+        try tk_mod.reserve(512 * 2560, 0, 64 * 10 * 640);
+        k.tfq3 = tk_mod;
+    }
+
     pub fn deinit(k: *Kernels) void {
+        if (k.tfq3) |*t| t.unload();
         if (k.expert_tile) |*tile| tile.unload();
         k.fp8.unload();
         k.nvfp4.unload();

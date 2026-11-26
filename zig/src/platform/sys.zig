@@ -14,6 +14,8 @@ pub const env = if (windows) @import("win_c.zig") else struct {
 pub const environment = @import("environment.zig");
 pub const atomic_file = @import("atomic_file.zig");
 pub const folder_lock = @import("folder_lock.zig");
+/// Original-span matching through arbitrarily nested percent encoding.
+pub const credential = @import("credential.zig");
 
 /// std.posix, or its sockets, signals and limits over Winsock and console events.
 pub const posix = if (windows) @import("win_posix.zig") else std.posix;
@@ -22,6 +24,8 @@ pub const posix = if (windows) @import("win_posix.zig") else std.posix;
 pub const DynLib = if (windows) WinDynLib else if (builtin.os.tag == .macos) MacDynLib else std.DynLib;
 pub const experimental = @import("experimental.zig");
 pub const memory_policy = @import("memory_policy.zig");
+pub const machine = @import("machine.zig");
+pub const working_set = @import("working_set.zig");
 pub const optional_libraries = @import("optional_libraries.zig");
 
 /// An environment variable's value, through libc (std.process.Environ.getPosix does not build on Windows).
