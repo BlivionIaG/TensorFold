@@ -6,6 +6,20 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 - Qwen3.8-27B on Metal: with `--glp` and MTP drafts both enabled, the control vector's last-layer direction is no longer applied a second time inside the MTP head; the head reads the steered target rows with its own final norm, and output is unchanged without `--glp` (#1835).
 - Metal: adds opt-in GLP additive control vectors for Qwen3.8-27B through `--glp FILE` and `--glp-alpha`. Startup reports the escaped filename, exact file SHA-256 and that replies are steered. Other modes, unsupported families/backends and malformed files are refused. Saved conversation states include the file hash and applied strength in their identity; older states start cold once after upgrading because the new kernel source also changes their identity. The engine ships no derived vectors or measurement receipts. Implements the GLP format defined by the `weightless` project (@msuiche) (#1835, fixes #1834). Thanks to @BlivionIaG.
+- Server: `--confidential` refuses existing Linux tracers and, where whole-process locking is supported, locks current and future process memory against swap or refuses startup; Darwin currently refuses because this locking is unavailable.
+
+- HIP, Qwen 3.5 and Nemotron on one GPU: long prompt chunks keep the next layer queued while they poll for a cancel, rather than draining the GPU at every layer; tokens unchanged, and a cancel still drains before the pass ends (#4887).
+
+
+
+- Qwen3.5 on CUDA: MTP admission charges the target tap ring once per stream, and native inference reserves only its 64-row recurrent log unless slide learning needs rollback snapshots, so the admission bound matches what the engine allocates (fixes #5134). Thanks to @tacosta for the report.
+
+- Metal: Inkling 2 with a DFlash 2 drafter now saves and restores the drafter's lane state in the prompt cache, so warm cache hits restore the drafter alongside the target (#5032, thanks @gilby).
+
+
+
+- `tensorfold info --hexagon FILE.gguf` checks a Gemma 4 E4B IT Q4_0 GGUF export against the Hexagon layout (architecture, text geometry and all 666 tensors) without the Qualcomm SDK; a match reports device execution as unverified, and a mismatch names the reason and exits with status 2 (#5475, thanks @tgerighty).
+
 - Qwen3.8-27B on Metal: Q and K head norm and RoPE run as one `q27_qk_norm_rope` dispatch instead of two head-norm launches, the barrier between them and two RoPE launches, on every chip and pass, keys-only prompt tails included; on an M5 Ultra every cache row and `qa` byte and the served replies match the previous path (#2955, part of #2940).
 
 - CUDA: drafted Qwen3.8-27B now sends a draft hold with any wide stream through the full head in one pass by default, winning back the 1.3.7 loss at 4 greedy streams (+2.3% to +3.1% on two GB10s) with identical tokens; `TF_QWEN_DRAFT_FULL_HEAD=0` restores the split path (#5490, fixes #4439).
