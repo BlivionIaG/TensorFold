@@ -116,12 +116,12 @@ pub const Loaded = struct {
 
 pub const cacheBytes = plan.cacheBytes;
 pub const cacheBytesWithTaps = plan.cacheBytesWithTaps;
-/// The pool's layout with a drafter (`extra` bytes a stream): DFlash2's ring and taps in the run, the rest fixed.
+/// The pool's layout with a drafter (`extra` bytes a stream): its ring and target taps in the run, the rest fixed.
 pub fn pagedLayout(p: *anyopaque, extra: u64) ?kv_pool.Layout {
     const l: *Lanes = @ptrCast(@alignCast(p));
     if (l.page_tokens == 0) return null;
     const ring = l.ringBytes();
-    const in_run = ring + if (l.draft != null) l.e.tapBytes() else 0; // DFlash2 counts the target's taps as its own
+    const in_run = ring + if (l.draft != null or l.mtp != null) l.e.tapBytes() else 0; // DFlash2 and MTP count the target's taps as their own
     l.extra = @intCast(extra -| in_run);
     return pages_mod.layout(l.e, l.capacity, l.page_tokens, ring, l.extra);
 }
@@ -177,7 +177,6 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     loaded.readouts = j.readout().info;
     return loaded;
 }
-
 /// `open` without the decision-only refusals: the runners open a BF16 backbone with a test readout through it.
 pub fn openLanes(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: []const u8, kernels: ?[]const u8, o: Options) !Loaded {
     if (kernels != null) return error.QwenHasNoCapturedKernels;
@@ -195,6 +194,7 @@ pub fn openLanes(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, d
     if (share_snaps > 0 and page_tokens == 0) return error.QwenShareNeedsPages;
     if (kv_host_mod.onHost() and share_snaps == 0) std.log.warn("TF_QWEN_KV_HOST pins the KV pages in host memory; the prompt cache would pin more beside them: set --prompt-cache-gib to bound it", .{});
     const e = try E.Engine.init(gpa, io, ctx, dir, o.kv8, fitOf(o), o.context);
+    e.rollback_capable = o.slide;
     errdefer e.deinit();
     if (o.rope_yarn) |f| { // --rope-yarn over the downloaded config: its table, and the window it allows
         var arena = std.heap.ArenaAllocator.init(gpa);
@@ -217,7 +217,8 @@ pub fn openLanes(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, d
     errdefer if (trace) |x| gpa.destroy(x);
     const l = try gpa.create(Lanes);
     l.* = .{ .gpa = gpa, .io = io, .e = e, .capacity = o.context, .mtp_drafts = o.mtp_drafts, .page_tokens = page_tokens, .engine_paged = engine_paged, .page_test = page_test, .share_snaps = share_snaps, .cost_context = ctx, .room = o.room, .startup = e.startup, .vision = v, .target = undefined, .timing_on = timing_on, .trace = trace };
-    l.target = .{ .e = e, .caches = &l.caches, .seen = &l.seen, .device = try ctx.attribute(.integrated) != 0 };
+    try @import("cuda_lane_startup.zig").open(l, ctx);
+    errdefer gpa.destroy(l);
     return .{
         .learns = if (o.slide) e else null,
         .learn_bytes = if (o.slide) @import("cuda_train.zig").memory(try @import("cuda_learn_shape.zig").from(e.g)) + e.streamBytes(o.context) else 0,
@@ -332,6 +333,7 @@ pub const Lanes = struct {
         if (self.vision) |v| v.deinit();
         self.target.spares.deinit(); // after the host closed the prompt cache, the last to give buffers back
         self.e.deinit();
+        @import("cuda_prefill_trace.zig").close();
         if (self.trace) |x| self.gpa.destroy(x);
         self.gpa.destroy(self);
     }
@@ -382,7 +384,7 @@ pub const Lanes = struct {
     };
 
     fn backend(self: *Lanes) be.Backend {
-        return .{ .ptr = self, .round_observer = if (self.trace) |x| x.observer() else null, .first_before_draft = true, .penalties = true, .chunk_invariant = true, .vtable = if (self.readout.readout != null) &read_vtable else &text_vtable };
+        return @import("cuda_prefill_trace.zig").wrapBackend(Lanes, .{ .ptr = self, .round_observer = if (self.trace) |x| x.observer() else null, .first_before_draft = true, .penalties = true, .chunk_invariant = true, .vtable = if (self.readout.readout != null) &read_vtable else &text_vtable });
     }
 
     /// Readout streams from now on fill through `r` (one rank; before the first stream): the backend to hand on.
@@ -538,14 +540,7 @@ pub const Lanes = struct {
 
     /// The accepted path of each window (a chain's prefix or a tree's branch): the state as that chain leaves it.
     fn keepFn(ptr: *anyopaque, windows: []const be.Window, paths: []const []const u32) !void {
-        const self = cast(ptr);
-        const t0 = std.Io.Clock.awake.now(self.io);
-        defer @import("cuda_draft.zig").timing("keep", self.io, t0);
-        for (windows, paths) |w, path| {
-            const cache = try self.cacheOf(w.stream);
-            if (cache.last == null) continue; // already kept: nothing to roll back
-            try cache.keep(self.e, path);
-        }
+        return @call(.always_inline, @import("cuda_native_keep.zig").keep, .{ cast(ptr), windows, paths });
     }
 
     fn draftFn(_: *anyopaque, requests: []const be.DraftRequest) !void {
@@ -597,4 +592,8 @@ test "Qwen stepped prefill: a cap (the flag's or fcfs's) cuts on the 128 grid in
 test {
     _ = @import("cuda_admit_test.zig");
     _ = @import("cuda_mtp_budget.zig");
+}
+
+test "CUDA prefill adapter: native off vtable and first-before-absorb lifecycle" {
+    try @import("cuda_prefill_adapter_test.zig").backend(Lanes, Lanes.backend);
 }

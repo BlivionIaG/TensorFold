@@ -62,6 +62,7 @@ test {
     _ = @import("cuda_kv_host_test.zig");
     _ = @import("cuda_pages_lifetime_test.zig");
     _ = @import("cuda_mtp_area_test.zig");
+    _ = @import("cuda_mtp_paged_test.zig");
     _ = @import("cuda_prefix.zig");
     _ = @import("cuda_prefix_fault_test.zig");
     _ = @import("cuda_pend_test.zig");
@@ -121,4 +122,8 @@ test "the shard plan's head widths are the kernels'" {
 
 test {
     _ = @import("cuda_request_starts_test.zig");
+}
+
+test {
+    _ = @import("cuda_prefill_adapter_test.zig");
 }

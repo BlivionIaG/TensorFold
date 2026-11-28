@@ -224,6 +224,7 @@ pub const Mtp = struct {
         const max_c_int: usize = @intCast(std.math.maxInt(c_int));
         if (d.capacity == 0 or d.capacity > max_c_int) return error.UnsupportedMtpGeometry;
         const hidden_bytes = try weights.checkedMul(d.e.g.hidden, 2);
+        const target_tap_bytes = try weights.checkedMul(try weights.checkedMul(d.taps().len, d.e.tapRows()), hidden_bytes);
         const kv_width = try weights.checkedMul(d.e.g.kv_heads, head_dim);
         d.ring_bytes = try arrayBytes(try weights.checkedMul(2, d.capacity), kv_width, 2);
         const aligned_ring = try weights.checkedAligned(d.ring_bytes);
@@ -232,6 +233,7 @@ pub const Mtp = struct {
         d.area_bytes = try weights.checkedAdd(d.area_bytes, try weights.checkedMul(max_lanes, 4));
         d.stream_bytes = try weights.checkedAdd(d.ring_bytes, try weights.checkedMul(2, hidden_bytes));
         d.stream_bytes = try weights.checkedAdd(d.stream_bytes, try weights.checkedMul(max_lanes, 4));
+        d.stream_bytes = try weights.checkedAdd(d.stream_bytes, target_tap_bytes);
         d.scratch_bytes = try d.layout(false);
     }
 
@@ -513,9 +515,13 @@ pub const Mtp = struct {
 
     // the Drafter contract
 
-    pub fn drafter(d: *Mtp) dr.Drafter {
+    pub const drafter_vtable: dr.Drafter.VTable = blk: {
         const adapter = @import("cuda_mtp_contract.zig").Adapter(Mtp);
-        return .{ .kind = "MTP", .ptr = d, .vtable = &.{ .taps = adapter.taps, .facts = adapter.facts, .open = openFn, .absorb = absorbFn, .hold = holdFn, .held = heldFn, .release = releaseFn } };
+        break :blk .{ .taps = adapter.taps, .facts = adapter.facts, .open = openFn, .absorb = absorbFn, .hold = holdFn, .held = heldFn, .release = releaseFn };
+    };
+
+    pub fn drafter(d: *Mtp) dr.Drafter {
+        return @import("cuda_prefill_trace.zig").wrapDrafter(d, .{ .kind = "MTP", .ptr = d, .vtable = &drafter_vtable });
     }
 
     fn openFn(p: *anyopaque, s: *Stream) anyerror!void {

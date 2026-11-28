@@ -67,6 +67,8 @@ pub const Input = struct {
     fill_room: bool = false,
     /// ``"execution_witness": true``: the reply binds the witness, its prompt, resolved request and tokens.
     execution_witness: bool = false,
+    /// The reply continues the final assistant message (continue_final_message, or a Messages prefill): prefill.zig.
+    prefill: bool = false,
 
     /// The prompt rows the engine computes: ``prompt_logprobs``' alternatives, or echo's ``logprobs`` when more.
     pub fn promptRows(input: Input) ?u8 {
@@ -83,6 +85,8 @@ pub const Sink = struct {
     /// Called only after admission, with cancellation and mailbox draining already guarded.
     begin: ?*const fn (ctx: *anyopaque, prompt_len: usize) error{Closed}!void = null,
     tokens: ?*const fn (ctx: *anyopaque, offset: usize, ids: []const u32) error{Closed}!void = null,
+    /// A prompt's progress, for ``return_progress`` requests; null: the stream shows none, and the engine sends none.
+    progress: ?*const fn (ctx: *anyopaque, p: api.Progress) error{Closed}!void = null,
 };
 
 pub const Reply = struct {
@@ -256,7 +260,8 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
     if (preparing) _ = srv.preparing.fetchAdd(1, .acq_rel);
     errdefer srv.release(preparing, null);
     if (gone.check()) return error.Cancelled;
-    const thinking = input.prompt == null and (fields_mod.flag(f, "enable_thinking") orelse srv.config.enable_thinking);
+    // a continued final message thinks only when the request turns thinking on: the server's default is off for it
+    const thinking = input.prompt == null and (fields_mod.flag(f, "enable_thinking") orelse (srv.config.enable_thinking and !input.prefill));
     const instruct = input.prompt == null and !thinking and !input.own; // a client's chat with thinking off may take --instruct-sampling's set
     const reasoning = (thinking or (srv.markers.optional and input.prompt == null)) and srv.info.capability(.reasoning) and (srv.text.vtable.format != .kimi or input.prompt == null); // the prompt renders `thinking`; the reply reads `reasoning`
     const asked = if (f.get("reasoning_effort")) |e| (if (e == .string) e.string else null) else null;
@@ -346,6 +351,7 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
     request.logprobs = input.logprobs;
     request.prompt_logprobs = input.promptRows();
     if (input.kept_probs) request.logprobs = try @import("kept_probs.zig").admit(cx, &request);
+    request.return_progress = fields_mod.flag(f, "return_progress") orelse false;
     if (try engine_refusal.of(srv.engine, cx, &request)) |message| return cx.refuse(message);
     const deadline: ?i96 = if (f.get("deadline_s")) |v| blk: {
         const s = (if (v == .bool) null else v.float64()) orelse return cx.refuse("deadline_s must be a number of seconds");
@@ -381,6 +387,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
     if (srv.info.capability(.decides)) return cx.refuse("this model makes decisions and does not write text: use POST /v1/systemone");
     var stop_hook: StopHook = .{ .srv = srv, .stops = .{ .strings = stops_opt.strings } };
     if (stops_opt.strings.len > 0) request.stop = .{ .ctx = &stop_hook, .check = StopHook.check };
+    request.return_progress = request.return_progress and sink != null and sink.?.progress != null; // a stream that shows it
     var box: Mailbox = .{ .io = io, .gpa = srv.gpa };
     defer box.deinit();
     if (sink != null) request.unread = &box.unread; // a streamed reply's reader can fall behind; a whole one cannot
@@ -398,7 +405,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
     };
     srv.release(preparing, null); // a background request waits only while a foreground one prepares
     preparing = false;
-    var gen: Generation = .{ .srv = srv, .a = a, .box = &box, .id = id, .asked = input.cancel, .reply_id = input.id, .seed = if (request.sampling) |v| v.seed else null, .report_seed = input.choices > 1, .sink = sink, .thinking = prepared.reasoning or (srv.text.vtable.format != .kimi and srv.info.capability(.reasoning) and reply_text.isChannel(srv.markers)), .chat = input.prompt == null, .stops = .{ .strings = stops_opt.strings }, .ignore_eos = stops_opt.ignore_eos, .grammar = if (request.structure) |st| (if (st.after) |t| .{ .after = t } else .on) else .none, .max_tokens = if (input.prompt_only) 0 else request.max_tokens, .tools = input.tools, .token_ids = prepared.token_ids, .lp = if (request.logprobs != null) .{ .positions = if (sink) |s| s.tokens != null else false, .opts = @import("kept_probs.zig").opts(input.logprobs, input.kept_probs, &request) } else null, .loop_stop = request.loop_stop, .single = fields_mod.flag(input.fields, "tool_call_single") orelse false, .required = fields_mod.flag(input.fields, "tool_call_required") orelse false, .recover = input.prompt == null and request.structure == null, .deadline_ns = prepared.deadline_ns };
+    var gen: Generation = .{ .srv = srv, .a = a, .box = &box, .id = id, .asked = input.cancel, .reply_id = input.id, .seed = if (request.sampling) |v| v.seed else null, .report_seed = input.choices > 1, .sink = sink, .thinking = prepared.reasoning or (srv.text.vtable.format != .kimi and srv.info.capability(.reasoning) and reply_text.isChannel(srv.markers)), .chat = input.prompt == null, .stops = .{ .strings = stops_opt.strings }, .ignore_eos = stops_opt.ignore_eos, .grammar = if (request.structure) |st| (if (st.after) |t| .{ .after = t } else .on) else .none, .max_tokens = if (input.prompt_only) 0 else request.max_tokens, .tools = input.tools, .token_ids = prepared.token_ids, .return_progress = request.return_progress, .lp = if (request.logprobs != null) .{ .positions = if (sink) |s| s.tokens != null else false, .opts = @import("kept_probs.zig").opts(input.logprobs, input.kept_probs, &request) } else null, .loop_stop = request.loop_stop, .single = fields_mod.flag(input.fields, "tool_call_single") orelse false, .required = fields_mod.flag(input.fields, "tool_call_required") orelse false, .recover = input.prompt == null and request.structure == null, .deadline_ns = prepared.deadline_ns };
     gen.call_end = @import("chat_inkling2.zig").callEnd(srv, gen.required, request.structure);
     defer srv.noteRequest(prepared.prompt_len, cached_tokens.within(box.cached, prepared.prompt_len), gen.collected.items.len, box.stats.drafted, box.stats.accepted, box.stats.rounds, received, gen.first_ns, gen.last_ns, box.stats.prefill_seconds, if (box.stats.prefill_seconds != null) box.stats.queued_seconds else null);
     errdefer if (!gen.engine_done) gen.cancel(); // the engine writes to the mailbox until it says finished
