@@ -7,6 +7,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - Metal: LFM2.5-24B-A2B can use an explicit DSpark drafter. Request and round costs gate neural work; pre-M5 or unrecognized devices retain target-only execution and cheap copies, and `draft:false` disables neural drafting (#1394). Thanks to @BlivionIaG.
 
 - Kernel contract: adds exact sorted-combine/norm/tap comparisons and float64 BF16 SwiGLU bounds with planted controls for LFM2 (#1394). Thanks to @BlivionIaG.
+- Build: the module walker matches source paths with either slash, so native Windows builds give `cli.zig` its `flashnext_memory` import again and `compile-native-cuda-windows` builds (#5511).
+
 - Qwen3.8-27B on Metal (M5, fused attention plans): the norm and RoPE dispatch, as `q27_qk_cache_rope`, writes rotated K and V straight into the KV cache (contiguous and paged) and Q into the packed `qa` buffer, padding slots included, so the intermediate barrier and the separate append and pack dispatches go; other chips and unfused plans keep the single `q27_qk_norm_rope` dispatch, and on an M5 Ultra every cache row and `qa` byte and the served replies match the previous path (#2960, part of #2940).
 
 - Server: a reply can continue the conversation's final assistant message, so a client can start it with `{` for JSON or with an answer's first words. `/v1/messages` now continues a trailing assistant message as Messages' prefill does, where it opened a new turn before, and `/v1/chat/completions` does so with `"continue_final_message": true`. The response holds only the continuation and usage counts the prefill. A request that turns thinking on itself, trailing whitespace on Messages, tool calls and a template that rewrites the message get HTTP 400 by name; with thinking on only by the server's default, the continuation runs with thinking off (#3548).
@@ -24,8 +26,6 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - Qwen3.5 on CUDA: MTP admission charges the target tap ring once per stream, and native inference reserves only its 64-row recurrent log unless slide learning needs rollback snapshots, so the admission bound matches what the engine allocates (fixes #5134). Thanks to @tacosta for the report.
 
 - Metal: Inkling 2 with a DFlash 2 drafter now saves and restores the drafter's lane state in the prompt cache, so warm cache hits restore the drafter alongside the target (#5032, thanks @gilby).
-
-
 
 - `tensorfold info --hexagon FILE.gguf` checks a Gemma 4 E4B IT Q4_0 GGUF export against the Hexagon layout (architecture, text geometry and all 666 tensors) without the Qualcomm SDK; a match reports device execution as unverified, and a mismatch names the reason and exits with status 2 (#5475, thanks @tgerighty).
 
