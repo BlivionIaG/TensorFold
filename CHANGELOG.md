@@ -7,7 +7,13 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - DeepSeek-V4.1 on Metal: an EXL3 group that also keeps a dense sibling is read as its trellis, and the routed
   experts quantize each 32-value activation block to E4M3 before the down projection, as the FP8 path does, so a
   routed activation's down inputs match the reference bit for bit (#5113, refs #5063). Thanks to @BlivionIaG.
+- Server: a streamed chat, completion or Responses request with `return_progress: true` receives `tensorfold.progress` counts (prompt tokens done, total and cached) while its prompt pass runs, before the first token; off by default, and a stream without it is byte for byte what it was (#3216).
+
+- Docs: `docs/environment-names.md` lists `TF_Q27_FLAT_GLUE`, `TF_Q27_QK` and `TF_CUDA_PREFILL_TRACE`, so the environment-names check passes on main again (#5513).
+
 - Build: the module walker matches source paths with either slash, so native Windows builds give `cli.zig` its `flashnext_memory` import again and `compile-native-cuda-windows` builds (#5511).
+
+
 
 - Qwen3.8-27B on Metal (M5, fused attention plans): the norm and RoPE dispatch, as `q27_qk_cache_rope`, writes rotated K and V straight into the KV cache (contiguous and paged) and Q into the packed `qa` buffer, padding slots included, so the intermediate barrier and the separate append and pack dispatches go; other chips and unfused plans keep the single `q27_qk_norm_rope` dispatch, and on an M5 Ultra every cache row and `qa` byte and the served replies match the previous path (#2960, part of #2940).
 
