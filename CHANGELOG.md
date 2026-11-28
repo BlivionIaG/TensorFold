@@ -4,6 +4,28 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 
 ## Unreleased
 
+- Qwen3.8-27B on Metal (M5, fused attention plans): the norm and RoPE dispatch, as `q27_qk_cache_rope`, writes rotated K and V straight into the KV cache (contiguous and paged) and Q into the packed `qa` buffer, padding slots included, so the intermediate barrier and the separate append and pack dispatches go; other chips and unfused plans keep the single `q27_qk_norm_rope` dispatch, and on an M5 Ultra every cache row and `qa` byte and the served replies match the previous path (#2960, part of #2940).
+
+- Server: a reply can continue the conversation's final assistant message, so a client can start it with `{` for JSON or with an answer's first words. `/v1/messages` now continues a trailing assistant message as Messages' prefill does, where it opened a new turn before, and `/v1/chat/completions` does so with `"continue_final_message": true`. The response holds only the continuation and usage counts the prefill. A request that turns thinking on itself, trailing whitespace on Messages, tool calls and a template that rewrites the message get HTTP 400 by name; with thinking on only by the server's default, the continuation runs with thinking off (#3548).
+
+- Qwen3.5 and Qwen3.8 (including the 27B) on CUDA: a full load now refuses a checkpoint with tensors the engine never binds, naming the first five; MTP, vision and tied-head tensors are scoped so they never count (#4577).
+
+
+
+- Server: `--confidential` refuses existing Linux tracers and, where whole-process locking is supported, locks current and future process memory against swap or refuses startup; Darwin currently refuses because this locking is unavailable.
+
+- HIP, Qwen 3.5 and Nemotron on one GPU: long prompt chunks keep the next layer queued while they poll for a cancel, rather than draining the GPU at every layer; tokens unchanged, and a cancel still drains before the pass ends (#4887).
+
+
+
+- Qwen3.5 on CUDA: MTP admission charges the target tap ring once per stream, and native inference reserves only its 64-row recurrent log unless slide learning needs rollback snapshots, so the admission bound matches what the engine allocates (fixes #5134). Thanks to @tacosta for the report.
+
+- Metal: Inkling 2 with a DFlash 2 drafter now saves and restores the drafter's lane state in the prompt cache, so warm cache hits restore the drafter alongside the target (#5032, thanks @gilby).
+
+
+
+- `tensorfold info --hexagon FILE.gguf` checks a Gemma 4 E4B IT Q4_0 GGUF export against the Hexagon layout (architecture, text geometry and all 666 tensors) without the Qualcomm SDK; a match reports device execution as unverified, and a mismatch names the reason and exits with status 2 (#5475, thanks @tgerighty).
+
 - Qwen3.8-27B on Metal: Q and K head norm and RoPE run as one `q27_qk_norm_rope` dispatch instead of two head-norm launches, the barrier between them and two RoPE launches, on every chip and pass, keys-only prompt tails included; on an M5 Ultra every cache row and `qa` byte and the served replies match the previous path (#2955, part of #2940).
 
 - CUDA: drafted Qwen3.8-27B now sends a draft hold with any wide stream through the full head in one pass by default, winning back the 1.3.7 loss at 4 greedy streams (+2.3% to +3.1% on two GB10s) with identical tokens; `TF_QWEN_DRAFT_FULL_HEAD=0` restores the split path (#5490, fixes #4439).
