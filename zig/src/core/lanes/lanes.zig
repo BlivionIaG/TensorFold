@@ -38,6 +38,7 @@ pub const row_cost = @import("row_cost.zig");
 pub const trail = @import("trail.zig");
 pub const engine = @import("engine.zig");
 pub const fake = @import("fake.zig");
+pub const memory_restore = @import("memory_restore.zig");
 pub const shared_head_cost_check = @import("shared_head_cost_check.zig");
 pub const shared_draft_check = @import("shared_draft_check.zig");
 pub const invariance = @import("invariance.zig");
@@ -50,6 +51,7 @@ pub const logprob = @import("logprob.zig");
 pub const grammar = @import("grammar.zig");
 pub const grammar_time = @import("grammar_time.zig");
 pub const grammar_fake = @import("grammar_fake.zig"); // a stand-in libtfgrammar for tests
+pub const drafted_fixture = @import("drafted_test.zig"); // its fake drafter and prompts, for a family's wrapper tests
 
 pub const Engine = engine.Engine;
 pub const Config = config.Config;
@@ -81,6 +83,8 @@ test {
     _ = @import("open_trace_test.zig");
     _ = @import("recorder_test.zig");
     _ = @import("gpu_full_test.zig");
+    _ = @import("gpu_launch_test.zig");
+    _ = @import("gpu_top_test.zig");
     _ = @import("drafted_test.zig");
     _ = @import("drafter_depth_sweep_test.zig");
     _ = @import("drafted_chances_test.zig");
@@ -113,6 +117,11 @@ pub const learned_dirs = @import("learned_dirs.zig");
 
 test {
     _ = @import("context_copy_price_test.zig");
+    _ = @import("lone_copy_price_test.zig");
+    _ = @import("lone_copy_sampled_test.zig");
+    _ = @import("copy_price_test.zig");
+    _ = @import("copy_edges_test.zig");
+    _ = @import("copy_scope_test.zig");
     _ = @import("sampling_row.zig");
     _ = @import("sampling_row_test.zig");
     _ = @import("penalty_rows.zig");

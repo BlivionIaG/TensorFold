@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 pub const profile = @import("profile");
 pub const tfvideo = @import("tfvideo.zig");
 pub const DraftSources = @import("draft_sources.zig").Sources;
+pub const glp = @import("glp.zig");
 /// The server's name for one request, unique while the process lives.
 pub const Id = u64;
 /// One request's sampling (Python's exact_sampling.Sampling); a request without one decodes greedily.
@@ -20,6 +21,7 @@ pub const execution_witness = @import("engine_witness.zig");
 
 /// One image of a request (``Request.images``): the tower's input and the placeholder rows its output replaces.
 pub const Image = lanes.stream.Image;
+pub const Audio = lanes.stream.Audio;
 
 /// A prompt's reproducible seed (``seed_for``), for requests that name none.
 pub const seedFor = lanes.sampling.seedFor;
@@ -43,9 +45,14 @@ pub const VideoSource = vision_types.VideoSource;
 pub const FrameSink = vision_types.FrameSink;
 pub const PreparedVideo = vision_types.PreparedVideo;
 pub const VideoOffer = vision_types.VideoOffer;
+pub const PreparedAudio = vision_types.PreparedAudio;
+pub const AudioOffer = vision_types.AudioOffer;
 pub const VisionOpen = vision_types.VisionOpen;
 pub const ImageShare = vision_types.ImageShare;
 pub const Size = vision_types.Size;
+pub const visionGate = vision_types.gate;
+pub const visionDeclared = vision_types.declared;
+pub const visionWords = vision_types.words;
 pub const ocr = @import("engine_ocr.zig");
 
 pub const SpeechRequest = @import("speech_api.zig").SpeechRequest;
@@ -64,10 +71,14 @@ pub const Reason = enum { stop, length, cancelled, failed, silence };
 pub const speech_guard = @import("speech_guard.zig");
 
 pub const Stats = @import("engine_stats.zig").Stats;
+/// ``done`` of a prompt's ``total`` rows are in the cache, ``cached`` of them restored from a kept prefix.
+pub const Progress = struct { done: u32, total: u32, cached: u32 };
 
 pub const Event = union(enum) {
     /// The prompt is in the cache: ``cached`` of its tokens came from a kept prefix.
     prefilled: u32,
+    /// A ``return_progress`` prompt's rows so far, each higher; the last, ``done == total``, precedes ``prefilled``.
+    progress: Progress,
     /// The next ``tokens`` event's logprob rows, one a token (``logprobs`` requests); valid only during the call.
     logprobs: []const LogprobRow,
     /// The prompt's rows, one a prompt token after the first, right after ``prefilled`` (``prompt_logprobs`` requests).
@@ -80,14 +91,24 @@ pub const Event = union(enum) {
 };
 
 /// Where a request's events go. Called on the engine's thread: it must return at once and not re-enter the engine.
-pub const Sink = struct {
-    ctx: *anyopaque,
-    event: *const fn (ctx: *anyopaque, id: Id, event: *const Event) void,
-};
+pub const Sink = struct { ctx: *anyopaque, event: *const fn (ctx: *anyopaque, id: Id, event: *const Event) void };
 
 pub const Benchmark = @import("benchmark_info.zig").Snapshot;
 /// A reranker's label tokens: a prompt's relevance score is sigmoid(yes - no) of their last-row logits.
 pub const Rerank = struct { yes: u32, no: u32 };
+
+/// Free bytes are sampled at different phases: before pool allocation, then with the old pool still resident.
+pub const CudaPoolSizing = struct {
+    estimated_free_bytes: u64,
+    measured_free_bytes: u64,
+    final_free_bytes: u64,
+    reserve_bytes: u64,
+    growth_room_bytes: u64,
+    estimated_pages: u64,
+    measured_pages: u64,
+    page_bytes: u64,
+    page_tokens: u32,
+};
 
 /// What the engine serves, fixed once it has loaded.
 pub const Info = struct {
@@ -143,6 +164,8 @@ pub const Info = struct {
     policy: []const u8 = "",
     /// A line the server prints once at startup (the engine's memory plan); empty: none.
     startup: []const u8 = "",
+    /// Frozen CUDA pool sizing inputs; the device report reads these without entering a device context.
+    cuda_pool_after_warmup: ?CudaPoolSizing = null,
     /// A prompt-only request (max_tokens 0) keeps its end state: the server prefills each reply for the next turn.
     warm_turns: bool = false,
     /// The engine decodes plain whatever a request asks: no drafter loaded, or this chip is faster plain.
@@ -163,11 +186,15 @@ pub const Info = struct {
     pictures: bool = false,
     /// Image input (--vision); null: text only.
     vision: ?Vision = null,
-    ocr: ?ocr.Ocr = null, // OCR reader for /v1/ocr; null: no OCR route
+    /// Audio input (a speech model's encoder); null: none.
+    audio: ?AudioOffer = null,
+    ocr: ?ocr.Ocr = null, // OCR reader for /v1/ocr and /ocr; null: no OCR routes
     /// The engine decodes greedily only: the server refuses a request with a temperature before admitting it.
     greedy_only: bool = false,
     /// The learner reads conversation prompts at any length through taps.
     slide_conversations: bool = false,
+    /// Folded Memory Weights v3 is active for `--slide` (fast weight compilation & exact deletion).
+    folded_memory: bool = false,
     /// Whether a request's caches fit beside the running streams' now (null: a free lane does); else it waits in order.
     admit: ?Admit = null,
     /// A byte budget each request promises its caches from as it is admitted (null: none); never beside `admit`.
@@ -244,6 +271,8 @@ pub const Open = struct {
     rope_yarn: ?f64 = null, // --rope-yarn: YaRN over the checkpoint's trained window; families without it refuse
     /// --record: each stream's committed rows and tapped features written under this folder, for drafter training.
     record: ?[]const u8 = null,
+    /// --glp: the control vector the engine applies to the residual stream (null: none).
+    glp: ?glp.Glp = null,
     speed_up: ?[]const u8 = null,
     prompt_cache_gib: ?f64 = null,
     prompt_cache_over_cap: bool = false,
@@ -285,6 +314,9 @@ pub const Open = struct {
     execution_witness: bool = false, // --execution-witness: an engine on a supported path attests it (Info.witness)
     rank: u32 = 0,
     given: Given = .{},
+    /// The build's release (rank aliases retire by it) and where `tp` came from, for the start-up line.
+    release: []const u8 = "",
+    launch_from: []const u8 = "",
     master: []const u8 = "",
     master_port: u16 = 29551,
     /// --policy: the engine's policy as `key=value,...`; empty: its defaults.
@@ -340,6 +372,11 @@ pub const LearnSink = @import("learning_api.zig").LearnSink;
 pub const LearnError = @import("learning_api.zig").LearnError;
 pub const Learner = @import("learning_api.zig").Learner;
 pub const pocket_audit = @import("pocket_audit.zig");
+pub const memory_api = @import("memory_api.zig");
+pub const MemoryOp = memory_api.MemoryOp;
+pub const MemoryResult = memory_api.MemoryResult;
+pub const MemoryController = memory_api.MemoryController;
+pub const MemorySnapHandle = memory_api.SnapHandle;
 
 pub const Engine = struct {
     ctx: *anyopaque,
@@ -375,6 +412,8 @@ pub const Engine = struct {
         refusal: ?*const fn (ctx: *anyopaque, request: *const Request, out: []u8) ?[]const u8 = null,
         /// A reference WAV file's codec rows in `gpa`, on the speech engine's own thread; null: it encodes no voices.
         encode_voice: ?*const fn (ctx: *anyopaque, gpa: Allocator, wav: []const u8) EncodeVoiceError![][10]i32 = null,
+        /// Folded Memory Weights v3 synchronous op on the engine thread; null when not attached.
+        memory_op: ?*const fn (ctx: *anyopaque, op: *const MemoryOp) MemoryResult = null,
     };
 
     pub fn info(e: Engine) Info {
@@ -459,6 +498,12 @@ pub const Engine = struct {
         const f = e.vtable.refusal orelse return null;
         return f(e.ctx, request, out);
     }
+
+    /// Folded Memory Weights v3 engine-thread op (init/teach_chunk/save/forget/clear/stats).
+    pub fn memoryOp(e: Engine, op: *const MemoryOp) MemoryResult {
+        const f = e.vtable.memory_op orelse return .{ .err = "folded memory weights are not supported by this engine" };
+        return f(e.ctx, op);
+    }
 };
 
 /// A backend's own driver for a lone greedy stream (the GPU round), which LaneHost runs while the stream is alone.
@@ -468,6 +513,8 @@ pub const LoneHooks = @import("engine_lone.zig").LoneHooks;
 
 /// The lane core served to the HTTP threads (lane_host.zig).
 pub const LaneHost = @import("lane_host.zig").LaneHost;
+/// Whether a server builds a folded-memory holder: only with --slide (lane_host_memory.zig).
+pub const memoryWanted = @import("lane_host_memory.zig").wanted;
 /// TENSORFOLD_PREFILL_* values the lane host would misread, refused at serve start (lane_host_env.zig).
 pub const prefill_env = @import("lane_host_env.zig");
 /// An opt-in family round planner for the lane host, in place of its `prefill_step` chunks (lane_rounds.zig).
@@ -500,5 +547,6 @@ pub const save_guard = @import("save_guard");
 
 test {
     _ = @import("engine_api_test.zig");
+    _ = vision_types;
     _ = @import("engine_capabilities.zig");
 }

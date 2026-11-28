@@ -195,6 +195,7 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     b.step("test-flashnext-proposal-hip-host", "Original Flash Next HIP IDs and head-row spans without device runtime").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.flashnext, .filters = &.{"Flash Next proposal:"} })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.nemotron })).step);
     b.step("test-nemotron-hip-faults-host", "Nemotron HIP adoption rollback without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.nemotron, .filters = &.{"Nemotron HIP page faults:"} })).step);
+    b.step("test-nemotron-hip-resume-host", "Nemotron HIP prompt-cache resumes and the MTP head's shared rows without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.nemotron, .filters = &.{"Nemotron HIP resume:"} })).step);
     const qwen3_host = b.addRunArtifact(b.addTest(.{ .root_module = host.qwen3 }));
     test_step.dependOn(&qwen3_host.step);
     b.step("test-qwen3-hip-host", "Qwen3 dense config, checkpoint prefix and lm_head rows on the CPU").dependOn(&qwen3_host.step);
@@ -311,7 +312,7 @@ fn checksExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-        .imports = &.{ .{ .name = "hip", .module = e.hip }, .{ .name = "qwen3_5", .module = e.family }, .{ .name = "lanes", .module = e.lanes }, .{ .name = "npy", .module = b.createModule(.{ .root_source_file = b.path("zig/npy_from_core.zig"), .target = target, .optimize = optimize, .imports = &.{.{ .name = "core", .module = e.hip.import_table.get("core").? }} }) } },
+        .imports = &.{ .{ .name = "hip", .module = e.hip }, .{ .name = "core", .module = e.hip.import_table.get("core").? }, .{ .name = "qwen3_5", .module = e.family }, .{ .name = "lanes", .module = e.lanes }, .{ .name = "npy", .module = b.createModule(.{ .root_source_file = b.path("zig/npy_from_core.zig"), .target = target, .optimize = optimize, .imports = &.{.{ .name = "core", .module = e.hip.import_table.get("core").? }} }) } },
     }) });
 }
 fn clefExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, e: Engine) *std.Build.Step.Compile {
@@ -469,12 +470,13 @@ pub fn server(b: *std.Build, target: std.Build.ResolvedTarget, e: Engine, build_
     const engines = e.native;
     const tokenizer = e.hip.import_table.get("core").?.import_table.get("tokenizer").?;
     const template = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
+    const checkpoint_cli = @import("cuda.zig").checkpointCli(b, target, .ReleaseSafe, null, engines, e.hip.import_table.get("core").?);
     const exe = b.addExecutable(.{ .name = "tensorfold-native", .root_module = b.createModule(.{
         .root_source_file = b.path("zig/src/server/main.zig"),
         .target = target,
         .optimize = .ReleaseSafe,
         .link_libc = true,
-        .imports = &.{ .{ .name = "core", .module = e.hip.import_table.get("core").? }, .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines }, .{ .name = "checkpoint_cli", .module = b.createModule(.{ .root_source_file = b.path("zig/src/cli/cli.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true, .imports = &.{ .{ .name = "native_engines", .module = engines }, exlr8_build.cliImport(b, target, .ReleaseSafe, e.hip.import_table.get("core").?), .{ .name = "core", .module = e.hip.import_table.get("core").? } } }) } },
+        .imports = &.{ .{ .name = "core", .module = e.hip.import_table.get("core").? }, .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines }, .{ .name = "checkpoint_cli", .module = checkpoint_cli } },
     }) });
     exe.root_module.addOptions("build_options", build_options);
     _ = @import("server.zig").addTo(b, exe.root_module, target, .ReleaseSafe);
@@ -501,6 +503,9 @@ const groups = [_]Source{
     .{ .path = "qwen_vision.hip", .strict = true },
     .{ .path = "draft/draft.hip" },
     .{ .path = "exl3/exl3.hip" },
+    .{ .path = "decode/plan_rows.hip" },
+    .{ .path = "inkling2/attention.hip", .strict = true },
+    .{ .path = "deepseek_v41/topk512.hip" },
 };
 /// What the group sources include, so an edit to one rebuilds them.
 const headers = [_][]const u8{
@@ -511,7 +516,7 @@ const headers = [_][]const u8{
     "tiles/gemm.hpp",             "tiles/gemm_kp.hpp",     "tiles/matrix_gemm.hpp",         "tiles/matrix_item.hpp", "tiles/plan.hpp",       "tiles/stream.hpp",
     "flashnext/streams.hpp",      "flashnext/ngram.hpp",   "flashnext/indexer.hpp",         "flashnext/sparse.hpp",  "ops/nemotron_moe.hpp", "quant/bf16_decoder.hpp",
     "quant/dense_tiles.hpp",      "tiles/wmma12_gemm.hpp", "tiles/wmma12_gemm_k32_ref.hpp", "ops/columns.hpp",       "columns_controls.hpp", "ops/vision.hpp",
-    "ops/dense_text.hpp",         "ops/vl_position.hpp",   "flashnext/sparse_lanes.hpp",    "tiles/wmma12_step.hpp",
+    "ops/dense_text.hpp",         "ops/vl_position.hpp",   "flashnext/sparse_lanes.hpp",    "tiles/wmma12_step.hpp", "inkling2/tile.hpp",
 };
 /// The flags of the kernels' first build: no contraction, wave32 on RDNA, C++20.
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-mno-wavefrontsize64", "-ffp-contract=off" };

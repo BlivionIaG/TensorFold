@@ -30,10 +30,15 @@ pub fn requested(generation: u32, moe: bool) u32 {
     return q.prompt_rows.requested(generation, moe, rowsValue());
 }
 
+/// The prompt rows asked for on `c`: a valid TF_PROMPT_ROWS, else the chip and family default.
+pub fn requestedFor(generation: u32, c: Config) u32 {
+    return q.prompt_rows.requestedModel(generation, c.moe(), c.looped, rowsValue());
+}
+
 /// The prompt rows startup takes: the request when it fits (always when named), never under the window.
 pub fn rows(f: memory.Fit, generation: u32, window: u32) !u32 {
     const geometry = try q.attention_plan.Geometry.fromConfig(f.config, f.shared);
-    const wanted = q.prompt_rows.frameRequested(generation, f.config.moe(), rowsValue(), geometry);
+    const wanted = if (f.config.looped) requestedFor(generation, f.config) else q.prompt_rows.frameRequested(generation, f.config.moe(), rowsValue(), geometry);
     return @max(window, try f.choose(wanted, q.prompt_rows.override(rowsValue()) != null));
 }
 
@@ -48,11 +53,21 @@ pub const Budget = struct {
     working_set: usize,
 };
 
+/// A tied head's repack, which the checkpoint's file bytes do not include.
+fn tiedHeadBytes(a: std.mem.Allocator, text: []const u8, c: Config) !usize {
+    if (!c.tied_head) return 0;
+    var formats = try q.affine.Formats.init(a, text);
+    defer formats.deinit();
+    const s = (try formats.resolve("model.embed_tokens")) orelse return error.MissingAffineFormat;
+    return q.tied_head.bytes(c.vocab, c.hidden, s.bits, s.group_size);
+}
+
 /// Startup's charge for `dir` on this Mac, no drafter or images; `weights` bytes stand in for the loaded model.
 pub fn budget(a: std.mem.Allocator, io: std.Io, dir: []const u8, weights: u64, context: u32, streams: u32, fixed: bool) !Budget {
     const path = try std.fs.path.join(a, &.{ dir, "config.json" });
     const text = try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(16 << 20));
-    const c = try q.config.parse(a, text, null);
+    var problem: q.config.Problem = .{};
+    const c = try q.model.parseServed(a, text, null, &problem);
     if (context == 0 or context > c.max_position) return error.ContextFull;
     const dev = try mtl.Device.init();
     defer dev.deinit();
@@ -61,7 +76,7 @@ pub fn budget(a: std.mem.Allocator, io: std.Io, dir: []const u8, weights: u64, c
     const shared = try q.simd_attention.sharedPrefix(units);
     const geometry = try q.attention_plan.Geometry.fromConfig(c, shared);
     const current = @max(loaded_rows, q.model.promptRows(c, 0, geometry));
-    const held = @as(usize, @intCast(weights)) + memory.frameBytes(c, current);
+    const held = @as(usize, @intCast(weights)) + try tiedHeadBytes(a, text, c) + memory.frameBytes(c, current);
     const f = fit(c, context, window, streams, shared, 0, q.taps.layers.len, current, try memory.room(dev.maxWorkingSet(), held, cap()));
     const r = try rows(f, dev.generation(), window);
     const slots = f.streams(r, fixed) catch |err| if (err == error.TooManyStreams) 0 else return err;

@@ -72,12 +72,18 @@ fn start(srv: *Server, input: chat.Input, sent: Value, reasoning: ?[]const u8, t
     // an image conversation's pass holds its images as its turns did (data URLs only: no URL is fetched twice)
     const pictures = try images.expand(srv.info.vision, null, srv.text, &cx, .{ .array = warm_prompt.messages }, prompt, prompt.len);
     if (pictures) |x| prompt = x.ids;
+    const clips = if (pictures == null) try @import("audio.zig").expand(srv.info.audio, &cx, .{ .array = warm_prompt.messages }, prompt, prompt.len) else null;
+    if (clips) |x| prompt = x.ids;
     if (prompt.len == 0 or (srv.info.context_window > 0 and prompt.len >= srv.info.context_window)) return;
     const system_len = prompt_mod.systemPrefixLen(srv, &cx, .{ .array = warm_prompt.messages }, input.tools, prompt, thinking, effort);
     // its states count as the reply's request's: they supersede none of that turn's own until a later turn does
-    p.request = .{ .prompt = prompt, .max_tokens = 0, .background = true, .born = @intCast(prompt_len), .history_len = @intCast(prompt.len), .rewind_len = if (pictures != null) 0 else @intCast(prompt_mod.rewindLen(srv, &cx, .{ .array = warm_prompt.messages }, input.messages.array.len, input.tools, prompt, thinking, effort)), .chunks = try srv.chunks.request(a, prompt, system_len), .decode_spans = try prompt_mod.replySpans(srv, &cx, prompt) };
+    p.request = .{ .prompt = prompt, .max_tokens = 0, .background = true, .born = @intCast(prompt_len), .history_len = @intCast(prompt.len), .rewind_len = if (pictures != null or clips != null) 0 else @intCast(prompt_mod.rewindLen(srv, &cx, .{ .array = warm_prompt.messages }, input.messages.array.len, input.tools, prompt, thinking, effort)), .chunks = try srv.chunks.request(a, prompt, system_len), .decode_spans = try prompt_mod.replySpans(srv, &cx, prompt) };
     if (pictures) |x| {
         p.request.images = x.images;
+        p.request.cache_key = x.cache_key;
+    }
+    if (clips) |x| {
+        p.request.audios = x.audios;
         p.request.cache_key = x.cache_key;
     }
     // a salted conversation's pass keeps its states under the same salt (an engine keyed by tokens alone: no pass)
@@ -91,13 +97,18 @@ fn start(srv: *Server, input: chat.Input, sent: Value, reasoning: ?[]const u8, t
 
 /// The tokens every next user or tool turn shares: two renderings agree up to that turn's text.
 fn shared(srv: *Server, cx: *errors.Cx, input: chat.Input, message: Value, thinking: bool, effort: ?[]const u8) !struct { ids: []const u32, messages: []Value } {
-    const before = input.messages.array;
+    var before = input.messages.array;
+    var turn = message;
+    if (input.prefill) { // the next turn holds the continued message and the reply as one
+        before = before[0 .. before.len - 1];
+        turn = try @import("prefill.zig").joined(cx.a, input.messages.array[before.len], message);
+    }
     var ids: [2][]const u32 = undefined;
     var first: []Value = undefined;
     for ([_][]const u8{ "A", "B" }, &ids, 0..) |text, *out, i| {
         const list = try cx.a.alloc(Value, before.len + 2);
         @memcpy(list[0..before.len], before);
-        list[before.len] = message;
+        list[before.len] = turn;
         const user = try json.newObject(cx.a);
         try user.put(cx.a, "role", .{ .string = "user" });
         try user.put(cx.a, "content", .{ .string = text });

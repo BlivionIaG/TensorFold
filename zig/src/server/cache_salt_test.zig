@@ -41,6 +41,7 @@ const Box = struct {
         defer b.mutex.unlock(io);
         switch (e.*) {
             .prefilled => |c| b.cached = c,
+            .progress => {},
             .logprobs, .prompt_logprobs, .audio => {},
             .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
             .finished => |f| b.done = f.reason,
@@ -514,7 +515,7 @@ test "cache salt isolation: two keys OCR pages never resume each other and each 
         var wire: harness.Wire = .{ .a = a };
         const conn = try harness.request(a, &wire, "/v1/ocr", "application/json", body);
         conn.key_digest = @as([32]u8, @splat(key));
-        @import("ocr/route.zig").post(srv, conn, a);
+        @import("ocr/route.zig").post(srv, conn, a, "/v1/ocr");
         try std.testing.expectEqual(@as(u16, 200), wire.status());
         try isolated(&cache, from, 1, resumed);
         const reply = try wire.parsed();

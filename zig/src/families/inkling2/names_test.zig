@@ -1,14 +1,18 @@
-//! The weight map and layer plan against the tiny-random checkpoint's safetensors headers (fixtures fold them).
+//! Weight maps and layer plans against safetensors headers (fixtures fold them).
+
 const std = @import("std");
 const config = @import("config.zig");
 const config_test = @import("config_test.zig");
-const st = @import("safetensors");
+const st = @import("core").safetensors;
 const names = @import("names.zig");
 const plan = @import("plan.zig");
 
 const t = std.testing;
 const model_fixture = @embedFile("fixtures/tiny_model_header.txt");
 const mtp_fixture = @embedFile("fixtures/tiny_mtp_header.txt");
+const mini_model_fixture = @embedFile("fixtures/mini_model_header.txt");
+const mini_mtp_fixture = @embedFile("fixtures/mini_mtp_header.txt");
+const tiny_mini_model_fixture = @embedFile("fixtures/tiny_mini_model_header.txt");
 
 fn byName(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.lessThan(u8, a, b);
@@ -78,11 +82,28 @@ fn load(a: std.mem.Allocator) !config.Config {
     return config.parse(a, config_test.tiny, &why);
 }
 
+fn loadMini(a: std.mem.Allocator) !config.Config {
+    var why: config.Why = .{};
+    return config.parse(a, config_test.mini, &why);
+}
+
+fn loadTinyMini(a: std.mem.Allocator) !config.Config {
+    var why: config.Why = .{};
+    return config.parse(a, config_test.tiny_mini, &why);
+}
+
 test "the folded fixtures unfold to the 404 and 84 tensors of tiny's two files, digests equal" {
     var arena = std.heap.ArenaAllocator.init(t.allocator);
     defer arena.deinit();
     try t.expectEqual(@as(usize, 404), (try unfold(arena.allocator(), model_fixture, "inkling2-tiny-model")).count());
     try t.expectEqual(@as(usize, 84), (try unfold(arena.allocator(), mtp_fixture, "inkling2-tiny-mtp")).count());
+}
+
+test "Mini's folded fixtures unfold to the 1244 and 54 tensors of its two files, digests equal" {
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    try t.expectEqual(@as(usize, 1244), (try unfold(arena.allocator(), mini_model_fixture, "inkling2-mini-model")).count());
+    try t.expectEqual(@as(usize, 54), (try unfold(arena.allocator(), mini_mtp_fixture, "inkling2-mini-mtp")).count());
 }
 
 test "the map names exactly tiny's backbone and vision tensors, with their dtypes and shapes" {
@@ -106,6 +127,19 @@ test "the map names exactly tiny's draft head tensors" {
     const r = try names.check(a, &c, try unfold(a, mtp_fixture, "inkling2-tiny-mtp"), .mtp);
     try t.expectEqual(@as(usize, 84), r.expected);
     try t.expect(r.clean());
+}
+
+test "Mini's config parses and the map names exactly its model and draft tensors" {
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const c = try loadMini(a);
+    const model = try names.check(a, &c, try unfold(a, mini_model_fixture, "inkling2-mini-model"), .model);
+    try t.expectEqual(@as(usize, 1244), model.expected);
+    try t.expect(model.clean());
+    const mtp = try names.check(a, &c, try unfold(a, mini_mtp_fixture, "inkling2-mini-mtp"), .mtp);
+    try t.expectEqual(@as(usize, 54), mtp.expected);
+    try t.expect(mtp.clean());
 }
 
 test "a missing tensor, a wrong shape, a wrong dtype and an unknown tensor are each reported by name" {
@@ -177,6 +211,15 @@ test "expert precision follows each layer's tensors: NVFP4 on layers 0 to 5, MXF
     try t.expectError(error.ExpertFormat, names.precisions(bad, 12, &prec));
 }
 
+test "Mini's expert precision is NVFP4 on layers 0 to 19 and MXFP8 on 20 to 23" {
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    const entries = try unfold(arena.allocator(), mini_model_fixture, "inkling2-mini-model");
+    var prec: [24]plan.Precision = undefined;
+    try names.precisions(entries, 24, &prec);
+    for (prec, 0..) |p, i| try t.expectEqual(if (i < 20) plan.Precision.nvfp4 else plan.Precision.mxfp8, p);
+}
+
 test "the plan: global layers 5 and 11, blocks of six, three attention queries before each global layer" {
     var arena = std.heap.ArenaAllocator.init(t.allocator);
     defer arena.deinit();
@@ -199,6 +242,84 @@ test "the plan: global layers 5 and 11, blocks of six, three attention queries b
     try t.expectEqual(@as(u32, 3), p.at(11).attn_sources);
     try t.expectEqual(@as(u32, 3), p.final_sources);
     try t.expectError(error.PrecisionCount, plan.build(&c.text, prec[0..11]));
+    try t.expectEqual(@as(u32, 12), p.n_visits);
+    for (0..p.n_visits) |i| {
+        const v = p.visit(@intCast(i));
+        try t.expectEqual(@as(u32, @intCast(i)), v.layer);
+        try t.expectEqual(@as(u32, @intCast(i)), v.cache_slot);
+        try t.expect(!v.hasMessages());
+    }
+}
+
+test "Mini's visit plan repeats only the core, gives all 48 visits private state and banks the previous pass" {
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const c = try loadMini(a);
+    var prec: [24]plan.Precision = undefined;
+    try names.precisions(try unfold(a, mini_model_fixture, "inkling2-mini-model"), 24, &prec);
+    const p = try plan.build(&c.text, &prec);
+    try t.expectEqual(@as(u32, 48), p.n_visits);
+    try t.expectEqual(@as(u32, 8), p.visitCount(.global));
+    try t.expectEqual(@as(u32, 40), p.visitCount(.local));
+    for (0..p.n_visits) |i| {
+        const v = p.visit(@intCast(i));
+        const layer: u32 = if (i < 6) @intCast(i) else if (i < 42) 6 + @as(u32, @intCast((i - 6) % 12)) else @intCast(i - 24);
+        const pass: u32 = if (i >= 6 and i < 42) 1 + @as(u32, @intCast((i - 6) / 12)) else 0;
+        try t.expectEqual(layer, v.layer);
+        try t.expectEqual(pass, v.pass);
+        try t.expectEqual(@as(u32, @intCast(i)), v.cache_slot);
+        try t.expectEqual(pass >= 2, v.hasMessages());
+        const previous: ?u32 = if (pass == 2) 6 else if (pass == 3) 18 else null;
+        try t.expectEqual(previous, v.previous_core_start);
+    }
+    try t.expectEqual(@as(u32, 5), p.final_sources);
+}
+
+test "tiny-inkling2-mini's config parses and the map names exactly the 622 tensors of its model file" {
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const c = try loadTinyMini(a);
+    const entries = try unfold(a, tiny_mini_model_fixture, "inkling2-tiny-mini-model");
+    try t.expectEqual(@as(usize, 622), entries.count());
+    const model = try names.check(a, &c, entries, .model);
+    try t.expectEqual(@as(usize, 622), model.expected);
+    try t.expect(model.clean());
+}
+
+test "tiny-inkling2-mini's expert precision is NVFP4 on layers 0 to 13 and MXFP8 on 14 to 17" {
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    const entries = try unfold(arena.allocator(), tiny_mini_model_fixture, "inkling2-tiny-mini-model");
+    var prec: [18]plan.Precision = undefined;
+    try names.precisions(entries, 18, &prec);
+    for (prec, 0..) |p, i| try t.expectEqual(if (i < 14) plan.Precision.nvfp4 else plan.Precision.mxfp8, p);
+}
+
+test "tiny-inkling2-mini's visit plan repeats its 6-layer core three times over 30 visits and banks the previous pass" {
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const c = try loadTinyMini(a);
+    var prec: [18]plan.Precision = undefined;
+    try names.precisions(try unfold(a, tiny_mini_model_fixture, "inkling2-tiny-mini-model"), 18, &prec);
+    const p = try plan.build(&c.text, &prec);
+    try t.expectEqual(@as(u32, 30), p.n_visits);
+    try t.expectEqual(@as(u32, 5), p.visitCount(.global));
+    try t.expectEqual(@as(u32, 25), p.visitCount(.local));
+    for (0..p.n_visits) |i| {
+        const v = p.visit(@intCast(i));
+        const layer: u32 = if (i < 6) @intCast(i) else if (i < 24) 6 + @as(u32, @intCast((i - 6) % 6)) else @intCast(i - 12);
+        const pass: u32 = if (i >= 6 and i < 24) 1 + @as(u32, @intCast((i - 6) / 6)) else 0;
+        try t.expectEqual(layer, v.layer);
+        try t.expectEqual(pass, v.pass);
+        try t.expectEqual(@as(u32, @intCast(i)), v.cache_slot);
+        try t.expectEqual(pass >= 2, v.hasMessages());
+        const previous: ?u32 = if (pass == 2) 6 else if (pass == 3) 12 else null;
+        try t.expectEqual(previous, v.previous_core_start);
+    }
+    try t.expectEqual(@as(u32, 4), p.final_sources);
 }
 
 /// A file's header through the core reader; the files may hold the header alone, so no data length is checked.
@@ -250,4 +371,91 @@ test "the real checkpoint's 24 shard headers and mtp.safetensors match the map (
     const mtp = try names.check(a, &c, try headerOf(a, dir, "mtp.safetensors"), .mtp);
     try t.expectEqual(@as(usize, 84), mtp.expected);
     try t.expect(mtp.clean());
+}
+
+test "dense_text names exactly Small's 996 non-expert text tensors and rejects vision or expert tensors" {
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var why: config.Why = .{};
+    const small = try config.parse(a, config_test.real, &why);
+    const Counter = struct {
+        n: usize = 0,
+        pub fn put(s: *@This(), _: []const u8, _: st.DType, _: []const u64) !void {
+            s.n += 1;
+        }
+    };
+    var count: Counter = .{};
+    try names.all(&small, &.{}, .dense_text, &count);
+    try t.expectEqual(@as(usize, 996), count.n);
+
+    const tiny = try load(a);
+    const full = try unfold(a, model_fixture, "inkling2-tiny-model");
+    var dense: st.Header = .empty;
+    for (full.keys(), full.values()) |name, e| {
+        if (!std.mem.startsWith(u8, name, "model.llm.")) continue;
+        if (std.mem.indexOf(u8, name, ".mlp.experts.") != null) continue;
+        try dense.put(a, name, e);
+    }
+    const clean = try names.check(a, &tiny, dense, .dense_text);
+    try t.expect(clean.clean());
+    try dense.put(a, "model.visual.backbone.ln_pre.weight", full.get("model.visual.backbone.ln_pre.weight").?);
+    const dirty = try names.check(a, &tiny, dense, .dense_text);
+    try t.expect(!dirty.clean());
+    try t.expectEqual(@as(usize, 1), dirty.unknown.items.len);
+}
+
+test "precisionsWithDir detects TFPW v3 shards alongside residual safetensors and requires pw_v3_tables.bin" {
+    var arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var tmp = t.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try std.fmt.allocPrint(a, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+
+    var hdr: [16]u8 = @splat(0);
+    std.mem.writeInt(u32, hdr[0..4], 0x57504654, .little); // "TFPW"
+    std.mem.writeInt(u32, hdr[4..8], 3, .little);
+    std.mem.writeInt(u32, hdr[12..16], 128, .little);
+    try tmp.dir.writeFile(t.io, .{ .sub_path = "layer_00.tffpw", .data = &hdr });
+    try tmp.dir.writeFile(t.io, .{ .sub_path = "layer_01.tffpw", .data = &hdr });
+
+    const empty: st.Header = .empty;
+    var prec: [2]plan.Precision = undefined;
+    // Missing pw_v3_tables.bin is refused.
+    try t.expectError(error.MissingTfq3Tables, names.precisionsWithDir(t.allocator, t.io, empty, 2, dir, &prec));
+
+    // With pw_v3_tables.bin present, both layers resolve to .tfq3.
+    try tmp.dir.writeFile(t.io, .{ .sub_path = "pw_v3_tables.bin", .data = "PWV3" });
+    try names.precisionsWithDir(t.allocator, t.io, empty, 2, dir, &prec);
+    try t.expectEqual(plan.Precision.tfq3, prec[0]);
+    try t.expectEqual(plan.Precision.tfq3, prec[1]);
+
+    // Replacing pw_v3_tables.bin with pw_v4_e8p_tables.bin also resolves to .tfq3 (hybrid/TFQ4 TFPW).
+    try tmp.dir.deleteFile(t.io, "pw_v3_tables.bin");
+    try tmp.dir.writeFile(t.io, .{ .sub_path = "pw_v4_e8p_tables.bin", .data = "PWV4" });
+    try names.precisionsWithDir(t.allocator, t.io, empty, 2, dir, &prec);
+    try t.expectEqual(plan.Precision.tfq3, prec[0]);
+    try t.expectEqual(plan.Precision.tfq3, prec[1]);
+
+    // A layer with num_experts == 0 is rejected as NoExperts.
+    std.mem.writeInt(u32, hdr[12..16], 0, .little);
+    try tmp.dir.writeFile(t.io, .{ .sub_path = "layer_01.tffpw", .data = &hdr });
+    try t.expectError(error.NoExperts, names.precisionsWithDir(t.allocator, t.io, empty, 2, dir, &prec));
+
+    // names.all with .tfq3 omits w13/w2 expert tensors while retaining routers and backbone.
+    const mini = try loadMini(a);
+    const tfq3_precs: [24]plan.Precision = @splat(.tfq3);
+    const Counter = struct {
+        experts: usize = 0,
+        routers: usize = 0,
+        pub fn put(s: *@This(), name: []const u8, _: st.DType, _: []const u64) !void {
+            if (std.mem.indexOf(u8, name, ".mlp.experts.") != null) s.experts += 1;
+            if (std.mem.endsWith(u8, name, ".mlp.gate.weight")) s.routers += 1;
+        }
+    };
+    var cnt: Counter = .{};
+    try names.all(&mini, &tfq3_precs, .model, &cnt);
+    try t.expectEqual(@as(usize, 0), cnt.experts);
+    try t.expectEqual(@as(usize, 24), cnt.routers);
 }

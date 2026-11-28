@@ -61,6 +61,7 @@ pub const Server = struct {
     text: model_text.Text,
     config: Config,
     voices: @import("drama_voice_store.zig").Store = .{},
+    zonos: ?*@import("zonos_speech.zig").State = null, // a ZONOS3 Mini release's voices; Drama 3's stay in `voices`
     keys: ?*auth.Store,
     late_system: []const u8 = "system",
     needs_user_after_tool: bool = false,
@@ -70,13 +71,15 @@ pub const Server = struct {
     close_id: ?u32 = null, // the close marker's own token, when the marker is one token
     chunks: chunk_plan.Plan = .{},
     effort_levels: []const []const u8 = &.{},
-    /// The effort a recipient template hears with thinking off: it has no switch, so its lowest level, not its default.
+    /// The effort a template with no thinking switch hears with thinking off: its lowest level, not its default.
     off_effort: ?[]const u8 = null,
     thinking_switch: bool = false,
     video_decoder: bool = false, // libtfvideo loaded in `init`: with the video offer it decides video input (#3004)
     eos: []const u32 = &.{},
     think_close: []const u32 = &.{},
     think_close_end: ?u32 = null,
+    /// Template's empty system turn prefix (`<|im_start|>system\n<|im_end|>\n`), stripped when Folded Memory fires.
+    empty_system_prefix: []const u32 = &.{},
     metrics: metrics.Metrics,
     /// Scheduler load the engine publishes as it works, and this server's identity and activity (load_ledger.zig).
     load: api.load_ledger.Ledger,
@@ -103,10 +106,14 @@ pub const Server = struct {
     /// Structured output's compiler, opened by the first structured request (Python's grammar.compiler).
     grammars: ?*api.grammar.Compiler = null,
     grammar_problem: ?[]const u8 = null,
+    tool_grammars: ?*api.grammar.Compiler = null, // Inkling 2's required calls: the eos ids and its end of message
+    tool_grammar_problem: ?[]const u8 = null,
     grammar_mutex: std.Io.Mutex = .init,
     /// The facts the learner was taught and whether the weights recall them.
     slide: slide_graph.Graph,
     teacher: slide_lesson.Teacher, // what every Sliding Weights lesson shares: keep prompts, the turn's end
+    /// Non-blocking in-flight chat learner for Folded Memory Weights v5 (started when --slide is on).
+    inflight: @import("slide_inflight.zig").Worker = .{},
     /// The folder's snapshot made or hashed whole by this process (under teacher.learning): later lessons trust it.
     snapshot_checked: bool = false,
     /// Cortheon's web reader and what replies hid from their clients; null without --cortheon.
@@ -133,11 +140,8 @@ pub const Server = struct {
             log.line("--vision: marker token {d} is not an added token in this tokenizer; image and video input cannot be served safely", .{id});
             return error.InvalidVisionMarkers;
         };
-        srv.video_decoder = @import("input_types.zig").decodes(srv.info.vision); // no decoder: video parts are a 400, never a 500
-        srv.voices = .{ .gpa = gpa, .io = io, .dir = config.voice.dir };
-        if (srv.info.speech == null and (config.voice.dir != null or config.voice.inline_voices or config.voice.manage)) return error.VoicesRequireSpeech;
-        if (config.voice.dir) |dir| try srv.voices.load(dir);
-        _ = try srv.voices.select(srv.arena.allocator(), config.voice.default, "default");
+        try @import("input_types.zig").start(srv); // the video decoder and the audio locator's token
+        try @import("speech_voices.zig").start(srv, gpa, io, config);
         if (!srv.info.capability(.text_generation)) {
             if (config.cortheon) return error.CortheonRequiresTextGeneration;
             return srv;
@@ -159,6 +163,8 @@ pub const Server = struct {
         const source = text.templateSource();
         srv.effort_levels = try fields.effortLevels(a, source);
         if (srv.recipients and srv.effort_levels.len > 0) srv.off_effort = fields.coerceEffort("minimal", srv.effort_levels);
+        // Inkling 2's template has no enable_thinking: its off is reasoning_effort "none" (effort level 0)
+        if (@import("chat_inkling2.zig").enabled(srv)) srv.off_effort = "none";
         // MiniMax-M3's template decides on its own; thinking off closes the block in the prompt (prompt.zig)
         srv.thinking_switch = minimax or std.mem.indexOf(u8, source, "enable_thinking") != null or
             std.mem.indexOf(u8, source, "thinking_mode") != null;
@@ -174,6 +180,8 @@ pub const Server = struct {
             srv.think_close = try std.mem.concat(a, u32, &.{ lead, &.{end}, trail });
             srv.think_close_end = end;
         }
+        // the header a memory prompt strips, encoded only where the engine serves learning
+        if (srv.info.folded_memory) srv.empty_system_prefix = text.encode(a, "<|im_start|>system\n<|im_end|>\n", false) catch &.{};
         srv.info.thinking_applicable = srv.close_id != null;
         srv.info.thinking_switch = try @import("prompt.zig").thinkingSwitch(srv);
         if (srv.info.prefill_step > 0) {
@@ -182,6 +190,7 @@ pub const Server = struct {
             var step: [32]u8 = undefined;
             log.line("prompt chunks of up to {s} tokens, cut at replies {d}+ tokens apart", .{ live.commas(&step, srv.info.prefill_step), srv.chunks.min_chunk });
         }
+        if (srv.info.folded_memory) srv.inflight.start(gpa, io, srv);
         return srv;
     }
 
@@ -191,10 +200,12 @@ pub const Server = struct {
     }
 
     pub fn deinit(srv: *Server) void {
+        srv.inflight.shutdown(); // drain any pending in-flight chat learning before engine/slide tear down
         srv.background_jobs.shutdown(srv); // they stop and end before the engine, store and counts they use go
         srv.load.detach(false); // an engine still attached is still open: it stops writing before anything here frees
         srv.stopKeepalive();
         if (srv.grammars) |g| g.close();
+        if (srv.tool_grammars) |g| if (g != srv.grammars) g.close();
         srv.metrics.deinit();
         srv.voices.deinit();
         srv.arena.deinit();
@@ -302,8 +313,19 @@ pub const Server = struct {
 
     /// A request's grammar, compiled once here and handed to the engine (a 400 with xgrammar's reason if it cannot be).
     pub fn compiledStructure(srv: *Server, cx: *Cx, kind: grammar.Kind, text: []const u8, field: []const u8, thinking: bool) errors.Refused!api.Structure {
+        return srv.compiledWith(cx, srv.grammarCompiler(), srv.grammar_problem, kind, text, field, thinking);
+    }
+
+    /// A required tool call's grammar: on Inkling 2 its own compiler, which may also end at a call's end of message.
+    pub fn compiledToolStructure(srv: *Server, cx: *Cx, text: []const u8, field: []const u8, thinking: bool) errors.Refused!api.Structure {
+        if (!@import("chat_inkling2.zig").enabled(srv)) return srv.compiledStructure(cx, .structural_tag, text, field, thinking);
+        const c = srv.compilerFor(&srv.tool_grammars, &srv.tool_grammar_problem, true);
+        return srv.compiledWith(cx, c, srv.tool_grammar_problem, .structural_tag, text, field, thinking);
+    }
+
+    fn compiledWith(srv: *Server, cx: *Cx, compiler: ?*api.grammar.Compiler, problem: ?[]const u8, kind: grammar.Kind, text: []const u8, field: []const u8, thinking: bool) errors.Refused!api.Structure {
         try grammar.checkNesting(cx, kind, text, field);
-        const c = srv.grammarCompiler() orelse return cx.fail(.request, "{s}: {s}", .{ if (kind == .structural_tag) field else "structured output", srv.grammar_problem.? });
+        const c = compiler orelse return cx.fail(.request, "{s}: {s}", .{ if (kind == .structural_tag) field else "structured output", problem.? });
         var err: [512]u8 = undefined;
         const compiled = c.compile(srv.io, @fromBackingInt(@intCast(@backingInt(kind))), text, &err) catch
             return cx.fail(.request, "{s}: the grammar cannot be enforced: {s}", .{ field, std.mem.sliceTo(&err, 0) });
@@ -323,12 +345,17 @@ pub const Server = struct {
 
     /// The model's grammar compiler: tokenizer.json, the text model's vocab_size, the eos ids.
     fn grammarCompiler(srv: *Server) ?*api.grammar.Compiler {
+        return srv.compilerFor(&srv.grammars, &srv.grammar_problem, false);
+    }
+
+    /// A compiler opened once into `slot`; `calls`: its ends also take Inkling 2's end of message (chat_inkling2).
+    fn compilerFor(srv: *Server, slot: *?*api.grammar.Compiler, problem: *?[]const u8, calls: bool) ?*api.grammar.Compiler {
         srv.grammar_mutex.lockUncancelable(srv.io);
         defer srv.grammar_mutex.unlock(srv.io);
-        if (srv.grammars) |g| return g;
-        if (srv.grammar_problem != null) return null;
+        if (slot.*) |g| return g;
+        if (problem.* != null) return null;
         const a = srv.arena.allocator();
-        srv.grammar_problem = blk: {
+        problem.* = blk: {
             const dir = std.Io.Dir.cwd();
             const tok = dir.readFileAlloc(srv.io, std.fs.path.join(a, &.{ srv.config.model_dir, "tokenizer.json" }) catch break :blk "out of memory", a, .limited(256 << 20)) catch break :blk "the checkpoint has no tokenizer.json";
             const cfg_text = dir.readFileAlloc(srv.io, std.fs.path.join(a, &.{ srv.config.model_dir, "config.json" }) catch break :blk "out of memory", a, .limited(16 << 20)) catch break :blk "the checkpoint has no config.json";
@@ -339,15 +366,16 @@ pub const Server = struct {
             const vocab = grammar.vocabSize(cfg) orelse break :blk "structured output needs the checkpoint's config.json vocab_size";
             var err: [512]u8 = undefined;
             const c = a.create(api.grammar.Compiler) catch break :blk "out of memory";
-            c.* = api.grammar.Compiler.open(srv.io, a, tok, vocab, srv.eos, &err) catch |e| break :blk switch (e) {
+            const ends = if (calls) @import("chat_inkling2.zig").grammarEnds(srv, a, srv.eos) catch break :blk "out of memory" else srv.eos;
+            c.* = api.grammar.Compiler.open(srv.io, a, tok, vocab, ends, &err) catch |e| break :blk switch (e) {
                 error.NoGrammarLibrary => @import("sys").optional_libraries.spec(.grammar).message,
                 else => a.dupe(u8, std.mem.sliceTo(&err, 0)) catch "out of memory",
             };
-            srv.grammars = c;
+            slot.* = c;
             log.line("structured output: xgrammar over {d} tokens", .{vocab});
             break :blk null;
         };
-        return srv.grammars;
+        return slot.*;
     }
 
     /// Counts one finished request for /metrics.

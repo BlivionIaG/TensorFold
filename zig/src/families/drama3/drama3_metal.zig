@@ -37,11 +37,13 @@ test {
     _ = @import("codec_map.zig");
     _ = @import("codec_schema.zig");
     _ = @import("codec_net.zig");
+    _ = @import("weight_names_test.zig");
     _ = prompt;
     _ = wav;
     _ = kernels;
     _ = load_limit;
     _ = guidance;
+    _ = @import("guidance.zig");
     _ = @import("metal/quant_format_test.zig");
 }
 

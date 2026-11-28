@@ -6,7 +6,6 @@ const launch_ = @import("launch.zig");
 const stream_ = @import("stream.zig");
 const kernels = @import("kernels.zig");
 const abi = @import("abi.zig");
-
 const Driver = driver.Driver;
 const Module = module.Module;
 const Function = module.Function;
@@ -56,6 +55,9 @@ pub fn bucket(m: usize) u32 {
 /// A packed projection on the device: codes or words, scale tiles, the tensor scale, its shape, its input scale (act).
 pub const Weight = struct { mode: Mode, codes: u64, scales: u64, scale: f32 = 1.0, n: u32, k: u32, npad: u32, act: f32 = 0, sk: u32 = 0 };
 
+pub const Many = @import("qmmf_many.zig").Many;
+/// Whether matmulMany takes `parts` in one grouped launch rather than one matmulOut each.
+pub const manyEligible = @import("qmmf_many.zig").eligible;
 /// `w` with its K slices pinned to `sk`: 1, 2, 4 or 8, dividing its groups and leaving at least 8 a slice.
 pub fn pinned(w: Weight, sk: u32) error{BadSplit}!Weight {
     const groups = w.k / group;
@@ -103,15 +105,15 @@ fn symbol(
 }
 
 /// The 16-row tile at 32 columns a block (MXFP8 and BF16): plain, then with a cluster.
-fn halfSymbol(comptime mode: Mode, comptime cluster: bool, comptime wide: bool) [:0]const u8 {
+pub fn halfSymbol(comptime mode: Mode, comptime cluster: bool, comptime wide: bool) [:0]const u8 {
     const name = "_ZN7tf_qmmf11qmmf_kernelILi{d}ELi16ELi32ELi1ELi4ELi4ELb{d}ELb{d}ELb0EEEvPK13__nv_bfloat16PKhS5_fPvPfiiiiiii";
     return std.fmt.comptimePrint(name, .{ @backingInt(mode), @intFromBool(wide), @intFromBool(cluster) });
 }
 
 /// Dynamic shared bytes of the half tile: a stage holds half the weights (and scales) of the 64-column tile's.
 pub fn halfShared(mode: Mode) u32 {
-    const w: u32 = if (mode == .bf16) 32 * group * 2 else 32 * group;
-    const s: u32 = if (mode == .mxfp8) 32 * 2 else 0;
+    const w: u32 = if (mode == .bf16) 32 * group * 2 else if (mode == .fp4) 32 * group / 2 else 32 * group;
+    const s: u32 = if (mode == .mxfp8) 32 * 2 else if (mode == .fp4 or mode == .fp8g) 32 * 4 else 0;
     const stage = (16 * group * 2 + w + s + 127) / 128 * 128;
     const partials = 1 * 1 * 4 * threads * 4;
     return @max(4 * stage, partials);
@@ -183,11 +185,13 @@ pub const Lane = struct {
     f32_fns: [modes.len][7]Function,
     reduce: [2]Function, // by Out
     half: [2][2][2]Function, // by halfModeIndex, Out, then plain / cluster
+    half_n: ?@import("qmmf_half.zig").Set = null, // TF_QMMF_HALF_BN: FP4, FP8 and FP8G half tiles too
     half_below: usize = half_below_default,
     shared_down: [4]Function = undefined,
     /// Output columns from which this lane fuses a split-K cluster call; 0 keeps its original schedule.
     fuse_split_n: usize = 0,
     fuse_s: [2][2][2]Function = undefined, // by halfModeIndex, Out, row tile 16 then 32: the fused form at decode rows
+    many: [6]Function = undefined,
     prompt: ?[2][2]Function = null, // Out, then plain / fused; loadPrompt() fills it on sm_12x
     prompt_k32: ?[2]Function = null, // Out; unsplit BF16 prompt calls, loadPrompt() fills it on sm_12x
     prompt_sms: usize = 0, // the device's SMs: the tile runs when its blocks fill more than half of them
@@ -225,7 +229,12 @@ pub const Lane = struct {
             try f.allowDynamicShared(sharedBytes(mode, bm));
             l.fuse_s[mi][oi][bi] = f;
         };
+        inline for (@import("qmmf_many.zig").symbols, 0..) |name, i| {
+            l.many[i] = try mod.function(name);
+            try l.many[i].allowDynamicShared(sharedBytes(.fp4, row_tiles[i / 2]));
+        }
         l.half_below = try halfBelow();
+        try @import("qmmf_half.zig").apply(&l, d);
         return l;
     }
 
@@ -273,6 +282,7 @@ pub const Lane = struct {
         return l.matmulOut(s, x, ldx, m, w, y, .f32, part);
     }
 
+    pub const matmulMany = @import("qmmf_many.zig").matmulMany;
     pub const matmulF32Strided = @import("qmmf_shared.zig").matmulF32Strided;
 
     /// The actual prompt selection: loaded tiles, the pinned slice plan, and blocks over half the SMs.
@@ -295,8 +305,9 @@ pub const Lane = struct {
         const hm = halfModeIndex(w.mode);
         // fuse_split_n: a cluster call this wide on the fused form (row tile 64: the fused instance), one block a tile
         const fs = l.fuse_split_n != 0 and p.cluster and w.n >= l.fuse_split_n and hm != null;
-        const half = hm != null and p.bm == 16 and !p.fused and !fs and rows_t * ((w.n + bn - 1) / bn) * p.sk < l.half_below;
-        const f = if (k32) l.prompt_k32.?[@backingInt(out)] else if (prompt) l.prompt.?[@backingInt(out)][@intFromBool(p.fused)] else if (half) l.half[hm.?][@backingInt(out)][@intFromBool(p.cluster)] else if (fs) (if (p.bm == 64) set[6] else l.fuse_s[hm.?][@backingInt(out)][@intFromBool(p.bm == 32)]) else if (p.fused) set[6] else set[ti * 2 + @intFromBool(p.cluster)];
+        const hn = if (l.half_n != null) @import("qmmf_half.zig").index(w.mode) else null;
+        const half = (hm != null or hn != null) and p.bm == 16 and !p.fused and !fs and rows_t * ((w.n + bn - 1) / bn) * p.sk < l.half_below;
+        const f = if (k32) l.prompt_k32.?[@backingInt(out)] else if (prompt) l.prompt.?[@backingInt(out)][@intFromBool(p.fused)] else if (half) (if (hm) |i| l.half[i] else l.half_n.?[hn.?])[@backingInt(out)][@intFromBool(p.cluster)] else if (fs) (if (p.bm == 64) set[6] else l.fuse_s[hm.?][@backingInt(out)][@intFromBool(p.bm == 32)]) else if (p.fused) set[6] else set[ti * 2 + @intFromBool(p.cluster)];
         const cols: usize = if (prompt) 128 else if (half) 32 else bn;
         const band = @max(1, @min(rows_t, (12 << 20) / (bm * w.k * 2)));
         var args: launch_.Args = .{};
@@ -583,4 +594,7 @@ test "a cut weight pinned to the whole weight's K slices plans as the whole one 
     try std.testing.expectEqual(splitK(cut.n, cut.k), slices(cut));
     try std.testing.expectEqual(@as(u32, 4), (try pinned(cut, 4)).sk); // 40 groups: 10 a slice
     for ([_]u32{ 0, 3, 8, 16 }) |bad| try std.testing.expectError(error.BadSplit, pinned(cut, bad)); // 8: 5 a slice
+}
+test {
+    _ = @import("qmmf_many.zig");
 }

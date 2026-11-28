@@ -9,6 +9,7 @@ pub const prefill = @import("cuda_prefill.zig");
 pub const cache = @import("cuda_cache.zig");
 pub const solo = @import("cuda_solo.zig");
 pub const signatures = @import("cuda_signatures.zig");
+pub const cuda_pdl = @import("cuda_pdl.zig");
 pub const native = @import("cuda_native.zig");
 pub const native_moe = @import("cuda_native_moe.zig");
 pub const mtp = @import("cuda_mtp.zig");
@@ -30,6 +31,8 @@ test {
     _ = @import("cuda_forward.zig");
     _ = engine;
     _ = @import("cuda_modelopt.zig");
+    _ = @import("cuda_pdl.zig");
+    _ = @import("cuda_pdl_contract_test.zig");
     _ = prompt_int8;
     _ = native;
     _ = native_moe;
@@ -46,6 +49,7 @@ test {
     _ = @import("cuda_draft_config.zig");
     _ = @import("cuda_drafter_open.zig");
     _ = draft;
+    _ = draft.spine;
     _ = @import("cuda_draft_absorb.zig");
     _ = vision;
     _ = @import("cuda_vision_prompt.zig");
@@ -58,6 +62,7 @@ test {
     _ = @import("cuda_kv_host_test.zig");
     _ = @import("cuda_pages_lifetime_test.zig");
     _ = @import("cuda_mtp_area_test.zig");
+    _ = @import("cuda_mtp_paged_test.zig");
     _ = @import("cuda_prefix.zig");
     _ = @import("cuda_prefix_fault_test.zig");
     _ = @import("cuda_pend_test.zig");
@@ -117,4 +122,8 @@ test "the shard plan's head widths are the kernels'" {
 
 test {
     _ = @import("cuda_request_starts_test.zig");
+}
+
+test {
+    _ = @import("cuda_prefill_adapter_test.zig");
 }

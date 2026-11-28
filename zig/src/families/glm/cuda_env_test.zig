@@ -8,8 +8,10 @@ const t = std.testing;
 /// The names GLM's CUDA readers pass to the shared parser, and the default each reader keeps.
 const Name = struct { name: [:0]const u8, default: bool = false };
 const switches = [_]Name{
+    .{ .name = "TF_GLM_KEEP_SEQS" },
     .{ .name = "TF_GLM_HOST_CACHE" },
     .{ .name = "TF_GLM_VISION_HOST" },
+    .{ .name = "TF_GLM_VISION_FUSED" },
     .{ .name = "TF_GLM_PROF" },
     .{ .name = "TF_GLM_LINK_WAIT" },
     .{ .name = "TF_GLM_PDL", .default = true },
@@ -18,6 +20,7 @@ const switches = [_]Name{
     .{ .name = "TF_GLM_DSEL", .default = true },
     .{ .name = "TF_GLM_DSCORES", .default = true },
     .{ .name = "TF_GLM_MOE_DIRECT" },
+    .{ .name = "TF_GLM_WIDE_EXPERT_TILE" },
 };
 const counts = [_][:0]const u8{"TF_GLM_DFLASH2_LOG"};
 const reals = [_][:0]const u8{"TF_GLM_DRAFT_CONFIDENCE"};
@@ -128,7 +131,9 @@ test "GLM strict env: the actual readers and the open's check keep defaults, 0 a
     const cases = [_]Case{
         .{ .name = "TF_GLM_HOST_CACHE", .read = @import("cuda_snapshot_pages.zig").onHost },
         .{ .name = "TF_GLM_VISION_HOST", .read = @import("cuda_vision_weights.zig").onHost },
+        .{ .name = "TF_GLM_VISION_FUSED", .read = @import("cuda_vision_attn.zig").wanted },
         .{ .name = "TF_GLM_PROF", .read = @import("cuda_prof.zig").Prof.wanted },
+        .{ .name = "TF_GLM_WIDE_EXPERT_TILE", .read = @import("cuda_experts.zig").wideExpertTile },
     };
     const startup = @import("cuda_env.zig").startup;
     for (cases) |c| {

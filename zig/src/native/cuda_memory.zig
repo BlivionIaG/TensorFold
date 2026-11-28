@@ -214,6 +214,12 @@ pub fn cacheBytes(asked: ?f64, room: u64, streams: u64) u64 {
     return if (room == std.math.maxInt(u64)) @min(left, 16 << 30) else automaticCache(left, 16 << 30);
 }
 
+/// Rows past a stream's window its pages hold: the width a family's load set (`windowRows()`), else `window_rows`.
+pub fn windowRows(comptime F: type) u64 {
+    if (comptime @hasDecl(F, "windowRows")) return F.windowRows();
+    return if (comptime @hasDecl(F, "window_rows")) F.window_rows else 0;
+}
+
 /// Integrated devices count procfs on Linux; Windows and WSL2 (`wsl_pool`: procfs is WSL's RAM) read CUDA's pool.
 pub fn hostCounts(unified: bool, windows: bool, wsl_pool: bool) bool {
     return unified and !windows and !wsl_pool;
@@ -388,8 +394,8 @@ pub fn readPool(a: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, prob
     };
     const available = counting(measured, zones);
     const free = boundFree(host_counts, available.available, card.free, 0);
-    const reserve_text = if (std.c.getenv("TENSORFOLD_MEMORY_RESERVE_GIB")) |p| std.mem.span(p) else null;
-    const limit_text = if (std.c.getenv("TENSORFOLD_CUDA_MEMORY_LIMIT_GB")) |p| std.mem.span(p) else null;
+    const reserve_text = @import("sys").environment.rawText("TENSORFOLD_MEMORY_RESERVE_GIB");
+    const limit_text = @import("sys").environment.rawText("TENSORFOLD_CUDA_MEMORY_LIMIT_GB");
     const reserve = reserveBytes(reserve_text, available.total, unified) catch {
         problem.* = try std.fmt.allocPrint(a, "TENSORFOLD_MEMORY_RESERVE_GIB={s}: a number of GiB from {d} to the memory's size", .{ reserve_text orelse "", floor(unified).least });
         return null;

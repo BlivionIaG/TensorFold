@@ -151,11 +151,13 @@ test "serve --config: a relative path in the file starts at the file's folder" {
         \\drafter = "./drafter"
         \\name = "plain/name"
         \\kv-cache = "bf16"
+        \\glp = "vec.gguf"
+        \\glp-alpha = 0.5
     ;
     const sep = std.fs.path.sep_str;
     const argv: []const []const u8 = &.{ "--config", "conf" ++ sep ++ "f.toml" };
     const out = try config.merge(a, argv, (try config.locate(a, argv, &f.u)).?, text, &f.u);
-    const want = [_][]const u8{ "conf" ++ sep ++ "weights/m", "--chat-template=conf" ++ sep ++ "t.jinja", "--api-key-file=conf" ++ sep ++ "../keys", "--learn-dir=/abs/learn", "--drafter=conf" ++ sep ++ "drafter", "--name=plain/name", "--kv-cache=bf16" };
+    const want = [_][]const u8{ "conf" ++ sep ++ "weights/m", "--chat-template=conf" ++ sep ++ "t.jinja", "--api-key-file=conf" ++ sep ++ "../keys", "--learn-dir=/abs/learn", "--drafter=conf" ++ sep ++ "drafter", "--name=plain/name", "--kv-cache=bf16", "--glp=conf" ++ sep ++ "vec.gguf", "--glp-alpha=0.5" };
     try t.expectEqual(want.len, out.argv.len);
     for (want, out.argv) |w, g| try t.expectEqualStrings(w, g);
     // a repo id, or a folder named without ./, is left as written: the hub resolves it as it does a typed model
@@ -220,7 +222,8 @@ test "serve --config: a file parses as its flags typed by hand, and the command 
     }
     // a value the flag refuses is refused in the flag's own words, with the file's line
     try f.refused("model = \"m\"\n\nport = 99999\n", 3, "argument --port: invalid port: '99999'");
-    try f.refused("backend = \"vulkan\"\n", 1, "argument --backend: invalid choice: 'vulkan'");
+    // the ported stack serves "vulkan" as a choice; an unlisted backend keeps the invalid-choice refusal
+    try f.refused("backend = \"vbogus\"\n", 1, "argument --backend: invalid choice: 'vbogus'");
     try f.refused("port = 1\ntemperature = \"warm\"\n", 2, "argument --temperature: invalid float value: 'warm'");
     try f.refused("alias = [\"a\"]\nallowed-host = [\"ok.example\",\n  \"bad host:1\"]\n", 2, "argument --allowed-host: expected a hostname or bracketed IP without a port: 'bad host:1'");
     try f.refused("compact-at = 1.5\n", 1, "argument --compact-at: expected auto or a fraction in (0, 1]: '1.5'");

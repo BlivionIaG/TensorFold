@@ -18,6 +18,7 @@ pub const Settings = struct {
     kda_pad: bool = false, // TF_GLM_KDA_PAD: 1 (an uneven fused KDA input, padded at load, tiled for glm_mm) or 0
     pieces: u32 = 3, // TF_GLM_OVERLAP_PIECES: a prompt chunk's exchanges in this many row pieces (1: whole); unset, 8 under solo on the wire.
     solo: bool = false, // TF_GLM_CHUNK_SOLO: 4096 (prompt buffers for two chunks a pass, while no stream decodes) or 2048
+    keep_seqs: bool = false, // TF_GLM_KEEP_SEQS: 1 (a released slot keeps its sequence for its next request)
     pair: bool = true, // TF_GLM_PROMPT_PAIR: 1 (while no stream decodes, a prompt step takes two chunks, each one's exchanges under the other's sites) or 0
     pair_experts: bool = false, // TF_GLM_PAIR_EXPERTS=1: paired chunks share 128-pair NVFP4 routed-expert items (0: two 64-pair passes)
     index_split: u32 = 2048, // TF_GLM_INDEX_SPLIT: from this position on, rank 0 splits a prompt chunk's indexer rows (0: never)
@@ -111,6 +112,12 @@ pub const Settings = struct {
                 return error.BadSetting;
             }
         }
+        if (get("TF_GLM_KEEP_SEQS")) |v| {
+            if (std.mem.eql(u8, v, "1")) s.keep_seqs = true else if (std.mem.eql(u8, v, "0")) s.keep_seqs = false else {
+                problem.* = "TF_GLM_KEEP_SEQS: 0 or 1";
+                return error.BadSetting;
+            }
+        }
         if (get("TF_GLM_PAIR_EXPERTS")) |v| {
             if (std.mem.eql(u8, v, "1")) s.pair_experts = true else if (std.mem.eql(u8, v, "0")) s.pair_experts = false else {
                 problem.* = "TF_GLM_PAIR_EXPERTS: 0 or 1";
@@ -123,8 +130,6 @@ pub const Settings = struct {
                 problem.* = "TF_GLM_OVERLAP_PIECES: 1 to 8";
                 return error.BadSetting;
             }
-        } else if (s.solo and s.roce_multi and wireOpens(get)) {
-            s.pieces = 8; // TF_GLM_CHUNK_SOLO=4096 with TF_GLM_ROCE_MULTI=1: solo's doubled passes on the wire
         }
         if (get("TF_GLM_INDEX_SPLIT")) |v| {
             s.index_split = std.fmt.parseInt(u32, v, 10) catch {
@@ -218,15 +223,21 @@ pub fn ownRoce(s: Settings, world: usize) bool {
     return !(s.roce_multi and world >= 3);
 }
 
-/// Whether TF_GLM_ROCE_MULTI's wire opens at TF_GLM_WORLD: three ranks or more (cuda_roce_multi); TP=2 stays on NCCL.
-fn wireOpens(get: *const fn ([:0]const u8) ?[]const u8) bool {
-    const v = get("TF_GLM_WORLD") orelse return false;
-    return (std.fmt.parseInt(usize, v, 10) catch 0) >= 3;
+/// TF_GLM_CHUNK_SOLO with TF_GLM_ROCE_MULTI at three ranks or more (the wire opens; TP=2 stays on NCCL): 8 pieces.
+pub fn wirePieces(s: *Settings, world: usize, comptime get: *const fn ([:0]const u8) ?[]const u8) void {
+    const set = if (get("TF_GLM_OVERLAP_PIECES")) |v| std.mem.trim(u8, v, " \t\r\n").len > 0 else false; // blank: unset, as `read`
+    if (!set and s.solo and s.roce_multi and world >= 3) s.pieces = 8;
+}
+
+/// The tools' form (tf-cuda-test): the world from TF_GLM_WORLD, their input as it always was, not their own arguments.
+pub fn toolPieces(s: *Settings, comptime get: *const fn ([:0]const u8) ?[]const u8) void {
+    const v = get("TF_GLM_WORLD") orelse return;
+    wirePieces(s, std.fmt.parseInt(usize, v, 10) catch return, get);
 }
 
 /// What every rank must agree on, as bytes the communicator carries.
 pub const Fingerprint = extern struct {
-    layout: u32 = 23, // this struct's version (22, plus pair_experts)
+    layout: u32 = 24, // this struct's version (23, plus keep_seqs)
     world: u32,
     rank: u32,
     kv8: u32 = 0,
@@ -252,6 +263,7 @@ pub const Fingerprint = extern struct {
     draft_split: u32 = 0, // TF_GLM_DRAFT_SPLIT=1: three ranks or more split the drafter MLP, or none does
     kv_host: u32 = 0, // TF_GLM_KV_HOST(_SHARED): every rank sizes the pool alike and maps the shared file, or none does
     solo: u32 = 0, // TF_GLM_CHUNK_SOLO: rank 0's solo passes need the wider prompt buffers on every rank
+    keep_seqs: u32 = 0, // TF_GLM_KEEP_SEQS: every rank keeps a released slot's sequence alike
     l2pf: [4]u32 = @splat(0), // TF_GLM_L2PF's words: every rank prefetches alike, so none waits on a slower one's windows
     bits: u32 = 16 << 8 | 16, // TF_GLM_DENSE_BITS << 8 | TF_GLM_HEAD_BITS: every rank's matmuls read the same codes
     capacity: u64, // tokens a sequence holds
@@ -266,6 +278,7 @@ pub const Fingerprint = extern struct {
         layout,
         rank,
         world,
+        keep_seqs,
         kv8,
         pages,
         prompt_fixed_k,
@@ -332,6 +345,7 @@ pub const Fingerprint = extern struct {
             .kv_host = s.kv_host,
             .kv_host_gib = s.kv_host_gib,
             .solo = @intFromBool(s.solo),
+            .keep_seqs = @intFromBool(s.keep_seqs),
             .l2pf = s.l2pf.words(),
             .bits = @as(u32, s.dense_bits) << 8 | s.head_bits,
             .capacity = capacity,
@@ -377,6 +391,7 @@ pub fn mismatch(all: []const Fingerprint) ?Mismatch {
             "draft_split",
             "kv_host",
             "solo",
+            "keep_seqs",
             "l2pf",
             "bits",
             "capacity",
@@ -480,6 +495,7 @@ fn explain(f: Fingerprint.Field) []const u8 {
         .layout => "a different build of this check",
         .rank => "a rank number given twice or out of order",
         .world => "the ranks were started with different world sizes",
+        .keep_seqs => "TF_GLM_KEEP_SEQS",
         .kv8 => "--kv-cache fp8",
         .pages => "TF_KV_PAGES (unset or auto pages from two ranks)",
         .prompt_fixed_k => "TF_GLM_PROMPT_K",
@@ -551,4 +567,34 @@ test "TF_GLM_PAIR_EXPERTS: off by default, 0 or 1, and every rank must agree" {
     try std.testing.expectEqualStrings("TF_GLM_PAIR_EXPERTS: 0 or 1", problem);
     const all = [_]Fingerprint{ Fingerprint.of(2, 0, on, 8192, true, @splat(0), @splat(0), @splat(0)), Fingerprint.of(2, 1, .{}, 8192, true, @splat(0), @splat(0), @splat(0)) };
     try std.testing.expectEqual(Mismatch{ .field = .pair_experts, .rank = 1 }, mismatch(&all).?);
+}
+
+test "wire pieces: a blank override is unset; the tools' form takes its world from TF_GLM_WORLD" {
+    const Reader = struct {
+        fn at(key: [:0]const u8, world: ?[]const u8, pieces: ?[]const u8) ?[]const u8 {
+            if (std.mem.eql(u8, key, "TF_GLM_CHUNK_SOLO")) return "4096";
+            if (std.mem.eql(u8, key, "TF_GLM_ROCE_MULTI")) return "1";
+            if (std.mem.eql(u8, key, "TF_GLM_WORLD")) return world;
+            if (std.mem.eql(u8, key, "TF_GLM_OVERLAP_PIECES")) return pieces;
+            return null;
+        }
+        fn blank(key: [:0]const u8) ?[]const u8 {
+            return at(key, null, " ");
+        }
+        fn three(key: [:0]const u8) ?[]const u8 {
+            return at(key, "3", null);
+        }
+        fn none(key: [:0]const u8) ?[]const u8 {
+            return at(key, null, null);
+        }
+    };
+    var s: Settings = .{ .solo = true, .roce_multi = true, .pieces = 3 };
+    wirePieces(&s, 3, Reader.blank);
+    try std.testing.expectEqual(@as(u32, 8), s.pieces);
+    s.pieces = 3;
+    toolPieces(&s, Reader.three);
+    try std.testing.expectEqual(@as(u32, 8), s.pieces);
+    s.pieces = 3;
+    toolPieces(&s, Reader.none);
+    try std.testing.expectEqual(@as(u32, 3), s.pieces);
 }

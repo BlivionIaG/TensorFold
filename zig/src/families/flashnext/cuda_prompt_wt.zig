@@ -485,6 +485,7 @@ pub fn loadHc(gpa: std.mem.Allocator, driver: *cuda.Driver, store: *Store, prefi
     const down_name = try std.fmt.bufPrint(&buf, "{s}.input_mix_weight_down.weight", .{prefix});
     const down_tensor = try store.tensor(down_name);
     if (down_tensor.dtype == .bf16) return loadDenseHc(gpa, driver, store, prefix, inject);
+    if (down_tensor.dtype == .u32 and down_tensor.rank == 2 and down_tensor.dim(1) == wide / 4) return @import("cuda_tfq3.zig").loadMlx8Hc(gpa, driver, store, prefix, inject);
     const down = try join3(gpa, store, &buf, prefix, ".input_mix_weight_down");
     defer gpa.free(down.w);
     defer gpa.free(down.s);
@@ -524,7 +525,7 @@ pub fn loadHc(gpa: std.mem.Allocator, driver: *cuda.Driver, store: *Store, prefi
     defer if (inject) gpa.free(inj_w);
     defer if (inject) gpa.free(inj_s);
     defer if (inject) gpa.free(inj_b);
-    try @import("readout_fused.zig").refuse("CUDA with an MLX affine read-out", @import("readout_fused.zig").on());
+    try @import("readout_fused.zig").refuse("CUDA with an MLX affine read-out", @import("readout_fused.zig").requested());
     const k8 = wide / 8;
     if (words.len != n * k8 * 4) return error.UnexpectedTensor;
     var down_q = try uploadTiled(gpa, driver, words, scales, biases, n, k8);

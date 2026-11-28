@@ -6,6 +6,7 @@ const prompt_tail = @import("cuda_prompt_tail.zig");
 const tap_window = @import("cuda_cache.zig").tap_window;
 const vision_prompt = @import("cuda_vision_prompt.zig");
 const readout = @import("cuda_readout.zig");
+const attribution = @import("cuda_prefill_stages.zig");
 const cuda_solo = @import("cuda_solo.zig");
 
 /// Where a prompt pass from `at` cuts its chunk: grid_rows rows on, or the request's next chunk start before that.
@@ -107,9 +108,34 @@ test "direct-normalized MTP keeps the target's original stepped chunk boundary" 
     try std.testing.expectEqual(@as(usize, 8192), targetForwardEnd(4096, 8192, 6143, false, false));
 }
 
+/// Shared page-edge marks join each fresh request chunk's compute grid, so resumed passes cut identically.
+fn keptCut(len: usize, chunks: []const u32, f: *const Fill, at: usize) usize {
+    var end = nextCut(len, chunks, at, 0);
+    if (f.kept != null) {
+        var anchor: usize = 0;
+        for (chunks) |boundary| {
+            if (boundary > at) break;
+            anchor = boundary;
+        }
+        const since = at - anchor;
+        end = @min(end, anchor + since + E.grid_rows - since % E.grid_rows);
+    }
+    const marks = if (f.kept) |k| k.marks else &.{};
+    for (marks) |mark| if (mark > at) {
+        end = @min(end, mark);
+        break;
+    };
+    return end;
+}
+
+test "Qwen stepped prefill: a shared resume continues the latest request chunk's compute grid" {
+    var f: Fill = .{ .at = 3500, .media = null, .kept = .{ .gpa = std.testing.allocator, .marks = &.{} } };
+    try std.testing.expectEqual(@as(usize, 3000 + E.grid_rows), keptCut(3 * E.grid_rows, &.{3000}, &f, 3500));
+}
+
 /// The end of `f`'s next step under `max_rows` (0: the cold cut), its cold cut renewed once the last one landed.
 fn capped(len: usize, chunks: []const u32, f: *Fill, max_rows: u32) usize {
-    if (f.cold <= f.at) f.cold = nextCut(len, chunks, f.at, 0);
+    if (f.cold <= f.at) f.cold = keptCut(len, chunks, f, f.at);
     return lanes.step_cap.end(f.at, f.cold, max_rows, cap_grid);
 }
 
@@ -218,7 +244,7 @@ fn soloEnd(len: usize, chunks: []const u32, f: *Fill, rows: usize, marks: []cons
     var end = capped(len, chunks, f, 0);
     if (end - f.at < solo_min_rows) return end; // a short chunk runs alone, as in a cold pass
     while (end < len and std.mem.indexOfScalar(u32, marks, @intCast(end)) == null) {
-        const next = nextCut(len, chunks, end, 0);
+        const next = keptCut(len, chunks, f, end);
         if (next - end < solo_min_rows or next - f.at > rows) break;
         end = next;
     }
@@ -249,9 +275,12 @@ test "a solo pass merges cold chunks of 2048 rows or more up to its rows; marks 
 }
 
 pub fn run(self: anytype, stream: *lanes.Stream) !void {
-    var f = try opening(self, stream, false);
+    return @call(.always_inline, runMode, .{ false, self, stream });
+}
+pub fn runMode(comptime traced: bool, self: anytype, stream: *lanes.Stream) !void {
+    var f = try opening(traced, self, stream, false);
     defer f.deinit();
-    while (!try chunk(self, stream, &f, 0)) {}
+    while (!try chunkMode(traced, self, stream, &f, 0)) {}
 }
 
 /// One whole prompt fill: a readout's pieces to the end, else the text pass, each exactly once.
@@ -265,15 +294,18 @@ pub fn whole(self: anytype, stream: *lanes.Stream) !void {
 
 /// One cut of the prompt pass a call (prefillFn's forwards, in order): the lane host runs rounds between them.
 pub fn step(self: anytype, stream: *lanes.Stream, max_rows: u32) !bool {
+    return @call(.always_inline, stepMode, .{ false, self, stream, max_rows });
+}
+pub fn stepMode(comptime traced: bool, self: anytype, stream: *lanes.Stream, max_rows: u32) !bool {
     const got = try self.fills.getOrPut(self.gpa, stream);
     if (!got.found_existing) {
-        got.value_ptr.* = opening(self, stream, true) catch |err| {
+        got.value_ptr.* = opening(traced, self, stream, true) catch |err| {
             self.fills.removeByPtr(got.key_ptr);
             return err;
         };
     }
     const f = self.fills.getPtr(stream).?;
-    const done = chunk(self, stream, f, max_rows) catch |err| {
+    const done = chunkMode(traced, self, stream, f, max_rows) catch |err| {
         endFill(self, stream);
         return err;
     };
@@ -311,7 +343,7 @@ pub const Fill = struct {
 };
 
 /// A prompt pass begins: its images encoded, a cache, a kept state restored where a cold pass cuts.
-fn opening(self: anytype, stream: *lanes.Stream, stepped: bool) !Fill {
+fn opening(comptime traced: bool, self: anytype, stream: *lanes.Stream, stepped: bool) !Fill {
     const ids = stream.prompt();
     if (ids.len == 0 or ids.len + stream.max_new > self.capacity or self.caches.contains(stream)) return error.InvalidQwenPrompt;
     // an image prompt: its images through the tower once the resume is known, then every chunk at its t, h, w positions
@@ -325,14 +357,31 @@ fn opening(self: anytype, stream: *lanes.Stream, stepped: bool) !Fill {
     // TF_QWEN_KV_SHARE: snapshots use the request's effective key, not raw prompt ids
     const cache_key = if (stream.key.len != 0) stream.key else ids;
     const share = self.prefix != null and stream.images.len == 0 and stream.chunks.len == 0;
+    var allocation: attribution.Ticket = if (traced) attribution.begin(.cache_allocate, true) else null;
+    defer if (traced) attribution.end(allocation);
+    errdefer if (traced) attribution.failed(allocation);
     const shared = if (share) try self.prefix.?.open(cache_key, stream.max_new, stream.history_len, stream.shared_prefixes, stream.cache_salt) else null;
     errdefer if (shared) |x| self.gpa.free(x.plan.marks);
     const cache = if (shared) |x| x.cache else try self.take(ids.len, stream.max_new);
     errdefer self.give(cache);
+    if (traced) {
+        attribution.end(allocation);
+        allocation = null;
+    }
     // the stream's cache is found by a save at a mark (cuda_reuse.zig) while its pass runs
+    var publication: attribution.Ticket = if (traced) attribution.begin(.cache_publish, false) else null;
+    defer if (traced) attribution.end(publication);
+    errdefer if (traced) attribution.failed(publication);
     try self.caches.put(self.gpa, stream, cache);
+    if (traced) {
+        attribution.end(publication);
+        publication = null;
+    }
     errdefer _ = self.caches.remove(stream);
     // a kept state resumes only where a cold pass cuts a chunk, so the chunks after it keep a cold pass's bits
+    var restoration: attribution.Ticket = if (traced) attribution.begin(.restore, true) else null;
+    defer if (traced) attribution.end(restoration);
+    errdefer if (traced) attribution.failed(restoration);
     var at: usize = 0;
     stream.cached = 0;
     if (shared) |x| {
@@ -350,6 +399,11 @@ fn opening(self: anytype, stream: *lanes.Stream, stepped: bool) !Fill {
                 stream.reuse_failed = true;
             }
         } else stream.reuse_failed = true;
+    }
+    if (traced) {
+        attribution.restored(at, shared != null, stream.reuse_failed);
+        attribution.end(restoration);
+        restoration = null;
     }
     cache.untaught = stream.untaught;
     // the images a kept state holds skip the tower (their rows are never spliced); positions still come from all
@@ -380,6 +434,9 @@ fn opening(self: anytype, stream: *lanes.Stream, stepped: bool) !Fill {
 
 /// The pass's next cut; true once the prompt is in. A cap cuts inside the cold chunk (on cap_grid): cold cuts all land.
 pub fn chunk(self: anytype, stream: *lanes.Stream, f: *Fill, max_rows: u32) !bool {
+    return @call(.always_inline, chunkMode, .{ false, self, stream, f, max_rows });
+}
+fn chunkMode(comptime traced: bool, self: anytype, stream: *lanes.Stream, f: *Fill, max_rows: u32) !bool {
     const ids = stream.prompt();
     const EngineType = if (@typeInfo(@TypeOf(self.e)) == .pointer)
         @typeInfo(@TypeOf(self.e)).pointer.child
@@ -412,9 +469,15 @@ pub fn chunk(self: anytype, stream: *lanes.Stream, f: *Fill, max_rows: u32) !boo
         defer self.e.mtp_prompt.restoreTapConfig(previous_tap);
         // A chunk without readers stops its last layer at the state writes.
         const unread = forward_end < ids.len and prompt_tail.unread(self.e, images != null);
+        const ticket = if (traced) attribution.chunk(self.e, f.at, forward_end - f.at, unread) else null;
+        defer if (traced) attribution.end(ticket);
+        errdefer if (traced) attribution.failed(ticket);
         try self.e.forward(&.{.{ .cache = cache, .rows = forward_end - f.at, .images = if (images) |*im| im else null }}, ids[f.at..forward_end], if (unread) .none else .last);
     } else {
         const unread = forward_end < ids.len and prompt_tail.unread(self.e, images != null);
+        const ticket = if (traced) attribution.chunk(self.e, f.at, forward_end - f.at, unread) else null;
+        defer if (traced) attribution.end(ticket);
+        errdefer if (traced) attribution.failed(ticket);
         try self.e.forward(&.{.{ .cache = cache, .rows = forward_end - f.at, .images = if (images) |*im| im else null }}, ids[f.at..forward_end], if (unread) .none else .last);
     }
     if (comptime @TypeOf(self.e) == *E.Engine and @hasField(@TypeOf(self.*), "last_mtp_normed")) {
@@ -426,19 +489,29 @@ pub fn chunk(self: anytype, stream: *lanes.Stream, f: *Fill, max_rows: u32) !boo
             }
         }
     }
+    const ready = if (traced) attribution.begin(.cache_publish, false) else null;
     lanes.prefill_widths.completed(self.gpa, stream, forward_end - f.at);
     f.at = forward_end;
     stream.fill_at.store(@intCast(forward_end), .monotonic);
-    // a mark the store asked for, where the cold pass cuts (a resume's only place): the lane host copies the state here
-    const cold = forward_end == f.cold; // a capped step's end inside a cold chunk keeps nothing: no pass resumes there
+    if (traced) attribution.end(ready);
+    // shared page-edge marks are cold cuts too, so their lane-host state is exactly resumable
+    const cold = forward_end == f.cold; // a capped step's end inside a cold chunk keeps nothing
     if (f.kept) |k| {
-        if (cold and forward_end < ids.len and std.mem.indexOfScalar(u32, k.marks, @intCast(forward_end)) != null)
+        if (cold and forward_end < ids.len and std.mem.indexOfScalar(u32, k.marks, @intCast(forward_end)) != null) {
+            const publication = if (traced) attribution.begin(.cache_publish, true) else null;
+            defer if (traced) attribution.end(publication);
+            errdefer if (traced) attribution.failed(publication);
             self.prefix.?.keep(cache, if (stream.key.len != 0) stream.key else ids, stream.cache_salt, forward_end) catch |err| {
                 if (err == error.QwenLaneTable) return err; // its table maps pages it may not hold
                 std.log.warn("qwen3_5: prompt pages not kept: {s}", .{@errorName(err)});
             };
+        }
     } else if (cold and forward_end < ids.len and std.mem.indexOfScalar(u32, stream.reuse.marks, @intCast(forward_end)) != null) {
-        if (stream.reuse.hook) |k| k.at(k.ptr, stream, @intCast(forward_end));
+        if (stream.reuse.hook) |k| {
+            const publication = if (traced) attribution.begin(.cache_publish, true) else null;
+            defer if (traced) attribution.end(publication);
+            k.at(k.ptr, stream, @intCast(forward_end));
+        }
     }
     if (forward_end < ids.len) return false;
     // the reply's rows rotate past the image prompt's positions (rope_delta)

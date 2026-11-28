@@ -7,27 +7,30 @@ NVIDIA's FP4-Local checkpoint as stored and from XSFP4, which keeps FP4-Local's 
 Jammed XSFP4, in [1.2.3](../../CHANGELOG.md#123) ([#2041](https://github.com/ashhart/TensorFold/pull/2041)), holds those experts at block 32 in the `csf0_v1` form and loads the same way.
 Jammed XSFP4 NZ5, in [1.2.10](../../CHANGELOG.md#1210) ([#2894](https://github.com/ashhart/TensorFold/pull/2894)), is Jammed XSFP4 refitted with E2M1's -0 code read as +5 (`NVFP4_NZ5`) and loads the same way.
 Rank 0 serves HTTP and the other ranks follow its steps, with MTP drafts, concurrent streams and kept prompt states.
-The [Python 0.6.6 recipe](glm-5.3-flash.md) and its `--tp`, `--rank` and `--master` flags belong to the frozen engine.
+The [Python 0.6.6 recipe](glm-5.3-flash.md) belongs to the frozen engine; the native server takes the same `--tp`, `--rank`
+and `--master` flags.
 
 ## Run
 
-`TF_GLM_RANK` of `TF_GLM_WORLD` places each rank, and `NCCL_COMM_ID` names rank 0's address and port on the link
-between the hosts ([placement](../multi-rank-receipts.md)). Give every rank the same arguments: before the weights load
+`--rank` of `--tp` places each rank, and `--master` with `--master-port` names rank 0's address and port on the link
+between the hosts; they become NCCL's root (`NCCL_COMM_ID`, which may be set instead, and must match when both are)
+([placement](../multi-rank-receipts.md)). `TF_GLM_RANK` and `TF_GLM_WORLD` still place a rank as aliases of `--rank` and `--tp` for one release; the start-up warning names the release that refuses them
+with the flag to use; a flag and an alias that differ refuse. Give every rank the same arguments: before the weights load
 the ranks compare their settings, model and build, and name the field and rank that differ. `--context` takes a
 positive limit for GLM. On two GB10s, with 192.0.2.1 as rank 0's address on their direct link:
 
 ```bash
 tensorfold pull nvidia/GLM-5.3-Flash-NVFP4@423acf37583782c51c142d145aef733d72943d93
 # on rank 1
-TF_GLM_RANK=1 TF_GLM_WORLD=2 NCCL_COMM_ID=192.0.2.1:29583 \
-  tensorfold serve nvidia/GLM-5.3-Flash-NVFP4 --context 245760 --parallel 1
+tensorfold serve nvidia/GLM-5.3-Flash-NVFP4 --tp 2 --rank 1 --master 192.0.2.1 --master-port 29583 \
+  --context 245760 --parallel 1
 # on rank 0 (192.0.2.1)
-TF_GLM_RANK=0 TF_GLM_WORLD=2 NCCL_COMM_ID=192.0.2.1:29583 \
-  tensorfold serve nvidia/GLM-5.3-Flash-NVFP4 --context 245760 --parallel 1
+tensorfold serve nvidia/GLM-5.3-Flash-NVFP4 --tp 2 --rank 0 --master 192.0.2.1 --master-port 29583 \
+  --context 245760 --parallel 1
 ```
 
 Set `NCCL_SOCKET_IFNAME` and `NCCL_IB_HCA` for the link between the hosts as NCCL documents them. Each rank keeps a
-TCP line to rank 0 on the port after `NCCL_COMM_ID`'s (29584 here), opened before NCCL: a rank that fails, refuses or
+TCP line to rank 0 on the port after the root's (29584 here), opened before NCCL: a rank that fails, refuses or
 dies stops the others.
 
 The contributed runs read that revision. The repository's later commit `da920bb0`, which declares the MTP layer as
@@ -51,6 +54,11 @@ drafted at one stream, and about 1,430 prompt tokens a second from 2,048 to 65,5
   `TF_GLM_VISION_HOST=1` keeps the tower's bf16 weights in pinned
   host memory and copies each part of a pass into one device slot as it runs (240 MiB for GLM-5.3-Flash's tower instead
   of its 1.05 GiB), leaving rank 0 that much more room for KV pages. Checked on two RTX PRO 6000 Blackwell cards.
+  `TF_GLM_VISION_FUSED=1` (opt-in) runs the tower's attention as the full-attention kernel the other towers use
+  (`vision_kernel` at head dim 64, the same code as RADIO's and MOSS-Image's) instead of two cuBLASLt products
+  around a softmax kernel: no scores or weights are written, so a large image's first token comes much sooner.
+  That kernel takes its maximum a 64-key tile at a time and sums in another order than cuBLASLt, so a reply to a
+  prompt with images can differ from the unset path's; text-only prompts are untouched.
 - Nonstreaming `/v1/completions` requests return `prompt_logprobs`, structured output follows its schema with drafts
   on, and required and named tool calls use the model's tool markup ([1.1.1](../../CHANGELOG.md#111): #1016 to #1018).
 - `--kv-cache fp8` is an opt-in FP8 latent cache ([1.1.2](../../CHANGELOG.md#112)); BF16 remains the default and the
@@ -243,7 +251,7 @@ default, 4 to 1024); larger ones, reductions and exchanges stay on NCCL. On the 
 cold 64K prompts in 36.5 s and decode at 73.1 / 60.8 tok/s (code / chat, temperature 0) with the relay off, and
 36.7 s and 75.3 / 62.7 tok/s with it on (#2569).
 
-`TF_GLM_WORLD=3` places a third rank the same way. From 1.1.2 the uneven KDA input projections of TP=3 (22, 21 and
+`--tp 3` places a third rank the same way. From 1.1.2 the uneven KDA input projections of TP=3 (22, 21 and
 21 heads) run instead of being refused; TP=3 device qualification is pending
 ([#1067](https://github.com/ashhart/TensorFold/issues/1067)). How a prompt's rows reach the other ranks
 (`TF_GLM_PREFILL_REDUCE`) and the RoCE gathers (`TF_ROCE`: on at two ranks, `TF_ROCE=1` at three or more) are in

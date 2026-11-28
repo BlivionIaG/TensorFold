@@ -117,6 +117,7 @@ pub const Engine = struct {
     ctx: hip.Context,
     lib: hip.Launcher,
     stream: hip.Stream,
+    edge_events: [2]hip.Event = undefined, // a polled prompt pass's layer edges (Poll)
     weights: weights.Model,
     bridge: *bridge.Bridge,
     o: Options,
@@ -156,11 +157,12 @@ pub const Engine = struct {
         const e = try gpa.create(Engine);
         errdefer gpa.destroy(e);
         e.gpa = gpa;
-        // --vision on a checkpoint without a tower serves text, as before; an unreadable tower still refuses at open
-        const seen: @FieldType(Options, "vision") = if (o.vision == null) null else if (vision.Vision.config(gpa, io, dir)) |_| o.vision else |err| switch (err) {
-            error.NoQwenVision => null,
+        // --vision on a checkpoint without a tower refuses by name (core's gate); an unreadable tower refuses too
+        const tower = if (o.vision == null) false else if (vision.Vision.config(gpa, io, dir)) |_| true else |err| switch (err) {
+            error.NoQwenVision => false,
             else => return err,
         };
+        const seen: @FieldType(Options, "vision") = if (try @import("engine_api").visionGate(o.vision != null, tower)) o.vision else null;
         e.o = o;
         e.o.prompt_rows = @max(o.prompt_rows, o.cut_rows); // a test's cut is one piece: the prompts arena holds it
         e.o.vision = seen;
@@ -186,6 +188,10 @@ pub const Engine = struct {
         if (seen != null and e.act != .bf16) return error.VisionRequiresBf16;
         e.stream = try hip.Stream.init(&e.driver);
         errdefer e.stream.deinit();
+        e.edge_events[0] = try hip.Event.init(&e.driver, false);
+        errdefer e.edge_events[0].deinit();
+        e.edge_events[1] = try hip.Event.init(&e.driver, false);
+        errdefer e.edge_events[1].deinit();
         const group: ?slicing.Rank = if (o.world > 1) .{ .rank = o.rank, .world = o.world } else null;
         // RCCL's init waits for every rank: none enters it unless every rank got this far
         _ = try steps.done(.{ 0, 0 }, .first);
@@ -305,6 +311,17 @@ pub const Engine = struct {
         e.blas = null;
     }
 
+    /// Rows a prompt pass takes through a layer at once (every rank the same: `prompt_rows.step`).
+    pub fn stepRows(e: *const Engine) usize {
+        return @import("prompt_rows.zig").step(e.o.prompt_rows, e.o.policy);
+    }
+
+    /// The share of `sizeBytes` that grows with the prompt rows: the prompts arena and the ids a pass uploads.
+    pub fn promptBytes(e: *Engine, capacity: usize) !usize {
+        const prompt_rows = @min(e.o.prompt_rows, capacity);
+        return try scratch.prompts(e, prompt_rows, capacity) + prompt_rows * 4;
+    }
+
     /// Device bytes `size(capacity, pool_pages)` would allocate with `rows` rows a forward: what admission weighs.
     pub fn sizeBytes(e: *Engine, rows: usize, capacity: usize, pool_pages: usize) !usize {
         const prompt_rows = @min(e.o.prompt_rows, capacity);
@@ -374,6 +391,7 @@ pub const Engine = struct {
         if (e.rope) |*k| k.deinit();
         e.bridge.deinit();
         e.weights.deinit();
+        for (&e.edge_events) |*ev| ev.deinit();
         e.stream.deinit();
         e.lib.unload();
         if (e.o.world > 1) e.comm.close();
@@ -468,17 +486,16 @@ pub const Engine = struct {
         return .{ .ptr = whole, .kind = slice.kind };
     }
 
-    /// Asked after each layer of a long prompt (the stream is idle then): true ends the pass with `error.Cancelled`.
+    /// Asked at a long prompt's layer edges once the layer before is done: true drains, then `error.Cancelled`.
     pub const Cancel = @import("lanes").stream.CancelCheck;
 
     const Poll = struct {
-        stream: hip.Stream,
+        edges: @import("hip_serve").cancel.Layers(hip.Stream, hip.Event),
         cancel: Cancel,
 
         fn layer(ctx: *anyopaque, _: usize, _: hip.ops.Tensor, _: usize) anyerror!void {
             const p: *Poll = @ptrCast(@alignCast(ctx));
-            try p.stream.synchronize();
-            try @import("hip_serve").cancel.poll(p.cancel);
+            try p.edges.edge(p.cancel.ptr, p.cancel.check);
         }
     };
 
@@ -486,7 +503,7 @@ pub const Engine = struct {
     fn poll(e: *Engine, cancel: ?Cancel, len: usize, p: *Poll) ?fwd.Trace {
         const c = cancel orelse return null;
         if (!prefix.pollsLayers(e.o.world, len)) return null;
-        p.* = .{ .stream = e.stream, .cancel = c };
+        p.* = .{ .edges = .{ .stream = e.stream, .events = e.edge_events }, .cancel = c };
         return .{ .ctx = p, .layer = Poll.layer, .reads = false };
     }
 
@@ -517,7 +534,7 @@ pub const Engine = struct {
         for (ids) |t| if (t >= e.model().spec.vocab) return error.InvalidQwenToken; // no kernel bounds an id
         try e.ids_dev.uploadAsync(0, e.ids.view(0, 4 * ids.len), e.stream);
         var p: Poll = undefined;
-        const rows = try fwd.spanFor(e.ops(&e.prompts), e.model(), caches, e.ids_dev.base(), end - pos0, pos0, e.poll(cancel, end - pos0, &p), reads);
+        const rows = try fwd.spanFor(e.ops(&e.prompts), e.model(), caches, e.ids_dev.base(), end - pos0, pos0, e.stepRows(), e.poll(cancel, end - pos0, &p), reads);
         try e.stream.synchronize();
         return rows;
     }
@@ -536,7 +553,7 @@ pub const Engine = struct {
         const o = e.ops(&e.prompts);
         var p: Poll = undefined;
         // the last row's logits and MTP's input are read: past its keys, the last layer runs that row's tile
-        const kept = try fwd.spanFor(o, m, caches, e.ids_dev.base(), len, pos0, e.poll(cancel, len, &p), passes.prefill);
+        const kept = try fwd.spanFor(o, m, caches, e.ids_dev.base(), len, pos0, e.stepRows(), e.poll(cancel, len, &p), passes.prefill);
         const row = kept.row(len - 1, m.spec.hidden);
         if (last) |b| try hip.raw.copy(b, 0, row.ptr, m.spec.hidden * m.act.size(), e.stream.handle);
         var token: [1]u32 = undefined;

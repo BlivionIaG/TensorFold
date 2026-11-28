@@ -3,6 +3,7 @@
 pub const usage =
     \\usage: tf-cuda-test <command>
     \\  qwen4                     synthetic native Qwen4: binary64 logits/tokens, state seams, lanes and copied drafts
+    \\  inkling2-serving MODEL IDS_FILE  Mini CUDA host-reference, resume, admission and copy-rollback serving equivalence
     \\  qwen-draft-frames MODEL DRAFTER IDS OUT  native 27B DFlash frames: raw bytes equal across partitions, controls red
     \\  experts-rows              experts_rows.cu's windows and chunks against the decode kernel's one-row launches
     \\  route-rows                route_rows.cu's router logits and softmax top-k against float64 (synthetic rows)
@@ -22,9 +23,14 @@ pub const usage =
     \\  moetile-contract          shared down replacement gates and the planted control
     \\  moetile-bench             alternate shared-down plus scatter and direct-slot GPU timings
     \\  nvfp4-fact                NVFP4 experts' prompt tiles with the decode form's sums: its bytes at every row, FP64
+    \\  hy4-nvfp4-experts         Hy4-flash's ModelOpt NVFP4 routed experts: each pair FP64-bounded under the SwiGLU clamp
+    \\  hy4-nvfp4-experts-ckpt <ckpt> <layer>  the published build's experts at one layer: FP64-bounded pairs
+    \\  mla-sink [<fatbin>]       the sink merge at Hy4-flash's shapes: the mla image gives Hy4-flash's bytes, FP64-bounded
     \\  nvfp4-b32                 block 32 experts with csf0 scales: block 16's bytes on equal scales, each form and width
     \\  nvfp4-nz5                 NVFP4_NZ5's block 32 experts: E2M1's bytes with each +5 a 4 under a scale 1.25x as large
     \\  lane-half                 lane half tiles (MXFP8, BF16): bytes equal to the 64-column tile, FP64, cold-weight time
+    \\  group-proj                grouped same-input lane projections: each one's bytes equal its own launch, rows 1-16
+    \\  lane-half-n               TF_QMMF_HALF_BN half tiles (FP4, FP8, FP8G): bytes equal to the 64-column tile, rows 1-16
     \\  flashnext-dense-hc        dense connection weights and FP32 normalization against FP64
     \\  flashnext-hc              Flash Next's own hyper-connection and n-gram glue against float64 (synthetic rows)
     \\  flashnext-attn            Flash Next's own attention glue, pooling and block scores against float64 (synthetic)
@@ -86,6 +92,7 @@ pub const usage =
     \\  marks MODEL IDS_FILE N PATTERNS   states kept inside chunks against chunks cut at the same rows, byte for byte
     \\  prompt-cuts MODEL IDS_FILE   a prompt keeping states inside chunks and at their ends (background passes too), and resumed from each, equals one uncut pass
     \\  prompt-segments MODEL IDS_FILE   a prompt run as 2 to 4 staggered segments a call equals one uncut pass, byte for byte
+    \\  qwen-prefill-cap MODEL IDS_FILE   a 12,000-row Qwen prompt cut at 512 rows beside a live stream equals its uncut pass: logits and 64 greedy tokens, byte for byte
     \\  cached-plans-tp2 MODEL IDS_FILE   rank-zero cached plans and prompt resumes with the existing expert rank
     \\  shared-fork MODEL         the latent MoE's shared expert on the side stream (held back), lone and in shared windows of 2/4/8 streams, against one stream, byte for byte
     \\  recapture MODEL           graphs captured again while another sequence is bound: both keep their sampling rules
@@ -95,6 +102,9 @@ pub const usage =
     \\  fp8-experts <dir>         grouped block-FP8 experts against recorded fixture bytes
     \\  nvfp4-experts <dir>       grouped NVFP4 experts against recorded fixture bytes
     \\  bf16-experts [contract]   grouped bf16 experts against float64 (repack, up, downs, rows, forms); contract: gates 1-4, controls red
+    \\  mxfp4-experts [contract]  grouped MXFP4 experts' downs: bf16 experts' bytes on the decoded weights; contract: SiTU's up and the downs, gates 1-4, controls red
+    \\  ernie5_5-head             ERNIE 5.5's MultiMax on the head's fp32 logits: contract gates 1-4, controls red
+    \\  ernie5_5-index            ERNIE 5.5's DSA key lists, picks then window: contract gates 1-4, controls red
     \\  projection-f32            FP32 projection outputs against FP64, rounding and row/reduction invariance
     \\  mxfp8                     MXFP8 strided projections against FP64 and row-count invariance
     \\  quant-ref                 FP8 and NVFP4 projections and experts against float64 references (synthetic)
@@ -102,6 +112,7 @@ pub const usage =
     \\  native-fp                 -Dnative-fp-decode: hardware e2m1/e4m3 pair decode equals software on every finite input
     \\  affine4-decode            affine-4 decode at the Qwen3.5 shapes: row counts and segmented launches byte for byte
     \\  absorb-batch              DFlash2 absorb projections over 1/4/8/16 streams' rows in one pass vs each alone, byte for byte
+    \\  wide-rounds               Nemotron Lightning dense calls at 17-32 rows vs 16-row calls (affine-4, NVFP4), byte for byte
     \\  w4a8                      int8-activation prompt matmuls on affine-4 tiles: float64 of their formula, rows (synthetic)
     \\  carveout [MiB] [card]     GB10 display memory: round trips and bandwidth (SKIP without the card)
     \\  nvfp4 <dir>               NVFP4 projections against recorded lane-matmul and prompt-GEMM fixture bytes
@@ -134,7 +145,7 @@ pub const usage =
     \\  qwen35-tp-cut PACK [STEP]  the 27B's EXL3 weights cut for two ranks at the whole plan: each rank's columns, one run's bytes
     \\  exl3-prompt-k6 [DIR|none] [BASE]  EXL3 prompt kernels at 3 and 4 bits, GLM's shapes: runSlots, FP64, row bytes, time; DIR adds a real layer, BASE (an earlier exl3_experts fatbin) its 4-bit bytes
     \\  train-pack MODEL EXAMPLES [COUNT]   training passes holding several sequences against one a pass: differences, time
-    \\  kernel-contract [WORD...]  the contract's gates, each planted control red (-Dnvcc); WORDs: kernels named so
+    \\  kernel-contract [WORD...] [--jobs N | --shard K/N [--device D]]  the contract's gates, each planted control red (-Dnvcc); WORDs: kernels named so, -WORDs: all but those; --help
     \\  qmm-prefill-many-contract the GB10 bit-exact multi-projection prompt launch against separate launches
     \\  qmm-prefill-tile22-contract the GB10 large-prompt 2x2 tile against the default tile
     \\  qmmf-prompt              BF16 K32 prompt staging: parent K64 bytes at current Flash Next shapes
@@ -144,6 +155,7 @@ pub const usage =
     \\  qmm-prefill-many-bench    same-process A-B-A screening for the GB10 launch fusion
     \\  prompt-swiglu-contract    the lean gate/up SwiGLU pair against two products and the act kernel, controls red
     \\  prompt-swiglu-bench       same-process A-B-A: the lean SwiGLU pair against two products and the act kernel
+    \\  int4-contract             the GPTQ int4 experts and head through gates 1-4 on this GPU, each planted control red
     \\  mtp-rows                  tf_q36m_attn_rows: gates 1-4 (byte-equal to tf_q36m_attn a segment) and float64 alone
     \\  qwen-pages                qwen35.cu's attention cache through a page table: paged == contiguous, float64, red controls
     \\  qwen-shared-prefix [time] attn_rows's classes across streams on shared pages == each stream alone, red controls; time: A/B
@@ -151,11 +163,15 @@ pub const usage =
     \\  clef tiny DIR | head MODEL CASES OUT [--piece N]  Clef's joint schema head: the tiny fixture, gate 3's logits
     \\  dots-help                 dots.mocr's tower and image prompt checks (dots-*): their usage
     \\  qwen-pending              qwen35's pending kept rows: the slot scans and tf_q35k_apply_pend == tf_q35k_apply, red controls
+    \\  qwen-pdl-stress           int8 prompt -> head norms -> FP8 RoPE: fixed PDL launches == all-plain bytes on GB10
     \\  rope-yarn                 YaRN rope in tf_q35_rope, tf_q35_rope8 and tf_q36m_norm_rope against float64, to 1M
     \\  kernel-contract-limits DIR   each registered launch against release SMs or sm_110 in DIR's fatbins
     \\  pocket-contract           Nemotron's pocket kernels (learned neurons) through gates 1-4, controls red
     \\  flashnext-modelopt-contract  Flash Next NVFP4's BF16 dense and FP8 MTP-expert downs through gates 1-4
     \\  minimax-contract          MiniMax-M3.1-Flash's indexer and block-sparse attention through gates 1-4, controls red
+    \\  ricursive-contract        Ripple's glue, attention prep and attention (group 10) through gates 1-4, controls red
+    \\  ripple-forward            Ripple's forward rounds (streams, verify windows, mixes) == one-row steps, bit for bit (synthetic)
+    \\  ripple-serve              Ripple's lane backend: shared rounds, copied drafts, kept states, logprob rows (synthetic)
     \\  moss-contract [ONLY..]    MOSS-Image's own kernels, its decoder's unpack and its encoder's mixer, gates 1-4, controls red
     \\  idol-decoder-contract     Idol's decoders' stem, to_kv, head norms and attention through gates 1-4, controls red
     \\  idol-contract             Idol's denoiser glue and head-64 attention through gates 1-4, controls red
@@ -168,11 +184,13 @@ pub const usage =
     \\  glm-index-check           GLM's indexer with glm_index against tf_glm_scores and tf_glm_select_rows, byte for byte (one GPU)
     \\  glm-kv-host-slots         TF_GLM_KV_HOST's gather past its slots is refused as error.GlmKvHostSlots, then one within (one GPU)
     \\  glm-ref                   GLM projections (matmuls, router, attention, indexer, hc) against float64 (synthetic)
+    \\  glm-ref-dsa               full GLM-5.3's projections at TP=3 shares on glm_mm, prompt and decode, against float64
     \\  glm-lanes-cover <ckpt> <dc.json> <rank> <world> <idfile>  copy drafts, cancels, discards, eos and max_new on one lanes.Engine across requests
     \\  glm-lanes-concurrent <ckpt> <dc.json> <rank> <world> <idfile>  concurrent streams on one lanes.Engine, each against its solo run
     \\  glm-shared-check <ckpt> <dc.json> <rank> <world> <idfile>  shared verify windows against lone twins, logits and states byte for byte
     \\  glm-pair-check <ckpt> <dc.json> <rank> <world> <idfile>  paired prompt steps against twins a chunk a step, logits and states byte for byte
     \\  glm-split-check <ckpt> <dc.json> <rank> <world> <idfile>  prompt chunks with their indexer rows split across ranks against whole twins, byte for byte
+    \\  glm-cap-check <ckpt> <dc.json> <rank> <world> <idfile>  full GLM-5.3's capped prompt steps against cold passes, state bytes but the index rings
     \\  glm-solo-check <ckpt> <dc.json> <rank> <world> <idfile>  solo prompt passes against twins a chunk a step, logits and states byte for byte
     \\  glm-tap-split-check <ckpt> <drafter> <rank> <world> <idfile>  DFlash2 prompt taps: split and ring retained taps against gather, byte for byte, every rank
     \\  glm-paged-check <ckpt> <rank> <world> <idfile>  a paged stream (pages out of order, NaN first) against a whole-window twin

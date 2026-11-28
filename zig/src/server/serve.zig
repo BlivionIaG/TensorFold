@@ -110,6 +110,8 @@ pub const Setup = struct {
     /// --execution-witness: the binary `main` opened and the text stamps it took before the load (null: unknown).
     witness_binary: ?@import("witness_parts.zig").Binary = null,
     witness_text: ?*const @import("witness_parts.zig").Text = null,
+    /// --listen-fd's socket as `main` took it before the load, with the parent it recorded then; null: `run` takes it.
+    listener: ?listener_mod.Listener = null,
 };
 
 /// `halt` (optional) ends the rounds at a boundary at the drain's deadline, so `close` never meets a running round.
@@ -136,15 +138,25 @@ pub fn validateEnvironment() !void {
 
 /// Serves until a stop signal; the process exit status.
 pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
-    validateEnvironment() catch return 1;
-    log.setJson(args.log_json);
-    stop_requested.store(false, .release);
-    stop_count.store(0, .release);
-    stop_signal.store(0, .release);
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
     const a = arena.allocator();
+    // every entry point refuses and hardens first: no settings check, key file or log line can show a value before it
+    if (@import("confidential.zig").enforce(a, args, s.environ) catch return 1) |why| {
+        std.debug.print("tensorfold: {s}\n", .{why});
+        return 2;
+    }
+    validateEnvironment() catch return 1;
+    log.setJson(args.log_json);
+    if (args.confidential) log.line("--confidential: prompt cache and checkpoint states are off", .{});
+    stop_requested.store(false, .release);
+    stop_count.store(0, .release);
+    stop_signal.store(0, .release);
     var problem: []const u8 = "";
+    if (@import("listen_fd.zig").keyRefusal(args, env(s, "TENSORFOLD_API_KEY") orelse "")) |why| {
+        std.debug.print("tensorfold: {s}\n", .{why});
+        return 2;
+    }
     var store = auth.Store.init(gpa, args.api_key, env(s, "TENSORFOLD_API_KEY") orelse "", args.api_key_file, args.metrics_open, &problem) catch {
         std.debug.print("tensorfold: {s}\n", .{if (problem.len > 0) problem else "API key file cannot be opened safely"});
         return 1;
@@ -228,6 +240,7 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
         .cache_salt_per_key = args.cache_salt_per_key,
         .sse_keepalive_s = keepalive_s,
         .request_log = env(s, "TENSORFOLD_REQUEST_LOG"),
+        .request_log_replies = if (env(s, "TENSORFOLD_REQUEST_LOG_REPLIES")) |v| std.mem.eql(u8, v, "1") else false,
         .journal = journal,
         .phase_metrics = if (env(s, "TENSORFOLD_PHASE_METRICS")) |v| std.mem.eql(u8, v, "1") else false,
         .spark_stats = spark_stats,
@@ -242,6 +255,7 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
         .cortheon = args.cortheon,
         .cortheon_search_key = env(s, "BRAVE_SEARCH_API_KEY"),
         .saved_conversations = args.learn_conversations,
+        .confidential = args.confidential,
         .identity = s.identity,
         .environ = s.environ,
         .tool_id_key = s.tool_id_key,
@@ -277,7 +291,7 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
     }
     if (args.cache_salt_per_key and !store.enabled()) log.line("--cache-salt-per-key: no API keys are set, so no request is salted by one", .{});
     if (raiseOpenFileLimit()) |r| log.line("open-file limit raised: soft {d} -> {d}", .{ r[0], r[1] });
-    const lis = (if (args.unix_socket) |path| openUnix(a, path) else openTcp(io, args)) orelse return 1;
+    const lis = (if (s.listener) |held| held else if (args.listen_fd) |fd| @import("listen_fd.zig").open(fd) else if (args.unix_socket) |path| openUnix(a, path) else openTcp(io, args)) orelse return 1;
     installSignals(store.enabled());
     const port = lis.port();
     platform.optional_libraries.warnMissing(.grammar, a, io, platform);
@@ -302,6 +316,8 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
     // the TCP line keeps its exact form: the benchmark server reads the port from it (benchmark_server_test.zig)
     if (lis.unix_path) |path| {
         log.line("serving {s} on Unix socket {s}, /v1 (sampling: {s}{s}; drafts: {f}; context: {s}; loaded in {d:.1}s)", .{ s.served, path, sampling, instruct, drafts, context, loaded });
+    } else if (lis.inherited) {
+        log.line("serving {s} on --listen-fd {d} to its parent, /v1 (sampling: {s}{s}; drafts: {f}; context: {s}; loaded in {d:.1}s)", .{ s.served, lis.fd, sampling, instruct, drafts, context, loaded });
     } else {
         log.line("serving {s} at http://{s}:{d}/v1 (sampling: {s}{s}; drafts: {f}; context: {s}; loaded in {d:.1}s)", .{ s.served, args.host, port, sampling, instruct, drafts, context, loaded });
     }
@@ -322,8 +338,13 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
     const accept = std.Thread.spawn(.{}, server_mod.Server.serve, .{ srv, lis, &accept_stop }) catch return 1;
     @import("startup_receipt.zig").ready(port);
     if (srv.witness) |w| w.start(srv); // hashing starts after ready, on its own thread, never on the startup path
-    while (!stop_requested.load(.acquire)) std.Io.sleep(io, .fromMilliseconds(50), .awake) catch {};
-    drain(srv, io, s.stop, drain_s);
+    // --listen-fd: the parent's exit stops the server at once, ending the connections it had already taken
+    const orphaned = while (!stop_requested.load(.acquire)) {
+        if (lis.inherited and !lis.parentAlive()) break true;
+        std.Io.sleep(io, .fromMilliseconds(50), .awake) catch {};
+    } else false;
+    if (orphaned) log.line("--listen-fd: the process that passed the socket exited; stopping without a drain", .{});
+    drain(srv, io, s.stop, if (orphaned) 0 else drain_s);
     if (journal) |j| j.stopped(); // a stop, not a crash: requests still open are not quarantined
     accept_stop.store(true, .release);
     accept.join();

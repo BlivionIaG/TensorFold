@@ -16,14 +16,14 @@ const sparse = @import("cuda_sparse.zig");
 const prompt_pair = @import("cuda_prompt_pair.zig");
 const Engine = engine.Engine;
 
-pub const Kind = enum(u32) { begin = 1, prefill, verify, keep, draft, end, drop, release, chunk, shared, image, block, many, redraw, idle, snapshots, pool, form, cuts };
+pub const Kind = enum(u32) { begin = 1, prefill, verify, keep, draft, end, drop, release, chunk, shared, image, block, many, redraw, idle, snapshots, pool, form, cuts, disk };
 
 /// One step as it crosses: 64 bytes, then `n` u32 ids.
 pub const Header = extern struct {
     kind: u32,
     n: u32 = 0, // ids that follow
     depth: u32 = 0, // draft: drafts to chain; chunk: where it starts; shared: its parts
-    flags: u32 = 0, // begin: sampled; draft: from the prompt (1), chances (2); prefill, chunk: prompt_logprobs (1); chunk: indexer rows split (2); verify, shared: whole rows; snapshots: pages shared
+    flags: u32 = 0, // begin: sampled; draft: from the prompt (1), chances (2); prefill, chunk: prompt_logprobs (1); chunk: indexer rows split (2), a capped step's rows (from bit 2); verify, shared: whole rows; snapshots: pages shared
     a: u64 = 0, // begin: the prompt cache's pages first in its table; keep: rows; prefill, chunk: the kept state it resumes (0: none); redraw: the prompt's length; form: a bit a window's rows
     seed: u64 = 0, // begin: the sampling seed; prefill, chunk: the kept state's position
     temperature: f64 = 0,
@@ -67,7 +67,14 @@ pub const Link = struct {
         return .{ .d = d, .lib = lib, .comm = comm, .stream = stream, .buf = buf, .ids = try gpa.alloc(u32, max_ids), .gpa = gpa, .wait = wait };
     }
 
+    /// Rank 0, before it serves: whether the other ranks begin asleep; at TP its kept states' disk steps cross here.
+    pub fn lead(l: *Link, asleep: bool, world: usize) void {
+        l.asleep = asleep;
+        if (world > 1) @import("cuda_disk_ranks.zig").link = l;
+    }
+
     pub fn deinit(l: *Link) void {
+        if (@import("cuda_disk_ranks.zig").link == l) @import("cuda_disk_ranks.zig").link = null;
         l.gpa.free(l.ids);
         l.buf.free();
     }
@@ -112,6 +119,14 @@ pub const Link = struct {
     pub fn rows(l: *Link, ptr: u64, bytes: usize) !void {
         if (bytes == 0) return;
         try l.lib.check(l.lib.api.ncclBroadcast(ptr, ptr, bytes, .u8, 0, l.comm, l.stream.handle), "ncclBroadcast");
+    }
+
+    /// `bytes` after the header from rank `root` into every rank's buffer (a disk step's take: cuda_disk_ranks).
+    pub fn from(l: *Link, root: u32, bytes: usize) !void {
+        if (bytes == 0) return;
+        if (64 + bytes > l.buf.len) return error.TooManyIds;
+        try l.lib.check(l.lib.api.ncclBroadcast(l.buf.ptr + 64, l.buf.ptr + 64, bytes, .u8, @intCast(root), l.comm, l.stream.handle), "ncclBroadcast");
+        try l.stream.synchronize();
     }
 
     /// Other ranks: the next step and its ids (valid until the next receive).
@@ -249,14 +264,23 @@ pub const Leader = struct {
 
     /// One prompt step on every rank (Engine.prefillChunk): to the next cut, or two if `alone` and solo or pair allow.
     pub fn chunk(x: Leader, ids: []const u32, start: usize, alone: bool, from: ?engine.Resume, cancel: ?engine.Cancel, marks: ?engine.Marks) !Chunk {
+        return x.chunkCapped(ids, start, alone, from, cancel, marks, 0);
+    }
+
+    /// chunk under the lane host's `max_rows` (0: none): full GLM-5.3 cuts inside the cold chunk (cuda_prompt_cuts).
+    pub fn chunkCapped(x: Leader, ids: []const u32, start: usize, alone: bool, from: ?engine.Resume, cancel: ?engine.Cancel, marks: ?engine.Marks, max_rows: u32) !Chunk {
         if (start >= ids.len) return error.BadChunk;
         try x.flush();
-        const wide = alone and (prompt_solo.at(x.e, start, ids.len, from, marks) or prompt_pair.pairedAt(x.e, start, ids.len, from, marks));
-        const n = prompt_cuts.leaderRows(ids.len, x.e.cur.cuts.items, start, wide);
+        const starts = x.e.cur.cuts.items;
+        const capped = x.e.c.dsa and (max_rows != 0 or !prompt_cuts.coldCut(ids.len, starts, start)); // or a capped pass's rest
+        const wide = !capped and alone and (prompt_solo.at(x.e, start, ids.len, from, marks) or prompt_pair.pairedAt(x.e, start, ids.len, from, marks));
+        const n = if (capped) prompt_cuts.cappedEnd(ids.len, starts, start, max_rows) - start else prompt_cuts.leaderRows(ids.len, starts, start, wide);
+        const cap: u32 = if (capped) @intCast(n) else 0;
         const part = ids[start..@min(ids.len, start + n + 1)];
         const split = sparse.splitAt(start, x.e.settings.index_split, x.e.share.world); // a paired step's chunks share it
-        try x.send(.{ .kind = @backingInt(Kind.chunk), .flags = x.rows() | @as(u32, @intFromBool(split)) << 1, .a = if (from) |r| r.id else 0, .seed = if (from) |r| r.at else 0, .depth = @intCast(start), .top_k = @intCast(ids.len) }, part);
+        try x.send(.{ .kind = @backingInt(Kind.chunk), .flags = x.rows() | @as(u32, @intFromBool(split)) << 1 | cap << 2, .a = if (from) |r| r.id else 0, .seed = if (from) |r| r.at else 0, .depth = @intCast(start), .top_k = @intCast(ids.len) }, part);
         x.e.index_split = split;
+        x.e.cap_rows = cap;
         const first = try x.e.prefillChunk(part, start, ids.len, from, cancel, marks);
         return .{ .first = first, .rows = @min(ids.len - start, n) };
     }
@@ -329,6 +353,14 @@ pub const Leader = struct {
         x.e.m.experts.fact = forms;
     }
 
+    /// A kept state's disk step (cuda_disk_ranks): its op and ids to every rank.
+    pub fn disk(x: Leader, h: Header, ids: []const u32) !void {
+        try x.flush();
+        var hh = h;
+        hh.kind = @backingInt(Kind.disk);
+        try x.send(hh, ids);
+    }
+
     /// The other ranks leave their loops.
     pub fn end(x: Leader) !void {
         try x.send(.{ .kind = @backingInt(Kind.end) }, &.{});
@@ -363,7 +395,7 @@ pub fn follow(e: *Engine, link: *Link) !void {
         const step = try link.receive();
         const h = step.h;
         const kind: Kind = @fromBackingInt(@intCast(h.kind));
-        if (kind != .end and kind != .drop and kind != .shared and kind != .block and kind != .many and kind != .idle and kind != .snapshots and kind != .pool and kind != .form) try e.bind(h.slot);
+        if (kind != .end and kind != .drop and kind != .shared and kind != .block and kind != .many and kind != .idle and kind != .snapshots and kind != .pool and kind != .form and kind != .disk) try e.bind(h.slot);
         e.prompt_logprobs = if (promptRows(h)) .{} else null;
         e.structured = structuredStep(h); // rank 0 alone masks them
         switch (kind) {
@@ -390,6 +422,7 @@ pub fn follow(e: *Engine, link: *Link) !void {
                 defer e.gpa.free(ids);
                 const from: ?engine.Resume = if (h.a != 0) .{ .id = h.a, .at = h.seed } else null;
                 e.index_split = indexSplit(h);
+                e.cap_rows = h.flags >> 2;
                 _ = e.prefillChunk(ids, h.depth, h.top_k, from, null, null) catch |err| switch (err) {
                     error.Cancelled => {},
                     else => return err,
@@ -442,6 +475,7 @@ pub fn follow(e: *Engine, link: *Link) !void {
                 e.share_pages = h.flags & 1 != 0; // TF_KV_SHARE on rank 0: a kept state leaves the shared store's pages out
                 try @import("cuda_snapshots.zig").agree(e, h.a);
             },
+            .disk => try @import("cuda_disk_ranks.zig").step(e, link, h, step.ids),
             .drop => for (step.ids) |id| e.dropState(id),
             .release => e.release(h.slot),
             .idle => cuda.tp_watch.sleep(e.io),

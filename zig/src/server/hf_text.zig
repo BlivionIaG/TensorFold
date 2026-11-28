@@ -36,6 +36,7 @@ pub const HfText = struct {
     native_kimi: ?*KimiText = null,
     source: []const u8 = "",
     native_deepseek: bool = false,
+    native_inkling2: bool = false,
     schema_prompt: bool = true, // TF_DSV41_SCHEMA_PROMPT: response_format's schema as the encoder's ``## Response Format``
     overridden: bool = false, // the chat template is --chat-template's file
     unread_template: bool = false, // a native DeepSeek checkpoint's own Jinja, which its encoder replaces
@@ -71,7 +72,7 @@ pub const HfText = struct {
             return t;
         };
         var read: []const u8 = dir;
-        t.tok = openTokenizer(io, a, gpa, dir, &read) catch |e| {
+        t.tok = openTokenizer(io, a, gpa, try @import("zonos_request").release.tokenizerAt(a, io, dir), &read) catch |e| {
             problem.* = try std.fmt.allocPrint(pa, "cannot read {s}/tokenizer.json ({s})", .{ read, @errorName(e) });
             return error.Load;
         };
@@ -100,14 +101,31 @@ pub const HfText = struct {
             return error.Load;
         };
         if (model_config == .object) if (model_config.object.get("model_type")) |kind| {
+            // the Inkling 2 family's two model types (families/inkling2/config.zig): Small's and Mini's looped one
+            t.native_inkling2 = template_override == null and kind == .string and
+                (std.mem.eql(u8, kind.string, "inkling2") or std.mem.eql(u8, kind.string, "inkling2_loop"));
             t.native_deepseek = template_override == null and kind == .string and
                 (std.mem.eql(u8, kind.string, "deepseek_v4") or std.mem.eql(u8, kind.string, "deepseek_v41"));
-            if (kind == .string and std.mem.eql(u8, kind.string, "glm5_next")) {
-                const value = if (std.c.getenv(clear_thinking_env)) |v| std.mem.span(v) else null;
-                t.clear_thinking = glmClearThinking(value) orelse {
-                    problem.* = try std.fmt.allocPrint(pa, "{s}={s}: expected 0 or 1", .{ clear_thinking_env, value.? });
-                    return error.Load;
+            const glm = kind == .string and (std.mem.eql(u8, kind.string, "glm5_next") or std.mem.eql(u8, kind.string, "glm_moe_dsa"));
+            if (glm) {
+                // Flash keeps its vocabulary in text_config; full GLM's engine reads only the root
+                const nested = if (std.mem.eql(u8, kind.string, "glm5_next")) model_config.object.get("text_config") else null;
+                const target = nested orelse model_config;
+                if (target == .object) if (target.object.get("vocab_size")) |size| if (size == .integer and size.integer > 0) {
+                    const vocab: usize = @intCast(size.integer);
+                    // padded embeddings are normal (Flash: 154856 tokens, 154880 rows); refuse only ids past them
+                    if (t.tok.id_to_token.tokens.items.len > vocab) {
+                        problem.* = try std.fmt.allocPrint(pa, "GLM tokenizer has more tokens than the model vocabulary: tokenizer {d}, model {d}", .{ t.tok.id_to_token.tokens.items.len, vocab });
+                        return error.Load;
+                    }
                 };
+                if (std.mem.eql(u8, kind.string, "glm5_next")) {
+                    const value = if (std.c.getenv(clear_thinking_env)) |v| std.mem.span(v) else null;
+                    t.clear_thinking = glmClearThinking(value) orelse {
+                        problem.* = try std.fmt.allocPrint(pa, "{s}={s}: expected 0 or 1", .{ clear_thinking_env, value.? });
+                        return error.Load;
+                    };
+                }
             }
         };
         if (template_override) |path| {
@@ -123,7 +141,7 @@ pub const HfText = struct {
             t.unread_template = t.source.len > 0 or t.tool_source.len > 0;
             t.source = "";
             t.tool_source = "";
-            t.schema_prompt = try schemaPrompt(if (std.c.getenv("TF_DSV41_SCHEMA_PROMPT")) |v| std.mem.span(v) else null);
+            t.schema_prompt = try schemaPrompt(@import("sys").environment.rawText("TF_DSV41_SCHEMA_PROMPT"));
         }
         t.specials = try specialsOf(a, config);
         t.eos = t.eosIds(a, model_config, generation, config, t.tok.id_to_token.tokens.items.len) catch |e| {
@@ -258,7 +276,7 @@ pub const HfText = struct {
 
     pub fn text(t: *HfText) model_text.Text {
         if (t.native_kimi) |kimi| return kimi.text();
-        return .{ .native_deepseek = t.native_deepseek and t.compiled == null, .deferred_native = @import("deferred_tools.zig").native(if (t.tool_source.len > 0) t.tool_source else t.source), .ctx = t, .vtable = &.{
+        return .{ .native_deepseek = t.native_deepseek and t.compiled == null, .native_inkling2 = t.native_inkling2, .deferred_native = @import("deferred_tools.zig").native(if (t.tool_source.len > 0) t.tool_source else t.source), .ctx = t, .vtable = &.{
             .encode = encodeFn,
             .decode = decodeFn,
             .token_id = tokenIdFn,
@@ -564,6 +582,7 @@ test "chat_template_kwargs.clear_thinking: a bool, null as unset, anything else 
 }
 
 test {
+    _ = @import("hf_glm_vocab_test.zig");
     _ = @import("hf_eos_test.zig");
     _ = @import("hf_text_regex_test.zig");
     _ = @import("dory_chat_test.zig");

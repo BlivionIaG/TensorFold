@@ -22,6 +22,9 @@ pub fn glmCudaShared(b: *std.Build, target: std.Build.ResolvedTarget, optimize: 
     m.addImport("heat", heat);
     m.addImport("tp", @import("tp.zig").moduleWith(b, target, optimize, cuda, verbs)); // over the engine's own cuda module
     m.addImport("engine_api", api); // TF_GLM_KV_SHARE's prompt_radix store: family()'s, the server's
+    // full GLM-5.3's shape, parsed as the Metal family parses it
+    const dsa_config = b.createModule(.{ .root_source_file = b.path("zig/src/families/glm_dsa/config.zig"), .target = target, .optimize = optimize });
+    m.addImport("glm_dsa_config", dsa_config);
     return m;
 }
 
@@ -64,6 +67,7 @@ pub fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const api = qwen35.import_table.get("engine_api").?; // family()'s, so the server and qwen3_5 share one
     const canon = canonModule(b, target, optimize);
     const verbs = @import("tp.zig").verbsModule(b, target, optimize);
+    const glm = glmCudaShared(b, target, optimize, cuda, core, lanes, heat, api, canon, verbs);
     const mod = b.createModule(.{
         .root_source_file = b.path("zig/src/native/cuda.zig"),
         .target = target,
@@ -75,10 +79,13 @@ pub fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
             .{ .name = "lanes", .module = lanes },
             .{ .name = "nemotron", .module = nemotron },
             .{ .name = "drama3", .module = @import("drama3_host.zig").module(b, target, optimize, cuda, core) },
+            .{ .name = "zonos3", .module = @import("zonos3.zig").module(b, target, optimize, cuda, core, lanes) },
             .{ .name = "lfm2", .module = lfm2Module(b, target, optimize, cuda, core) },
             .{ .name = "core", .module = core },
+            .{ .name = "tensorfold", .module = core },
             .{ .name = "flashnext", .module = flashnextModule(b, target, optimize, cuda, core, lanes, qwen_vision, api) },
-            .{ .name = "glm_cuda", .module = glmCudaShared(b, target, optimize, cuda, core, lanes, heat, api, canon, verbs) },
+            .{ .name = "glm_cuda", .module = glm },
+            .{ .name = "mesh", .module = glm.import_table.get("mesh").? }, // the launch resolver's, GLM's one instance
             .{ .name = "qwen3_cuda", .module = qwen3Module(b, target, optimize, cuda, core, lanes, api) },
             .{ .name = "minimax_m3_cuda", .module = @import("minimax_cuda.zig").module(b, target, optimize, cuda, core, lanes) },
             .{ .name = "qwen35", .module = qwen35 },
@@ -86,9 +93,12 @@ pub fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
             .{ .name = "gemma4_cuda", .module = @import("gemma4_cuda.zig").module(b, target, optimize, cuda, core, lanes) },
             .{ .name = "spark25", .module = @import("spark25.zig").module(b, target, optimize, cuda, core, lanes) },
             .{ .name = "lfm2_moe_cuda", .module = @import("lfm2_moe_cuda.zig").module(b, target, optimize, cuda, core, lanes) },
+            .{ .name = "inkling2", .module = @import("inkling2.zig").module(b, target, optimize, cuda, core, lanes) },
+            .{ .name = "lfm3_cuda", .module = @import("lfm3_cuda.zig").module(b, target, optimize, cuda, core, lanes) },
             .{ .name = "dory", .module = @import("dory.zig").module(b, target, optimize, cuda, core, lanes) },
             .{ .name = "dots_mocr_cuda", .module = @import("dots_mocr_cuda.zig").module(b, target, optimize, cuda, core, lanes, @import("cuda_dense.zig").module(b, target, optimize, cuda, core, lanes)) },
             .{ .name = "muse_spark", .module = @import("muse.zig").moduleOver(b, target, optimize, cuda, core, lanes, @import("tp.zig").moduleWith(b, target, optimize, cuda, verbs)) },
+            .{ .name = "ricursive_cuda", .module = @import("ricursive_cuda.zig").module(b, target, optimize, cuda, core, lanes) },
         },
     });
     mod.addImport("qwen4", @import("qwen4.zig").module(b, target, optimize, core));

@@ -36,7 +36,7 @@ Needs glibc 2.28 or newer and NVIDIA driver R580 or newer (CUDA 13.0). The [run 
 lists the archive's requirements; Windows has [its own guide](docs/WINDOWS.md).
 
 ```sh
-V=1.3.4
+V=1.3.7
 case "$(uname -m)" in
   aarch64|arm64) PLATFORM=linux-aarch64 ;;
   x86_64) PLATFORM=linux-x86_64 ;;
@@ -51,6 +51,11 @@ tensorfold() { command tensorfold-native "$@"; }
 tensorfold pull mlx-community/Qwen3.5-2B-MLX-4bit@93760be4f1f69842a46bc13dbdc0f19e291392a3
 tensorfold serve mlx-community/Qwen3.5-2B-MLX-4bit --name local-model --context 8192 --no-thinking
 ```
+
+On Windows, `tensorfold start` is not available yet. Use the [Windows guide](docs/WINDOWS.md).
+
+Or let TensorFold choose on macOS and Linux with `tensorfold start --check`. It prints the selected model and download
+size and asks before downloading. The check prints one reply and stops the server.
 
 ### Send a request
 
@@ -81,9 +86,11 @@ See [the chat command](docs/chat.md) for its flags and the serve flags it passes
   Cortheon mode, every serve flag, the Mac app and TensorFold Starlight.
 - [Supported models](docs/supported-models.md): which checkpoints run on which machines, models on disk and model discovery.
 - [Living Weights (experimental)](docs/living-weights.md): teach a running model new facts in its own weights.
+- [Control vectors](docs/control-vectors.md): steer Qwen3.8-27B on Metal with `--glp FILE` and `--glp-alpha ALPHA`, the vector file's format and how one is brought.
 - [Installation runbook](RUNBOOK.md): macOS and CUDA installation, paired Metal serving and troubleshooting.
 - [Windows](docs/WINDOWS.md), [TensorFold Web](docs/web.md) and [the Mac app](app/README.md).
 - [API](docs/api.md), [Cortheon mode](docs/cortheon.md) and [known issues](docs/known-issues.md).
+- [Claude Code](docs/claude-code.md): point it at a local server, name its model, and keep its prompt prefix cacheable.
 - [Evaluating TensorFold](docs/evaluating.md) and [community benchmarks](docs/community-benchmarks.md).
 - [Usable memory profiles](docs/memory-profiling.md): how to record applied budgets, context, cache state and process peaks.
 - [Contributing](CONTRIBUTING.md): ATC and agents, builds, tests and the exactness and performance gates.

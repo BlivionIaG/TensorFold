@@ -2,6 +2,9 @@
 const std = @import("std");
 
 pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, engines: *std.Build.Module, core: *std.Build.Module, test_step: *std.Build.Step) void {
+    const route = b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/cli/pull_route.zig"), .target = target, .optimize = optimize, .link_libc = true }) }));
+    b.step("test-pull-route-host", "Proxy configuration, refusal names and routing rules without a network").dependOn(&route.step);
+    test_step.dependOn(&route.step);
     // rm's tests make their own cache of links, hard links and copies, so they run on every OS
     const rm = b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("zig/src/cli/rm_test.zig"),
@@ -12,13 +15,13 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     }) }));
     b.step("test-rm-host", "Checkpoint removal in a temporary cache: shared blobs, refs, dry runs, refusals and links out").dependOn(&rm.step);
     test_step.dependOn(&rm.step);
-    if (target.result.os.tag != .windows) { // the journal fixture listens on a POSIX socket
+    if (target.result.os.tag != .windows) { // its fixture is plain files under std.testing.tmpDir; the one POSIX item is `follow`'s rotation check on the stat inode
         const journal_log = b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/cli/journal_log.zig"), .target = target, .optimize = optimize }) }));
-        b.step("test-journal-log-host", "tensorfold log over a fixture request journal: list, show, --json and follow across a rotation").dependOn(&journal_log.step);
+        b.step("test-journal-log-host", "tensorfold log over a fixture journal and request-log file: list, show, --json and follow across a rotation").dependOn(&journal_log.step);
         test_step.dependOn(&journal_log.step);
     }
     const mod = b.createModule(.{
-        .root_source_file = b.path("zig/src/cli/pull_test.zig"),
+        .root_source_file = b.path("zig/src/cli/pull_host_test.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -39,6 +42,7 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
         .imports = &.{ .{ .name = "native_engines", .module = engines }, @import("exlr8.zig").cliImport(b, target, optimize, core) },
     }) }));
     test_step.dependOn(&security.step);
+    b.step("test-pull-security-host", "Credential, metadata, cache and artifact-body containment against a local fake hub").dependOn(&security.step);
 }
 
 pub fn compile(b: *std.Build, target: std.Build.ResolvedTarget, draft_ids: *std.Build.Module) void {
@@ -48,7 +52,7 @@ pub fn compile(b: *std.Build, target: std.Build.ResolvedTarget, draft_ids: *std.
     const mods = cuda.family(b, target, .debug, runtime, draft_ids);
     const native = @import("cuda_engines.zig").engines(b, target, .debug, runtime, mods.core, mods.lanes, mods.nemotron, mods.heat, mods.qwen35, mods.qwen_vision);
     const tests = b.addTest(.{ .name = "tf-pull-host-tests", .root_module = b.createModule(.{
-        .root_source_file = b.path("zig/src/cli/pull_test.zig"),
+        .root_source_file = b.path("zig/src/cli/pull_host_test.zig"),
         .target = target,
         .optimize = .debug,
         .link_libc = true,

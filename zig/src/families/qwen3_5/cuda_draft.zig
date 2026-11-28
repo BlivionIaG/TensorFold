@@ -9,6 +9,7 @@ pub const tree = @import("cuda_draft_tree.zig");
 const profile = @import("cuda_startup_profile.zig");
 pub const precision = @import("cuda_draft_precision.zig");
 const draft_prior = @import("draft_prior.zig");
+pub const trace = @import("cuda_draft_trace.zig");
 
 const E = engine.Engine;
 const DeviceBuffer = cuda.DeviceBuffer;
@@ -27,6 +28,7 @@ pub const Config = @import("cuda_draft_config.zig").Config;
 pub const frame = @import("cuda_draft_frame.zig");
 pub const memory = @import("cuda_draft_memory.zig");
 pub const spine = @import("cuda_dspine_frame.zig");
+pub const graphs = @import("cuda_draft_graphs.zig");
 const Fns = struct { gather_taps: cuda.Function, gather_rows: cuda.Function, dyn_conv: cuda.Function, norm_rope: cuda.Function, ring_put: cuda.Function, attn: cuda.Function, dyn_conv_batch: cuda.Function, norm_rope_batch: cuda.Function, mask_rows: cuda.Function, attn_partial: cuda.Function, attn_merge: cuda.Function };
 
 /// qwen35_draft.cu's TapRows.
@@ -43,16 +45,22 @@ pub const Ctx = struct {
     parents: [engine.most_window]i32 = undefined,
     own: [engine.most_window]f64 = undefined,
     grown: usize = 0,
+    trace_active: bool = false,
+    trace_base: usize = 0,
+    trace_snapshot: trace.Snapshot((engine.most_window + 1) * lanes.draft_tree.branch) = .{},
     // the stream's tokens draft_frame has read, and whether one lay outside its spans (then drafts take the whole head)
     scanned: usize = 0,
     wide: bool = false,
 };
-
+pub fn fullHeadEnabled() bool {
+    return platform.environment.read(bool, "TF_QWEN_DRAFT_FULL_HEAD", true) catch true;
+}
 pub const Draft = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     e: *E,
     projection_role: precision.Role = .proposal,
+    full_head: bool = true,
     c: Config,
     w: weights.Weights,
     mod: cuda.Module,
@@ -101,6 +109,7 @@ pub const Draft = struct {
     pool: std.ArrayList(*Ctx) = .empty,
     /// Grown trees' nodes offered and landed, by own chance: the nodes' chances the round loop prices.
     landing: tree.Landing = .{},
+    trace: ?*trace.Trace = null, // TF_Q35_DFLASH_TRACE, read once at open; no data is copied unless set
     absorb_batch: bool = false, // TF_Q35_DFLASH_ABSORB_BATCH, read once at open
     /// One level of a hold (a hold drafts every level at once; timed at load, over the block's levels).
     step_ms: f64 = 1.0,
@@ -108,21 +117,19 @@ pub const Draft = struct {
     costs: [engine.most_window]lanes.config.Cost = undefined,
     n_costs: usize = 0,
     tree_nodes: usize = 0,
-
     startup: profile.Times = .{},
     frame_streams: usize = 1,
     scratch_one: usize = 0,
     target_taps: usize = 0,
     /// TF_QWEN_KV_PAGES: a stream's ring is a view of its target lane's run (null: the contexts own theirs).
     ring_of: ?RingOf = null,
-
+    graphs: graphs.Graphs = .{},
+    pub const TapRows = @import("cuda_draft.zig").TapRows;
     /// all: every stream is a pool lane (TF_QWEN_KV_PAGES_ALL), so the drafter keeps no ring of its own.
     pub const RingOf = struct { ctx: *anyopaque, ring: *const fn (*anyopaque, *Stream) ?u64, all: bool = false };
-
     const words_at = frame.words_at;
     const hp_at = frame.hp_at;
     const stagedLen = frame.stagedLen;
-
     pub fn init(gpa: std.mem.Allocator, io: std.Io, e: *E, dir: []const u8) !*Draft {
         const nodes = try tree.nodes();
         const started = profile.now(io);
@@ -146,6 +153,8 @@ pub const Draft = struct {
         _ = try d.layout(true);
         d.staged = try cuda.HostBuffer.alloc(e.d, try frame.stagedBytes(@max(c.rank, 2 * c.topk * c.topk)));
         errdefer d.staged.free();
+        d.trace = trace.Trace.fromEnv(gpa, io);
+        errdefer trace.drop(&d.trace);
         // the first context, and a hold timed on it (the quickest of several: the first ones pay the driver's stalls)
         const ctx = try d.create();
         errdefer d.drop(ctx);
@@ -160,13 +169,20 @@ pub const Draft = struct {
             quickest = @min(quickest, @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(io)).toNanoseconds())) / 1e6);
         }
         d.step_ms = quickest / @as(f64, @floatFromInt(c.block - 1));
-        ctx.* = .{ .ring = ctx.ring };
+        ctx.* = .{ .ring = ctx.ring, .trace_snapshot = ctx.trace_snapshot };
         try d.pool.append(gpa, ctx);
         d.startup.warmups += profile.elapsed(io, warm_start);
         d.startup.load = profile.elapsed(io, started) - d.startup.reserve - d.startup.warmups;
+        d.graphs.on = c.kind == .dflash2 and graphs.enabled();
+        d.graphs.stats.on = c.kind == .dflash2 and graphs.statsEnabled();
+        d.full_head = c.kind == .dflash2 and fullHeadEnabled();
+        if (d.trace != null and d.c.kind == .dflash2) {
+            const t = d.trace.?;
+            t.steps = try gpa.alloc(tree.GrowNode, frame.max_streams * (engine.most_window + 1) * lanes.draft_tree.branch);
+            t.captures = try gpa.alloc(tree.GrowTrace, frame.max_streams);
+        }
         return d;
     }
-
     /// The drafter's taps (the target's layers it reads).
     pub fn taps(d: *const Draft) []const u32 {
         return d.c.taps[0..d.c.n_taps];
@@ -182,6 +198,8 @@ pub const Draft = struct {
     }
 
     pub fn deinit(d: *Draft) void {
+        trace.drop(&d.trace);
+        if (graphs.enabled() or d.graphs.stats.on) d.graphs.deinit(d.gpa);
         var it = d.streams.valueIterator();
         while (it.next()) |ctx| d.drop(ctx.*);
         d.streams.deinit(d.gpa);
@@ -240,7 +258,8 @@ pub const Draft = struct {
     }
 
     fn drop(d: *Draft, ctx: *Ctx) void {
-        ctx.ring.free();
+        ctx.trace_snapshot.deinit(d.gpa);
+        if (!ctx.ring.borrowed) ctx.ring.free();
         d.gpa.destroy(ctx);
     }
 
@@ -266,6 +285,7 @@ pub const Draft = struct {
         const started = profile.now(d.io);
         const previous_times = d.startup;
         try memory.resize(d, n);
+        if (graphs.enabled()) d.graphs.clear(d.gpa);
         // with a pool the other streams' rings are lane runs (all: every stream's)
         const own = if (d.ring_of) |r| (if (r.all) 0 else @min(n, 1)) else n;
         try d.pool.ensureTotalCapacity(d.gpa, own);
@@ -337,32 +357,13 @@ pub const Draft = struct {
         const previous = d.projection_role;
         defer d.projection_role = previous;
         d.projection_role = if (prompt) .prompt else .live;
-        const c = d.c;
         if (rows_) |rs| if (rs.len != n_ or n_ > engine.most_window) return error.BadDraftRows;
         const span = absorbs.open(d, ctx, start_, n_); // the context's window opened for the rows
         var start = span.start;
         var n = span.n;
-        const e = d.e;
         while (n > 0) {
             const rows = @min(n, max_rows);
-            if (rows_) |rs| {
-                var tr: TapRows = .{ .n = @intCast(rows), .rows = @splat(0) };
-                for (rs, 0..) |r, i| tr.rows[i] = @intCast(r);
-                try e.run(d.fns.gather_rows, .{ rows, 1, 1 }, .{ 256, 1, 1 }, .{ tap_ring, @as(c_int, @intCast(e.tapRows())), @as(c_longlong, @intCast(start)), tr, @as(c_int, @intCast(c.n_taps * c.hidden)), d.taps_in });
-            } else try e.run(d.fns.gather_taps, .{ rows, 1, 1 }, .{ 256, 1, 1 }, .{ tap_ring, @as(c_int, @intCast(e.tapRows())), @as(c_longlong, @intCast(start)), @as(c_int, @intCast(c.n_taps * c.hidden)), d.taps_in });
-            try d.proj(d.w.fc, d.taps_in, d.th, rows);
-            try d.norm(d.th, d.w.hidden_norm, d.thn, rows);
-            for (d.w.layers, 0..) |l, i| {
-                if (e.affine.pdl) {
-                    try d.projManySums(&.{ l.k, l.v }, d.thn, &.{ d.kabs, d.vabs }, rows, false);
-                    try d.normRope(d.kabs, l.k_norm, d.kn, rows, c.kv_heads, start);
-                } else {
-                    try d.projAgain(l.k, d.thn, d.kabs, rows);
-                    try d.normRope(d.kabs, l.k_norm, d.kn, rows, c.kv_heads, start);
-                    try d.projAgain(l.v, d.thn, d.vabs, rows);
-                }
-                try e.run(d.fns.ring_put, .{ rows, 1, 1 }, .{ 256, 1, 1 }, .{ d.kn, d.vabs, d.ringK(ctx, i), d.ringV(ctx, i), @as(c_int, @intCast(c.kvWidth())), @as(c_longlong, @intCast(start)), @as(c_int, @intCast(c.ringRows())) });
-            }
+            if (!try graphs.absorb(d, ctx, tap_ring, start, rows, rows_, prompt)) try graphs.absorbRows(d, ctx, tap_ring, start, rows, rows_);
             start += rows;
             n -= rows;
             ctx.end = start;
@@ -386,6 +387,12 @@ pub const Draft = struct {
         const per = if (d.c.kind == .dspine) d.c.topk * d.c.topk * 4 else d.c.rank * 2; // a table row, or a projected row
         return .{ .table = d.c.kind == .dspine, .words = d.staged.bytes[words_at + base * lp_words * 4 ..][0 .. rows * lp_words * 4], .projected = d.staged.bytes[hp_at + base * per ..][0 .. rows * per], .topk = d.c.topk, .rank = d.c.rank, .predecessor = d.w.predecessor, .successor = d.w.successor, .sampling = d.drawn.sampling, .position = d.drawn.position };
     }
+    pub fn traceCandidates(d: *Draft, ctx: *const Ctx) tree.Candidates {
+        const saved = d.selection_base;
+        d.selection_base = ctx.trace_base;
+        defer d.selection_base = saved;
+        return d.candidates(d.c.block - 1);
+    }
 
     pub fn select(d: *Draft, ctx: *Ctx, pending: u32, rows: usize) void {
         tree.chain(d.candidates(rows), pending, ctx.held[0..rows]);
@@ -408,7 +415,8 @@ pub const Draft = struct {
         if (limit > 0) {
             // the whole budget whenever drafts are asked: the block's forward costs the same at any depth
             const n = if (it.depth == 0) 0 else limit;
-            ctx.grown = tree.grow(d.candidates(rows), it.pending, rows, n, &ctx.held, &ctx.parents, &ctx.own);
+            const capture: ?*tree.GrowTrace = if (d.trace == null or d.trace.?.captures.len == 0) null else &d.trace.?.captures[ctx.trace_base / (d.c.block - 1)];
+            ctx.grown = tree.growTraced(d.candidates(rows), it.pending, rows, n, &ctx.held, &ctx.parents, &ctx.own, capture);
             ctx.held_n = ctx.grown;
         } else {
             d.select(ctx, it.pending, rows);
@@ -417,9 +425,9 @@ pub const Draft = struct {
     }
 
     // the Drafter contract
-
+    pub const drafter_vtable: dr.Drafter.VTable = .{ .taps = tapsFn, .facts = factsFn, .open = openFn, .absorb = absorbFn, .hold = holdFn, .held = heldFn, .release = releaseFn, .tree = treeFn, .chances = chancesFn };
     pub fn drafter(d: *Draft) dr.Drafter {
-        return .{ .kind = if (d.c.kind == .dspine) "DSpine" else "DFlash2", .ptr = d, .vtable = &.{ .taps = tapsFn, .facts = factsFn, .open = openFn, .absorb = absorbFn, .hold = holdFn, .held = heldFn, .release = releaseFn, .tree = treeFn, .chances = chancesFn } };
+        return @import("cuda_prefill_trace.zig").wrapDrafter(d, .{ .kind = if (d.c.kind == .dspine) "DSpine" else "DFlash2", .ptr = d, .vtable = &drafter_vtable });
     }
 
     fn cast(p: *anyopaque) *Draft {
@@ -448,7 +456,7 @@ pub const Draft = struct {
         };
         const ctx = d.pool.pop() orelse try d.create();
         errdefer d.pool.append(d.gpa, ctx) catch d.drop(ctx);
-        ctx.* = .{ .ring = ctx.ring };
+        ctx.* = .{ .ring = ctx.ring, .trace_snapshot = ctx.trace_snapshot };
         try d.streams.put(d.gpa, s, ctx);
     }
 
@@ -470,7 +478,20 @@ pub const Draft = struct {
             ctx.* = d.streams.get(it.stream) orelse return error.UnknownStream;
             frame.scan(ctx.*, it.tokens);
         }
+        if (d.trace) |t| if (d.c.kind == .dflash2) for (contexts[0..items.len], 0..) |ctx, i| {
+            ctx.trace_base = i * (d.c.block - 1);
+            t.captures[i] = .{ .nodes = t.steps[i * (engine.most_window + 1) * lanes.draft_tree.branch ..][0 .. (engine.most_window + 1) * lanes.draft_tree.branch] };
+        };
         try d.forward(items, contexts[0..items.len]);
+        if (d.trace) |t| if (d.c.kind == .dflash2) for (items, contexts[0..items.len], 0..) |it, ctx, i| {
+            ctx.trace_active = !t.broken and it.lanes == null and it.depth > 0 and ctx.grown > 0;
+            if (ctx.trace_active) {
+                ctx.trace_snapshot.save(d.gpa, d.traceCandidates(ctx), &t.captures[i], it.position, it.pending, it.sampling) catch {
+                    ctx.trace_active = false;
+                    t.recordDrop();
+                };
+            }
+        };
     }
 
     fn heldFn(p: *anyopaque, streams: []const *Stream, out: []const []u32) anyerror!void {
@@ -504,7 +525,7 @@ pub const Draft = struct {
     fn releaseFn(p: *anyopaque, s: *Stream) void {
         const d = cast(p);
         if (d.streams.fetchRemove(s)) |kv| {
-            if (kv.value.ring.borrowed) return d.gpa.destroy(kv.value); // its lane's run goes back with the lane
+            if (kv.value.ring.borrowed) return d.drop(kv.value); // its lane's run goes back with the lane
             d.pool.append(d.gpa, kv.value) catch d.drop(kv.value);
         }
     }

@@ -6,6 +6,7 @@ const q = tf.qwen27;
 const lanes = tf.lanes;
 const be = lanes.backend;
 const lb = @import("qwen27_lanes.zig");
+const draft_block = @import("qwen27_draft_block.zig");
 const Metal = lb.Metal;
 const Tree = q.dflash.selector.Tree;
 const Proposal = q.dflash.runtime_model.Model.Proposal;
@@ -74,6 +75,7 @@ pub fn draftFn(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void
         if (r.depth == 0 or room < 2) continue;
         const pending = if (r.rows != null) r.follow[r.follow.len - 1] else try b.value(r.first orelse return error.NoFirstToken);
         const nodes = @import("qwen27_window.zig").proposal(b.window, b.copies, r.depth, @intCast(room), lone);
+        if (b.draft_block.enabled) try g.draft.setTreeBlock(if (lone and slot == 0) b.draft_block.rows(@intFromPtr(r.stream)) else draft_block.wide);
         if (slot == 0) if (g.proposer) |p| {
             b.trees[0] = try p.call(p.ptr, pending, nodes);
             continue;
@@ -168,4 +170,9 @@ pub fn treeFn(ptr: *anyopaque, s: *lanes.Stream, gpa: std.mem.Allocator) anyerro
     const tokens = try gpa.dupe(u32, t.tokens);
     errdefer gpa.free(tokens);
     return .{ .count = @intCast(t.tokens.len), .tokens = tokens, .parents = try gpa.dupe(i32, t.parents) };
+}
+
+/// Streams that draft their own trees in shared rounds, while no more are live (TF_Q27_DRAFT_SLOTS; 1: slot 0 alone).
+pub fn draftSlots() !u32 {
+    return std.math.clamp(try @import("sys").environment.read(u32, "TF_Q27_DRAFT_SLOTS", 8), 1, q.attention_plan.max_streams);
 }

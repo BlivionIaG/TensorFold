@@ -8,7 +8,7 @@ const config = @import("config.zig");
 const segments = @import("../../core/segments.zig");
 const snapshot = @import("snapshot.zig");
 const CallLog = @import("call_log.zig").CallLog;
-const tp_settings = @import("tp_settings.zig");
+const tp_settings = @import("../../core/tp_settings.zig");
 const follow_mod = @import("follow.zig");
 const marks_mod = @import("marks.zig");
 const pack_io = @import("pack_io.zig");
@@ -281,6 +281,7 @@ pub const Engine = struct {
         e.snap_pool.deinit();
         e.peer_drops.deinit(gpa);
         if (e.penalties) |*p| p.deinit(gpa);
+        if (e.r.gx) |g| g.logCounts();
         e.r.deinit();
         e.r.device.deinit();
         e.arena_state.deinit();

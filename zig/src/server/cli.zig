@@ -2,23 +2,13 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const api = @import("engine_api");
+const glp_startup = @import("glp_startup.zig");
 const Allocator = std.mem.Allocator;
-pub const Kind = enum {
-    value, // --flag VALUE or --flag=VALUE
-    store_true, // --flag
-    append, // repeatable --flag VALUE
-};
-pub const Flag = struct {
-    name: []const u8,
-    kind: Kind = .value,
-    choices: []const []const u8 = &.{}, // argparse's choices; empty: any value of the flag's type.
-    /// This binary honours the flag (and lists it in ``capabilities``); the rest are refused as unsupported.
-    native: bool = false,
-    native_values: ?[]const []const u8 = null, // The values it honours when only some of the choices.
-    /// The value names a file or folder: a config file's relative one is read from that file's folder (cli_config.zig).
-    path: bool = false,
-};
-const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else if (served("--backend=rocm")) &.{ "auto", "rocm" } else &.{ "auto", "cuda" };
+/// The serve flag table and its sub-tables (glp_startup.zig) concatenate, so there is one shape only.
+const cli_flag = @import("cli_flag.zig");
+pub const Kind = cli_flag.Kind;
+pub const Flag = cli_flag.Flag;
+const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else if (served("--backend=vulkan")) &.{ "auto", "vulkan" } else if (served("--backend=rocm")) &.{ "auto", "rocm" } else &.{ "auto", "cuda" };
 /// The flags past the common ones the binary's backend serves, from its root's `serves` (test roots: none).
 const native_serves: []const []const u8 = if (@hasDecl(@import("root"), "serves")) @import("root").serves else &.{};
 
@@ -44,11 +34,12 @@ pub const flags = [_]Flag{
     .{ .name = "--port", .native = true },
     .{ .name = "--config", .native = true }, // a TOML file of these flags, read first (cli_config.zig)
     .{ .name = "--unix-socket", .path = true, .native = true },
+    .{ .name = "--listen-fd", .native = true },
     .{ .name = "--name", .native = true },
     .{ .name = "--chat-template", .path = true, .native = true },
     .{ .name = "--voices", .path = true, .native = true },
     .{ .name = "--default-voice", .native = true },
-} ++ @import("drama_cfg.zig").flags ++ @import("admission_cli.zig").flags ++ @import("connection_cli.zig").flags ++ @import("voice_cli.zig").flags ++ [_]Flag{
+} ++ @import("drama_cfg.zig").flags ++ @import("admission_cli.zig").flags ++ @import("connection_cli.zig").flags ++ @import("voice_cli.zig").flags ++ glp_startup.flags ++ [_]Flag{
     .{ .name = "--alias", .kind = .append, .native = true },
     .{ .name = "--name-priority", .kind = .append, .native = true },
     .{ .name = "--api-key", .kind = .append, .native = true },
@@ -133,7 +124,7 @@ pub const flags = [_]Flag{
     .{ .name = "--ple-on-ssd", .kind = .store_true, .native = builtin.os.tag == .macos },
     .{ .name = "--fsr-route-trace", .path = true, .native = builtin.os.tag == .macos },
     .{ .name = "--no-update-check", .kind = .store_true, .native = true },
-    .{ .name = "--backend", .choices = &.{ "auto", "mlx", "cuda", "rocm" }, .native = true, .native_values = backend_values },
+    .{ .name = "--backend", .choices = &.{ "auto", "mlx", "cuda", "rocm", "vulkan" }, .native = true, .native_values = backend_values },
     .{ .name = "--tp", .native = served("--tp") }, // 1 to 64; each family admits its own worlds
     .{ .name = "--pp", .native = served("--tp") }, // 1 until pipeline stages serve (#2005)
     .{ .name = "--rank", .native = served("--tp") },
@@ -164,10 +155,12 @@ pub const flags = [_]Flag{
     // the native server's own: Cortheon's reasoning program and server-run web research for every chat request
     .{ .name = "--cortheon", .kind = .store_true, .native = true },
     .{ .name = "--execution-witness", .kind = .store_true, .native = true }, // GET /v1/execution/witness (witness.zig)
+    // keeps and exposes no request content (confidential.zig)
+    .{ .name = "--confidential", .kind = .store_true, .native = true },
 };
 
 /// The variables this binary honours as the Python engine does, then the CUDA build's or the Metal build's.
-pub const env = [_][]const u8{ "TENSORFOLD_API_KEY", "TENSORFOLD_NO_LIVE", "TENSORFOLD_SEED_SALT", "TENSORFOLD_REQUEST_LOG", "TENSORFOLD_REQUEST_JOURNAL", "TENSORFOLD_TOOL_ID_KEY_FILE", "TENSORFOLD_PHASE_METRICS", "TENSORFOLD_LIBPDFIUM", "TENSORFOLD_MAX_PDF_PAGES", "TENSORFOLD_DEVICE_CHECK", "HF_HOME", "HF_HUB_CACHE", "BRAVE_SEARCH_API_KEY" } ++
+pub const env = [_][]const u8{ "TENSORFOLD_API_KEY", "TENSORFOLD_NO_LIVE", "TENSORFOLD_SEED_SALT", "TENSORFOLD_REQUEST_LOG", "TENSORFOLD_REQUEST_LOG_REPLIES", "TENSORFOLD_REQUEST_JOURNAL", "TENSORFOLD_TOOL_ID_KEY_FILE", "TENSORFOLD_PHASE_METRICS", "TENSORFOLD_LIBPDFIUM", "TENSORFOLD_MAX_PDF_PAGES", "TENSORFOLD_DEVICE_CHECK", "HF_HOME", "HF_HUB_CACHE", "BRAVE_SEARCH_API_KEY", "TENSORFOLD_PARALLEL", "TENSORFOLD_VIDEO_TOKENS", "TF_LOAD_PREFETCH", "TENSORFOLD_PREFILL_SHARE", "TENSORFOLD_PREFILL_BUDGET", "TENSORFOLD_PREFILL_POLICY", "TENSORFOLD_PREFILL_TOKENS", "TENSORFOLD_PREFIX_WAIT_MS", "TENSORFOLD_PRIORITY_AGE_MS", "TENSORFOLD_PRESSURE_CACHE_PERCENT", "TENSORFOLD_RESTORE_PREFETCH", "TENSORFOLD_RESTORE_PREFETCH_GIB", "TENSORFOLD_RESTORE_PREFETCH_MS", "TENSORFOLD_PULL_CONNECT_SECONDS", "TENSORFOLD_PULL_STALL_SECONDS", "TF_CACHE_EVICT", "TF_SHARED_PRICE_LOG", "TF_STARTUP_RECEIPT", "TF_QWEN_PDL", "TENSORFOLD_LOG_TIME", "TENSORFOLD_TOOL_GRAMMAR", "TF_DSV41_TOOL_GRAMMAR", "TF_GLM_WORLD", "TF_GLM_CLEAR_THINKING", "TF_DSV41_SCHEMA_PROMPT", "TF_SLIDE_TAKE_OUT_CHECK" } ++
     (if (cuda_build) [_][]const u8{ "TF_CUDA_DEVICE", "TF_CUDA_SEGMENTS", "TENSORFOLD_CUDA_KERNELS", "TENSORFOLD_MEMORY_RESERVE_GIB", "TENSORFOLD_CUDA_MEMORY_LIMIT_GB", "TENSORFOLD_P2P_DIAGNOSTICS", "TENSORFOLD_P2P_PROBE" } else [_][]const u8{}) ++
     (if (builtin.os.tag == .macos) [_][]const u8{"TF_Q27_PROFILE"} else [_][]const u8{});
 pub const Args = @import("cli_args.zig").Args;
@@ -226,6 +219,8 @@ pub fn parse(a: Allocator, argv: []const []const u8, u: *Usage) error{ Usage, Ou
         try one(a, &out, &repeated, flag, value, u);
     }
     if (out.unix_socket != null) if (builtin.os.tag == .windows) return fail(u, a, "argument --unix-socket: not served on Windows", .{}) else if (tcp_flag) |t| return fail(u, a, "argument --unix-socket: not allowed with {s}", .{t});
+    try @import("listen_fd.zig").check(u, a, out, &repeated, tcp_flag);
+    if (out.confidential and builtin.os.tag == .windows) return fail(u, a, "argument --confidential: not served on Windows", .{});
     out.model = model orelse return fail(u, a, "the following arguments are required: model", .{});
     if ((out.cfg.batched or out.cfg.force_guided) and out.cfg.options() == null) return fail(u, a, "--cfg-batched and --cfg-force-guided need --cfg-gamma or --cfg-allow-request-gamma", .{});
     try ranks(u, a, out);
@@ -243,9 +238,11 @@ pub fn parse(a: Allocator, argv: []const []const u8, u: *Usage) error{ Usage, Ou
     out.allowed_origin = repeated.origins.items;
     out.cors_origin = repeated.cors.items;
     if (out.slide_drift_gate and !out.slide) return fail(u, a, "--slide-drift-gate needs --slide", .{});
-    var env_buf: [192]u8 = undefined; // a prefill variable the lane host would misread: refused here, by name
-    if (api.prefill_env.problem(&env_buf)) |why| return fail(u, a, "{s}", .{why});
+    // a prefill variable the lane host would misread, refused here; --confidential names it later, never its value
+    var env_buf: [192]u8 = undefined;
+    if (!out.confidential) if (api.prefill_env.problem(&env_buf)) |why| return fail(u, a, "{s}", .{why});
     try spillWith(u, a, out);
+    if (try glp_startup.read(a, &out.glp)) |why| return fail(u, a, "{s}", .{why});
     return out;
 }
 
@@ -354,7 +351,7 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
         const p = try int(u, a, name, v);
         if (p < 0 or p > 65535) return fail(u, a, "argument --port: invalid port: '{s}'", .{v});
         out.port = @intCast(p);
-    } else if (is(name, "--unix-socket")) out.unix_socket = v else if (is(name, "--name")) out.name = v else if (is(name, "--alias")) try repeated.alias.append(a, v) else if (is(name, "--name-priority")) try repeated.priorities.append(a, v) else if (is(name, "--api-key")) try repeated.keys.append(a, v) else if (is(name, "--api-key-file")) out.api_key_file = v else if (is(name, "--metrics-open")) out.metrics_open = true else if (is(name, "--dashboard")) out.dashboard = true else if (is(name, "--log-json")) out.log_json = true else if (is(name, "--context")) out.context = try int(u, a, name, v) else if (is(name, "--speed-up")) out.speed_up = v else if (is(name, "--prompt-cache-gib")) out.prompt_cache_gib = try gib(u, a, name, v) else if (is(name, "--prompt-cache-over-cap")) out.prompt_cache_over_cap = true else if (is(name, "--learn")) out.learn = true else if (is(name, "--learn-dir")) {
+    } else if (is(name, "--unix-socket")) out.unix_socket = v else if (is(name, "--listen-fd")) out.listen_fd = try int(u, a, name, v) else if (is(name, "--name")) out.name = v else if (is(name, "--alias")) try repeated.alias.append(a, v) else if (is(name, "--name-priority")) try repeated.priorities.append(a, v) else if (is(name, "--api-key")) try repeated.keys.append(a, v) else if (is(name, "--api-key-file")) out.api_key_file = v else if (is(name, "--metrics-open")) out.metrics_open = true else if (is(name, "--dashboard")) out.dashboard = true else if (is(name, "--log-json")) out.log_json = true else if (is(name, "--context")) out.context = try int(u, a, name, v) else if (is(name, "--speed-up")) out.speed_up = v else if (is(name, "--prompt-cache-gib")) out.prompt_cache_gib = try gib(u, a, name, v) else if (is(name, "--prompt-cache-over-cap")) out.prompt_cache_over_cap = true else if (is(name, "--learn")) out.learn = true else if (is(name, "--learn-dir")) {
         out.learn = true;
         out.learn_dir = v;
     } else if (is(name, "--prompt-cache-disk")) {
@@ -375,7 +372,7 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
     } else if (is(name, "--decode-share")) {
         out.decode_share = try float(u, a, name, v);
         if (!(out.decode_share.? >= 0 and out.decode_share.? < 1)) return fail(u, a, "argument --decode-share: expected a share from 0 to under 1: '{s}'", .{v});
-    } else if (is(name, "--prompt-seed")) out.prompt_seed = true else if (is(name, "--cache-salt-per-key")) out.cache_salt_per_key = true else if (is(name, "--max-tokens")) out.max_tokens = try int(u, a, name, v) else if (is(name, "--temperature")) out.temperature = try float(u, a, name, v) else if (is(name, "--top-p")) out.top_p = try float(u, a, name, v) else if (is(name, "--top-k")) out.top_k = try int(u, a, name, v) else if (is(name, "--min-p")) out.min_p = try float(u, a, name, v) else if (is(name, "--instruct-sampling")) out.instruct_sampling = if (try @import("family_sampling.zig").pairsProblem(a, v)) |why| return fail(u, a, "argument {s}: {s}: '{s}'", .{ name, why, v }) else v else if (is(name, "--thinking")) out.thinking = true else if (is(name, "--no-thinking")) out.thinking = false else if (is(name, "--reasoning-effort")) out.reasoning_effort = v else if (is(name, "--thinking-budget")) out.thinking_budget = try int(u, a, name, v) else if (is(name, "--thinking-reserve")) out.thinking_reserve = try int(u, a, name, v) else if (is(name, "--loop-guard")) out.loop_guard = true else if (is(name, "--loop-guard-stop")) out.loop_guard_stop = true else if (is(name, "--tool-think-close")) out.tool_think_close = true else if (is(name, "--execution-witness")) out.execution_witness = true else if (is(name, "--drafter")) out.drafter = v else if (is(name, "--drafter-bits")) out.drafter_bits = @intCast(try int(u, a, name, v)) else if (is(name, "--record")) out.record = v else if (is(name, "--kv-cache")) out.kv_cache = v else if (is(name, "--prompt-precision")) out.prompt_precision = v else if (is(name, "--no-drafts")) out.no_drafts = true else if (is(name, "--keep-warm")) out.keep_warm = try int(u, a, name, v) else if (is(name, "--idle-unload")) out.idle_unload = try int(u, a, name, v) else if (is(name, "--compact-at")) {
+    } else if (is(name, "--prompt-seed")) out.prompt_seed = true else if (is(name, "--cache-salt-per-key")) out.cache_salt_per_key = true else if (is(name, "--max-tokens")) out.max_tokens = try int(u, a, name, v) else if (is(name, "--temperature")) out.temperature = try float(u, a, name, v) else if (is(name, "--top-p")) out.top_p = try float(u, a, name, v) else if (is(name, "--top-k")) out.top_k = try int(u, a, name, v) else if (is(name, "--min-p")) out.min_p = try float(u, a, name, v) else if (is(name, "--instruct-sampling")) out.instruct_sampling = if (try @import("family_sampling.zig").pairsProblem(a, v)) |why| return fail(u, a, "argument {s}: {s}: '{s}'", .{ name, why, v }) else v else if (is(name, "--thinking")) out.thinking = true else if (is(name, "--no-thinking")) out.thinking = false else if (is(name, "--reasoning-effort")) out.reasoning_effort = v else if (is(name, "--thinking-budget")) out.thinking_budget = try int(u, a, name, v) else if (is(name, "--thinking-reserve")) out.thinking_reserve = try int(u, a, name, v) else if (is(name, "--loop-guard")) out.loop_guard = true else if (is(name, "--loop-guard-stop")) out.loop_guard_stop = true else if (is(name, "--tool-think-close")) out.tool_think_close = true else if (is(name, "--execution-witness")) out.execution_witness = true else if (is(name, "--confidential")) out.confidential = true else if (is(name, "--drafter")) out.drafter = v else if (is(name, "--drafter-bits")) out.drafter_bits = @intCast(try int(u, a, name, v)) else if (is(name, "--record")) out.record = v else if (is(name, "--kv-cache")) out.kv_cache = v else if (is(name, "--prompt-precision")) out.prompt_precision = v else if (is(name, "--no-drafts")) out.no_drafts = true else if (is(name, "--keep-warm")) out.keep_warm = try int(u, a, name, v) else if (is(name, "--idle-unload")) out.idle_unload = try int(u, a, name, v) else if (is(name, "--compact-at")) {
         out.compact_auto = std.mem.eql(u8, v, "auto"); // each occurrence replaces both fields, so the last one wins
         out.compact_fraction = null;
         if (!out.compact_auto) {
@@ -410,7 +407,7 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
         out.redraw.budget_s = try float(u, a, name, v);
     } else if (is(name, "--short-reply-ratio")) out.redraw.short_ratio = try float(u, a, name, v) else if (is(name, "--short-reply-chars-per-s")) out.redraw.short_chars_per_s = try float(u, a, name, v) else if (is(name, "--silence-redraw-controls")) {
         out.redraw.controls = @import("drama_allow.zig").parse(v) catch return fail(u, a, "argument --silence-redraw-controls: expected comma-separated UTF-8 names without square brackets, or an empty list: '{s}'", .{v});
-    } else if (is(name, "--register-redraw-st")) out.redraw.register.st = try float(u, a, name, v) else if (is(name, "--register-redraw-high")) out.redraw.register.high = try float(u, a, name, v) else if (is(name, "--register-high-hz")) out.redraw.register.high_hz = try float(u, a, name, v);
+    } else if (is(name, "--register-redraw-st")) out.redraw.register.st = try float(u, a, name, v) else if (is(name, "--register-redraw-high")) out.redraw.register.high = try float(u, a, name, v) else if (is(name, "--register-high-hz")) out.redraw.register.high_hz = try float(u, a, name, v) else if (is(name, "--glp")) out.glp = glp_startup.withPath(out.glp, v) else if (is(name, "--glp-alpha")) out.glp = glp_startup.withAlpha(out.glp, glp_startup.strength(v) orelse return fail(u, a, "argument --glp-alpha: expected a finite strength above 0: '{s}'", .{v}));
 }
 
 /// ``--parallel``: "auto" is up to 8 requests at once; a number caps it.
@@ -438,12 +435,13 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .drafter = args.drafter,
         .drafter_name = args.drafter_name orelse args.drafter,
         .drafter_bits = args.drafter_bits,
+        .glp = try glp_startup.engine(a, dir, model_type, args.backend, args.glp),
         .rope_yarn = args.rope_yarn,
         .record = args.record,
         .kv8 = std.mem.eql(u8, args.kv_cache, "fp8"),
         .prompt_int8 = std.mem.eql(u8, args.prompt_precision, "int8"),
         .speed_up = args.speed_up,
-        .prompt_cache_gib = args.prompt_cache_gib,
+        .prompt_cache_gib = if (args.confidential) 0 else args.prompt_cache_gib,
         .prompt_cache_over_cap = args.prompt_cache_over_cap,
         .ssd_experts_gib = args.ssd_experts_gib,
         .ple_on_ssd = args.ple_on_ssd,
@@ -463,7 +461,7 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .mtp_drafts = args.mtp_drafts,
         .mtp_confidence = args.mtp_confidence,
         .decode_share = args.decode_share,
-        .keep = args.checkpoint_slots,
+        .keep = if (args.confidential) null else args.checkpoint_slots,
         .tp = args.tp,
         .execution_witness = args.execution_witness,
         .rank = args.rank,
@@ -485,6 +483,7 @@ const cli = @This();
 /// The private flag helpers cli_test.zig checks.
 pub const Test = if (builtin.is_test) struct {
     pub const cuda_build = cli.cuda_build;
+    pub const backend_values = cli.backend_values;
     pub const native_serves = cli.native_serves;
     pub const servedBy = cli.servedBy;
     pub const cudaFlag = cli.cudaFlag;

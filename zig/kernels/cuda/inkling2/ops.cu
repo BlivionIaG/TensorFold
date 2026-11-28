@@ -1,9 +1,8 @@
-// Inkling 2 glue: embedding, block attention-residual mix, row dots, router top-k, softcapped SwiGLU, short convs.
+// Inkling 2 glue: embedding, block attention-residual mix, row dots, router top-k, short convs.
 #include <cstdint>
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_pipeline.h>
-
 #include "exl3_decode.cuh"
 
 namespace ink2o {
@@ -97,10 +96,20 @@ extern "C" __global__ void __launch_bounds__(512) tf_ink2_mix(const MixArgs a) {
         return a.partial_bf16 ? bf(reinterpret_cast<const uint16_t*>(sp)[i]) : reinterpret_cast<const float*>(sp)[i];
     };
     if (a.query) {
-        // every block's sums in one pass and one reduction: each sum adds in the order it did block by block
-        float v[kV];
+        // Normalize each source before its query dot; both passes retain the declared strided/shuffle reduction.
+        float ss[kMaxBlocks + 1] = {};
+        for (int c0 = 0; c0 < C; c0 += kMixCols) {
+            mixStage(a, row, c0, sb, sp);
+            for (int i = threadIdx.x; i < kMixCols && c0 + i < C; i += blockDim.x) {
 #pragma unroll
-        for (int i = 0; i < kV; ++i) v[i] = 0.0f;
+                for (int j = 0; j < kMaxBlocks + 1; ++j)
+                    if (j < n) { const float x = entry(j, i); ss[j] += x * x; }
+            }
+            __syncthreads();
+        }
+        blockSums<kMaxBlocks + 1>(ss, sh);
+        if (threadIdx.x == 0) for (int j = 0; j < n; ++j) rr[j] = rsqrtf(ss[j] / C + 1e-6f); __syncthreads();
+        float v[kV] = {};
         for (int c0 = 0; c0 < C; c0 += kMixCols) {
             mixStage(a, row, c0, sb, sp);
             for (int i = threadIdx.x; i < kMixCols && c0 + i < C; i += blockDim.x) {
@@ -109,26 +118,18 @@ extern "C" __global__ void __launch_bounds__(512) tf_ink2_mix(const MixArgs a) {
 #pragma unroll
                 for (int q = 0; q < kMaxQueries; ++q) qc[q] = q < a.nq ? a.query[static_cast<size_t>(q) * C + c] : 0.0f;
 #pragma unroll
-                for (int j = 0; j < kMaxBlocks + 1; ++j) {
-                    if (j < n) {
-                        const float x = entry(j, i);
-                        v[j * (1 + kMaxQueries)] += x * x;
+                for (int j = 0; j < kMaxBlocks + 1; ++j) if (j < n) {
+                    const float normalized = entry(j, i) * rr[j];
 #pragma unroll
-                        for (int q = 0; q < kMaxQueries; ++q)
-                            if (q < a.nq) v[j * (1 + kMaxQueries) + 1 + q] += x * qc[q];
-                    }
+                    for (int q = 0; q < kMaxQueries; ++q)
+                        if (q < a.nq) v[j * (1 + kMaxQueries) + 1 + q] += qc[q] * normalized;
                 }
             }
-            __syncthreads();  // the next slice overwrites the staged one
+            __syncthreads();
         }
         blockSums<kV>(v, sh);
-        if (threadIdx.x == 0)
-            for (int j = 0; j < n; ++j) {
-                const float r = rsqrtf(v[j * (1 + kMaxQueries)] / C + 1e-6f);
-                rr[j] = r;
-                for (int q = 0; q < a.nq; ++q)
-                    wts[q][j] = v[j * (1 + kMaxQueries) + 1 + q] * r * rsqrtf(static_cast<float>(C));
-            }
+        if (threadIdx.x == 0) for (int j = 0; j < n; ++j) for (int q = 0; q < a.nq; ++q) wts[q][j] =
+            v[j * (1 + kMaxQueries) + 1 + q] * rsqrtf(static_cast<float>(C));
         __syncthreads();
         if (threadIdx.x < a.nq) {
             float* l = wts[threadIdx.x];
@@ -199,18 +200,19 @@ extern "C" __global__ void __launch_bounds__(512) tf_ink2_mix_rows(const MixArgs
     };
     if (a.query) {
         for (int j = 0; j < n; ++j) {
-            float v[1 + kMaxQueries] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float ss[1] = {0.0f};
+            for (int c = threadIdx.x; c < C; c += blockDim.x) { const float x = entry(j, c); ss[0] += x * x; }
+            blockSums<1>(ss, sh); if (threadIdx.x == 0) rr[j] = rsqrtf(ss[0] / C + 1e-6f);
+        }
+        __syncthreads();
+        for (int j = 0; j < n; ++j) {
+            float dots[kMaxQueries] = {0.0f, 0.0f, 0.0f};
             for (int c = threadIdx.x; c < C; c += blockDim.x) {
-                const float x = entry(j, c);
-                v[0] += x * x;
-                for (int q = 0; q < a.nq; ++q) v[1 + q] += x * a.query[static_cast<size_t>(q) * C + c];
+                const float normalized = entry(j, c) * rr[j]; for (int q = 0; q < a.nq; ++q)
+                    dots[q] += a.query[static_cast<size_t>(q) * C + c] * normalized;
             }
-            blockSums<1 + kMaxQueries>(v, sh);
-            const float r = rsqrtf(v[0] / C + 1e-6f);
-            if (threadIdx.x == 0) {
-                rr[j] = r;
-                for (int q = 0; q < a.nq; ++q) wts[q][j] = v[1 + q] * r * rsqrtf(static_cast<float>(C));
-            }
+            blockSums<kMaxQueries>(dots, sh);
+            if (threadIdx.x == 0) for (int q = 0; q < a.nq; ++q) wts[q][j] = dots[q] * rsqrtf(static_cast<float>(C));
         }
         __syncthreads();
         if (threadIdx.x < a.nq) {
@@ -316,52 +318,6 @@ extern "C" __global__ void __launch_bounds__(512) tf_ink2_topk(const float* __re
             wts[row * K + k] = chosen[k] / (t + 1e-20f) * scale;
         }
     }
-}
-
-// The shared gate/up epilogue with Inkling's softcapped SwiGLU: gcap tanh(g/gcap) sigmoid(g) ucap tanh(u/ucap).
-struct GateUpArgs {
-    const float* z;      // [(mat * sk + split) * P + p] * N + col
-    const int* pick;     // int32 [P]
-    const half* svh_g;   // fp16 [E, N]
-    const half* svh_u;   // fp16 [E, N]
-    const half* suh_d;   // fp16 [E, N]
-    half* xd;            // fp16 [P, N]
-    int p, n, sk, experts;
-    float gate_cap, up_cap;
-};
-
-extern "C" __global__ void tf_ink2_gateup(const GateUpArgs a) {
-    using namespace tf_exl3;
-    const int p = blockIdx.x, blk = blockIdx.y;
-    const int e = a.pick[p];
-    if (e < 0 || e >= a.experts) return;
-    const int lane = threadIdx.x;
-    const int n = blk * 128 + 4 * lane;
-    float gv[4], uv[4];
-#pragma unroll
-    for (int j = 0; j < 4; ++j) {
-        float sg = 0.f, su = 0.f;
-        for (int s = 0; s < a.sk; ++s) {
-            sg += a.z[((size_t)(0 * a.sk + s) * a.p + p) * a.n + n + j];
-            su += a.z[((size_t)(1 * a.sk + s) * a.p + p) * a.n + n + j];
-        }
-        gv[j] = sg;
-        uv[j] = su;
-    }
-    fwht128(gv, lane);
-    fwht128(uv, lane);
-    float v[4];
-#pragma unroll
-    for (int j = 0; j < 4; ++j) {
-        const float g = gv[j] * HAD_SCALE * __half2float(a.svh_g[(size_t)e * a.n + n + j]);
-        const float u = uv[j] * HAD_SCALE * __half2float(a.svh_u[(size_t)e * a.n + n + j]);
-        const float act = a.gate_cap * tanhf(g / a.gate_cap) * (1.f / (1.f + expf(-g))) * a.up_cap * tanhf(u / a.up_cap);
-        v[j] = act * __half2float(a.suh_d[(size_t)e * a.n + n + j]);
-    }
-    fwht128(v, lane);
-    half* o = a.xd + (size_t)p * a.n + n;
-#pragma unroll
-    for (int j = 0; j < 4; ++j) o[j] = __float2half_rn(v[j] * HAD_SCALE);
 }
 
 // Short causal conv over a stream's rows (4 taps, last 3 inputs in `state`): static [C][4] or dynamic [4][C] + dyn.

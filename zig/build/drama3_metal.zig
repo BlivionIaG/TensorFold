@@ -14,7 +14,7 @@ pub fn addNative(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
         break :tok t;
     };
     const rounds = b.createModule(.{ .root_source_file = b.path("zig/src/core/frame_rounds.zig"), .target = target, .optimize = optimize });
-    const shim = b.addWriteFiles().add("drama3_core.zig", "pub const safetensors = @import(\"tensorfold\").safetensors;\npub const tokenizer = @import(\"tokenizer\");\npub const frame_rounds = @import(\"frame_rounds\");\npub const torch_pth = @import(\"tensorfold\").torch_pth;\npub const wav = @import(\"tensorfold\").wav;\npub const audio = @import(\"tensorfold\").audio;\n");
+    const shim = b.addWriteFiles().add("drama3_core.zig", "pub const safetensors = @import(\"tensorfold\").safetensors;\npub const tokenizer = @import(\"tokenizer\");\npub const frame_rounds = @import(\"frame_rounds\");\npub const torch_pth = @import(\"tensorfold\").torch_pth;\npub const wav = @import(\"tensorfold\").wav;\npub const audio = @import(\"tensorfold\").audio;\npub const digest_cache = @import(\"tensorfold\").digest_cache;\npub const checkpoint_identity = @import(\"tensorfold\").checkpoint_identity;\n");
     const core = b.createModule(.{ .root_source_file = shim, .target = target, .optimize = optimize, .imports = &.{
         .{ .name = "tensorfold", .module = native.import_table.get("tensorfold").? },
         .{ .name = "tokenizer", .module = tokenizer },
@@ -40,6 +40,8 @@ pub fn metallib(b: *std.Build, metal_std: []const u8) std.Build.LazyPath {
         const cc = b.addSystemCommand(&.{ "xcrun", "-sdk", "macosx", "metal", b.fmt("-std={s}", .{metal_std}), "-fmetal-math-mode=safe", "-fmetal-math-fp32-functions=precise" });
         cc.addPrefixedDirectoryArg("-I", b.path(dir));
         cc.addFileInput(b.path(dir ++ "/d3_common.h"));
+        // codec.metal includes the shared u32 copy macros; a change there must rebuild its .air.
+        if (std.mem.eql(u8, name, "codec.metal")) cc.addFileInput(b.path("zig/kernels/metal/core/copy_u32.metal"));
         cc.addArg("-c");
         cc.addFileArg(b.path(b.fmt("{s}/{s}", .{ dir, name })));
         cc.addArg("-o");

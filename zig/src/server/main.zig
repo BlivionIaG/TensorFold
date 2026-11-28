@@ -10,6 +10,7 @@ const engines = @import("engines.zig");
 const serve = @import("serve.zig");
 const hf_text = @import("hf_text.zig");
 const witness = @import("witness.zig");
+const confidential = @import("confidential.zig");
 const startup = @import("startup.zig");
 const slide_cli = @import("slide_cli.zig");
 const slide_key = @import("slide_key.zig");
@@ -17,13 +18,14 @@ const api = @import("engine_api");
 const recall_open = @import("recall_open.zig");
 const benchmark = @import("benchmark.zig");
 const checkpoint_cli = @import("checkpoint_cli");
+const server_start = @import("start_cli.zig");
 const pdf_worker = @import("pdf_worker.zig");
 const web_cli = @import("web_cli.zig");
 const chat_cli = @import("chat_cli.zig");
 const launch_cli = @import("launch_cli.zig");
 const device_cli = @import("device_cli.zig");
 
-const usage_line = "usage: tensorfold serve [-h] [--config FILE.toml] [--host HOST] [--port PORT] [--unix-socket PATH] [--name NAME] [--chat-template FILE]" ++
+const usage_line = "usage: tensorfold serve [-h] [--config FILE.toml] [--host HOST] [--port PORT] [--unix-socket PATH] [--listen-fd N] [--name NAME] [--chat-template FILE]" ++
     " [--alias ALIAS] [--allowed-host NAME] [--allowed-origin ORIGIN] [--cors-origin ORIGIN] [--api-key API_KEY] [--api-key-file API_KEY_FILE] [--metrics-open] [--dashboard] [--log-json]" ++
     " [--max-inflight N] [--max-inflight-per-key N] [--requests-per-second N] [--request-burst N]" ++
     " [--max-connections N] [--max-connections-per-address N] [--trusted-proxy ADDRESS]" ++
@@ -35,6 +37,7 @@ const usage_line = "usage: tensorfold serve [-h] [--config FILE.toml] [--host HO
     " [--thinking | --no-thinking] [--reasoning-effort {low,medium,high,xhigh}]" ++
     " [--thinking-budget THINKING_BUDGET] [--thinking-reserve THINKING_RESERVE] [--loop-guard] [--loop-guard-stop] [--tool-think-close] [--no-drafts]" ++
     " [--drafter DRAFTER]" ++
+    " [--glp FILE] [--glp-alpha ALPHA]" ++
     " [--drafter-bits {0,4}] [--record RECORD] [--keep-warm SECONDS] [--idle-unload SECONDS]" ++
     " [--silence-floor-dbfs DBFS] [--silence-seconds SECONDS]" ++
     " [--silence-onset-s SECONDS] [--silence-onset-voiced-s SECONDS]" ++
@@ -73,7 +76,7 @@ pub fn main(init: std.process.Init) !u8 {
     // help and a bare run lead with what this machine runs: the saved profile, or a quick scan with no driver
     if (argv.len == 2 and (std.mem.eql(u8, argv[1], "--help") or std.mem.eql(u8, argv[1], "-h") or std.mem.eql(u8, argv[1], "help"))) {
         try std.Io.File.stdout().writeStreamingAll(io, device_cli.summary(init));
-        try std.Io.File.stdout().writeStreamingAll(io, "usage: tensorfold-native --version | capabilities --json | device [--json] [--rescan] | models [--json] | info MODEL | pull REPO[@REVISION] | rm REPO[@REVISION] | log [list|show ID|follow] [PATH] | slide rollback FOLDER | web [ARGS...] | launch <agent> [args...] | slide audit [flags] | serve MODEL [flags] | benchmark MODEL [flags] | chat [MODEL] [flags]\n" ++ usage_line);
+        try std.Io.File.stdout().writeStreamingAll(io, "usage: tensorfold-native --version | capabilities --json | device [--json] [--rescan] | models [--json] | info MODEL | pull REPO[@REVISION] | rm REPO[@REVISION] | tfq3 MODEL [flags] | log [list|show ID|follow] [PATH] | slide rollback FOLDER | web [ARGS...] | launch <agent> [args...] | slide audit [flags] | serve MODEL [flags] | benchmark MODEL [flags] | chat [MODEL] [flags]\n" ++ usage_line);
         return 0;
     }
     if (argv.len >= 2 and std.mem.eql(u8, argv[1], "device")) return device_cli.main(init, argv[2..]);
@@ -94,6 +97,7 @@ pub fn main(init: std.process.Init) !u8 {
         };
     }
     // the checkpoint commands need no model, GPU or driver either
+    if (argv.len >= 2 and std.mem.eql(u8, argv[1], "start")) return server_start.main(init, argv[2..]);
     if (argv.len >= 2 and checkpoint_cli.wants(@ptrCast(argv[1..]))) return checkpoint_cli.main(init, argv[1..]);
     if (argv.len >= 2 and std.mem.eql(u8, argv[1], "slide")) return slide_cli.main(init, argv[2..]);
     log.init(io, false);
@@ -117,7 +121,7 @@ pub fn main(init: std.process.Init) !u8 {
     // a chat with a running server works on every platform; chat_cli.zig refuses its own serve child on Windows
     if (argv.len >= 2 and std.mem.eql(u8, argv[1], "chat")) return chat_cli.main(init, argv[2..]);
     if (argv.len < 2 or !std.mem.eql(u8, argv[1], "serve")) {
-        std.debug.print("{s}usage: tensorfold-native capabilities --json | device [--json] [--rescan] | models [--json] | info MODEL | pull REPO[@REVISION] | rm REPO[@REVISION] | log [list|show ID|follow] [PATH] | slide rollback FOLDER | launch <agent> [args...] | slide audit [flags] | serve MODEL [flags] | benchmark MODEL [flags] | chat [MODEL] [flags]\n", .{if (argv.len < 2) device_cli.summary(init) else ""});
+        std.debug.print("{s}usage: tensorfold-native capabilities --json | device [--json] [--rescan] | models [--json] | info MODEL | pull REPO[@REVISION] | rm REPO[@REVISION] | tfq3 MODEL [flags] | log [list|show ID|follow] [PATH] | slide rollback FOLDER | launch <agent> [args...] | slide audit [flags] | serve MODEL [flags] | benchmark MODEL [flags] | chat [MODEL] [flags]\n", .{if (argv.len < 2) device_cli.summary(init) else ""});
         return 2;
     }
     const started = std.Io.Clock.awake.now(io).toNanoseconds();
@@ -138,6 +142,8 @@ pub fn main(init: std.process.Init) !u8 {
         else => |x| return x,
     };
     if (expanded.path) |path| log.line("config: {s} ({d} options)", .{ path, expanded.options });
+    // before the settings check reads them
+    if (try confidential.enforce(a, args, init.environ_map)) |why| return fail(why);
     if (try engines.environment(a, args)) |why| return fail(why);
     // TENSORFOLD_PARALLEL names the default lanes once the environment check passed; the flag wins.
     if (try @import("sys").environment.parallel(if (args.parallel_named) args.parallel else null, @import("sys").environment.Process.get(.{}, "TENSORFOLD_PARALLEL"))) |text| args.parallel = text;
@@ -149,6 +155,12 @@ pub fn main(init: std.process.Init) !u8 {
         std.debug.print("tensorfold: {s}\n", .{why});
         return 2;
     }
+    if (@import("listen_fd.zig").keyRefusal(args, init.environ_map.get("TENSORFOLD_API_KEY") orelse "")) |why| {
+        std.debug.print("tensorfold: {s}\n", .{why});
+        return 2;
+    }
+    // taken once, before the load: serving keeps the parent recorded now, so an exit during the load stops it
+    const inherited = if (args.listen_fd) |fd| @import("listen_fd.zig").open(fd) orelse return 2 else null;
     api.prompt_cache.status.named.store(args.dashboard, .monotonic); // before any store keeps a state
     if (witness.refusal(args, witness.keysNamed(a, args, init.environ_map.get("TENSORFOLD_API_KEY") orelse ""))) |why| {
         std.debug.print("tensorfold: {s}\n", .{why});
@@ -235,6 +247,7 @@ pub fn main(init: std.process.Init) !u8 {
         .tool_id_key = if (tool_ids) |*key| key else null,
         .witness_binary = witness_binary,
         .witness_text = witness_text,
+        .listener = inherited,
     });
 }
 
@@ -280,7 +293,8 @@ fn fail(message: []const u8) u8 {
 }
 
 fn modelType(a: std.mem.Allocator, io: std.Io, dir: []const u8, problem: *[]const u8) ![]const u8 {
-    const bytes = (try @import("checkpoint_config").read(a, io, dir, problem)) orelse return "unknown";
+    const bytes = (try @import("checkpoint_config").read(a, io, dir, problem)) orelse
+        return if (@import("zonos_request").release.present(io, dir)) "zonos3" else "unknown"; // a release without config.json
     const doc = std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{}) catch return "unknown";
     if (doc != .object) return "unknown";
     const t = doc.object.get("model_type") orelse return "unknown";

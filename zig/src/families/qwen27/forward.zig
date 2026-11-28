@@ -8,6 +8,7 @@ const Config = @import("config.zig").Config;
 pub const Ref = @import("projection.zig").Ref;
 const Frame = @import("gpu_frame.zig").Frame;
 const ane_mlp = @import("ane_mlp.zig");
+const norm_steer = @import("norm_steer_gpu.zig");
 
 pub const Mixer = struct {
     ptr: *anyopaque,
@@ -17,6 +18,8 @@ pub const Mixer = struct {
     /// A pass that keeps no row and has no other reader of the last layer: that layer writes keys and values only.
     keys: ?*const fn (*anyopaque, mtl.ComputeEncoder, usize, wts.Attention, *Frame, u32) anyerror!void = null,
 };
+/// Staged references (tf-qwen27-run only): the stream after each stage, the final norm and the head's rows.
+const stage_planes = @import("stage_planes.zig");
 
 /// One exchange: `x` its index, `ref` this rank's `width` columns of the seam in the window's slot for x.
 pub const Seam = struct { x: u32, ref: Ref };
@@ -84,6 +87,8 @@ pub const Stages = struct {
     norm: ?wts.Tensor = null,
     /// Where the head writes its logits: the frame's, or the MTP head's own (the target's last row stays readable).
     logits: ?Ref = null,
+    /// Whether the target's control-vector plan applies at the block norms; the MTP head's own block sets this false.
+    steer: bool = true,
     /// The rows layer `index`'s post and the final norm run: the tail's on the last layer, else every row.
     fn rowsAt(s: *const Stages, index: usize) Span {
         const f = &s.model.frame;
@@ -95,12 +100,17 @@ pub const Stages = struct {
         if (s.rows == 0 or s.rows > m.frame.capacity or lane.k != 0) return error.BadFrameRows;
         s.hidden = m.frame.get(.hidden);
         s.residual = m.frame.get(.residual);
-        try m.glue.embedding(lane.enc, m.config, m.weights.embed, m.frame.get(.ids), s.hidden, s.rows);
+        if (m.weights.embed_bf16) |t| {
+            try m.glue.embeddingBf16(lane.enc, m.config.hidden, m.config.vocab, wts.ref(t), m.frame.get(.ids), s.hidden, s.rows);
+        } else {
+            try m.glue.embedding(lane.enc, m.config, m.weights.embed, m.frame.get(.ids), s.hidden, s.rows);
+        }
         lane.enc.barrier();
         if (s.images) |rows| {
             m.glue.imageRows(lane.enc, s.hidden, rows, m.frame.get(.takes), @intCast(m.config.hidden), s.rows);
             lane.enc.barrier();
         }
+        if (stage_planes.on) try stage_planes.record(s.model.glue, lane.enc, .embed, s.hidden, s.rows);
     }
     pub fn wait(_: *Stages, _: usize) @import("core").segments.Wait {
         return .mixer;
@@ -112,11 +122,24 @@ pub const Stages = struct {
         const e = lane.enc;
         const layer = layerAt(m, index);
         const h: u32 = @intCast(m.config.hidden);
-        try m.kernels.norm(e, s.hidden, s.pending, wts.ref(layer.norm), f.get(.eps), f.get(.dims), s.residual, f.get(.input), f.get(.sums), h, s.rows);
+        if (m.config.mhc_roles[index] != .none) {
+            const tap: ?@import("loop.zig").TapHook = if (s.hooks.tap) |cb| .{ .ptr = s.hooks.ptr, .cb = cb } else null;
+            try @import("loop.zig").preMhc(&m.mhc.?, &m.kernels, m.config, index, layer, m.weights.mhc[m.config.exec_phys[index]], &s.hidden, &s.residual, &s.pending, f, s.rows, e, tap);
+            return;
+        }
+        // The direction for the block before this one rides along with the norm that adds that block's output.
+        const dir = if (s.pending != null) s.direction(index - 1) else null;
+        if (dir) |d| {
+            try norm_steer.encode(&m.kernels, d.plan, e, s.hidden, s.pending.?, wts.ref(layer.norm), f.get(.eps), f.get(.dims), s.residual, f.get(.input), f.get(.sums), d.buffer, h, s.rows);
+        } else {
+            try m.kernels.normShift(e, s.hidden, s.pending, wts.ref(layer.norm), f.get(.eps), f.get(.dims), s.residual, f.get(.input), f.get(.sums), h, s.rows, m.config.shift_norms);
+        }
         e.barrier();
         if (s.pending != null) {
             std.mem.swap(Ref, &s.hidden, &s.residual);
+            // The residual now holds the output of the block before this one, which is layer `index - 1`.
             if (s.hooks.tap) |tap| try tap(s.hooks.ptr, e, index - 1, s.hidden, s.rows);
+            if (stage_planes.on) try stage_planes.record(s.model.glue, e, .{ .block = index - 1 }, s.hidden, s.rows);
         }
     }
     /// The last layer of a pass whose other rows nothing reads: q, attention, o and the MLP have no reader.
@@ -170,9 +193,14 @@ pub const Stages = struct {
             if (s.reduce.?.broken()) return error.PairFailed;
             e.barrier();
         }
-        try m.kernels.norm(e, t.at(s.hidden, h), t.at(f.get(.output), h), wts.ref(layer.post_norm), f.get(.eps), t.dims, t.at(s.residual, h), t.at(f.get(.input), h), t.sums(f.get(.sums)), h, t.n);
-        e.barrier();
-        std.mem.swap(Ref, &s.hidden, &s.residual);
+        if (m.config.mhc_roles[index] != .none) {
+            try @import("loop.zig").postMhcMid(&m.mhc.?, &m.kernels, m.config, layer, m.weights.mhc[m.config.exec_phys[index]], f, s.rows, e);
+        } else {
+            try m.kernels.normShift(e, t.at(s.hidden, h), t.at(f.get(.output), h), wts.ref(layer.post_norm), f.get(.eps), t.dims, t.at(s.residual, h), t.at(f.get(.input), h), t.sums(f.get(.sums)), h, t.n, m.config.shift_norms);
+            e.barrier();
+            std.mem.swap(Ref, &s.hidden, &s.residual);
+            if (stage_planes.on) try stage_planes.record(s.model.glue, e, .{ .mixer = index }, s.hidden, s.rows);
+        }
         if (layer.moe) |*mo| if (!m.moe.?.sorted(mo, m.kernels.prompt)) {
             // decode rows: the routed block runs the shared expert as one more slot of the experts' kernel
             try m.moe.?.block(lane.enc, m.config, mo, f, s.rows, m.kernels.prompt);
@@ -249,6 +277,13 @@ pub const Stages = struct {
             try m.moe.?.block(lane.enc, m.config, mo, f, s.rows, m.kernels.prompt);
             lane.enc.barrier();
         }
+        if (m.config.mhc_roles[index] != .none) {
+            const tap: ?@import("loop.zig").TapHook = if (s.hooks.tap) |cb| .{ .ptr = s.hooks.ptr, .cb = cb } else null;
+            const next_l: ?wts.Layer = if (index + 1 < m.config.layers) m.weights.layers[index + 1] else null;
+            const next_ml: ?@import("loop.zig").MhcLayer = if (index + 1 < m.config.layers) m.weights.mhc[m.config.exec_phys[index + 1]] else null;
+            try @import("loop.zig").postMhcEnd(&m.mhc.?, &m.kernels, m.config, index, next_l, next_ml, &s.hidden, &s.pending, f, s.rows, lane.enc, tap);
+            return;
+        }
         s.pending = f.get(.output);
     }
     pub fn finish(s: *Stages, lane: *@import("core").segments.Lane) !void {
@@ -260,10 +295,22 @@ pub const Stages = struct {
         const h: u32 = @intCast(m.config.hidden);
         const t = s.rowsAt(m.config.layers - 1);
         const pending: ?Ref = if (s.pending) |p| t.at(p, h) else null;
-        try m.kernels.norm(e, t.at(s.hidden, h), pending, wts.ref(s.norm orelse m.weights.norm), f.get(.eps), t.dims, t.at(s.residual, h), t.at(f.get(.input), h), t.sums(f.get(.sums)), h, t.n);
+        // The last block's output is layer `layers - 1`, and the direction for it rides along with the norm.
+        const dir = if (pending != null) s.direction(m.config.layers - 1) else null;
+        if (dir) |d| {
+            try norm_steer.encode(&m.kernels, d.plan, e, t.at(s.hidden, h), pending.?, wts.ref(s.norm orelse m.weights.norm), f.get(.eps), t.dims, t.at(s.residual, h), t.at(f.get(.input), h), t.sums(f.get(.sums)), d.buffer, h, t.n);
+        } else {
+            try m.kernels.normShift(e, t.at(s.hidden, h), pending, wts.ref(s.norm orelse m.weights.norm), f.get(.eps), t.dims, t.at(s.residual, h), t.at(f.get(.input), h), t.sums(f.get(.sums)), h, t.n, m.config.shift_norms);
+        }
         e.barrier();
         std.mem.swap(Ref, &s.hidden, &s.residual);
+        // The residual now holds the output of the last block, which is layer `layers - 1`.
         if (s.hooks.tap) |tap| try tap(s.hooks.ptr, e, m.config.layers - 1, s.hidden, s.rows);
+        if (stage_planes.on) {
+            // the last block is the residual stream; final is the normed rows the head reads (f.input)
+            try stage_planes.record(m.glue, e, .{ .block = m.config.layers - 1 }, s.hidden, s.rows);
+            try stage_planes.record(m.glue, e, .final, f.get(.input), s.rows);
+        }
         if (s.head == .all and s.rows > @import("gpu_frame.zig").logit_rows) return error.BadFrameRows;
         if (s.head != .none) {
             var input = f.get(.input);
@@ -273,6 +320,10 @@ pub const Stages = struct {
                 head_sums.ref.offset += @as(usize, s.rows - 1) * 4;
             }
             try m.kernels.quant(e, m.weights.head, input, head_sums, f.get(.dims), s.logits orelse f.get(.logits), if (s.head == .last) 1 else s.rows);
+            if (stage_planes.on) if (stage_planes.active != null) {
+                e.barrier();
+                try stage_planes.record(m.glue, e, .logits, f.get(.logits), if (s.head == .last) 1 else s.rows);
+            };
         }
         e.barrier();
         if (s.reduce) |r| {
@@ -288,6 +339,20 @@ pub const Stages = struct {
         }
         if (s.tail) |tail| try tail.encode(tail.ptr, e);
     }
+
+    /// The direction that steers the layer whose residual just landed; none in force (or off) means nothing done.
+    pub fn direction(s: *const Stages, layer: usize) ?Direction {
+        if (!s.steer) return null;
+        const plan = s.model.steer orelse return null;
+        const buffer = plan.dir(@intCast(layer)) orelse return null;
+        return .{ .plan = plan, .buffer = buffer };
+    }
+
+    /// A direction on the device and the plan it belongs to, whose alpha it is added at.
+    pub const Direction = struct {
+        plan: *@import("steer.zig").Plan,
+        buffer: mtl.Buffer,
+    };
 };
 
 /// `e` is the caller's encoder, but seams reopen it: the final one is written back through the pointer, so commit it.

@@ -48,10 +48,14 @@ pub const Config = struct {
     silence_mid: bool = false,
     silence_guard: bool = false,
     cfg: ?@import("drama_cfg.zig").Options = null,
+    /// The flock a voice holds while it synthesizes, so batch work on this GPU gives way (gpu_turn.zig).
+    speech_lock: []const u8 = @import("gpu_turn.zig").path,
     prompt_seed: bool = false, // --prompt-seed: historical prompt-keyed sampling when a request omits its seed
     cache_salt_per_key: bool = false, // --cache-salt-per-key: the matched API key salts each request's prompt cache
     /// TENSORFOLD_REQUEST_LOG: where chat and completion bodies are appended; null: nowhere.
     request_log: ?[]const u8 = null,
+    /// TENSORFOLD_REQUEST_LOG_REPLIES=1: each finished reply is appended beside its request; default 0.
+    request_log_replies: bool = false,
     journal: ?*@import("request_journal.zig").Journal = null, // serve owns TENSORFOLD_REQUEST_JOURNAL
     /// TENSORFOLD_PHASE_METRICS=1: /metrics adds the queue phase's histogram; unset, its families are as before.
     phase_metrics: bool = false,
@@ -74,6 +78,7 @@ pub const Config = struct {
     cortheon_search_key: ?[]const u8 = null,
     /// --learn-conversations: /v1/imprint answers; without it each of its routes refuses and names the flag.
     saved_conversations: bool = false,
+    confidential: bool = false, // --confidential: Responses are stateless, nothing kept for a later read
     timeouts: http_conn.Timeouts = .{},
     max_connections: u32 = @import("http_admission.zig").default_limit,
     /// --max-connections-per-address, --trusted-proxy: one address's share from three quarters full.

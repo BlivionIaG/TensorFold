@@ -10,6 +10,7 @@ const state = @import("../forward/state.zig");
 const mtp = @import("mtp.zig");
 const costs = @import("hip_costs.zig");
 const prefix = @import("prefix.zig");
+const prompt_rows = @import("prompt_rows.zig");
 const hip_prefix = @import("hip_prefix.zig");
 const memory = @import("memory.zig");
 const pages = @import("../forward/pages.zig");
@@ -197,6 +198,7 @@ pub const Hip = struct {
             .max_streams = @intCast(h.e.o.batch_rows),
             .draft_streams = drafting,
             .plain_guard = plain_guard,
+            .copy_guard = plain_guard,
             .window_costs = h.costs.window[0..h.costs.windows],
             .shared_costs = h.costs.shared[0..h.costs.shareds],
             .mtp_step_ms = h.costs.step_ms,
@@ -339,9 +341,19 @@ pub const Hip = struct {
         return lane;
     }
 
-    /// Where the chunk from `at` ends: decoding streams wait less; a readout keeps the chunk (rocBLAS bits by rows).
+    /// Where the chunk from `at` ends: the prompt rows alone, fewer beside decoders; rocBLAS bits keep the chunk.
     pub fn reach(h: *Hip, lane: *Lane, at: usize, limit: usize) !usize {
-        const rows = if (h.e.o.cut_rows > 0) h.e.o.cut_rows else if (lane.readout == null and h.decoding()) h.e.o.policy.fill_rows else prefix.chunk;
+        const o = &h.e.o;
+        const rows = if (o.cut_rows > 0)
+            o.cut_rows
+        else if (lane.readout != null)
+            prefix.chunk
+        else if (h.decoding())
+            o.policy.fill_rows
+        else if (h.e.plain())
+            prefix.chunk
+        else
+            prompt_rows.idle(o.prompt_rows, o.policy);
         const end = prefix.chunkEnd(at, limit, rows);
         if (h.cuts) |c| try c.append(h.gpa, @intCast(end));
         return end;
@@ -547,5 +559,15 @@ test "Qwen HIP facts price plain rounds for a copies-only engine" {
     h.costs.window[0] = .{ .width = 1, .ms = 1 };
     const facts = h.facts();
     try std.testing.expect(facts.plain_guard);
+    try std.testing.expect(facts.copy_guard);
     try std.testing.expect(!facts.mtp and !facts.speculate and !facts.draft_streams);
+    h.head = @ptrFromInt(@alignOf(mtp.Head));
+    const with_head = h.facts();
+    try std.testing.expect(with_head.mtp and with_head.copy_guard);
+    test_engine.o.policy.mtp.drafts = 0;
+    const disabled_head = h.facts();
+    try std.testing.expect(!disabled_head.mtp and disabled_head.copy_guard);
+    h.head = null;
+    h.costs.windows = 0;
+    try std.testing.expect(!h.facts().copy_guard);
 }

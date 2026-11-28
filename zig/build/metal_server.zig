@@ -9,12 +9,13 @@ pub fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     // the HTTP side keeps its safety checks; the engine below it runs at `optimize`
     const tokenizer = engines.import_table.get("tokenizer") orelse b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
     const template = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
+    const checkpoint_cli = @import("cuda.zig").checkpointCli(b, target, .ReleaseSafe, null, engines, engine);
     const exe = b.addExecutable(.{ .name = "tensorfold-native", .root_module = b.createModule(.{
         .root_source_file = b.path("zig/src/server/main.zig"),
         .target = target,
         .optimize = .ReleaseSafe,
         .link_libc = true,
-        .imports = &.{ .{ .name = "core", .module = engine }, .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines }, .{ .name = "living", .module = living }, .{ .name = "checkpoint_cli", .module = b.createModule(.{ .root_source_file = b.path("zig/src/cli/cli.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true, .imports = &.{ .{ .name = "native_engines", .module = engines }, exlr8_build.cliImport(b, target, .ReleaseSafe, engine), .{ .name = "core", .module = engine } } }) } },
+        .imports = &.{ .{ .name = "core", .module = engine }, .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines }, .{ .name = "living", .module = living }, .{ .name = "checkpoint_cli", .module = checkpoint_cli } },
     }) });
     exe.root_module.addOptions("build_options", build_options);
     _ = server_build.addTo(b, exe.root_module, target, .ReleaseSafe);
@@ -87,7 +88,9 @@ pub fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     golden_build.step(b, target, server_tests, api, tokenizer, template, engines);
     engines.addImport("lanes", api.import_table.get("lanes").?);
     b.step("test-draft-metal-host", "Metal draft source metadata without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engines, .filters = &.{"draft sources:"} })).step);
+    b.step("test-qwen35-chunk-startup-metal-host", "Qwen3.5 Metal startup refuses bad TF_QWEN35_CHUNK before checkpoint load").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engines, .filters = &.{"qwen35 startup: TF_QWEN35_CHUNK refuses before the checkpoint loader runs"} })).step);
     b.step("test-drafter-skip-metal-host", "Counted shared draft skips without device execution").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engine, .filters = &.{"zero grant:"} })).step);
+    b.step("test-gemma4-metal-vtable-host", "Gemma 4 Metal steps its prompt passes (#3021), without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engine, .filters = &.{"Gemma Metal steps:"} })).step);
     b.step("test-uocr", "Unlimited-OCR-2's tests (its kernels compile on this GPU)").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engine, .filters = &.{"uocr:"} })).step);
     const embed_host = b.step("test-qwen3-metal-host", "Qwen3 Metal embedding geometry, batch bounds and native refusals without GPU work");
     const embed_air = b.addSystemCommand(&.{ "xcrun", "-sdk", "macosx", "metal", b.fmt("-std={s}", .{mlxMetalStd(b)}), "-fno-fast-math", "-c" });
@@ -100,7 +103,23 @@ pub fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     const flint_draft_host = b.step("test-flint-draft-host", "Flint draft config, taps and first-token metadata without devices");
     for ([_]*std.Build.Module{ engine, api.import_table.get("lanes").? }) |module|
         flint_draft_host.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module, .filters = &.{"Flint DFlash2"} })).step);
-    b.step("test-native", "The Metal engines module's host-side tests").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engines })).step);
+    const native_tests = b.step("test-native", "The Metal engines module's host-side tests");
+    native_tests.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engines })).step);
+    const capabilities = b.createModule(.{ .root_source_file = b.path("zig/src/native/inkling2_capabilities_test.zig"), .target = target, .optimize = .Debug, .link_libc = true });
+    for (engines.import_table.keys(), engines.import_table.values()) |name, module| capabilities.addImport(name, module);
+    capabilities.addImport("native_metal", engines);
+    const capability_run = b.addRunArtifact(b.addTest(.{ .root_module = capabilities }));
+    const capability_step = b.step("test-inkling2-metal-capabilities", "Inkling native Metal checkpoint-format capabilities");
+    capability_step.dependOn(&capability_run.step);
+    native_tests.dependOn(capability_step);
+    test_step.?.dependOn(&capability_run.step);
+    const tfq3_caps = b.createModule(.{ .root_source_file = b.path("zig/src/native/tfq3_capabilities_test.zig"), .target = target, .optimize = .Debug, .link_libc = true });
+    for (engines.import_table.keys(), engines.import_table.values()) |name, module| tfq3_caps.addImport(name, module);
+    tfq3_caps.addImport("native_metal", engines);
+    const tfq3_run = b.addRunArtifact(b.addTest(.{ .root_module = tfq3_caps }));
+    b.step("test-tfq3-metal-capabilities", "The Metal families that offer TFQ3 checkpoints: glm5_next and qwen4_exp only").dependOn(&tfq3_run.step);
+    native_tests.dependOn(&tfq3_run.step);
+    test_step.?.dependOn(&tfq3_run.step);
     const reuse = b.addExecutable(.{ .name = "tf-flashnext-reuse", .root_module = b.createModule(.{
         .root_source_file = b.path("zig/tests/flashnext_reuse.zig"),
         .target = target,

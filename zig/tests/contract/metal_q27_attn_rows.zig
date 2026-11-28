@@ -19,7 +19,7 @@ const u = 0x1p-24;
 const scale = 0.0625;
 
 /// One Mac's head counts (a rank's 12 over 2 merges as a pair, so its rows are not one call's).
-pub const heads = [_]at_.Heads{ .q27b, .gqa16, .q9b };
+pub const heads = [_]at_.Heads{ .q27b, .gqa16, .q9b, .q35b };
 
 /// decode: a round's trees and chains as decode_round.zig plans them; prompt: one chain through the prompt kernel.
 pub const Which = enum { decode, prompt };
@@ -276,7 +276,7 @@ pub const Attn = struct {
         const op = if (t.baseline) &t.base_op.? else &t.op;
         const caches = if (t.baseline) t.base_caches[0..t.rd.streams] else t.caches[0..t.rd.streams];
         const p = t.rig.begin();
-        op.encode(p.e, &s.scratch, &s.binding, s.plan, at_.ref(t.refs[0]), at_.ref(t.refs[1]), at_.ref(t.refs[2]), at_.ref(t.refs[4]), caches, at_.ref(t.refs[3]), t.reg.which == .prompt, t.reg.paged and t.reg.heads == .rank) catch |err| {
+        op.encodeContiguous(p.e, &s.scratch, &s.binding, s.plan, at_.ref(t.refs[0]), at_.ref(t.refs[1]), at_.ref(t.refs[2]), at_.ref(t.refs[4]), caches, at_.ref(t.refs[3]), t.reg.which == .prompt, false) catch |err| {
             p.e.end();
             p.pool.pop();
             return err;
@@ -434,8 +434,8 @@ pub const Suite = struct {
             const x = try s.a.create(Attn);
             errdefer s.a.destroy(x);
             x.* = try Attn.init(s.a, s.device, s.queue, r);
-            try s.attns.append(s.a, x);
-            try s.kernels.append(s.a, x.kernel());
+            errdefer x.deinit();
+            try @import("contract").register(s.a, &s.attns, &s.kernels, x, x.kernel());
         }
     }
 

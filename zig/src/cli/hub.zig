@@ -15,6 +15,7 @@ const titles = [_]struct { model_type: []const u8, title: []const u8 }{
     .{ .model_type = "glm5_next", .title = "GLM-5.3-Flash" },
     .{ .model_type = "mistral3", .title = "Mistral3 wrapper (LightOnOCR-3-1B only)" },
     .{ .model_type = "lighton_ocr", .title = "LightOnOCR-3-1B" },
+    .{ .model_type = "sensenova_loop", .title = "SenseNova Loop" },
     .{ .model_type = "qwen3_5", .title = "Qwen3.5-2B or Qwen3.8-27B" },
     .{ .model_type = "qwen3_5_moe", .title = "Qwen3.5-MoE (Ornith-1.5-122B)" },
     .{ .model_type = "gemma4", .title = "Gemma 4 31B" },
@@ -89,8 +90,26 @@ pub fn revisionOk(text: []const u8) bool {
 
 /// The cached snapshot serving `repo`: refs/main's revision, else the newest snapshot with a config.json.
 pub fn cachedSnapshot(a: Allocator, io: std.Io, hub: []const u8, repo: []const u8) !?[]const u8 {
+    return cachedSnapshotRev(a, io, hub, repo, null);
+}
+
+/// The cached snapshot at one explicit revision, or the ordinary main/newest lookup when revision is null.
+pub fn cachedSnapshotRev(a: Allocator, io: std.Io, hub: []const u8, repo: []const u8, revision: ?[]const u8) !?[]const u8 {
     const dir_name = try repoDirName(a, repo);
     const root = try std.fs.path.join(a, &.{ hub, dir_name });
+    const snapshots = try std.fs.path.join(a, &.{ root, "snapshots" });
+    if (revision) |requested| {
+        if (!revisionOk(requested)) return null;
+        if (readSmall(a, io, try std.fs.path.join(a, &.{ root, "refs", requested }))) |ref| {
+            const rev = std.mem.trim(u8, ref, " \r\n");
+            if (hexSha(rev)) {
+                const snapshot = try std.fs.path.join(a, &.{ snapshots, rev });
+                if (isDir(io, snapshot)) return snapshot;
+            }
+        }
+        const snapshot = try std.fs.path.join(a, &.{ snapshots, requested });
+        return if (isDir(io, snapshot)) snapshot else null;
+    }
     if (readSmall(a, io, try std.fs.path.join(a, &.{ root, "refs", "main" }))) |ref| {
         const rev = std.mem.trim(u8, ref, " \r\n");
         // The ref names the snapshot dir: only a 40-hex git sha is ever joined into a cache path.
@@ -99,7 +118,6 @@ pub fn cachedSnapshot(a: Allocator, io: std.Io, hub: []const u8, repo: []const u
             if (isDir(io, snapshot)) return snapshot;
         }
     }
-    const snapshots = try std.fs.path.join(a, &.{ root, "snapshots" });
     var dir = std.Io.Dir.cwd().openDir(io, snapshots, .{ .iterate = true }) catch return null;
     defer dir.close(io);
     var newest: ?[]const u8 = null;

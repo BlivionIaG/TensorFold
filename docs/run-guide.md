@@ -17,15 +17,37 @@ a container and the tests that need no GPU.
   Its kernels are built with CUDA 13, so TensorFold refuses an older driver at startup; `nvidia-smi` shows the installed one.
   See the [CUDA runbook](../RUNBOOK.md#linux-and-cuda) for runtime libraries and supported GPUs.
   The archive's binary is `tensorfold-native`; the quick start defines a `tensorfold` shell function that calls it.
-- **Windows with an NVIDIA GPU:** follow [the native Windows build guide](WINDOWS.md).
+- **Windows with an NVIDIA GPU:** `tensorfold start` is not available there yet. Follow [the native Windows guide](WINDOWS.md).
+
+## Select, download and prove a model
+
+Or let TensorFold choose on macOS and Linux with `tensorfold start --check`. It prints the selected model and download
+size and asks before downloading. The check prints one reply and stops the server. Selection uses the same machine probe
+and registry as `tensorfold models`, choosing the largest fully pinned checkpoint that fits and `tensorfold pull` can install.
+`--yes` gives download consent explicitly. Without it, a non-interactive run stops before any download; an interactive
+run accepts only `y` or `yes`. A cached model needs no prompt or download. Rows whose Gemma 4 drafts need M5 tensor units are
+served without the drafter on pre-M5 Metal; M5 and CUDA retain it.
+
+The command starts a loopback server and sends one deterministic request. `--check` stops that server after a nonempty
+reply and exits 0; this ephemeral check replaces any caller API key with a private temporary key. Without `--check`, set
+`TENSORFOLD_API_KEY` in the environment first: persistent `start` requires at least one nonempty, valid entry, passes a
+comma-separated list to the child unchanged, and uses its first nonempty trimmed entry for the managed checks. Every entry
+must be UTF-8, at most 256 bytes, and contain no whitespace or control characters. The server accepts each registered entry.
+Send external requests with `Authorization: Bearer KEY`, replacing `KEY` with one accepted entry. Keys are never printed or
+placed in the child arguments. A failed first reply is fatal and the started server is stopped.
+`--startup-timeout SECONDS` sets how long `start` waits for the server to load, above 0 and at most 3600; unset, it
+waits 600 seconds plus 6 for every GB of weights past 20 GB, at most 3600.
+No existing `serve` default or flag changes.
 
 ## Send a request
-
-Leave the server running. In another terminal, on either platform:
+Leave the server running. In another terminal, on either platform, send the persistent credential below. For a
+comma-separated `TENSORFOLD_API_KEY`, substitute one accepted entry for the whole value in the Authorization header.
+An unauthenticated manual `serve` does not need a key:
 
 ```sh
 curl -fsS http://127.0.0.1:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${TENSORFOLD_API_KEY}" \
   -d '{"model":"local-model","messages":[{"role":"user","content":"Say hello in one sentence."}],"max_tokens":128,"temperature":0}'
 ```
 
@@ -91,12 +113,14 @@ The read-only [`/memory` diagnostics](memory-diagnostics.md) report process foot
 available backend allocation counters, and the applied retained-prefix plan without changing memory policy.
 
 The binary's `capabilities --json` response lists its supported flags and platform-specific values.
+The GLP flags are left out where the build cannot serve them (everything but Metal on macOS), though they still parse there so their refusal names the engine.
 `serve MODEL --help` prints usage without loading a model.
 
 | Flag | Meaning |
 | --- | --- |
 | `--host HOST`, `--port PORT` | Listen address and port, default `127.0.0.1:8080`. |
 | `--unix-socket PATH` | Listen on a new owner-only Unix socket at PATH instead of TCP, refused with `--host` or `--port`; macOS and Linux. An existing PATH, or a directory other users can write to (unless sticky, like `/tmp`), is refused, and connections from other users are closed. API keys, `--metrics-open` and the Host check apply as on TCP (a client sends a loopback `Host` or one in `--allowed-host`): the socket's permissions are a second layer, not a substitute for keys. |
+| `--listen-fd N` | Serve the Unix stream socket the parent process passed as descriptor N, bound and usually listening, instead of TCP or a path of its own; macOS and Linux. Only the process that started the server can connect: a connection from any other process, of any user, is closed. When that process exits the server stops at once, without a drain, ending the connections it had taken. Refused with `--unix-socket`, `--host`, `--port`, `--api-key`, `--api-key-file` and `TENSORFOLD_API_KEY`, so it is the only way in. A descriptor that is not an open Unix stream socket already bound to an address is refused by name before the model loads. The server closes its copy at exit but leaves the socket and its path to the parent. |
 | `--profile stable` | Explicitly preserve current defaults; [profiles](profiles.md) describes the initial switch registry and startup report. |
 | `--config FILE.toml` | Read serve flags from a TOML file: a key is a flag without its `--`, and `model` names the model. The command line wins over the file, and a relative path in the file starts at the file's folder. See [serve config files](serve-config.md). |
 | `--name NAME` | Model ID advertised to clients. |
@@ -106,7 +130,8 @@ The binary's `capabilities --json` response lists its supported flags and platfo
 | `--metrics-open` | Allow `/metrics`, `/v1/metrics` and `/v1/load` without a key when API authentication is enabled. |
 | `--dashboard` | Enable the local `/dashboard` page and `/stats` endpoint. |
 | `--log-json` | Write the access, `ended` and `refused` lines as one JSON object each, with `event` set to `access`, `ended` or `refused`. `access` is written when the response starts, with the HTTP status and the request id once assigned. `ended` is written only when the client left or the reply failed, with `prompt` and `tokens`. `refused` is written for an error reply, before its `access` line. Long fields are cut so each line still parses. Off keeps the text lines. |
-| `--execution-witness` | Serve `GET /v1/execution/witness` to read-scoped keys: a snapshot of the running binary, the checkpoint's text files, the serve defaults and settings, or why it is unknown. Needs an API key or `--unix-socket`; see [execution witness](api.md#execution-witness). |
+| `--execution-witness` | Serve `GET /v1/execution/witness` to read-scoped keys: a snapshot of the running binary, the checkpoint's text files, the serve defaults and settings, or why it is unknown. Needs an API key, `--unix-socket` or `--listen-fd`; see [execution witness](api.md#execution-witness). |
+| `--confidential` | Start only when nothing keeps request content on disk, sends it to another process or fetches a URL a request names: `--record`, `--learn` and the flags that imply it (`--prompt-cache-disk` among them), `--recall`, `--slide`, `--spill-gib`, `--compact-memory`, `--fsr-route-trace`, `--cortheon`, `--tp` above 1, `--speed-up`, `--vision-urls`, `--vision-pdf` and `--manage-voices` are refused, and so is any `TENSORFOLD_*`, `TF_*`, `FZ_*`, `GLM_*`, `MCDMA_*` or `XPU_*` variable (`TENSORFOLD_REQUEST_LOG` and `TENSORFOLD_REQUEST_JOURNAL` among them), `DYLD_*`, `LD_*` or `GLIBC_TUNABLES`, and the GPU drivers' dump, injection and capture variables (`CUDA_ENABLE_*`, `CUDA_COREDUMP_*`, `CUDA_INJECTION*`, `NVTX_INJECTION*`, `MTL_CAPTURE*`, `METAL_CAPTURE*`, `MTL_DEBUG_LAYER`, `METAL_DEVICE_WRAPPER_TYPE`, `MTL_SHADER_VALIDATION`) in the environment (named, never their values). Every serving entry point checks this first, before it reads another setting or a key file, so no diagnostic shows a value. The platform loader consumes `LD_PRELOAD`, `LD_AUDIT` and `DYLD_INSERT_LIBRARIES` before `main`; refusing them stops the server from serving in that environment, but does not prevent or undo their injection. A launcher must scrub them before `exec` for that boundary. The process also turns its core dumps off, soft and hard limits, and stops same-user debugger reads: not dumpable on Linux, `PT_DENY_ATTACH` on macOS. On Linux, an existing tracer (`TracerPid` nonzero), or missing, duplicate, malformed, overflowing or unreadable tracer state, refuses startup. Confidential serving requires `mlockall(MCL_CURRENT \| MCL_FUTURE)` over the whole process, covering current and future pages; there is no unlocked fallback. Provision both soft and hard `RLIMIT_MEMLOCK` before launch for model weights, tokenizer, libraries, thread stacks, requests and responses, and later growth, not just the 32 MiB request-body and 1 MiB retained-arena caps. A shell launcher can use `ulimit -l KIB`; Docker or Podman can use `--ulimit memlock=BYTES:BYTES`; a systemd service can set `LimitMEMLOCK=BYTES` under `[Service]`. If the limit is too low, startup refuses with `--confidential could not lock process memory against swap: raise RLIMIT_MEMLOCK (ulimit -l) before restart`. Startup success does not reserve unlimited future mappings: a later mapping or connection-thread stack can still fail when the limit is exhausted. On macOS, `PT_DENY_ATTACH` is applied, but this delivery then refuses confidential startup because Zig has no Darwin `mlockall`; swap protection is not provided there. |
 | `--max-inflight N`, `--max-inflight-per-key N` | Refuse model requests past N in progress at once, overall or per key, with 429; 0, the default, is off. See [admission](api.md#admission). |
 | `--max-connections N`, `--max-connections-per-address N`, `--trusted-proxy ADDRESS` | Open connections at most (default 128); from three quarters full, one address's share (default a quarter, 0 off); addresses never counted for that share, as loopback is not, such as a reverse proxy or Docker's bridge gateway. See [admission](api.md#admission). |
 | `--requests-per-second N`, `--request-burst N` | Refuse a key's model requests past N a second, after a burst; 0, the default, is off. |
@@ -130,11 +155,13 @@ The binary's `capabilities --json` response lists its supported flags and platfo
 | `--drafter DRAFTER` | An external drafter, as a directory or a repo id in the Hugging Face cache, for models that take one (Gemma 4 31B's recipe names its drafter); `none` serves without one. Without the flag, Qwen3.8-27B pairs DFlash2 when the cache holds it (never downloaded, not on HIP): one line names it, and serve runs without it if it does not open. |
 | `--drafter-bits 0\|4` | Drafter weight precision where the model offers a choice: 4 bits (the default), or 0 to keep bf16. Qwen3.8-27B on CUDA takes 4 only. |
 | `--record DIR` | Write each stream's committed tokens, positions and tapped rows under DIR, for drafter training. CUDA Nemotron only; a single stream runs through the lane rounds, and recording stops below 25 GiB free disk. |
+| `--glp FILE` | A GLP control vector whose directions are added to the residual stream, one per layer; off unless given. Qwen3.8-27B on Metal takes one; the file's width and base model must match the checkpoint, and a Gemma checkpoint, CUDA and ROCm are refused. Only add vectors are applied. |
+| `--glp-alpha ALPHA` | The strength the vector applies with, above 0; the file's own `glp.alpha_default` by default. |
 | `--keep-warm SECONDS` | Keep the Metal GPU active while idle for this long after a request, default 900; zero disables it. |
-| `--cfg-gamma GAMMA` | Metal Drama speech: semantic guidance strength, finite 1–5; 0/default disables it. Only reference-conditioned requests are guided. Enabled replies report `X-Cfg-Gamma`; codec heads stay conditional. |
-| `--cfg-allow-request-gamma` | Metal Drama speech: allow a finite 1–5 `X-Cfg-Gamma` request header; invalid values return 400 before engine submission. Without this opt-in, the server's gamma is fixed. |
-| `--cfg-force-guided` | With an enabled Metal Drama guidance policy, exercise the unconditional state even at gamma 1. The semantic mix at 1 remains exact conditional-logit identity. |
-| `--cfg-batched` | With enabled Metal Drama guidance, submit both independent backbone states in one command buffer rather than separate submissions. Weights are shared; extra state is included in admission. Not vectorized batching. |
+| `--cfg-gamma GAMMA` | Drama speech on Metal and CUDA: semantic guidance strength, finite 1–5; 0/default disables it. Only reference-conditioned requests are guided. Enabled replies report `X-Cfg-Gamma`; codec heads stay conditional. |
+| `--cfg-allow-request-gamma` | Drama speech on Metal and CUDA: allow a finite 1–5 `X-Cfg-Gamma` request header; invalid values return 400 before engine submission. Without this opt-in, the server's gamma is fixed. |
+| `--cfg-force-guided` | With an enabled Drama guidance policy, exercise the unconditional state even at gamma 1. The semantic mix at 1 remains exact conditional-logit identity. |
+| `--cfg-batched` | With enabled Drama guidance, run both independent backbone states without a host wait between them: one command buffer on Metal, two streams joined by events on CUDA, rather than separate submissions. Weights are shared; extra state is included in admission. Not vectorized batching. |
 | `--silence-floor-dbfs DBFS` | Drama speech only: explicit frame-power floor for the silence guard, with no default floor. Calibrate below quiet intended speech using public or built-in speech. |
 | `--silence-seconds SECONDS` | Drama speech only: stop after this continuous duration below the explicit floor, retaining audio and reporting `silence`. Unset by default: off; calibrate above intentional pauses. |
 | `--silence-onset-s SECONDS` | Drama speech only: with the silence guard on, stop once this many seconds run below its floor while the synthesis has voiced less than `--silence-onset-voiced-s`, retaining audio and reporting `silence`. Off unless given; must be below `--silence-seconds`. |
@@ -182,6 +209,12 @@ a long conversation. Where the cache cannot keep a whole context, the server als
 at each prompt's history end, so a turn whose template drops the last reply's reasoning resumes there. Replies are
 the same tokens as a fresh prompt pass; `TF_QWEN27_SLOT_RESUME=0` turns both off.
 
+`--glp` reads its file once at startup, and the startup line names the file (escaped), the SHA-256 of its exact bytes and
+that replies are steered, with the strength in force, the layers the file names, the checkpoint the vector was derived from
+and whether the file's own tensor digest matched; a vector derived at another site is reported as a warning, not refused.
+The [control vector guide](control-vectors.md) covers the format, the layer a direction names, the files the server
+refuses and how a vector is brought.
+
 Sampling defaults come from the checkpoint's `generation_config.json`, then serve flags and request fields override them.
 `--context 0` is family-specific; use a positive limit for GLM and inspect the capacity reported at startup.
 The supported environment variables are listed in `capabilities --json`, including API keys, request logging and Hugging Face cache paths.
@@ -191,7 +224,8 @@ The supported environment variables are listed in `capabilities --json`, includi
 
 With `TENSORFOLD_REQUEST_JOURNAL=PATH` set on `serve`, `tensorfold log list`, `tensorfold log show ID` and
 `tensorfold log follow` read what each request asked, what it got back, its token counts and its timings, while the
-server runs; see [the API's request journal section](api.md#request-journal-and-replay).
+server runs. With that variable unset or empty, the same three commands read the `TENSORFOLD_REQUEST_LOG=PATH` file
+instead; see [the API's request journal section](api.md#request-journal-and-replay).
 
 ## Other ways to run
 

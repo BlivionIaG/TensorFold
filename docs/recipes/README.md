@@ -13,6 +13,7 @@ For agent-assisted contributions, read the [TensorFold contributor skill](SKILL.
 | Nemotron 3.5 Lightning | [MLX](nemotron-3.5.md), [Intel Arc, experimental](xpu-arc.md) |
 | Nemotron 3.5 Parse | [Native HIP OCR, validation and qualification limits](nemotron-parse.md) |
 | Nemotron 3.5 Super VL | [Native CUDA on one or two GB10s, images](nemotron-3.5-super-vl.md) |
+| Nemotron 3.5 Transcribe | [Native CUDA on one GB10, the bf16 release, audio input](nemotron-3.5-transcribe.md) |
 | Qwen3.8-27B | [MLX, quantization and CUDA](qwen3.8-27b.md) |
 | Qwen3-Embedding | [Native Metal](qwen3-embedding-metal.md), [HIP](qwen3-embedding-hip.md) |
 | Qwen3.5-2B | [Native Metal preview and CUDA, tied affine 4-bit](qwen3.5-2b-native.md) |
@@ -35,9 +36,25 @@ For agent-assisted contributions, read the [TensorFold contributor skill](SKILL.
 | Recursive Flint | [Native Metal, the publisher's affine 4-bit export, reasoning and tool calls](flint.md) |
 | Unlimited-OCR-2 | [Native Metal, the bf16 release: page images to structured text, 131k context](unlimited-ocr-metal.md) |
 | Muse Spark Open | [EXL3 on CUDA, two-rank DGX Spark, plain decode](muse-spark.md) |
-| Ripple-65B-Preview | [Native Metal, the publisher's NVFP4 and bf16 releases](ripple-65b-metal.md) |
+| Ripple-65B-Preview | [Native CUDA, the publisher's NVFP4 release](ripple-65b-cuda.md), [native Metal, the publisher's NVFP4 and bf16 releases](ripple-65b-metal.md) |
+| Ling-3.0-tiny | [Native CPU on aarch64 Linux, the Q4_K_M GGUF, exact greedy decode from token IDs](ling-3.0-tiny-cpu.md) |
+| SenseNova-Loop-9B | [Native Metal, BF16 and AWQ g128, 512k context, MTP drafts, images](sensenova-loop-9b.md) |
 
 [Persisted serving-state identities](persisted-serving-keys.md) lists the disk owners, their compatibility keys and stale-state host checks.
+
+## Hexagon GGUF inspection
+
+```sh
+tensorfold info --hexagon ./gemma-4-E4B_q4_0-it.gguf
+```
+
+This host-only command checks the GGUF version, selected architecture and geometry metadata, and the names,
+shapes, kinds and file ranges of all 666 text tensors in
+[Google's Gemma 4 E4B IT Q4_0 export](https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/4b4a2c1d584be7264f87aac328a1bc739ce81b6c/gemma-4-E4B_q4_0-it.gguf).
+The expected kinds are Q4_0 for the block matrices, Q6_K for the embeddings, F16 for the per-layer input
+projection, and F32 for the remaining tensors. The check reads the index and metadata and validates tensor
+ranges. It does not verify weight contents. An accepted file is a match for this layout. Device execution is
+unverified.
 
 ## Capability floor
 

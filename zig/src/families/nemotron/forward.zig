@@ -80,6 +80,7 @@ pub const Forward = struct {
     pool: *st.Pool,
     geometry: usize = 0, // routed experts' (rows, simdgroups) variant: 0 generated, i: kernels.geometries[i - 1]
     members: usize = 0, // routed experts' member rows a pass (2 or 4: the shared-unpack kernels; 0: one at a time)
+    serial_attention: bool = false, // pre-M5 paged host verify chains use the one-row attention program
     round: ?layers.RoundArgs = null, // a GPU-side round's Mamba tables and routed rows, written on the GPU (one segment)
     masks: ?*const Masks = null, // structured output's bits (segments with a mask_row)
     route: lesson_route.Route = .{}, // which rows carry the lessons (none set: no row does)
@@ -277,6 +278,59 @@ pub const Forward = struct {
             }
             self.tapAt(e, .h_out, s.h, rows * d * 2);
             self.tapAt(e, .x_out, s.x, rows * d * 2);
+        }
+    }
+
+    /// Partial forward to `layer_sem`; residuals at `layer_lex` -> `tap_lex`, `layer_sem` -> `scratch.h` (bf16).
+    pub fn bodyPartial(
+        forward: Forward,
+        e: *Enc,
+        segs: []const Seg,
+        ids: Buffer,
+        ids_off: usize,
+        layer_lex: usize,
+        layer_sem: usize,
+        tap_lex: Buffer,
+    ) void {
+        var self = forward;
+        self.segs = segs;
+        self.untaught = true;
+        const c = self.c;
+        const s = self.s;
+        const d = c.hidden;
+        var rows: usize = 0;
+        for (segs) |g| rows += g.rows;
+        std.debug.assert(rows >= 1 and rows <= s.rows);
+        std.debug.assert(layer_lex < layer_sem and layer_sem < c.layers);
+        self.embed(e, rows, ids, ids_off, s.h);
+        self.rms(e, rows, s.h, 0, d, self.w.norms[0], s.x, 0, d);
+        self.xsumHidden(e, s.x, 0, s.xs, rows);
+        const t = layers.Tables.of(segs);
+        var mamba: usize = 0;
+        var attention: usize = 0;
+        for (0..layer_sem + 1) |i| {
+            const next = if (i + 1 < c.layers) self.w.norms[i + 1] else self.w.norm_f;
+            switch (self.w.layers[i]) {
+                .mamba => |m| {
+                    layers.mamba(self, e, m, mamba, &t, rows);
+                    self.norm(e, s.delta, next, rows, c.eps);
+                    mamba += 1;
+                },
+                .moe => |m| if (c.bolt) bolt.moe(self, e, m, next, rows, c.eps) else layers.moe(self, e, m, next, rows, c.eps),
+                .attention => |a| {
+                    var kvs: [st.max_rows]layers.Kvs = undefined;
+                    for (segs, 0..) |g, j| kvs[j] = .{ .kv = g.cache.kv[attention], .len = g.cache.len, .rows = g.rows, .tree = false, .deepest = 0, .gpu = null, .gpu_tree = null, .layer = attention };
+                    layers.attention(self, e, a, kvs[0..segs.len], rows);
+                    self.norm(e, s.delta, next, rows, c.eps);
+                    attention += 1;
+                },
+            }
+            if (i == layer_lex) {
+                e.pipe(self.k.get("tf_copy_u32"));
+                e.buf(s.h, 0, 0);
+                e.buf(tap_lex, 0, 1);
+                e.run(.{ (rows * d) / 2, 1, 1 }, .{ 256, 1, 1 });
+            }
         }
     }
 

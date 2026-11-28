@@ -69,6 +69,7 @@ const linux_compile = [_][]const u8{
 
 const linux_deepseek = [_][]const u8{
     "test-dsv41-device-host",
+    "test-dsv41-exl3-experts-host",
     "test-dsv41-forward",
     "test-dsv41-wait-reasons-host",
     "test-sessions-writes-host",
@@ -171,10 +172,14 @@ const linux_host = [_][]const u8{
     "test-flashnext-proposal-pack-host",
     "test-flashnext-rotary-bound-host",
     "test-flashnext-single-session-host",
+    "test-flashnext-ssd-budget-host",
+    "test-flashnext-ssd-review-host",
+    "test-flashnext-load-admission",
     "test-flashnext-vision-contracts-host",
     "test-flashnext-vision-memory-host",
     "test-gemma4-config",
     "test-gemma4-load-parts-host",
+    "test-gemma4-metal-steps-host",
     "test-gemma4-owners-host",
     "test-gemma4-prompt-head-host",
     "test-glm-dflash-host",
@@ -188,6 +193,7 @@ const linux_host = [_][]const u8{
     "test-glm-ring-host",
     "test-glm-scheduling-host",
     "test-glm-structured-host",
+    "test-glm-tfq3-host",
     "test-group-sums-stress-host",
     "test-inc4-round-host",
     "test-inc4-rows-host",
@@ -201,6 +207,7 @@ const linux_host = [_][]const u8{
     "test-living-shards-host",
     "test-merge",
     "test-metal-residency-host",
+    "test-metal-residency-owners-host",
     "test-nemotron-copies-host",
     "test-omni-slide-host",
     "test-omni-video-host",
@@ -282,7 +289,6 @@ const macos_adapters = [_][]const u8{
     "test-drama-metal-quant-host",
     "test-exl3",
     "test-flashnext-driver-host",
-    "test-flashnext-load-admission",
     "test-flashnext-pack-cache",
     "test-gguf-linux-compile",
     "test-h3-modulation-bf16",
@@ -317,6 +323,9 @@ const macos_deepseek = [_][]const u8{
 };
 
 const macos_fast = [_][]const u8{
+    "test-flashnext-load-admission",
+    "test-flashnext-ssd-budget-host",
+    "test-flashnext-ssd-review-host",
     "check-qwen27-speed-host",
     "test-cluster-membership-host",
     "test-glm-disk-charge-host",

@@ -40,7 +40,6 @@ pub const deviceName = cuda_device.deviceName;
 /// `capabilities --json`'s "p2p": NVML's GPUs and pairs on a host with two or more; null otherwise.
 pub const p2p = cuda.p2p_report.compact;
 pub const kernelSupport = cuda_device.kernelSupport;
-const getenv = cuda_device.getenv;
 const setting = cuda_device.setting;
 const windows = @import("cuda_window.zig");
 const modelContext = windows.modelContext;
@@ -153,7 +152,8 @@ pub const Host = struct { // One loaded model behind the lane host: everything t
         return .{ .ptr = h, .round_observer = h.inner.round_observer, .vtable = &h.vtable, .first_before_draft = h.inner.first_before_draft, .penalties = h.inner.penalties, .chunk_invariant = h.inner.chunk_invariant, .warm_images = h.inner.warm_images };
     }
 };
-const refusals = @import("cuda_refusal.zig");
+pub const refusals = @import("cuda_refusal.zig");
+pub const metal_spill = @import("metal_spill.zig");
 const open_family = @import("cuda_open.zig");
 const record = @import("cuda_record.zig");
 /// The engine for `o.dir`, or null with `problem` set when `refusal` names a flag or no CUDA family reads it.
@@ -163,7 +163,10 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     if (try refusals.startup(a, o, problem)) return null;
     if (@import("save_admission.zig").refused(io, o.dir, problem)) return null;
     // a checkpoint that serves pictures rather than tokens: its model_index.json decides, before any family's flags
-    if (@import("moss_image_spec.zig").recognize(a, io, o.dir)) return @import("moss_image_host.zig").open(a, gpa, io, o, problem);
+    const moss_image = @import("moss_image_spec.zig").recognize(a, io, o.dir);
+    const targets: refusals.Targets = .{ .built_sm = cuda.kernels.built_sm, .sms = cuda.kernels.target_sms };
+    if (try refusals.sm110Startup(a, io, o, moss_image, targets, cuda_device.selectedCapability, problem)) return null;
+    if (moss_image) return @import("moss_image_host.zig").open(a, gpa, io, o, problem);
     if (refusals.backend(o)) |why| {
         problem.* = why;
         return null;
@@ -173,25 +176,23 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         .not_mine => {},
         .opened => |engine| return engine,
     }
-    inline for (registry) |F| if (std.mem.eql(u8, o.model_type, F.model_type)) return openWith(F, a, gpa, io, o, problem);
+    const at = @import("cuda_alias.zig").which(o.model_type);
+    inline for (registry, 0..) |F, i| if (at == i) return openWith(F, a, gpa, io, o, problem);
     problem.* = try std.fmt.allocPrint(a, "the native CUDA engine has no backend for {s} checkpoints yet", .{o.model_type});
     return null;
 }
 fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: api.Open, problem: *[]const u8) !?api.Opened {
-    const o = family_memory.familyOpen(F, asked);
-    if (try refusals.place(F, a, o)) |why| { // a rank inside its world, a world the family serves: before admission
-        problem.* = why;
-        return null;
-    }
+    const resolved = (try @import("cuda_launch.zig").resolve(F, a, asked, problem)) orelse return null; // resolved and placed, before admission
+    const o = family_memory.familyOpen(F, resolved);
     if (refusals.family(F, o)) |why| {
         problem.* = why;
         return null;
     }
-    // a family whose rope can stretch (Qwen's YaRN, from its config or --rope-yarn) names its own ceiling
+    // the window: a stretched rope's own ceiling (Qwen's YaRN), else a family's trained_context, else config.json's
     const own = if (comptime @hasDecl(F, "contextCeiling")) F.contextCeiling(a, io, o.dir, o.rope_yarn) catch |e| {
         problem.* = try std.fmt.allocPrint(a, "{s} ({s}): YaRN takes rope_type yarn, factor, original_max_position_embeddings and their product as max_position_embeddings, and --rope-yarn a factor from 1 matching it", .{ if (o.rope_yarn != null) "--rope-yarn" else "the checkpoint's rope scaling", @errorName(e) });
         return null;
-    } else modelContext(a, io, o.dir);
+    } else if (comptime @hasDecl(F, "trained_context")) F.trained_context else modelContext(a, io, o.dir);
     // a family with no positions to stretch (GLM-5.3-Flash) raises it with a row of its own, read at its open
     const raised = windows.familyCeiling(F, problem) catch return null;
     const native: i64 = if (raised.window) |n| @intCast(n) else own;
@@ -246,6 +247,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         problem.* = try std.fmt.allocPrint(a, "{s}{d}: this machine has {d} CUDA device{s} (0 to {d})", .{ named, device, count, if (count == 1) "" else "s", @max(count, 1) - 1 });
         return null;
     }
+    try @import("cuda_schedule.zig").apply(&g.driver, @intCast(device)); // TF_CUDA_SCHED, before the context starts
     g.ctx = try cuda.Context.init(&g.driver, @intCast(device));
     defer if (!opened) g.ctx.deinit();
     bound = &g.ctx;
@@ -256,7 +258,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         problem.* = try std.fmt.allocPrint(a, "--slide learns on a GB10 (sm_121) so far, and this {s} is sm_{d}: serve it without --slide", .{ name, capability });
         return null;
     }
-    const kernels: ?[]const u8 = switch (try cuda.aot.pick(a, io, getenv("TENSORFOLD_CUDA_KERNELS"), capability)) {
+    const kernels: ?[]const u8 = switch (try cuda.aot.pick(a, io, @import("sys").environment.rawText("TENSORFOLD_CUDA_KERNELS"), capability)) {
         .native => null,
         .captured => |dir| dir,
         .missing => |dir| {
@@ -264,7 +266,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
             return null;
         },
     };
-    const witness = if (cuda_witness.wanted(F, o)) try cuda_witness.Witness.openOrFailed(gpa, io, o.dir, kernels) else null; // before the load
+    const witness = if (cuda_witness.wanted(F, o)) try cuda_witness.openOrFailed(gpa, io, o.dir, kernels) else null; // before the load
     defer cuda_witness.release(witness);
     const before = try pool(a, io, &g.ctx, problem) orelse return null;
     // a family split over hosts holds only its rank's share (GLM-5.3-Flash's TP)
@@ -364,18 +366,21 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         low = try std.fmt.allocPrint(a, " on rank {d}, the smallest room of the ranks", .{pr.rank});
     };
     const free = loaded.free_streams;
-    const counted = try @import("cuda_streams.zig").count(F, a, loaded, o, .{ .room = room, .model = model, .reserve = after.reserve, .low = low, .window = window, .stream_bytes = served.stream_bytes, .host_cache = host_cache, .host_budget = staging_budget, .share = share }, problem) orelse return null;
+    var counted = try @import("cuda_streams.zig").count(F, a, loaded, o, .{ .room = room, .model = model, .reserve = after.reserve, .low = low, .window = window, .stream_bytes = served.stream_bytes, .host_cache = host_cache, .host_budget = staging_budget, .share = share }, problem) orelse return null;
     const streams = counted.streams;
     const held = served.stream_bytes * (streams -| free);
     const cache_room = @import("cuda_streams.zig").cacheRoom(room, served.stream_bytes, free, counted);
     const final_host_budget = if (host_cache and @hasDecl(F, "snap_save")) budget.hostCacheBytes(a, io, o.prompt_cache_gib, cache_room.room, cache_room.streams, after.unified) else 0;
     const layout = counted.layout;
-    const paged = counted.paged;
+    var paged = counted.paged;
     if (!try kv_pages.attach(F, a, loaded.ctx, paged, counted.planned, problem) or !try drafted.price(F, a, io, &g.ctx, o.dir, loaded.ctx, &served, problem)) return null;
     served.reserve(streams) catch |e| {
         problem.* = try std.fmt.allocPrint(a, "the native CUDA engine cannot reserve {d} streams' caches at a {d}-token window ({s}): serve fewer with --parallel, or lower --context", .{ streams, window, @errorName(e) });
         return null;
     };
+    var pool_sizing: ?api.CudaPoolSizing = null;
+    if (!try @import("cuda_pool_after_warmup.zig").apply(F, a, gpa, io, &g.ctx, loaded, o, &served, weights, held0, after, &counted, &pool_sizing, problem)) return null;
+    paged = counted.paged;
     const h = try gpa.create(Host);
     errdefer gpa.destroy(h);
     h.* = .{ .gpa = gpa, .gpu = g, .family = loaded.ctx, .release = loaded.deinit, .inner = served.backend, .served = served, .vtable = undefined, .cfg = undefined, .clock = undefined, .core = undefined, .host = undefined, .lone = if (@hasField(L, "lone")) loaded.lone else null };
@@ -390,8 +395,8 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
     if (counted.ledger) |lp| shown[0] = try @import("cuda_ledger.zig").text(a, lp, window);
     const cache_text = try kv_pages.cacheText(a, kv_pages.ownCache(loaded) or share, counted.slots, paged, layout, counted.planned, shown[1]);
     h.startup = try std.fmt.allocPrint(gpa, @import("cuda_startup.zig").format, .{
-        capability, device,                                                                                                       name, if (after.unified) ", memory shared with the host" else "", toGib(model), if (learn_bytes > 0) try std.fmt.allocPrint(a, " and {d:.2} GiB kept for --slide's trainer", .{toGib(learn_bytes)}) else "", streams, if (streams == 1) "" else "s", shown[0], toGib(room), toGib(after.reserve), @import("cuda_startup.zig").rows(F, loaded), if (segments > 1) try std.fmt.allocPrint(a, ", {d} staggered segments a call", .{segments}) else "",
-        cache_text, if (kernels) |dir| try std.fmt.allocPrint(a, "glue kernels captured at {s}", .{dir}) else "own glue kernels",
+        capability, device,                                                                                                       name,                                                           if (after.unified) ", memory shared with the host" else "", toGib(model), if (learn_bytes > 0) try std.fmt.allocPrint(a, " and {d:.2} GiB kept for --slide's trainer", .{toGib(learn_bytes)}) else "", streams, if (streams == 1) "" else "s", shown[0], toGib(room), toGib(after.reserve), @import("cuda_startup.zig").rows(F, loaded), if (segments > 1) try std.fmt.allocPrint(a, ", {d} staggered segments a call", .{segments}) else "",
+        cache_text, if (kernels) |dir| try std.fmt.allocPrint(a, "glue kernels captured at {s}", .{dir}) else "own glue kernels", try @import("cuda_pool_after_warmup.zig").text(a, pool_sizing),
     });
     errdefer gpa.free(h.startup);
     if (@hasDecl(F, "snap_save") and cache > 0 and !kv_pages.ownCache(loaded) and !share) {
@@ -399,7 +404,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         const store = try gpa.create(pc.Store);
         errdefer gpa.destroy(store);
         // rules and budget from the family's snap_* declarations (cuda_snaps.zig)
-        const image: ?*const pc.rows.Image = if (F == nemotron.native) &cuda_disk.image else if (comptime cuda_disk.keptDisk(F)) |K| &K.image else null;
+        const image: ?*const pc.rows.Image = if (F == nemotron.native) &cuda_disk.image else if (F == @import("glm_cuda").native) &@import("cuda_glm_disk.zig").image else if (comptime cuda_disk.keptDisk(F)) |K| &K.image else null;
         const copies: pc.Snapshots = .{ .ptr = loaded.target, .vtable = &snaps.Snaps(F, image).vtable };
         var rules = snaps.passRules(F, @import("cuda_startup.zig").rows(F, loaded));
         if (o.tp != 1) rules.warm = .off; // no warm passes across ranks: the cache keeps as without warm turns
@@ -413,7 +418,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         try kv_pages.store(F, store, loaded, kept); // its snapshot slots, before a disk probe takes one
         h.store = store;
         if (o.learn_conversations) if (o.learn) |root| {
-            if (F == nemotron.native) try cuda_disk.attach(a, io, &g.ctx, o, root, kernels, loaded, store);
+            if (F == nemotron.native) try cuda_disk.attach(a, io, &g.ctx, o, root, kernels, loaded, store) else if (F == @import("glm_cuda").native) try @import("cuda_glm_disk.zig").attach(a, io, &g.ctx, o, root, kernels, loaded, store);
             if (comptime cuda_disk.keptDisk(F)) |K| try cuda_disk.attachKept(K, F.model_type, a, io, &g.ctx, o, root, kernels, loaded, store);
         };
     }
@@ -467,6 +472,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         .prefill_step = snaps.requestStep(F),
         .prefill_min_chunk = snaps.requestMinimum(F),
         .startup = h.startup,
+        .cuda_pool_after_warmup = pool_sizing,
         .policy = if (@hasField(@TypeOf(loaded), "policy")) loaded.policy else "",
         .prompt_cache = h.store != null,
         .decode_share = o.decode_share,
@@ -478,6 +484,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         .penalties = served.backend.penalties,
         .structures = served.backend.vtable.first_masked != null,
         .vision = if (@hasField(@TypeOf(loaded), "vision")) vision_offer.offer(loaded.vision, o.vision) else null,
+        .audio = if (@hasField(@TypeOf(loaded), "audio")) vision_offer.audio(loaded.audio) else null,
         .admit = admit,
         .ledger = @import("cuda_ledger.zig").info(if (h.kv_plan) |*p| p else null),
         .slide_conversations = conversations,
@@ -501,6 +508,7 @@ const familyInfo = @import("cuda_family_info.zig").familyInfo;
 test {
     _ = @import("cuda_qwen_host_test.zig");
     _ = @import("cuda_family_info.zig");
+    _ = @import("cuda_alias.zig");
     _ = @import("moss_image_host_test.zig");
     _ = @import("draft_sources_cuda_test.zig");
     _ = @import("copy_drafts_nemotron_test.zig");
@@ -555,8 +563,10 @@ test {
     _ = kv_pages;
     _ = drafted;
     _ = cuda_disk; // its tests run under test-cuda-disk-open-host's filter
+    _ = @import("cuda_glm_disk.zig");
     _ = @import("cuda_disk_identity_test.zig");
     _ = cuda_witness;
+    _ = @import("cuda_pool_after_warmup.zig");
 }
 test "Learner ownership: actual native close drains Nemotron before any source, trainer or parent free" {
     try @import("nemotron_trainer_test.zig").run(Host, Host.serve, Host.close, false);

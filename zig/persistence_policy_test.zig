@@ -23,6 +23,15 @@ test "persistence identity: Qwen Metal loaded ANE columns miss with the same pro
     try fixture.misses(before, matching, &.{ other_share, qwen.withPolicy(7, &h) });
 }
 
+test "persistence identity: Qwen Metal control vector and strength miss with the same probe" {
+    var file_sha: [32]u8 = @splat(0x13);
+    const before = qwen.withSteering(7, &file_sha, 0.75);
+    const matching = qwen.withSteering(7, &file_sha, 0.75);
+    const stronger = qwen.withSteering(7, &file_sha, 1.5);
+    file_sha[31] ^= 1;
+    try fixture.misses(before, matching, &.{ qwen.withSteering(7, &file_sha, 0.75), stronger, 7 });
+}
+
 test "persistence identity: GLM Metal resolved policy misses with the same probe" {
     const Config = @import("src/families/glm/config.zig").Config;
     const Prompt = struct { rows: u32 = 4096, sparse_nax: bool = true };
@@ -156,6 +165,7 @@ test "persistence identity: Nemotron Metal coop K-slice split misses with the sa
 }
 
 test "persistence identity: Flash Next Metal actual pack rewrite misses with the same source and probe" {
+    if (!@import("src/core/digest_key.zig").persistent) return error.SkipZigTest;
     const a = t.allocator;
     var tmp = t.tmpDir(.{});
     defer tmp.cleanup();
@@ -170,11 +180,27 @@ test "persistence identity: Flash Next Metal actual pack rewrite misses with the
     const other = try tmp.dir.openFile(t.io, "other.safetensors", .{});
     defer other.close(t.io);
     const files = [_]c_int{ file.handle, other.handle };
-    const before = try flash.withFiles(7, a, t.io, &files);
-    const matching = try flash.withFiles(7, a, t.io, &.{ other.handle, file.handle });
+    const dc = @import("src/core/digest_cache.zig");
+    const policy = @import("src/native/persistence_policy.zig");
+    const root = try tmp.dir.realPathFileAlloc(t.io, ".", a);
+    defer a.free(root);
+    const cache: dc.Cache = .{ .root = root };
+    for ([_][]const u8{ "pack.safetensors", "other.safetensors" }, files) |name, fd| {
+        const path = try std.fs.path.join(a, &.{ root, name });
+        defer a.free(path);
+        const opened: std.Io.File = .{ .handle = fd, .flags = .{ .nonblocking = false } };
+        try cache.remember(a, t.io, path, try dc.Key.of(opened, t.io), @import("src/families/flashnext/pack_io.zig").hashBytes(&pack_bytes));
+    }
+    try t.expectError(error.UnverifiedPersistence, flash.withFiles(7, a, t.io, &files));
+    const before = try policy.filesWithCache(7, a, t.io, &files, root);
+    const matching = try policy.filesWithCache(7, a, t.io, &.{ other.handle, file.handle }, root);
     pack_bytes[pack_bytes.len - 1] = 1;
     try fixture.rewrite(tmp.dir, "pack.safetensors", &pack_bytes);
-    try fixture.misses(before, matching, &.{try flash.withFiles(7, a, t.io, &files)});
+    try t.expectError(error.DigestFileChanged, policy.filesWithCache(7, a, t.io, &files, root));
+    const path = try std.fs.path.join(a, &.{ root, "pack.safetensors" });
+    defer a.free(path);
+    try cache.remember(a, t.io, path, try dc.Key.of(file, t.io), @import("src/families/flashnext/pack_io.zig").hashBytes(&pack_bytes));
+    try fixture.misses(before, matching, &.{try policy.filesWithCache(7, a, t.io, &files, root)});
     try t.expectError(error.IdentityFileUnavailable, flash.withFiles(7, a, t.io, &.{-1}));
 }
 

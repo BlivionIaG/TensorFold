@@ -10,14 +10,17 @@ const blobName = single.blobName;
 const downloadRetrying = single.downloadRetrying;
 const linkIntoSnapshot = single.linkIntoSnapshot;
 const revisionOk = hub.revisionOk;
+const credential = @import("sys").credential;
 const route = @import("pull_route.zig");
 
 pub const GiB: u64 = 1 << 30;
 const revision_json_bytes = 1 << 20;
 const tree_json_bytes = 16 << 20;
 const config_json_bytes = 1 << 20;
-/// Where files switch to shared pieces, and how big a piece is (tests use small ones).
-pub const Sizes = struct { threshold: u64 = ranged.threshold, piece: u64 = ranged.piece };
+/// Whether an ordinary inference pull or an explicit conversion admits the model type.
+pub const Admission = enum { inference, conversion };
+/// Where files switch to shared pieces, how big a piece is, and which config admission applies.
+pub const Sizes = struct { threshold: u64 = ranged.threshold, piece: u64 = ranged.piece, admission: Admission = .inference };
 
 /// A large LFS file on the shared queue, named by its sha256 once its bytes check out.
 const Big = struct { entry: Entry, blob: []const u8, file: ranged.File };
@@ -25,6 +28,11 @@ const Big = struct { entry: Entry, blob: []const u8, file: ranged.File };
 /// Downloads ``repo[@revision]`` into the cache and prints where it landed. Returns the exit code.
 pub fn run(a: Allocator, io: std.Io, out: *std.Io.Writer, err_out: *std.Io.Writer, env: ?*const std.process.Environ.Map, override: ?[]const u8, spec: []const u8) !u8 {
     return runWith(a, io, out, err_out, env, override, spec, .{});
+}
+
+/// Conversion keeps the ordinary download checks while admitting unregistered model types.
+pub fn runForConversion(a: Allocator, io: std.Io, out: *std.Io.Writer, err_out: *std.Io.Writer, env: ?*const std.process.Environ.Map, override: ?[]const u8, spec: []const u8) !u8 {
+    return runWith(a, io, out, err_out, env, override, spec, .{ .admission = .conversion });
 }
 
 pub fn runWith(a: Allocator, io: std.Io, out: *std.Io.Writer, err_out: *std.Io.Writer, env: ?*const std.process.Environ.Map, override: ?[]const u8, spec: []const u8, sizes: Sizes) !u8 {
@@ -36,7 +44,6 @@ pub fn runWith(a: Allocator, io: std.Io, out: *std.Io.Writer, err_out: *std.Io.W
         return 2;
     }
     const auth = try Auth.init(a, io, env, err_out) orelse return 1;
-    const endpoint = auth.endpoint;
     if (!try routes(a, io, err_out, env)) return 2;
     const root = try hub.cacheDir(a, env, override);
     const w = std.Io.Dir.cwd();
@@ -61,7 +68,7 @@ pub fn runWith(a: Allocator, io: std.Io, out: *std.Io.Writer, err_out: *std.Io.W
             return 1;
         },
         else => {
-            try err_out.print("{s}@{s}: the hub at {s} is unreachable: ", .{ repo, revision, endpoint });
+            try err_out.print("{s}@{s}: the hub at the configured HF_ENDPOINT is unreachable: ", .{ repo, revision });
             try route.explain(io, err_out, e);
             try err_out.writeAll("; check the network, HF_ENDPOINT or the proxy settings\n");
             return 1;
@@ -73,6 +80,10 @@ pub fn runWith(a: Allocator, io: std.Io, out: *std.Io.Writer, err_out: *std.Io.W
         error.HubDenied => return auth.refuse(err_out, repo),
         error.HubTooLarge => {
             try err_out.print("{s}@{s}: file tree exceeds its decompressed byte cap\n", .{ repo, revision });
+            return 1;
+        },
+        error.HubCredentialPath, error.HubUnsafePath => {
+            try err_out.print("{s}@{s}: the hub returned an unsafe file path\n", .{ repo, sha });
             return 1;
         },
         else => {
@@ -97,21 +108,14 @@ pub fn runWith(a: Allocator, io: std.Io, out: *std.Io.Writer, err_out: *std.Io.W
         error.HubDenied => return auth.refuse(err_out, repo),
         else => return e,
     };
-    const kind = configKind(a, config_bytes);
-    const model_type = kind.model_type;
-    if (kind.drafter) {
-        try out.print("{s}: DFlash2 drafter ({s}), for serve --drafter\n", .{ repo, model_type });
-    } else if (hub.family(model_type)) |family| {
-        try out.print("{s}: {s} ({s})\n", .{ repo, family.title, family.model_type });
-    } else {
-        try err_out.print("{s}: no registered Zig family serves model_type {s}; the 0.6 line may: tensorfold@0.6\n", .{ repo, model_type });
-        return 1;
-    }
+    if (!try admitConfig(a, out, err_out, auth, repo, config_bytes, sizes.admission)) return 1;
 
     const repo_dir = try std.fs.path.join(a, &.{ root, try hub.repoDirName(a, repo) });
     const blobs_dir = try std.fs.path.join(a, &.{ repo_dir, "blobs" });
     const snapshot_dir = try std.fs.path.join(a, &.{ repo_dir, "snapshots", sha });
     const refs_dir = try std.fs.path.join(a, &.{ repo_dir, "refs" });
+    // A failed same-revision repair must not create directories or leave its old completion marker behind.
+    try revokeRefs(a, io, refs_dir, revision, sha);
     for ([_][]const u8{ blobs_dir, snapshot_dir, refs_dir }) |d| try w.createDirPath(io, d);
 
     var big: std.ArrayList(Big) = .empty;
@@ -126,6 +130,10 @@ pub fn runWith(a: Allocator, io: std.Io, out: *std.Io.Writer, err_out: *std.Io.W
         const blob_path = try std.fs.path.join(a, &.{ blobs_dir, blob_name });
         if (e.sha256 != null or e.git_sha1 != null) blob_exists: {
             if (!(single.cachedMatches(io, blob_path, e) catch false)) {
+                std.Io.Dir.cwd().deleteFile(io, blob_path) catch {};
+                break :blob_exists;
+            }
+            if (auth.fileContains(a, io, blob_path) catch true) {
                 std.Io.Dir.cwd().deleteFile(io, blob_path) catch {};
                 break :blob_exists;
             }
@@ -150,9 +158,58 @@ pub fn runWith(a: Allocator, io: std.Io, out: *std.Io.Writer, err_out: *std.Io.W
         else => return e,
     };
     if (!fetched) return 1;
-    try w.writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ refs_dir, "main" }), .data = sha });
+    try publishRefs(a, io, refs_dir, revision, sha);
     try out.print("stored {s}@{s} at {s}\n", .{ repo, sha, snapshot_dir });
     return 0;
+}
+
+/// Checks config and inference admission before any weight or snapshot mutation.
+pub fn admitConfig(a: Allocator, out: *std.Io.Writer, err_out: *std.Io.Writer, auth: Auth, repo: []const u8, config_bytes: []const u8, admission: Admission) !bool {
+    const kind = configKind(a, config_bytes);
+    const model_type = kind.model_type;
+    if (!kind.valid and admission == .conversion) {
+        try err_out.print("{s}: config.json must be a JSON object; refusing\n", .{repo});
+        return false;
+    }
+    if (admission == .conversion) {
+        try out.print("{s}: conversion source ({s})\n", .{ repo, try safeModelType(a, model_type, auth) });
+    } else if (kind.drafter) {
+        try out.print("{s}: DFlash2 drafter ({s}), for serve --drafter\n", .{ repo, try safeModelType(a, model_type, auth) });
+    } else if (hub.family(model_type)) |family| {
+        try out.print("{s}: {s} ({s})\n", .{ repo, if (auth.reflects(family.title)) credential.withheld else family.title, try safeModelType(a, family.model_type, auth) });
+    } else {
+        try err_out.print("{s}: no registered Zig family serves model_type {s}; the 0.6 line may: tensorfold@0.6\n", .{ repo, try safeModelType(a, model_type, auth) });
+        return false;
+    }
+
+    return true;
+}
+
+/// Withdraws both aliases before repairing their shared snapshot, reading them before any mutation.
+pub fn revokeRefs(a: Allocator, io: std.Io, refs: []const u8, revision: []const u8, sha: []const u8) !void {
+    if (!revisionOk(revision) or !hub.hexSha(sha)) return error.BadRevision;
+    const names = [_][]const u8{ "main", revision };
+    var paths: [2][]const u8 = undefined;
+    var remove: [2]bool = @splat(false);
+    for (names, 0..) |name, i| {
+        if (i == 1 and std.mem.eql(u8, name, "main")) continue;
+        paths[i] = try std.fs.path.join(a, &.{ refs, name });
+        var buf: [128]u8 = undefined;
+        const text = std.Io.Dir.cwd().readFile(io, paths[i], &buf) catch |err| switch (err) {
+            error.FileNotFound => continue,
+            else => return err,
+        };
+        remove[i] = std.mem.eql(u8, std.mem.trim(u8, text, " \r\n"), sha);
+    }
+    for (remove, 0..) |yes, i| if (yes) try std.Io.Dir.cwd().deleteFile(io, paths[i]);
+}
+
+/// Publishes the requested revision only after every snapshot file has passed the ordinary download checks.
+pub fn publishRefs(a: Allocator, io: std.Io, refs: []const u8, revision: []const u8, sha: []const u8) !void {
+    if (!revisionOk(revision) or !hub.hexSha(sha)) return error.BadRevision;
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ refs, revision }), .data = sha });
+    if (!std.mem.eql(u8, revision, "main"))
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ refs, "main" }), .data = sha });
 }
 
 /// The large files as pieces on one queue; each matches its sha256 before it becomes a blob, else it comes once more.
@@ -267,6 +324,8 @@ pub fn listTree(a: Allocator, client: *std.http.Client, auth: Auth, repo: []cons
         if (kind != .string or !std.mem.eql(u8, kind.string, "file")) continue;
         const path_v = o.get("path") orelse continue;
         if (path_v != .string) continue;
+        if (auth.reflects(path_v.string)) return error.HubCredentialPath;
+        if (!validEntryText(path_v.string)) return error.HubUnsafePath;
         const size_v = o.get("size");
         const size: u64 = if (size_v != null and size_v.? == .integer and size_v.?.integer >= 0) @intCast(size_v.?.integer) else 0;
         var sha256: ?[32]u8 = null;
@@ -293,13 +352,34 @@ fn lfsDigest(oid: []const u8) ?[32]u8 {
 }
 
 /// config.json's model_type, copied from the raw bytes' parse, and whether it is a DFlash2 drafter (`serve --drafter`).
-fn configKind(a: Allocator, bytes: []const u8) struct { model_type: []const u8, drafter: bool } {
-    var parsed = std.json.parseFromSlice(std.json.Value, a, bytes, .{}) catch return .{ .model_type = "unknown", .drafter = false };
+fn configKind(a: Allocator, bytes: []const u8) struct { model_type: []const u8, drafter: bool, valid: bool = true } {
+    var parsed = std.json.parseFromSlice(std.json.Value, a, bytes, .{}) catch return .{ .model_type = "unknown", .drafter = false, .valid = false };
     defer parsed.deinit();
-    if (parsed.value != .object) return .{ .model_type = "unknown", .drafter = false };
+    if (parsed.value != .object) return .{ .model_type = "unknown", .drafter = false, .valid = false };
     const t = parsed.value.object.get("model_type");
     const model_type = if (t != null and t.? == .string) a.dupe(u8, t.?.string) catch "unknown" else "unknown";
     return .{ .model_type = model_type, .drafter = parsed.value.object.get("dflash_config") != null };
+}
+
+/// Server-controlled model text made safe for output, with final containment after every candidate choice.
+fn safeModelType(a: Allocator, text: []const u8, auth: Auth) ![]const u8 {
+    const out = try auth.redact(a, text);
+    var printable = true;
+    for (out) |ch| if (ch <= 0x20 or ch >= 0x7f) {
+        printable = false;
+        break;
+    };
+    const candidate = if (printable) out else "[unprintable model_type]";
+    return if (auth.reflects(candidate)) credential.withheld else candidate;
+}
+
+/// Valid UTF-8 without terminal controls, for a path before it reaches a URL, log or local filename.
+fn validEntryText(path: []const u8) bool {
+    if (path.len == 0) return false;
+    const view = std.unicode.Utf8View.init(path) catch return false;
+    var it = view.iterator();
+    while (it.nextCodepoint()) |cp| if (cp < 0x20 or (cp >= 0x7f and cp <= 0x9f)) return false;
+    return true;
 }
 
 fn parseHex(comptime n: usize, text: []const u8) ?[n]u8 {

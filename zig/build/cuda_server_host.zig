@@ -15,6 +15,31 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
         .imports = &.{ .{ .name = "engine_api", .module = native_modules.api }, .{ .name = "tokenizer", .module = mods.tokenizer }, .{ .name = "template", .module = template }, .{ .name = "living", .module = mods.living }, .{ .name = "core", .module = mods.core } },
     });
     const server_json = @import("server.zig").addTo(b, server_tests, host, .debug);
+    const confidential_cli = b.createModule(.{
+        .root_source_file = b.path("zig/src/server/cli.zig"),
+        .target = host,
+        .optimize = .debug,
+        .link_libc = true,
+    });
+    confidential_cli.addImport("engine_api", native_modules.api);
+    confidential_cli.addImport("native_engines", native_modules.engines);
+    confidential_cli.addImport("core", mods.core);
+    confidential_cli.addImport("tokenizer", mods.tokenizer);
+    confidential_cli.addImport("template", template);
+    confidential_cli.addImport("living", mods.living);
+    _ = @import("server.zig").addTo(b, confidential_cli, host, .debug);
+    const confidential_admission = b.createModule(.{
+        .root_source_file = b.path("zig/confidential_admission_host.zig"),
+        .target = host,
+        .optimize = .debug,
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "cli", .module = confidential_cli },
+            .{ .name = "native", .module = native_modules.engines },
+            .{ .name = "glm_cuda", .module = native_modules.engines.import_table.get("glm_cuda").? },
+        },
+    });
+    b.step("test-confidential-admission-host", "Confidential CLI options through real backend and family refusals").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = confidential_admission, .filters = &.{ "confidential admission:", "CUDA prompt cache admission:" } })).step);
     b.step("test-responses-owner-host", "Stored and running Responses stay with their creating API key").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "Responses owner:", "a whole response keeps", "the cancel route's path", "a held name", "with API keys only", "auth scopes:" } })).step);
     const owner_socket = b.addTest(.{ .root_module = server_tests, .filters = &.{"Responses owner socket:"} });
     b.step("check-responses-owner-socket-host", "Compile authenticated Responses transport tests without listening").dependOn(&owner_socket.step);
@@ -27,6 +52,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
     b.step("test-wait-reasons-server-host", "The ledger's wait, refusal and failure labels in /metrics and /v1/load").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"wait reason ledger:"} })).step);
     // the open-connection limit, one address's share under pressure and its flags (#3048), on Linux hosts too
     b.step("test-connection-admission-host", "Connection limit, per-address share, trusted proxies and idle shedding").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "security: ", "connection CLI:" } })).step);
+    b.step("test-managed-log-host", "A managed child's log without keys in the file, its readiness and its startup tail").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "benchmark log:", "benchmark_server_test.", "benchmark_server_log_test." } })).step);
     b.step("test-admission-http-host", "Admission places over HTTP: n choices, refusals and walk-aways return every place").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"admission HTTP:"} })).step);
     const flush = b.step("test-prompt-cache-flush-host", "The prompt cache flush: its hold, a cold next turn, withdrawal and who may call it");
     flush.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = native_modules.api, .filters = &.{"prompt cache flush:"} })).step);
@@ -71,16 +97,23 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
     b.step("test-lesson-gate-host", "Production server rounds and earlier-fact retention").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Learning persistence:"} })).step);
     b.step("test-slide-delete-host", "Single and multiple fact deletion without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "delete", "a graph file", "allocation that fails anywhere in recording" } })).step);
     b.step("test-frame-cache-identity-host", "Image frame identities through the actual shared cache").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = native_modules.api, .filters = &.{"Frame cache:"} })).step);
-    b.step("test-originals-host", "Model folder snapshots, holds and slide rollback without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = native_modules.api, .filters = &.{"originals_test."} })).step);
+    b.step("test-originals-host", "Model folder snapshots, holds and slide rollback without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = native_modules.api, .filters = &.{ "originals_test.", "originals_lock_test." } })).step);
     const media_gate = b.step("test-media-request-ownership-host", "Shared request ownership, image frame caches and media expansion on the CPU");
     media_gate.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = native_modules.api })).step);
     media_gate.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "image", "video" } })).step);
     media_gate.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = mods.core, .filters = &.{ "qwen_vl", "video" } })).step);
     b.step("test-http-limits-host", "Total HTTP read deadlines and connection admission without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"HTTP limits:"} })).step);
     b.step("test-request-log-host", "Default text and opt-in JSON access, ended and refused log lines without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "default request log:", "json request log:" } })).step);
+    b.step("test-request-log-replies-host", "Request log reply records: off writes nothing, text, usage, timings, refusals, background exclusion and the typed request line, without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"request log replies:"} })).step);
+    b.step("test-request-log-pdf-host", "Inline document redaction in request and journal records without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"request log:"} })).step);
     b.step("test-server-recovery-host", "Incomplete replies, token allocation and bounded SSE storage without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Server recovery:"} })).step);
     b.step("test-request-journal-host", "The request journal's records, rotation and crash quarantine on a fake engine").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"request journal:"} })).step);
+    b.step("test-prompt-progress-host", "Prompt progress on plain, fanned-out and traced Responses streams without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"prompt progress:"} })).step);
     b.step("test-prompt-interior-host", "Last-user metadata excludes later messages without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"interior prompt:"} })).step);
+    const prefill = b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"assistant prefill:"} }));
+    prefill.has_side_effects = true; // reads TF_TOKENIZER_DIRS on every run
+    prefill.setCwd(b.path("."));
+    b.step("test-prefill-host", "Continued final assistant messages on Messages and chat routes and real templates, no devices").dependOn(&prefill.step);
     b.step("test-cors-template-host", "Exact CORS and special-preserving template route regressions").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "CORS", "apply-template:" } })).step);
     const salts = b.step("test-cache-salt-host", "Salted state, disk, Recall and per-key route isolation");
     salts.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "salts:", "salts per key:", "two salts never", "a salted text prompt", "the routes:", "cache salt isolation:" } })).step);
@@ -96,6 +129,34 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
     b.step("test-benchmark-routing-host", "Benchmark command routing from explicit model capabilities").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"benchmark routing:"} })).step);
     b.step("test-benchmark-cancel-host", "A cancelled local benchmark saves its receipt, exits 130 and never publishes").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"a cancelled local run"} })).step);
     b.step("test-chat-cli-host", "tensorfold chat's flags, stream, history, Ctrl-C and serve child against a fake server").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"chat CLI:"} })).step);
+    const start_tests = b.createModule(.{
+        .root_source_file = b.path("zig/src/server/start_cli_test.zig"),
+        .target = host,
+        .optimize = .debug,
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "engine_api", .module = native_modules.api },
+            .{ .name = "core", .module = mods.core },
+            .{ .name = "json", .module = server_json },
+            .{ .name = "checkpoint_cli", .module = @import("cuda.zig").checkpointCli(b, host, .debug, false, native_modules.engines, mods.core) },
+        },
+    });
+    const start_run = b.addRunArtifact(b.addTest(.{ .root_module = start_tests, .filters = &.{"start CLI:"} }));
+    start_run.has_side_effects = true;
+    const start_step = b.step("test-start-cli-host", "Automatic model choice, download consent, first reply and serve-child cleanup without devices");
+    if (host.result.os.tag != .windows) {
+        start_step.dependOn(&start_run.step);
+        step.dependOn(&start_run.step);
+    }
+    const windows_target = b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .gnu });
+    const windows_lanes = b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = windows_target, .optimize = .debug, .link_libc = true });
+    const windows_start = @import("server.zig").plain(b, "zig/src/server/start_cli.zig", windows_target, .debug, windows_lanes);
+    const windows_api = windows_start.import_table.get("engine_api").?;
+    const windows_core = windows_start.import_table.get("core").?;
+    const windows_none = b.createModule(.{ .root_source_file = b.path("zig/src/native/none.zig"), .target = windows_target, .optimize = .debug, .imports = &.{.{ .name = "engine_api", .module = windows_api }} });
+    windows_start.addImport("checkpoint_cli", @import("cuda.zig").checkpointCli(b, windows_target, .debug, false, windows_none, windows_core));
+    const windows_check = b.addTest(.{ .root_module = windows_start, .filters = &.{"start CLI: Windows refusal"} });
+    start_step.dependOn(&windows_check.step); // compile only: a Windows test binary is never executed
     const server_step = b.step(
         "test-server-cpu",
         "The HTTP server's unit tests (routes, templates, tool parsing) without a GPU",

@@ -1,6 +1,7 @@
-//! Inkling 2 Small's weight map: each tensor the config implies, with dtype and shape, checked against headers.
+//! Inkling 2 weight maps: each tensor the config implies, with dtype and shape, checked against headers.
 const std = @import("std");
-const st = @import("safetensors");
+const st = @import("core").safetensors;
+const tfq3_format = @import("tfq3_format");
 const config = @import("config.zig");
 const plan = @import("plan.zig");
 
@@ -10,8 +11,8 @@ const Text = config.Text;
 /// A dimension the map does not derive from the config: any size is accepted there.
 pub const any = std.math.maxInt(u64);
 
-/// Which file's tensors: the backbone and vision tower (model.safetensors), or the draft head (mtp.safetensors).
-pub const File = enum { model, mtp };
+/// Which file's tensors: full checkpoint (model), text-only dense pack (dense_text), or draft head (mtp).
+pub const File = enum { model, dense_text, mtp };
 
 fn put(sink: anytype, comptime fmt: []const u8, args: anytype, dtype: Dtype, dims: []const u64) !void {
     var buf: [128]u8 = undefined;
@@ -50,19 +51,26 @@ fn attention(c: *const Text, i: u32, sink: anytype) !void {
     }
 }
 
+fn router(c: *const Text, i: u32, sink: anytype) !void {
+    const h: u64 = c.hidden;
+    const e: u64 = c.experts;
+    const L = .{i};
+    try put(sink, "model.llm.layers.{d}.mlp.gate.weight", L, .bf16, &.{ e, h });
+    try put(sink, "model.llm.layers.{d}.mlp.gate.bias", L, .f32, &.{e});
+}
+
 fn experts(c: *const Text, i: u32, prec: plan.Precision, sink: anytype) !void {
     const h: u64 = c.hidden;
     const m: u64 = c.expert_inter;
     const e: u64 = c.experts;
     const L = .{i};
-    try put(sink, "model.llm.layers.{d}.mlp.gate.weight", L, .bf16, &.{ e, h });
-    try put(sink, "model.llm.layers.{d}.mlp.gate.bias", L, .f32, &.{e});
     // gate and up are one tensor, w13: 2 * intermediate rows
     const rows = [2][2]u64{ .{ 2 * m, h }, .{ h, m } };
     inline for (.{ "w13", "w2" }, 0..) |w, n| {
         const r = rows[n][0];
         const k = rows[n][1];
         switch (prec) {
+            .exl3, .tfq3 => {},
             .nvfp4 => {
                 try put(sink, "model.llm.layers.{d}.mlp.experts." ++ w ++ "_weight", L, .u8, &.{ e, r, k / 2 });
                 try put(sink, "model.llm.layers.{d}.mlp.experts." ++ w ++ "_weight_scale", L, .f8_e4m3, &.{ e, r, k / 16 });
@@ -77,13 +85,31 @@ fn experts(c: *const Text, i: u32, prec: plan.Precision, sink: anytype) !void {
     }
 }
 
-fn backbone(c: *const Text, prec: []const plan.Precision, sink: anytype) !void {
+fn controllers(c: *const Text, i: u32, sink: anytype) !void {
+    const loop = c.loop orelse return;
+    if (i < loop.core_start or i >= loop.core_end) return;
+    const rank: u64 = loop.gate_rank;
+    const h: u64 = c.hidden;
+    const L = .{i};
+    inline for (.{ "attn", "k", "mlp", "v" }) |kind| {
+        try put(sink, "model.llm.layers.{d}.controllers." ++ kind ++ ".down_weight", L, .bf16, &.{ rank, 2 * h });
+        try put(sink, "model.llm.layers.{d}.controllers." ++ kind ++ ".forget_weight", L, .bf16, &.{ h, rank });
+        try put(sink, "model.llm.layers.{d}.controllers." ++ kind ++ ".gain_weight", L, .bf16, &.{ h, rank });
+    }
+}
+
+fn backbone(c: *const Text, prec: ?[]const plan.Precision, sink: anytype) !void {
     const h: u64 = c.hidden;
     try put(sink, "model.llm.embed.weight", .{}, .bf16, &.{ c.vocab, h });
     try put(sink, "model.llm.embed_norm.weight", .{}, .bf16, &.{h});
     try put(sink, "model.llm.norm.weight", .{}, .bf16, &.{h});
     try put(sink, "model.llm.unembed.weight", .{}, .bf16, &.{ c.vocab, h });
     try put(sink, "model.llm.attn_res.output_query", .{}, .f32, &.{h});
+    if (c.loop) |loop| {
+        const rows = 2 * @as(u64, loop.core_end - loop.core_start);
+        try put(sink, "model.llm.middle_cycle_cross_pass_queries", .{}, .f32, &.{ rows, h });
+        try put(sink, "model.llm.middle_cycle_cross_pass_kv_queries", .{}, .f32, &.{ rows, h });
+    }
     for (0..c.layers) |k| {
         const i: u32 = @intCast(k);
         try put(sink, "model.llm.attn_res.mlp_queries.{d}", .{i}, .f32, &.{h});
@@ -93,10 +119,12 @@ fn backbone(c: *const Text, prec: []const plan.Precision, sink: anytype) !void {
             try put(sink, "model.llm.attn_res.attn_queries.{d}", .{i}, .f32, dims);
         }
         try attention(c, i, sink);
+        try controllers(c, i, sink);
         try put(sink, "model.llm.layers.{d}.attn_sconv.weight", .{i}, .bf16, &.{ h, 1, config.conv_taps });
         try put(sink, "model.llm.layers.{d}.mlp_norm.weight", .{i}, .bf16, &.{h});
         try put(sink, "model.llm.layers.{d}.mlp_sconv.weight", .{i}, .bf16, &.{ h, 1, config.conv_taps });
-        try experts(c, i, prec[i], sink);
+        try router(c, i, sink);
+        if (prec) |ps| try experts(c, i, ps[i], sink);
     }
 }
 
@@ -131,8 +159,8 @@ fn draft(m: config.Mtp, text: *const Text, sink: anytype) !void {
     const q: u64 = @as(u64, m.q_heads) * m.head_dim;
     const kv: u64 = @as(u64, m.kv_heads) * m.head_dim;
     const rank: u64 = m.rank;
-    // fuse_weight's six rows do not follow from the config, so any row count passes
-    try put(sink, "fuse_weight", .{}, .bf16, &.{ any, m.taps_n });
+    // One fusion row per draft layer plus the Markov head, one column per target visit tap.
+    try put(sink, "fuse_weight", .{}, .bf16, &.{ m.layers + 1, m.taps_n });
     try put(sink, "mask_embed", .{}, .bf16, &.{h});
     try put(sink, "norm.weight", .{}, .bf16, &.{h});
     try put(sink, "markov_head.dflare_norm.weight", .{}, .bf16, &.{h});
@@ -162,6 +190,7 @@ pub fn all(c: *const config.Config, prec: []const plan.Precision, file: File, si
             try backbone(&c.text, prec, sink);
             try vision(c.vision, sink);
         },
+        .dense_text => try backbone(&c.text, null, sink),
         .mtp => try draft(c.mtp orelse return error.NoDraftHead, &c.text, sink),
     }
 }
@@ -179,6 +208,53 @@ pub fn precisions(entries: st.Header, layers: u32, out: []plan.Precision) !void 
             else => return error.ExpertFormat,
         };
     }
+}
+
+fn hasAnyTablesFile(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) bool {
+    for ([_][]const u8{ "pw_v3_tables.bin", "pw_v4_e8p_tables.bin" }) |fname| {
+        const path = std.fs.path.join(gpa, &.{ dir, fname }) catch continue;
+        defer gpa.free(path);
+        std.Io.Dir.cwd().access(io, path, .{}) catch continue;
+        return true;
+    }
+    return false;
+}
+
+fn hasLayerTfpw(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, layer: usize) bool {
+    var fname_buf: [32]u8 = undefined;
+    const fname = std.fmt.bufPrint(&fname_buf, "layer_{d:0>2}.tffpw", .{layer}) catch return false;
+    const path = std.fs.path.join(gpa, &.{ dir, fname }) catch return false;
+    defer gpa.free(path);
+    const f = std.Io.Dir.cwd().openFile(io, path, .{}) catch return false;
+    defer f.close(io);
+    var h: [16]u8 = undefined;
+    if ((f.readPositionalAll(io, &h, 0) catch return false) != h.len) return false;
+    return std.mem.readInt(u32, h[0..4], .little) == tfq3_format.magic_layer and
+        std.mem.readInt(u32, h[4..8], .little) == tfq3_format.format_version and
+        std.mem.readInt(u32, h[12..16], .little) != 0;
+}
+
+/// Directory-aware expert precision detection: w13_weight (NVFP4/MXFP8), else TFPW v3 shards + pw_v3_tables.bin.
+pub fn precisionsWithDir(gpa: std.mem.Allocator, io: std.Io, entries: st.Header, layers: u32, dir: []const u8, out: []plan.Precision) !void {
+    if (out.len < layers) return error.PrecisionCount;
+    var any_tfq3 = false;
+    for (0..layers) |i| {
+        var buf: [96]u8 = undefined;
+        const name = try std.fmt.bufPrint(&buf, "model.llm.layers.{d}.mlp.experts.w13_weight", .{i});
+        if (entries.get(name)) |hit| {
+            out[i] = switch (hit.dtype) {
+                .u8 => .nvfp4,
+                .f8_e4m3 => .mxfp8,
+                else => return error.ExpertFormat,
+            };
+        } else if (hasLayerTfpw(gpa, io, dir, i)) {
+            out[i] = .tfq3;
+            any_tfq3 = true;
+        } else {
+            return error.NoExperts;
+        }
+    }
+    if (any_tfq3 and !hasAnyTablesFile(gpa, io, dir)) return error.MissingTfq3Tables;
 }
 
 /// Every tensor of `from` added to `into`, for a checkpoint held in several files; a name in both is refused.

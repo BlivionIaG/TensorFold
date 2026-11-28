@@ -13,6 +13,8 @@ const mamba_k = @import("contract_mamba.zig");
 const scan_k = @import("contract_scan.zig");
 const moe_k = @import("contract_nemo_moe.zig");
 const walk_k = @import("contract_walk.zig");
+const walk_rows_k = @import("contract_walk_rows.zig");
+const apply_rows_k = @import("contract_apply_rows.zig");
 const prefill_k = @import("contract_prefill.zig");
 const add_rms_k = @import("contract_add_rms.zig");
 const tail_k = @import("contract_tail.zig");
@@ -22,6 +24,7 @@ const kv_k = @import("contract_kv_write.zig");
 const tap_k = @import("contract_tap.zig");
 const draft_k = @import("contract_draft.zig");
 const exl3_k = @import("contract_exl3.zig");
+const topk512_k = @import("contract_dsv41_topk512.zig");
 const argmax_k = @import("contract_argmax.zig");
 const pair_k = @import("contract_relu2_pair.zig");
 const heads_rows_k = @import("contract_heads_rows.zig");
@@ -200,6 +203,16 @@ fn run(a: std.mem.Allocator, io: std.Io) !usize {
     for (&qwen_walks, 0..) |*w, i| w.* = .qwenAt(a, &r, s, &l, i);
     defer for (&qwen_walks) |*w| w.deinit();
     for (&qwen_walks) |*w| try kernels.append(a, w.kernel());
+    // d = 256's score of a launch's slots, a slot's rows on one read of its keys: each head group, both kinds; controls
+    var row_walks: [walk_rows_k.count_all]walk_rows_k.RowsScore = undefined;
+    for (&row_walks, 0..) |*w, i| w.* = .init(a, &r, s, &l, i);
+    defer for (&row_walks) |*w| w.deinit();
+    for (&row_walks) |*w| try kernels.append(a, w.kernel());
+    // d = 256's values of a launch's slots, a slot's rows on one read of them: each head group, both kinds; controls
+    var row_applies: [apply_rows_k.count_all]apply_rows_k.RowsApply = undefined;
+    for (&row_applies, 0..) |*w, i| w.* = .init(a, &r, s, &l, i);
+    defer for (&row_applies) |*w| w.deinit();
+    for (&row_applies) |*w| try kernels.append(a, w.kernel());
     var prefills: [2]prefill_k.Prefill = undefined;
     for (&prefills, [_]bool{ true, false }) |*p, paged| p.* = .init(a, &r, s, &l, paged);
     defer for (&prefills) |*p| p.deinit();
@@ -266,6 +279,10 @@ fn run(a: std.mem.Allocator, io: std.Io) !usize {
     for (&exl3s, exl3_k.registrations) |*m, reg| m.* = .init(a, &r, s, &l, reg);
     defer for (&exl3s) |*m| m.deinit();
     for (&exl3s) |*m| try kernels.append(a, m.kernel());
+    var topk512s: [topk512_k.registrations.len]topk512_k.TopK = undefined;
+    for (&topk512s, topk512_k.registrations) |*m, reg| m.* = .init(a, &r, s, &l, reg.fault);
+    defer for (&topk512s) |*m| m.deinit();
+    for (&topk512s, topk512_k.registrations) |*m, reg| try kernels.append(a, m.kernel(reg.name));
     var argmax = argmax_k.Argmax.init(a, &r, s, &l);
     defer argmax.deinit();
     try kernels.append(a, argmax.kernel());

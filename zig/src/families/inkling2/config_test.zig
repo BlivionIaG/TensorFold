@@ -1,10 +1,12 @@
-//! Config parsing: the real checkpoint's config.json, the tiny-random one, and what parse refuses.
+//! Config parsing: the real checkpoint's config.json, the tiny-random one, the tiny Mini, and what parse refuses.
 const std = @import("std");
 const config = @import("config.zig");
 
 const t = std.testing;
 pub const real = @embedFile("fixtures/config.json");
 pub const tiny = @embedFile("fixtures/tiny_config.json");
+pub const mini = @embedFile("fixtures/mini_config.json");
+pub const tiny_mini = @embedFile("fixtures/tiny_mini_config.json");
 
 fn refused(json: []const u8, from: []const u8, to: []const u8, want: anyerror, says: []const u8) !void {
     if (std.mem.count(u8, json, from) != 1) return error.EditAnchor;
@@ -46,6 +48,41 @@ test "Inkling 2 Small's config.json parses: 48 layers, 8 global, 384 experts, 8 
     try t.expectEqualSlices(bool, &.{ true, true, false, true, true }, m.local[0..5]);
 }
 
+test "Inkling 2 Mini's config.json parses: 24 weight layers, 48 visits and four drafter taps" {
+    var why: config.Why = .{};
+    const c = try config.parse(t.allocator, mini, &why);
+    try t.expectEqual(@as(u32, 2304), c.text.hidden);
+    try t.expectEqual(@as(u32, 24), c.text.layers);
+    try t.expectEqual(@as(u32, 48), c.text.visitCount());
+    try t.expectEqual(config.Heads{ .q = 24, .kv = 8, .dim = 128 }, c.text.global);
+    try t.expectEqual(@as(u32, 8192), c.text.log_floor);
+    try t.expectEqual(@as(u32, 128), c.text.experts);
+    try t.expectEqual(@as(u32, 1152), c.text.expert_inter);
+    try t.expectEqual(@as(f32, 8), c.text.route_scale);
+    const loop = c.text.loop.?;
+    try t.expectEqual(@as(u32, 6), loop.core_start);
+    try t.expectEqual(@as(u32, 18), loop.core_end);
+    try t.expectEqual(@as(u32, 3), loop.passes);
+    try t.expectEqual(@as(u32, 64), loop.gate_rank);
+    try t.expectEqual(@as(u32, 2304), c.vision.text_hidden);
+    try t.expectEqual(@as(f32, 1e-5), c.vision.eps);
+    const m = c.mtp.?;
+    try t.expectEqual(@as(u32, 3), m.layers);
+    try t.expectEqual(@as(u32, 9216), m.inter);
+    try t.expectEqualSlices(u32, &.{ 5, 23, 41, 48 }, m.taps[0..m.taps_n]);
+    try t.expectEqualSlices(bool, &.{ true, false, true }, m.local[0..3]);
+}
+
+test "loop layouts the engine does not run are refused by their config key" {
+    try refused(mini, "\"is_varloop\": false", "\"is_varloop\": true", error.Unsupported, "is_varloop must be false");
+    try refused(mini, "\"core_start\": 6", "\"core_start\": 0", error.Layout, "must start after layer 0");
+    try refused(mini, "\"core_start\": 6", "\"core_start\": 7", error.Layout, "multiples of the 6-layer");
+    try refused(mini, "\"core_end\": 18", "\"core_end\": 24", error.Layout, "multiples of the 6-layer");
+    try refused(mini, "\"core_end\": 18,", "\"core_end\": 30,", error.Layout, "fit inside the 24 physical layers");
+    try refused(mini, "Inkling2LoopForConditionalGeneration", "Inkling2ForConditionalGeneration", error.NotInkling2, "model_type and architectures must match");
+    try refused(mini, "\"model_type\": \"inkling2_loop\"", "\"model_type\": \"inkling2\"", error.NotInkling2, "model_type and architectures must match");
+}
+
 test "tiny-random's config.json parses: 12 layers, 96 experts, width 128, no quantization_config" {
     var why: config.Why = .{};
     const c = try config.parse(t.allocator, tiny, &why);
@@ -56,6 +93,30 @@ test "tiny-random's config.json parses: 12 layers, 96 experts, width 128, no qua
     try t.expectEqualSlices(u32, &.{ 5, 12 }, c.mtp.?.taps[0..c.mtp.?.taps_n]);
     try t.expectEqual(@as(u32, 1024), c.text.extent(0));
     try t.expectEqual(@as(u32, 1024), c.text.extent(5));
+}
+
+test "tiny-inkling2-mini's config.json parses: 18 weight layers, a 6-layer core, 30 visits and no drafter" {
+    var why: config.Why = .{};
+    const c = try config.parse(t.allocator, tiny_mini, &why);
+    try t.expectEqual(@as(u32, 256), c.text.hidden);
+    try t.expectEqual(@as(u32, 18), c.text.layers);
+    try t.expectEqual(@as(u32, 30), c.text.visitCount());
+    try t.expectEqual(config.Heads{ .q = 4, .kv = 2, .dim = 128 }, c.text.global);
+    try t.expectEqual(config.Heads{ .q = 4, .kv = 2, .dim = 128 }, c.text.local);
+    try t.expectEqual(@as(u32, 8192), c.text.log_floor);
+    try t.expectEqual(@as(u32, 16), c.text.experts);
+    try t.expectEqual(@as(u32, 4), c.text.topk);
+    try t.expectEqual(@as(u32, 256), c.text.expert_inter);
+    try t.expectEqual(@as(u32, 128), c.text.extent(0));
+    try t.expectEqual(@as(u32, 256), c.text.extent(5));
+    const loop = c.text.loop.?;
+    try t.expectEqual(@as(u32, 6), loop.core_start);
+    try t.expectEqual(@as(u32, 12), loop.core_end);
+    try t.expectEqual(@as(u32, 3), loop.passes);
+    try t.expectEqual(@as(u32, 64), loop.gate_rank);
+    try t.expectEqual(@as(u32, 256), c.vision.text_hidden);
+    try t.expectEqual(@as(u32, 2), c.vision.layers);
+    try t.expect(c.mtp == null);
 }
 
 test "a config that is not Inkling 2 is refused by name" {
@@ -111,6 +172,16 @@ test "an mlp_ratio past 1024 is refused instead of overflowing, as is a block lo
     try refused(tiny, "\"n_layers_per_attn_res_block\": 6", "\"n_layers_per_attn_res_block\": 4294967295", error.Layout, "is past num_hidden_layers");
 }
 
+test "attention-residual blocks past the mixes' eight and widths the attention kernels do not run are refused" {
+    var why: config.Why = .{};
+    try t.expectEqual(@as(u32, config.max_blocks), (try config.parse(t.allocator, real, &why)).text.layers / 6);
+    try refused(real, "\"n_layers_per_attn_res_block\": 6", "\"n_layers_per_attn_res_block\": 5", error.Layout, "into more than the residual mixes' 8 blocks");
+    try refused(tiny, "\"n_layers_per_attn_res_block\": 6", "\"n_layers_per_attn_res_block\": 1", error.Layout, "splits 12 layers into more than");
+    try refused(tiny, "\"head_dim\": 128,\n    \"d_rel\"", "\"head_dim\": 64,\n    \"d_rel\"", error.Unsupported, "head_dim 64 is not 128");
+    try refused(tiny, "\"swa_head_dim\": 128", "\"swa_head_dim\": 256", error.Unsupported, "swa_head_dim 256 is not 128");
+    try refused(tiny, "\"d_rel\": 16", "\"d_rel\": 32", error.Unsupported, "d_rel 32 is not 16");
+}
+
 test "a scoring function, a layer count, a quantization_config and a root that the engine cannot read are refused" {
     try refused(tiny, "\"use_gate_bias\": true,\n    \"tie_word_embeddings\"", "\"use_gate_bias\": true,\n    \"scoring_func\": \"softmax\",\n    \"tie_word_embeddings\"", error.Unsupported, "scoring_func must be");
     try refused(tiny, "\"hidden_size\": 128,\n    \"num_hidden_layers\": 12", "\"hidden_size\": 128,\n    \"num_hidden_layers\": 129", error.Layout, "129 layers: the plan tables hold 128");
@@ -120,4 +191,26 @@ test "a scoring function, a layer count, a quantization_config and a root that t
     try t.expectEqualStrings("config.json is not an object", why.text());
     try t.expectError(error.BadConfig, config.parse(t.allocator, "{", &why));
     try t.expectEqualStrings("config.json is not JSON", why.text());
+}
+
+test "kortexa-inkling2-exl3-v1 quantization_config is accepted on Small and refused on Mini or other formats" {
+    const from =
+        \\  "quantization_config": {
+        \\    "quant_method": "modelopt",
+        \\    "quant_algo": "NVFP4"
+        \\  }
+    ;
+    const to =
+        \\  "quantization_config": {
+        \\    "quant_method": "exl3",
+        \\    "format": "kortexa-inkling2-exl3-v1"
+        \\  }
+    ;
+    const edited = try std.mem.replaceOwned(u8, t.allocator, real, from, to);
+    defer t.allocator.free(edited);
+    var why: config.Why = .{};
+    const c = try config.parse(t.allocator, edited, &why);
+    try t.expectEqual(config.Quant.exl3_kortexa_v1, c.quant);
+    try refused(edited, "kortexa-inkling2-exl3-v1", "unknown-exl3-v2", error.Quant, "kortexa-inkling2-exl3-v1");
+    try refused(mini, from, to, error.Quant, "Inkling 2 Small");
 }

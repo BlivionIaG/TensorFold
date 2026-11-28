@@ -9,6 +9,7 @@ pub const Args = struct {
     host: []const u8 = "127.0.0.1",
     port: u16 = 8080,
     unix_socket: ?[]const u8 = null,
+    listen_fd: ?i64 = null, // --listen-fd: an inherited listening Unix socket, the only way in
     name: []const u8 = "",
     chat_template: ?[]const u8 = null,
     voices: ?[]const u8 = null,
@@ -102,6 +103,7 @@ pub const Args = struct {
     master_port: u16 = 29551,
     policy: []const u8 = "", // every --policy joined by commas
     execution_witness: bool = false, // a read-scoped snapshot of the engine, binary, text and settings that serve
+    confidential: bool = false, // refuse every setting that keeps or exposes request content (confidential.zig)
     // Cortheon's program, pre-build research, and server-run cortheon_search/cortheon_fetch.
     cortheon: bool = false,
     vision: bool = false, // image input (GLM-5.3-Flash): data-URL image_url parts in user messages
@@ -113,4 +115,5 @@ pub const Args = struct {
     vision_image_tokens_set: bool = false, // --vision-image-tokens given: a family's own default no longer applies
     vision_image_share: api.ImageShare = .request, // --vision-image-share: the request's own count, or the fixed share
     vision_video_tokens: u32 = 16384, // the visual tokens a request's videos share (the processor's max_image_tokens)
+    glp: ?@import("glp_startup.zig").Vec = null, // --glp: the control vector file and the strength in force
 };
