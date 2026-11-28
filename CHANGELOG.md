@@ -7,6 +7,14 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - Metal: LFM2.5-24B-A2B can use an explicit DSpark drafter. Request and round costs gate neural work; pre-M5 or unrecognized devices retain target-only execution and cheap copies, and `draft:false` disables neural drafting (#1394). Thanks to @BlivionIaG.
 
 - Kernel contract: adds exact sorted-combine/norm/tap comparisons and float64 BF16 SwiGLU bounds with planted controls for LFM2 (#1394). Thanks to @BlivionIaG.
+- CUDA kernels: ERNIE 5.5's DSA key lists (`tf_ernie55_window_merge`, in a new `ernie5_5_index` image): each row's indexer top-k picks, then its 128-position sliding window, with the row's count, as the sparse MLA reads them; under the kernel contract against the host's lists; nothing launches it yet, so served output is unchanged (#5211, part of #4926).
+
+- DeepSeek-V4.1 on CUDA: `tf-dsv41 follow` and `tf-dsv41 generate` catch SIGTERM and SIGINT once the model has loaded and take the fail-fast path, so the stopped rank aborts its own collectives, every rank gets the reason and exits with code 70; a second stop signal takes the default action (#3232).
+
+- DeepSeek V4.1 on CUDA: in replay prefill, the decoder pass's mHC boundaries over a short tail (16 rows or fewer) write the second streams buffer instead of the streams in place, so a short prompt's reply no longer depends on which kernel block runs first; longer tails take the same path as before (#3630, refs #2715).
+
+
+
 - Server: a streamed chat, completion or Responses request with `return_progress: true` receives `tensorfold.progress` counts (prompt tokens done, total and cached) while its prompt pass runs, before the first token; off by default, and a stream without it is byte for byte what it was (#3216).
 
 - Docs: `docs/environment-names.md` lists `TF_Q27_FLAT_GLUE`, `TF_Q27_QK` and `TF_CUDA_PREFILL_TRACE`, so the environment-names check passes on main again (#5513).
@@ -26,8 +34,6 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
 - Server: `--confidential` refuses existing Linux tracers and, where whole-process locking is supported, locks current and future process memory against swap or refuses startup; Darwin currently refuses because this locking is unavailable.
 
 - HIP, Qwen 3.5 and Nemotron on one GPU: long prompt chunks keep the next layer queued while they poll for a cancel, rather than draining the GPU at every layer; tokens unchanged, and a cancel still drains before the pass ends (#4887).
-
-
 
 - Qwen3.5 on CUDA: MTP admission charges the target tap ring once per stream, and native inference reserves only its 64-row recurrent log unless slide learning needs rollback snapshots, so the admission bound matches what the engine allocates (fixes #5134). Thanks to @tacosta for the report.
 
