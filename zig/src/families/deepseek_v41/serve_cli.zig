@@ -15,6 +15,7 @@ pub fn follow(gpa: std.mem.Allocator, io: std.Io, pack: []const u8, assets: []co
     defer if (source) |*g| g.deinit(gpa);
     const m = try model.Model.open(gpa, io, pack, assets, .{ .drafts = try drafts(), .own_prefill = (try model.ownPrefillEnv()), .layers = try model.layersEnv(gpa), .glp = if (source) |*g| g else null });
     defer m.close();
+    @import("model_supervisor.zig").installStopSignals();
     return followLoaded(m, followStartup) catch |err| {
         if (m.rank() != 0) std.log.err("rank {d}: following rank 0 failed: {s}", .{ m.rank(), @errorName(err) });
         return err;
@@ -81,6 +82,7 @@ pub fn generate(gpa: std.mem.Allocator, io: std.Io, pack: []const u8, assets: []
     const text = try std.Io.Dir.cwd().readFileAlloc(io, trace, a, .limited(1 << 30));
     const s = try se.Served.open(gpa, io, pack, assets, try drafts(), null, null, steer);
     defer se.Served.close(s);
+    @import("model_supervisor.zig").installStopSignals();
     const eng = s.engine();
     const Keyed = struct { seed: u64, temperature: f64, top_k: u32, top_p: f64, min_p: f64 = 0 };
     // "structure" ({kind, text}: the request's grammar, TF_DSV41_GRAMMAR=1): replayed under the same grammar
